@@ -1,0 +1,39 @@
+Pendulum vous dit si vos jambes bougent de façon périodique pendant votre sommeil, et à quel point ce rythme est régulier, à partir d'une montre connectée portée à la cheville.
+
+UNE AIDE AU DÉPISTAGE, PAS UN DIAGNOSTIC. Pendulum vous donne une vraie mesure : les relevés de l'accéléromètre sont réels, le traitement suit des règles de cotation publiées, et les chiffres veulent dire quelque chose. Sur plusieurs nuits, elle peut vous donner une raison fondée de prendre rendez-vous — ou une raison fondée de ne pas vous inquiéter.
+
+Ce qu'elle n'est pas : un dispositif médical, une application de santé officielle, ni un diagnostic. Elle n'a été examinée ni approuvée par aucune autorité de santé, et n'a jamais été validée contre un examen du sommeil. Portez le résultat à un médecin ; n'en tirez aucune décision de traitement, et ne laissez pas un chiffre rassurant vous dissuader de consulter si vous avez des symptômes.
+
+CE QU'ELLE MESURE
+
+Les mouvements périodiques des jambes sont des mouvements involontaires qui reviennent à intervalles réguliers pendant la nuit. Ils constituent le signe moteur associé au syndrome des jambes sans repos et au trouble des mouvements périodiques des membres, et la plupart des personnes concernées les ignorent, puisqu'ils surviennent pendant le sommeil.
+
+La mesure conventionnelle est un nombre par heure de sommeil. Pendulum le calcule, et l'inscrit dans le rapport destiné au médecin, parce que c'est ce qu'un somnologue sait lire. Mais ce n'est pas la grandeur que l'application suit dans le temps.
+
+POURQUOI LE RYTHME PLUTÔT QUE LE NOMBRE
+
+La période d'un pendule ne dépend pas de l'amplitude de son balancement. La même distinction s'applique ici. Le compte horaire varie d'environ 43 % d'une nuit à l'autre ; l'intervalle entre deux mouvements varie de 3,6 %. Douze fois moins. Cet intervalle n'a en outre besoin d'aucun dénominateur, puisqu'il se calcule à partir des seuls instants d'apparition — ce qui lui évite une circularité qui fragilise le compte lorsque la durée de sommeil est estimée à partir du même capteur.
+
+Pendulum suit donc le rythme fondamental, en secondes, et rapporte le compte à part.
+
+CE QU'IL VOUS FAUT
+
+Deux appareils, et ce n'est pas une limite qu'on peut faire disparaître :
+
+- Une montre Wear OS portée à la cheville. C'est le seul type d'appareil grand public dont une application tierce peut lire l'accéléromètre brut toute la nuit.
+- Une source indépendante de durée de sommeil qui écrit dans Health Connect — une autre montre, une bague, ou un capteur sous le matelas. Un seul capteur ne peut pas mesurer honnêtement à la fois les mouvements et le sommeil pendant lequel ils surviennent.
+
+COMMENT ELLE SE COMPORTE
+
+- Elle refuse d'afficher une tendance avant trois nuits éligibles, parce qu'une nuit seule ne dit rien d'une tendance.
+- Chaque chiffre agrégé porte son intervalle d'incertitude et le nombre de nuits sur lequel il repose, sur la même ligne.
+- Elle ne dit jamais qu'une évolution est une amélioration ou une aggravation. Quand une variation ne se distingue pas du bruit d'une nuit à l'autre, elle le dit avant d'afficher le chiffre.
+- Les nuits écartées d'une comparaison restent visibles avec leur motif. Il n'existe aucun bouton pour retirer une nuit à la main : une nuit retirée après avoir vu son chiffre fabriquerait la tendance.
+
+CONFIDENTIALITÉ
+
+L'application ne déclare aucune permission INTERNET. Elle ne peut donc ouvrir aucune connexion réseau : c'est une propriété que le système d'exploitation impose et que l'on peut vérifier sur le paquet installé, et non une promesse écrite dans une politique. Aucune analytique, aucun rapport de plantage, aucune publicité. Vos données ne quittent l'appareil que par un export que vous déclenchez vous-même, vers un emplacement que vous choisissez.
+
+LOGICIEL LIBRE
+
+Le code source, la spécification technique complète et le raisonnement derrière chaque décision de conception — y compris ce qui ne fonctionne pas — sont publiés sous licence AGPL-3.0.

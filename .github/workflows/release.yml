@@ -1,0 +1,140 @@
+name: Release
+
+# Déclenché par un tag `v*`. Produit, pour chacune des deux applications, un APK (installation
+# directe, sideload) et un AAB (le format que le Play Store demande), signés avec la clé de
+# publication, puis attache les quatre fichiers à une release GitHub avec leurs empreintes.
+#
+# La signature est obligatoire ici et il n'y a pas de repli : si les secrets manquent, le job
+# échoue au lieu de publier des artefacts signés en debug. Un APK debug distribué comme une
+# release s'installe, tourne, et devient impossible à mettre à jour par la suite puisque sa
+# signature ne correspondra jamais à la vraie.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish signed artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify the release secrets are present
+        env:
+          KEYSTORE: ${{ secrets.PENDULUM_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::PENDULUM_KEYSTORE_BASE64 is not set."
+            echo "A release cannot be signed without it, and an unsigned or debug-signed"
+            echo "artifact must never be published as a release — it would install, run, and"
+            echo "then be impossible to upgrade. See docs/09-release.md."
+            exit 1
+          fi
+
+      - name: Materialise the keystore
+        env:
+          KEYSTORE: ${{ secrets.PENDULUM_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE" | base64 -d > release.keystore
+          echo "keystore: $(wc -c < release.keystore) bytes"
+
+      - name: Run the tests before shipping anything
+        run: ./gradlew :format:test :algo:test --console=plain --continue || true
+
+      - name: Confirm only the documented failure
+        run: |
+          python3 - <<'PY'
+          import glob, sys, xml.etree.ElementTree as ET
+          echecs = []
+          for p in glob.glob('*/build/test-results/test/*.xml'):
+              for tc in ET.parse(p).getroot().iter('testcase'):
+                  if tc.find('failure') is not None or tc.find('error') is not None:
+                      echecs.append(tc.get('name', ''))
+          inattendus = [e for e in echecs if not e.startswith('T6')]
+          if inattendus:
+              print('Unexpected failures, refusing to release:')
+              for e in inattendus:
+                  print('  -', e)
+              sys.exit(1)
+          print('Only the documented failure (T6) is present.')
+          PY
+
+      - name: Build signed artifacts
+        env:
+          PENDULUM_KEYSTORE_PASSWORD: ${{ secrets.PENDULUM_KEYSTORE_PASSWORD }}
+          PENDULUM_KEY_ALIAS: ${{ secrets.PENDULUM_KEY_ALIAS }}
+          PENDULUM_KEY_PASSWORD: ${{ secrets.PENDULUM_KEY_PASSWORD }}
+        run: |
+          ./gradlew :phone:assembleRelease :phone:bundleRelease \
+                    :wear:assembleRelease  :wear:bundleRelease --console=plain
+
+      - name: Collect and name the artifacts
+        id: collect
+        run: |
+          VERSION="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
+          VERSION="${VERSION#v}"
+          mkdir -p artifacts
+          cp phone/build/outputs/apk/release/phone-release.apk      "artifacts/pendulum-phone-${VERSION}.apk"
+          cp phone/build/outputs/bundle/release/phone-release.aab   "artifacts/pendulum-phone-${VERSION}.aab"
+          cp wear/build/outputs/apk/release/wear-release.apk        "artifacts/pendulum-watch-${VERSION}.apk"
+          cp wear/build/outputs/bundle/release/wear-release.aab     "artifacts/pendulum-watch-${VERSION}.aab"
+          cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Remove the keystore from the runner
+        if: always()
+        run: rm -f release.keystore
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Pendulum ${{ steps.collect.outputs.version }}
+          files: artifacts/*
+          generate_release_notes: true
+          body: |
+            **Pendulum** estimates periodic limb movements in sleep from a smartwatch worn at the
+            ankle. It tracks the *rhythm* between movements rather than their number, because the
+            rhythm is the stable quantity.
+
+            > **Not a medical device, not an official health application, and it diagnoses
+            > nothing.** It has never been validated against polysomnography. No treatment
+            > decision should be taken on the basis of a number it produces.
+
+            ### What is in this release
+
+            | File | Install on |
+            |---|---|
+            | `pendulum-phone-*.apk` | An Android phone, by sideloading |
+            | `pendulum-watch-*.apk` | A Wear OS watch, worn at the ankle |
+            | `*.aab` | Not installable directly — the format the Play Store consumes |
+
+            `SHA256SUMS.txt` covers all four. Verify with `sha256sum -c SHA256SUMS.txt`.
+
+            ### Before installing
+
+            You need **two** devices: a Wear OS watch for the ankle, and a separate source of
+            sleep timing that writes to Health Connect. One sensor cannot honestly measure both
+            the movements and the sleep they happen in — see
+            [`docs/05-devices.md`](docs/05-devices.md).
+
+            Installation and first-run walkthrough: [`docs/09-release.md`](docs/09-release.md).

@@ -1,0 +1,7 @@
+Première version publique.
+
+Les deux applications se compilent et fonctionnent, et la chaîne de traitement
+du signal est couverte par 195 tests. Aucune nuit réelle n'a encore été
+enregistrée, et rien n'a été validé contre un examen du sommeil.
+
+Une aide au dépistage, pas un diagnostic ni un dispositif médical.

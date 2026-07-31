@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 780" width="360" height="780" role="img" aria-labelledby="ti de">
+  <title id="ti">Pendulum — carte « Ce soir » et scellement du contexte du soir</title>
+  <desc id="de">Maquette. En tête de l'écran Tendance, entre 20 h et 4 h : l'état de la montre, du bracelet et de la source de sommeil, puis le relevé du soir. Tant que ce relevé n'est pas scellé, le bouton DÉMARRER reste verrouillé sur la montre.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+    .t   { font-size: 21px; font-weight: 500; fill: #E6EAF0; }
+    .lb  { font-size: 11px; font-weight: 500; fill: #7C8695; letter-spacing: .6px; }
+    .b   { font-size: 13.5px; fill: #A3ADBB; }
+    .bp  { font-size: 13.5px; fill: #E6EAF0; }
+    .c   { font-size: 11.5px; fill: #7C8695; }
+    .nav { font-size: 10.5px; fill: #7C8695; }
+  </style>
+
+  <rect width="360" height="780" fill="#0E1116"/>
+
+  <text class="c" x="16" y="16">22:47</text>
+  <rect x="330" y="8" width="16" height="8" rx="2" fill="none" stroke="#7C8695"/>
+  <rect x="332" y="10" width="12" height="4" fill="#7C8695"/>
+
+  <!-- top app bar -->
+  <text class="t" x="16" y="58">Tendance</text>
+  <rect x="256" y="40" width="88" height="26" rx="10" fill="none" stroke="#2A313C"/>
+  <text class="c" x="270" y="57" fill="#A3ADBB">14 nuits</text>
+  <path d="M326 52 l4 4 l4 -4" fill="none" stroke="#7C8695" stroke-width="1.3"/>
+
+  <!-- ============ card: CE SOIR ============ -->
+  <rect x="16" y="82" width="328" height="150" rx="14" fill="#161A21" stroke="#2A313C"/>
+  <text class="lb" x="32" y="106">CE SOIR</text>
+
+  <text class="b"  x="32"  y="132">Montre</text>
+  <text class="bp" x="120" y="132">98 %  ·  1,2 Go libre</text>
+  <path d="M316 128 l3.5 4 l7 -8.5" fill="none" stroke="#5FBF8C" stroke-width="1.8"/>
+
+  <text class="b"  x="32"  y="156">Bracelet</text>
+  <text class="bp" x="120" y="156">4e trou, jambe droite</text>
+  <circle cx="322" cy="151.5" r="6" fill="none" stroke="#7C8695" stroke-width="1.3"/>
+  <path d="M322 149.5 v5" stroke="#7C8695" stroke-width="1.3"/>
+  <circle cx="322" cy="147" r="0.9" fill="#7C8695"/>
+
+  <text class="b"  x="32"  y="180">Sommeil</text>
+  <text class="bp" x="120" y="180">Samsung Health, actif</text>
+  <path d="M316 176 l3.5 4 l7 -8.5" fill="none" stroke="#5FBF8C" stroke-width="1.8"/>
+
+  <line x1="32" y1="196" x2="328" y2="196" stroke="#2A313C"/>
+  <!-- padlock -->
+  <rect x="32" y="215" width="10" height="8" rx="1.5" fill="none" stroke="#E0A33E" stroke-width="1.4"/>
+  <path d="M34.5 215 v-2.5 a2.5 2.5 0 0 1 5 0 v2.5" fill="none" stroke="#E0A33E" stroke-width="1.4"/>
+  <text class="c" x="52" y="217" fill="#E0A33E">DÉMARRER est verrouillé sur la montre</text>
+  <text class="c" x="52" y="230">tant que le contexte du soir n'est pas scellé.</text>
+
+  <!-- ============ card: CONTEXTE DU SOIR ============ -->
+  <rect x="16" y="244" width="328" height="316" rx="14" fill="#161A21" stroke="#2A313C"/>
+  <text class="lb" x="32" y="268">CONTEXTE DU SOIR</text>
+  <text class="c"  x="32" y="288">Saisi avant le coucher, jamais après.</text>
+
+  <text class="b"  x="32"  y="316">Traitement du soir</text>
+  <text class="bp" x="328" y="316" text-anchor="end">225 mg à 21:30</text>
+  <line x1="32" y1="328" x2="328" y2="328" stroke="#2A313C"/>
+
+  <text class="b"  x="32"  y="348">Alcool</text>
+  <text class="bp" x="328" y="348" text-anchor="end">aucun</text>
+  <line x1="32" y1="360" x2="328" y2="360" stroke="#2A313C"/>
+
+  <text class="b"  x="32"  y="380">Café après 16 h</text>
+  <text class="bp" x="328" y="380" text-anchor="end">non</text>
+  <line x1="32" y1="392" x2="328" y2="392" stroke="#2A313C"/>
+
+  <text class="b"  x="32"  y="412">Seul dans le lit</text>
+  <text class="bp" x="328" y="412" text-anchor="end">oui</text>
+  <line x1="32" y1="424" x2="328" y2="424" stroke="#2A313C"/>
+
+  <text class="b"  x="32"  y="444">Jambe et bracelet</text>
+  <text class="bp" x="328" y="444" text-anchor="end">droite · 4e trou</text>
+
+  <text class="c" x="32" y="474">Enregistrement append-only : une fois scellé, ce relevé</text>
+  <text class="c" x="32" y="489">n'est plus modifiable, et la nuit ne peut pas être</text>
+  <text class="c" x="32" y="504">requalifiée après avoir vu le résultat.</text>
+
+  <rect x="32" y="518" width="296" height="42" rx="10" fill="#6FB2FF"/>
+  <text x="180" y="544" text-anchor="middle" font-size="14px" font-weight="500" fill="#0B1017"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif">Sceller le contexte du soir</text>
+
+  <!-- night counter row -->
+  <line x1="0" y1="592" x2="360" y2="592" stroke="#2A313C"/>
+  <text class="bp" x="16" y="620">8 nuits enregistrées · 7 éligibles · 1 écartée</text>
+  <path d="M334 613 l6 6 l-6 6" fill="none" stroke="#7C8695" stroke-width="1.4"/>
+  <line x1="0" y1="640" x2="360" y2="640" stroke="#2A313C"/>
+
+  <text class="c" x="16" y="666">La carte « Ce soir » n'apparaît qu'entre 20 h 00 et 04 h 00.</text>
+  <text class="c" x="16" y="681">Au réveil, elle a disparu : rien d'inutile sur l'écran du matin.</text>
+
+  <!-- ============ navigation bar ============ -->
+  <line x1="0" y1="724" x2="360" y2="724" stroke="#2A313C"/>
+  <rect x="0" y="724" width="360" height="56" fill="#12161C"/>
+  <path d="M48 750 l8 -8 l6 5 l10 -12" fill="none" stroke="#6FB2FF" stroke-width="1.6"/>
+  <text class="nav" x="60" y="770" text-anchor="middle" fill="#6FB2FF">Tendance</text>
+  <path d="M186 742 a9 9 0 1 0 -8 14 a11 11 0 0 1 8 -14 z" fill="none" stroke="#7C8695" stroke-width="1.5"/>
+  <text class="nav" x="180" y="770" text-anchor="middle">Nuits</text>
+  <path d="M288 743 h14 M288 750 h14 M288 757 h14" stroke="#7C8695" stroke-width="1.5"/>
+  <circle cx="293" cy="743" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <circle cx="299" cy="750" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <circle cx="295" cy="757" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <text class="nav" x="300" y="770" text-anchor="middle">Réglages</text>
+</svg>

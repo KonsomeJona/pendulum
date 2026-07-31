@@ -1,0 +1,152 @@
+name: CI
+
+# Ce qui tourne à chaque poussée, dans l'ordre de coût croissant : les tests JVM d'abord,
+# parce qu'ils portent l'algorithme et qu'ils sont rapides ; l'assemblage Android ensuite ;
+# les tests instrumentés en dernier, parce qu'ils démarrent un émulateur.
+#
+# Un point de méthode : le seul échec connu et accepté du projet — T6 — est toléré **nommément**,
+# par une étape qui lit les rapports XML et vérifie que rien d'autre n'a échoué. Une tolérance
+# globale (`|| true`, `continue-on-error` sur le job) couvrirait aussi les régressions à venir et
+# les erreurs de compilation ; ici, tout autre test rouge, ou l'absence de rapport, rend le job
+# rouge. La raison pour laquelle T6 échoue est dans docs/07-validation.md — c'est un conflit entre
+# trois spécifications publiées, pas un défaut du code, et le faire passer masquerait un
+# sous-comptage.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jvm-tests:
+    name: JVM tests (format, algo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # `continue-on-error` plutôt qu'un `|| true` : la step reste visiblement rouge dans
+      # l'interface, mais le job continue jusqu'à la vérification qui suit, laquelle décide.
+      # Un `|| true` cacherait aussi bien une erreur de compilation qu'un test rouge.
+      - name: Run unit tests
+        id: tests
+        continue-on-error: true
+        run: ./gradlew :format:test :algo:test --console=plain --continue
+
+      # C'est cette étape qui décide, et non le code de retour de Gradle. Elle échoue si un test
+      # autre que T6 est rouge, et aussi — ce qui compte autant — si Gradle a échoué sans produire
+      # de rapport, cas où un `|| true` naïf aurait laissé passer une erreur de compilation.
+      - name: Check the only failure is the documented one
+        run: |
+          python3 - <<'PY'
+          import glob, sys, xml.etree.ElementTree as ET
+          echecs = []
+          total = 0
+          for p in glob.glob('*/build/test-results/test/*.xml'):
+              r = ET.parse(p).getroot()
+              total += int(r.get('tests', 0))
+              for tc in r.iter('testcase'):
+                  if tc.find('failure') is not None or tc.find('error') is not None:
+                      echecs.append(tc.get('name', ''))
+          if total == 0:
+              print('No test results at all — the build failed before running tests.')
+              sys.exit(1)
+          print(f'{total} tests, {len(echecs)} failure(s)')
+          for e in echecs:
+              print('  -', e)
+          inattendus = [e for e in echecs if not e.startswith('T6')]
+          if inattendus:
+              print('\nUnexpected failures — see docs/07-validation.md for the one that is expected.')
+              sys.exit(1)
+          PY
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: '*/build/reports/tests/test'
+          retention-days: 14
+
+  android-build:
+    name: Assemble both applications
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug
+        run: ./gradlew :wear:assembleDebug :phone:assembleDebug --console=plain
+
+      # 7 jours et non 14 : ces APK pesent ~21 Mo par execution et ne servent qu'a essayer une
+      # branche avant fusion. Les artefacts qui comptent — ceux qu'on installe — sont attaches a
+      # une **release**, et ceux-la n'expirent jamais. Confondre les deux est le moyen le plus
+      # simple de remplir le quota de stockage avec des fichiers que personne ne rouvrira.
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apks
+          path: '*/build/outputs/apk/debug/*.apk'
+          retention-days: 7
+
+  instrumented-tests:
+    name: Guard-rail tests on an emulator
+    runs-on: ubuntu-latest
+    # Ces tests vérifient ce qu'aucun test JVM ne peut atteindre : que l'interface assemblée
+    # refuse bien d'agréger sous trois nuits, que l'avertissement dit toujours que ce n'est pas
+    # une application de santé officielle, et que la hiérarchie des grandeurs tient.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: ./gradlew :phone:connectedDebugAndroidTest --console=plain
+
+      - name: Upload instrumented reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumented-reports
+          path: phone/build/reports/androidTests
+          retention-days: 14

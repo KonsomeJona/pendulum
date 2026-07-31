@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pendulum — restless legs, measured at the ankle</title>
+<meta name="description" content="Pendulum measures periodic limb movements in sleep from a smartwatch worn at the ankle, and tracks the rhythm between them rather than their number. A screening aid, not a diagnosis and not a medical device.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <span class="wordmark">Pendulum</span>
+    <nav class="topnav" aria-label="Primary">
+      <a href="#rhythm">The thesis</a>
+      <a href="#night">A night</a>
+      <a href="#chain">The chain</a>
+      <a href="#screens">The application</a>
+      <a href="#limits">Limits</a>
+      <a class="topnav-repo" href="https://github.com/KonsomeJona/pendulum">Repository</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ─────────────────────────────  HERO  ───────────────────────────── -->
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Restless legs, measured at the ankle</p>
+    <h1 class="hero-h1">The amplitude decays.<br><span class="hero-em">The period holds.</span></h1>
+    <p class="hero-lede">
+      Pendulum records raw acceleration from a Wear OS watch worn at the ankle and reports whether
+      your legs move periodically while you sleep — and how regular that rhythm is. It tracks the
+      <em>interval</em> between movements, not their number.
+    </p>
+
+    <figure class="swing">
+      <canvas id="swingCanvas" class="swing-canvas" role="img"
+        aria-label="Animation of a pendulum whose swing decays while the tick marks recording each crossing stay evenly spaced."></canvas>
+      <figcaption class="swing-cap">
+        Huygens, 1656: a pendulum's period does not depend on how far it swings. The swing above
+        decays; the tick marks below it — one per crossing — stay evenly spaced. The same split runs
+        through this project.
+      </figcaption>
+    </figure>
+
+    <div class="isnot">
+      <div class="isnot-card isnot-is">
+        <p class="isnot-tag">What this is</p>
+        <p>A <strong>real measurement</strong>. The accelerometer readings are real, the processing
+        chain follows published scoring rules, and the numbers mean something. Used over several
+        nights, it can give you a well-founded reason to book an appointment — or a well-founded
+        reason not to worry.</p>
+      </div>
+      <div class="isnot-card isnot-not">
+        <p class="isnot-tag">What this is not</p>
+        <p>Not a <strong>medical device</strong>, an official health application, or a diagnosis. Not
+        reviewed or approved by any health authority, not affiliated with any medical body, and never
+        validated against a sleep study. Its numbers are on a different scale from the ones a
+        laboratory produces.</p>
+      </div>
+    </div>
+
+    <p class="isnot-so"><span class="so-tag">So</span> Take the result to a physician. Do not take a
+    treatment decision from it, and do not let a reassuring number stop you from seeing someone if
+    you have symptoms.</p>
+
+    <p class="status">
+      <span class="pill">Pre-alpha</span>
+      <span class="status-txt">All four modules build; 195 unit tests on the two pure-JVM modules.
+      No accelerometer has yet been worn at an ankle by this software.</span>
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────  WHAT IT NEEDS  ───────────────────────── -->
+<section class="band" id="devices">
+  <div class="wrap">
+    <h2>It takes two devices, and that cannot be engineered away</h2>
+    <p class="measure">
+      The clinical index is movements per hour of <em>sleep</em>. If the movements and the sleep both
+      come from the same accelerometer, the metric becomes circular: processing that suppresses
+      movements lowers the numerator and, in the same gesture, raises the denominator. A treatment
+      with no effect can then display as a clear improvement.
+    </p>
+    <div class="devices">
+      <div class="device">
+        <p class="device-where">Ankle</p>
+        <p class="device-what">A Wear OS watch</p>
+        <p class="device-why">The only class of consumer device whose <strong>raw</strong>
+        accelerometer a third-party app can read at 50 Hz for eight hours. Fitbit, Oura, Whoop and
+        Garmin expose aggregated vendor metrics, never the sample stream.</p>
+      </div>
+      <div class="device">
+        <p class="device-where">Wrist, finger, or under the mattress</p>
+        <p class="device-what">Any source that writes sleep to Health Connect</p>
+        <p class="device-why">It provides the denominator, independently. Consumer wearables estimate
+        <em>total sleep time</em> well and sleep <em>stages</em> poorly — and total sleep time is all
+        the index needs.</p>
+      </div>
+    </div>
+    <p class="note measure">
+      An accelerometer does the work, not a gyroscope. A movement lasting 0.5 to 10 seconds is fully
+      described by acceleration, and a gyroscope costs 3 to 40 times the current for nothing.
+    </p>
+  </div>
+</section>
+
+<!-- ───────────────────────  THE THESIS / DEMO  ─────────────────────── -->
+<section class="band band-alt" id="rhythm">
+  <div class="wrap">
+    <p class="eyebrow">The thesis</p>
+    <h2>Why the rhythm, and not the count</h2>
+    <p class="measure">
+      The clinical convention is the PLM index — movements per hour of sleep. Pendulum computes it and
+      puts it in the report a physician would read, because that is the number a sleep specialist
+      reads. It is not the number the application follows from one night to the next, for three
+      reasons.
+    </p>
+
+    <div class="reasons">
+      <div class="reason">
+        <p class="reason-tag">Stability</p>
+        <p>Night-to-night variability of the hourly count is <strong>43.2 % ± 37.1</strong>; of the
+        mean log inter-movement interval, <strong>3.6 % ± 3.7</strong>. Twelve times less.
+        <span class="cite">Skeba et al., <em>Sleep Med</em> 2016, PMID 26847989</span></p>
+        <div class="varbars">
+          <div class="varbar">
+            <span class="varbar-lab">Hourly count</span>
+            <span class="varbar-track"><span class="varbar-fill varbar-rose" style="--w:100%"></span></span>
+            <span class="varbar-num">43.2 %</span>
+          </div>
+          <div class="varbar">
+            <span class="varbar-lab">Mean log interval</span>
+            <span class="varbar-track"><span class="varbar-fill varbar-brass" style="--w:8.3%"></span></span>
+            <span class="varbar-num">3.6 %</span>
+          </div>
+        </div>
+      </div>
+      <div class="reason">
+        <p class="reason-tag">No denominator</p>
+        <p>The inter-movement interval and the periodicity index are computed from the movement
+        onsets alone. The hourly count needs hours of sleep — and when that estimate comes from the
+        same accelerometer that supplies the movements, the metric is circular and self-amplifying.</p>
+      </div>
+      <div class="reason">
+        <p class="reason-tag">Scale</p>
+        <p><strong>39 %</strong> of movements scored on EMG produce no detectable motion at an
+        ankle-worn sensor. An accelerometric count is a different quantity, not a noisy estimate of
+        the EMG one, so the 15/h clinical threshold does not transfer.
+        <span class="cite">Terrill et al., EMBC 2013, PMID 24111321</span></p>
+      </div>
+    </div>
+
+    <!-- interactive demonstration -->
+    <div class="demo" id="demo">
+      <div class="demo-head">
+        <p class="panel-tag">Interactive · move the slider</p>
+        <h3 class="demo-h3">What a miss rate does to each quantity</h3>
+        <p class="measure demo-intro">
+          Suppose the detector misses a fraction <span class="mono">p</span> of the movements,
+          independently. The count falls in direct proportion. The rhythm does not: a missed movement
+          merges two 21 s intervals into one 42 s interval, which is a <strong>harmonic of the
+          fundamental, not noise</strong>. The information is displaced, not destroyed — and the
+          mixture model that separates the harmonics recovers the fundamental and measures
+          <span class="mono">p</span> at the same time.
+        </p>
+      </div>
+
+      <div class="demo-control">
+        <label class="demo-label" for="missRate">Missed movements</label>
+        <input class="demo-slider" type="range" id="missRate" min="0" max="60" step="1" value="0"
+               aria-describedby="demoReadout">
+        <output class="demo-value mono" id="missValue" for="missRate">0 %</output>
+        <div class="demo-ticks" aria-hidden="true">
+          <span class="demo-tick" style="--at:0%"><span>0</span></span>
+          <span class="demo-tick demo-tick-mark" style="--at:65%"><span>39 % — Terrill</span></span>
+          <span class="demo-tick" style="--at:100%"><span>60</span></span>
+        </div>
+      </div>
+
+      <div class="demo-grid">
+        <div class="metric metric-rose">
+          <p class="metric-tag">Hourly count · <span class="metric-fate" id="fateCount">collapses</span></p>
+          <p class="metric-val mono"><span id="countVal">25.2</span> <span class="metric-unit">/h</span></p>
+          <span class="metric-track"><span class="metric-fill metric-fill-rose" id="countBar"></span></span>
+          <p class="metric-foot">From a true 25.2 /h — the nominal synthetic night of the regression
+          suite: 168 in-series movements over 400 min of analysable sleep.</p>
+        </div>
+        <div class="metric metric-blue">
+          <p class="metric-tag">Raw mean log interval · <span class="metric-fate" id="fateRaw">biased upward</span></p>
+          <p class="metric-val mono"><span id="rawVal">21.0</span> <span class="metric-unit">s</span></p>
+          <span class="metric-track"><span class="metric-fill metric-fill-blue" id="rawBar"></span></span>
+          <p class="metric-foot">Bias <span class="mono" id="biasVal">+0.000</span> nats ·
+          interval <span class="mono" id="multVal">×1.00</span>. Published night-to-night variability
+          is 0.11 nats at a 21 s interval.</p>
+        </div>
+        <div class="metric metric-brass">
+          <p class="metric-tag">Fundamental, deconvolved · <span class="metric-fate">holds</span></p>
+          <p class="metric-val mono">21.0 <span class="metric-unit">s</span></p>
+          <span class="metric-track"><span class="metric-fill metric-fill-brass" id="funBar"></span></span>
+          <p class="metric-foot">Recovered by the harmonic mixture model, together with an estimate
+          of <span class="mono">p</span> itself — which doubles as a night-comparability check.</p>
+        </div>
+      </div>
+
+      <figure class="hist">
+        <canvas id="histCanvas" class="hist-canvas" role="img"
+          aria-label="Distribution of observed intervals. As the miss rate rises, mass moves from the 21 second peak onto harmonics at 42, 63 and 84 seconds; the fundamental centroid stays at 21 seconds while the raw mean of the distribution moves to the right."></canvas>
+        <figcaption class="hist-cap">
+          <span class="key"><span class="key-swatch key-blue"></span>Observed distribution of intervals
+          (synthetic, log-normal with σ = 0.3, mixed over harmonics with weights
+          <span class="mono">w<sub>k</sub> ∝ p<sup>k−1</sup>(1−p)</span>)</span>
+          <span class="key"><span class="key-line key-line-brass"></span>Fundamental μ — solid, stays at 21 s</span>
+          <span class="key"><span class="key-line key-line-rose"></span>Raw mean of the log distribution — dashed, drifts right</span>
+        </figcaption>
+      </figure>
+
+      <p class="demo-note measure" id="demoReadout" aria-live="polite">
+        <span id="readoutText">At a zero miss rate the two agree. Raise the slider and watch them
+        separate.</span>
+      </p>
+    </div>
+
+    <p class="note measure">
+      Values are computed live from the published relations:
+      <span class="mono">E[ln N] = Σ p<sup>k−1</sup>(1−p)·ln k</span> for the bias, and a proportional
+      fall for the count. At <span class="mono">p = 0.39</span> the bias is
+      <strong>+0.357 nats</strong>, an interval multiplied by <strong>1.43</strong> — a true 21 s
+      rhythm reads as 30.0 s. That is 3.3 times the night-to-night variability the whole method rests
+      on, which is why deconvolution is not a refinement but the condition for the metric to exist.
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────  ONE NIGHT  ───────────────────────── -->
+<section class="band" id="night">
+  <div class="wrap">
+    <p class="eyebrow">Seven minutes of it</p>
+    <h2>What the detector actually sees</h2>
+    <p class="measure">
+      The vertical axis is amplitude divided by that night's own noise floor, on a log₂ scale — which
+      is what makes the ×8 onset threshold a straight horizontal line and the detector's logic
+      readable at a glance. The envelope is drawn as minimum-to-maximum per pixel column and never
+      averaged, which is why it looks like a picket fence rather than a smooth curve.
+    </p>
+  </div>
+
+  <figure class="trace">
+    <canvas id="traceCanvas" class="trace-canvas" role="img"
+      aria-label="Synthetic accelerometric envelope over seven minutes: a background near the noise floor, two runs of movements about twenty-one seconds apart crossing the times-eight onset threshold, one isolated movement, and one gross body movement above times forty that is excluded. Series bands mark the two runs."></canvas>
+    <figcaption class="trace-cap wrap">
+      <span class="key"><span class="key-swatch key-blue"></span>Envelope, in multiples of the noise floor</span>
+      <span class="key"><span class="key-line key-line-brass"></span>Θ<sub>on</sub> = ×8 — solid</span>
+      <span class="key"><span class="key-line key-line-dot"></span>Θ<sub>off</sub> = ×2.5 — dotted</span>
+      <span class="key"><span class="key-mark key-mark-solid"></span>Counted movement</span>
+      <span class="key"><span class="key-mark key-mark-hollow"></span>Isolated — outside any series</span>
+      <span class="key"><span class="key-mark key-mark-cross">×</span>Excluded: gross body movement, ≥ ×40</span>
+      <span class="key"><span class="key-bar"></span>Series of four or more</span>
+    </figcaption>
+  </figure>
+
+  <div class="wrap">
+    <p class="note measure">
+      <strong>This signal is synthetic.</strong> No accelerometer has been worn at an ankle by this
+      software. It is generated in the browser from the parameters of the worked example in
+      <span class="mono">docs/03-algorithm.md</span> §7: a noise floor of 4.0 mg, an onset threshold
+      at ×8 of it (32 mg) and an offset at ×2.5 (10 mg), movements 21 s apart with plateau amplitudes
+      in the 45–150 mg range and durations between 1.7 and 3.3 s, and a gross-body threshold at ×40 of
+      the effective floor. Four consecutive movements make a series; a movement above ×40 is excluded
+      and imposes a 2 s refractory window on either side.
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────  THE CHAIN  ───────────────────────── -->
+<section class="band band-alt" id="chain">
+  <div class="wrap">
+    <p class="eyebrow">Raw acceleration to published indices</p>
+    <h2>The processing chain</h2>
+    <p class="measure">
+      Nine stages, in order. Two edges are drawn dashed because they are the only places where the
+      chain is not strictly feed-forward: posture boundaries cut the noise-floor windows, and detected
+      movements are fed back into the sleep mask so that the mask does not read them as evidence of
+      wakefulness.
+    </p>
+
+    <div class="chain">
+      <div class="stage" style="--row:1">
+        <span class="stage-n mono">−1</span>
+        <p class="stage-h">Integrity</p>
+        <p class="stage-b">Eleven O(n) checks on data the on-wire CRC does not cover: rate,
+        monotonicity, overlap, impossible jerk, saturation, gravity plausibility. Above 1 % of blocks
+        rejected, the night is void.</p>
+      </div>
+      <div class="stage" style="--row:2">
+        <span class="stage-n mono">0</span>
+        <p class="stage-h">Timeline</p>
+        <p class="stage-b">The sampling rate is re-estimated from the timestamps and the signal
+        resampled to 50.000 Hz — a rate wrong by 5.2 % falsifies every duration by 5.2 %. Gaps are
+        classified; the first 5 s of each segment leaves the denominator.</p>
+      </div>
+      <div class="stage" style="--row:3">
+        <span class="stage-n mono">1</span>
+        <p class="stage-h">Gravity / movement split</p>
+        <p class="stage-b">Two parallel paths, not a subtraction: a 0.15 Hz low-pass gives the gravity
+        vector ĝ as a first-class signal, a 0.5–8 Hz band-pass gives the movement channel. Stateful
+        biquads, one pass per segment — restarting them per block injects a periodic artefact that
+        looks exactly like a perfect movement series.</p>
+      </div>
+
+      <div class="aside" style="--row:3;--col:2">
+        <p class="aside-tag">From ĝ · off-chain</p>
+        <p class="aside-h">Posture detector</p>
+        <p class="aside-b">A change of more than 20° over ±2 s, held within 10° for 10 s. A turn moves
+        gravity by up to 1 g — fifty times a real movement — and rings for the exact duration that
+        would be counted.</p>
+        <p class="aside-edge">↓ cuts the floor windows · guards detection</p>
+      </div>
+
+      <div class="stage" style="--row:4">
+        <span class="stage-n mono">2</span>
+        <p class="stage-h">Dual envelope</p>
+        <p class="stage-b">RMS over 0.50 s for the decision — long enough to null the ripple that
+        fragments one movement into three — and RMS over 0.15 s for edges and the WASM morphology
+        criterion.</p>
+      </div>
+      <div class="stage" style="--row:5">
+        <span class="stage-n mono">3</span>
+        <p class="stage-h">Adaptive noise floor</p>
+        <p class="stage-b">p25 over a bilateral 120 s window, then mask everything above ×4, then the
+        median of the survivors. The floor is mechanical, not thermal: it steps at every posture
+        change, so windows never cross a boundary.</p>
+      </div>
+      <div class="stage" style="--row:6">
+        <span class="stage-n mono">4</span>
+        <p class="stage-h">Thresholds</p>
+        <p class="stage-b"><span class="mono">Θ_on = max(8·floor, 0.020 g, 0.12·gainCal)</span>, with
+        the offset at 0.3125 of the same three terms. Which term dominates is recorded per sample:
+        two nights in different regimes are not comparable.</p>
+      </div>
+      <div class="stage" style="--row:7">
+        <span class="stage-n mono">5</span>
+        <p class="stage-h">Candidate detection</p>
+        <p class="stage-b">A state machine on the coarse envelope, edges refined on the fine one.
+        Morphology, duration 0.5–10 s, gross body movement, posture guard, blind zones. Rejection
+        reasons are exclusive; flags are cumulative.</p>
+      </div>
+
+      <div class="aside" style="--row:7;--col:2">
+        <p class="aside-tag">Three layers · off-chain</p>
+        <p class="aside-h">Sleep mask</p>
+        <p class="aside-b">A sustained-inactivity rule of the van Hees type — the only family showing
+        no significant wrist-versus-ankle difference. Blind to periodic movements by construction, a
+        bounded fixed point of exactly two iterations, then fused with Health Connect where it exists.</p>
+        <p class="aside-edge">↓ supplies the denominator and its independence level</p>
+      </div>
+
+      <div class="stage" style="--row:8">
+        <span class="stage-n mono">6</span>
+        <p class="stage-h">Series building</p>
+        <p class="stage-b">AASM v3 and WASM 2016 implemented literally and separately, never as one
+        parameterised rule — the difference that matters is not the interval bound but whether a short
+        interval breaks the sequence.</p>
+      </div>
+      <div class="stage" style="--row:9">
+        <span class="stage-n mono">7</span>
+        <p class="stage-h">Indices</p>
+        <p class="stage-b">aPLM-i and aPLM-i/SPT, the Periodicity Index, and the fundamental rhythm μ
+        by harmonic deconvolution — plus a publication gate that can refuse to emit a number at all.
+        The rhythm and the periodicity index survive that refusal: they have no temporal denominator.</p>
+      </div>
+    </div>
+
+    <p class="note measure">
+      The published quantity is deliberately not called PLMI. It is called <span class="mono">aPLM-i</span>
+      — ankle periodic limb movement index, estimated, not validated — in the code, the database and
+      the export, because calling it PLMI would guarantee it is read as a laboratory PLMI.
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────  SCREENS  ───────────────────────── -->
+<section class="band" id="screens">
+  <div class="wrap">
+    <p class="eyebrow">Real screenshots, from emulators</p>
+    <h2>The application</h2>
+    <p class="measure">
+      Every number on these screens was produced by the application's own preview dataset flowing
+      through the real Compose code, and every chart was drawn by the same routines the production
+      build uses. What they are <em>not</em> is a recorded night: the plotted signal is synthetic
+      preview data. The screens are real; the night is not.
+    </p>
+
+    <div class="shots">
+      <figure class="shot">
+        <img src="img/waking-provisional.png" width="1080" height="2400" loading="lazy"
+          alt="Phone screen titled Night of 12 March, provisional result, explaining that sleep stages have not reached Health Connect yet, with a Try again now button, above a card showing 21 s with a 95 % confidence interval of 18 to 25 over 6 eligible nights.">
+        <figcaption>
+          <span class="shot-t">Waking, provisional</span>
+          The hypnogram arrives hours after waking because the vendor's sync follows its own battery
+          policy. This is the normal case, so nothing on the screen is red and there is no error code:
+          if a missing hypnogram were presented as an anomaly, the user would conclude the application
+          was broken every single morning and stop believing the one flag that means something. The
+          retry ladder — 30 min, 1 h, 2 h, 4 h, 8 h — runs whether the button is pressed or not.
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <img src="img/trend-numbers.png" width="1080" height="2400" loading="lazy"
+          alt="Trend screen: a boxed sentence saying the interval spans the 15 per hour threshold, above a chart of seven nights plotted as unjoined points with a dashed minimum-detectable-change band around a 21 second line.">
+        <figcaption>
+          <span class="shot-t">The trend, and its refusals</span>
+          Points are not joined: a line between nightly values would assert a continuity the
+          measurement does not have. The dashed band is the minimum detectable change — below it, a
+          difference is not a difference. One night is a hollow circle: excluded, still visible, with
+          its reason. The boxed sentence is the one the specification demanded — the interval spans
+          the 15/h threshold, so the application says it cannot tell which side you are on.
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <img src="img/trend-chart.png" width="1080" height="2400" loading="lazy"
+          alt="Lower half of the trend screen listing counting rule AASM v3, sleep mask Health Connect on five of six nights, movements while awake nine per hour, high periodicity, and an estimated missed rate of 31 percent.">
+        <figcaption>
+          <span class="shot-t">What produced the number</span>
+          Which counting rule, which sleep mask and on how many nights, and the estimated missed rate
+          — the by-product of the mixture model, shown because a rate that jumps between nights is
+          precisely the non-comparability flag. Periodicity is described in words rather than as its
+          index: a bare 0.58 compares to nothing you can picture.
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <img src="img/nights-list.png" width="1080" height="2400" loading="lazy"
+          alt="List of recorded nights, each with its state and quality flags; one night is struck through with the criterion that excluded it, and a card at the bottom explains why no manual exclusion button exists.">
+        <figcaption>
+          <span class="shot-t">The nights</span>
+          Each night carries its state and its quality flags. The excluded night keeps its value
+          visible but struck through, with the criterion that excluded it. There is no button to
+          exclude a night by hand, and the card at the bottom says why: a night removed after its
+          figure has been seen would manufacture the trend.
+        </figcaption>
+      </figure>
+
+      <figure class="shot">
+        <img src="img/night-detail.png" width="1080" height="2400" loading="lazy"
+          alt="One night in detail: envelope on a log-2 axis with event markers and series bands, a hypnogram aligned below on the same time axis, then counts including 412 movements detected, 278 in sleep, 57 excluded for posture, and an estimated fundamental rhythm of 19 seconds.">
+          <figcaption>
+          <span class="shot-t">One night, in detail</span>
+          The envelope on a log₂ axis with the adaptive threshold, event markers on their own band
+          rather than overlaid on the curve, series bars underneath, and the hypnogram aligned below
+          on the same time axis with a lane of hatching where the two disagree. Below it, the counts —
+          including the ones that undermine the headline figure, such as the 57 movements discarded
+          for posture.
+        </figcaption>
+      </figure>
+
+      <figure class="shot shot-watch">
+        <img src="img/watch.png" width="384" height="384" loading="lazy"
+          alt="Round watch screen on pure black showing elapsed time, sample count, measured rate, gaps, megabytes written, battery and FIFO mode, with recording blocked until the evening record is sealed.">
+        <figcaption>
+          <span class="shot-t">The watch</span>
+          One screen. No navigation, no animation, and no result of any kind, ever. Everything on it
+          is a correctness check, read at most twice a night. Pure black because on OLED black does
+          not light the pixel. Recording refuses to start until the evening record is sealed on the
+          phone — an interface that invites you to look at your ankle invites you to move the leg
+          being measured.
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────  LIMITS  ───────────────────────── -->
+<section class="band band-limits" id="limits">
+  <div class="wrap">
+    <p class="eyebrow">Not disclaimers added for form</p>
+    <h2>What this cannot do</h2>
+    <p class="measure">
+      These are the reasons the output must not be read as a diagnosis. They are stated here rather
+      than at the bottom of the page because three of them are properties of the sensor and its
+      position, not defects to be fixed in a later version.
+    </p>
+
+    <ol class="limits">
+      <li class="limit">
+        <p class="limit-h">A leg sensor cannot diagnose restless legs syndrome</p>
+        <p>The diagnosis is clinical — five IRLSSG criteria based on waking symptoms. Periodic limb
+        movements are a supporting criterion, nothing more.</p>
+      </li>
+      <li class="limit">
+        <p class="limit-h">The AASM recommends against actigraphy for this, strongly</p>
+        <p>As a replacement for EMG in diagnosing periodic limb movement disorder. This project does
+        not dispute that recommendation.
+        <span class="cite">Smith et al., <em>JCSM</em> 2018</span></p>
+      </li>
+      <li class="limit">
+        <p class="limit-h">No respiratory channel</p>
+        <p>Respiratory-related leg movements cannot be excluded, because both published exclusion
+        rules require a respiratory signal. In the presence of sleep apnoea the index is structurally
+        <strong>overestimated</strong>. Periodicity does not rescue this: the movement interval mode
+        is 22–26 s and the apnoeic cycle is typically 25–45 s, and respiratory-related movements are
+        themselves periodic.</p>
+      </li>
+      <li class="limit">
+        <p class="limit-h">One leg only</p>
+        <p>Movements of the opposite leg are missed, biasing the count <strong>downward</strong>. This
+        does not cancel the bias above — different subjects, different mechanisms, and their variances
+        add.</p>
+      </li>
+      <li class="limit">
+        <p class="limit-h">A single night means nothing</p>
+        <p>In confirmed patients the 15/h threshold is exceeded on only about a third of individual
+        nights. The interface refuses to draw a trend below three nights — by construction, not by
+        warning.</p>
+      </li>
+      <li class="limit">
+        <p class="limit-h">Never validated against a sleep study</p>
+        <p>Nothing here has been checked against polysomnography, and there is no plan that would make
+        that possible for an individual.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ─────────────────────────  NEXT  ───────────────────────── -->
+<section class="band" id="next">
+  <div class="wrap">
+    <p class="eyebrow">Where to go next</p>
+    <h2>The code, the builds, the reasoning</h2>
+    <div class="next">
+      <a class="nextcard" href="https://github.com/KonsomeJona/pendulum">
+        <p class="nextcard-h">The repository</p>
+        <p class="nextcard-b">Four Kotlin modules: the chunk format and the signal chain as pure JVM,
+        the watch and phone applications on top. Source under AGPL v3, documentation under
+        CC BY-NC-SA 4.0.</p>
+        <p class="nextcard-go mono">github.com/KonsomeJona/pendulum →</p>
+      </a>
+      <a class="nextcard" href="https://github.com/KonsomeJona/pendulum/releases/latest">
+        <p class="nextcard-h">The latest release</p>
+        <p class="nextcard-b">Phone and watch, as APK for sideloading and AAB for the store, with
+        SHA-256 sums. Take <strong>both halves from the same release</strong>: the Wearable Data Layer
+        only exchanges between applications sharing an id and a signature, and the failure mode is
+        silence.</p>
+        <p class="nextcard-go mono">releases/latest →</p>
+      </a>
+      <a class="nextcard" href="https://github.com/KonsomeJona/pendulum/tree/main/docs">
+        <p class="nextcard-h">The documentation</p>
+        <p class="nextcard-b">Ten documents: the overview, the science, the algorithm stage by stage
+        with its parameter tables and rejected alternatives, the architecture, the devices, the
+        interface, the adversarial review, the screens, and the bibliography with the access status of
+        every source.</p>
+        <p class="nextcard-go mono">docs/ →</p>
+      </a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <p class="foot-main">
+      <strong>Pendulum</strong> is a screening aid, not a medical device and not a diagnosis. It has
+      not been reviewed or approved by any health authority and is not affiliated with any medical
+      body. Take the result to a physician; do not take a treatment decision from it.
+    </p>
+    <p class="foot-meta">
+      Source under the GNU Affero General Public License v3.0 · documentation under CC BY-NC-SA 4.0 ·
+      the authoritative working documents are the French ones under <span class="mono">docs/fr/</span>.
+    </p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

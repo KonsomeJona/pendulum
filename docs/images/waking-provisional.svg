@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 780" width="360" height="780" role="img" aria-labelledby="ti de">
+  <title id="ti">Pendulum — écran du réveil, état 4 : résultat provisoire</title>
+  <desc id="de">Maquette. La bande d'état du matin dans son état le plus fréquent : les mouvements sont détectés, l'hypnogramme n'est pas encore arrivé dans Health Connect. Titre neutre, drapeau ambre « masque accéléro », aucun rouge, aucun code d'erreur. Le résultat agrégé reste masqué au réveil.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+    .t   { font-size: 21px; font-weight: 500; fill: #E6EAF0; }
+    .ct  { font-size: 14px; font-weight: 500; fill: #E6EAF0; }
+    .b   { font-size: 12.5px; fill: #A3ADBB; }
+    .bp  { font-size: 13.5px; fill: #E6EAF0; }
+    .c   { font-size: 11.5px; fill: #7C8695; }
+    .lb  { font-size: 11px; font-weight: 500; fill: #7C8695; letter-spacing: .6px; }
+    .nav { font-size: 10.5px; fill: #7C8695; }
+  </style>
+
+  <rect width="360" height="780" fill="#0E1116"/>
+
+  <text class="c" x="16" y="16">07:14</text>
+  <rect x="330" y="8" width="16" height="8" rx="2" fill="none" stroke="#7C8695"/>
+  <rect x="332" y="10" width="12" height="4" fill="#7C8695"/>
+
+  <text class="t" x="16" y="58">Tendance</text>
+  <rect x="256" y="40" width="88" height="26" rx="10" fill="none" stroke="#2A313C"/>
+  <text class="c" x="270" y="57" fill="#A3ADBB">14 nuits</text>
+  <path d="M326 52 l4 4 l4 -4" fill="none" stroke="#7C8695" stroke-width="1.3"/>
+
+  <!-- ============ status strip: state 4, provisional ============ -->
+  <rect x="16" y="82" width="328" height="288" rx="14" fill="#161A21" stroke="#2A313C"/>
+  <text class="ct" x="32" y="110">Nuit du 12 mars — résultat provisoire</text>
+
+  <!-- quality flag, amber: a flag, not an error -->
+  <rect x="32" y="122" width="122" height="22" rx="10" fill="none" stroke="#E0A33E"/>
+  <path d="M42 128 v11 M42 128 h8 l-2 3 l2 3 h-8" fill="none" stroke="#E0A33E" stroke-width="1.2"/>
+  <text x="56" y="137" font-size="11.5px" fill="#E0A33E"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif">masque accéléro</text>
+
+  <text class="b" x="32" y="170">Les mouvements sont détectés. Les stades de</text>
+  <text class="b" x="32" y="187">sommeil de votre montre de poignet ne sont pas</text>
+  <text class="b" x="32" y="204">encore arrivés dans Health Connect : la</text>
+  <text class="b" x="32" y="221">synchronisation se fait souvent plusieurs heures</text>
+  <text class="b" x="32" y="238">après le réveil.</text>
+
+  <text class="b" x="32" y="264">En attendant, Pendulum utilise son propre masque</text>
+  <text class="b" x="32" y="281">d'immobilité. Le chiffre sera recalculé</text>
+  <text class="b" x="32" y="298">automatiquement, sans rien faire de votre part.</text>
+
+  <text class="c" x="32" y="326">Dernière tentative : 07:12 · prochaine : 08:12</text>
+
+  <rect x="186" y="338" width="142" height="38" rx="10" fill="#161A21" stroke="#6FB2FF"/>
+  <text x="257" y="362" text-anchor="middle" font-size="13px" font-weight="500" fill="#6FB2FF"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif">Réessayer maintenant</text>
+
+  <!-- ============ the aggregate is not shown on waking ============ -->
+  <rect x="16" y="392" width="328" height="176" rx="14" fill="#161A21" stroke="#2A313C"/>
+  <text class="lb" x="32" y="416">TENDANCE · 7 NUITS ÉLIGIBLES</text>
+
+  <rect x="32" y="428" width="150" height="44" rx="8" fill="#12161C" stroke="#2A313C" stroke-dasharray="4 3"/>
+  <text x="107" y="456" text-anchor="middle" font-size="13px" fill="#7C8695"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif">résultat masqué</text>
+
+  <text class="b" x="32" y="494">Le résultat n'est pas affiché au réveil, quand il est le</text>
+  <text class="b" x="32" y="511">moins bien jugé. L'afficher est inscrit au journal, et le</text>
+  <text class="b" x="32" y="528">journal figure dans l'export.</text>
+
+  <rect x="194" y="540" width="134" height="38" rx="10" fill="#161A21" stroke="#2A313C"/>
+  <text x="261" y="564" text-anchor="middle" font-size="13px" font-weight="500" fill="#A3ADBB"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif">Afficher le résultat</text>
+
+  <!-- night counter -->
+  <line x1="0" y1="600" x2="360" y2="600" stroke="#2A313C"/>
+  <text class="bp" x="16" y="628">8 nuits enregistrées · 7 éligibles · 1 écartée</text>
+  <path d="M334 621 l6 6 l-6 6" fill="none" stroke="#7C8695" stroke-width="1.4"/>
+  <line x1="0" y1="648" x2="360" y2="648" stroke="#2A313C"/>
+
+  <text class="c" x="16" y="674">La notification du matin ne porte aucun chiffre :</text>
+  <text class="c" x="16" y="689">« Nuit du 12 mars analysée. 7 nuits disponibles. »</text>
+
+  <!-- navigation bar -->
+  <line x1="0" y1="724" x2="360" y2="724" stroke="#2A313C"/>
+  <rect x="0" y="724" width="360" height="56" fill="#12161C"/>
+  <path d="M48 750 l8 -8 l6 5 l10 -12" fill="none" stroke="#6FB2FF" stroke-width="1.6"/>
+  <text class="nav" x="60" y="770" text-anchor="middle" fill="#6FB2FF">Tendance</text>
+  <path d="M186 742 a9 9 0 1 0 -8 14 a11 11 0 0 1 8 -14 z" fill="none" stroke="#7C8695" stroke-width="1.5"/>
+  <text class="nav" x="180" y="770" text-anchor="middle">Nuits</text>
+  <path d="M288 743 h14 M288 750 h14 M288 757 h14" stroke="#7C8695" stroke-width="1.5"/>
+  <circle cx="293" cy="743" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <circle cx="299" cy="750" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <circle cx="295" cy="757" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <text class="nav" x="300" y="770" text-anchor="middle">Réglages</text>
+</svg>
