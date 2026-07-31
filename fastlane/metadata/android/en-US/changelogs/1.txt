@@ -1,0 +1,7 @@
+First public build.
+
+Both applications build and run, and the signal-processing chain is covered by
+195 unit tests. No night of real data has been recorded yet, and nothing has
+been validated against a sleep study.
+
+A measurement tool. Not a diagnosis, not a medical device.

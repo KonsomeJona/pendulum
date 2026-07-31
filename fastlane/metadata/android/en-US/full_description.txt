@@ -1,0 +1,39 @@
+Pendulum tells you whether your legs move periodically while you sleep, and how regular that rhythm is, using a smartwatch worn at the ankle.
+
+A MEASUREMENT, NOT AN INTERPRETATION. Pendulum gives you a real measurement — the accelerometer readings are real, the processing follows published scoring rules, and the numbers mean something. Over several nights it can give you a well-founded reason to book an appointment, or a well-founded reason not to worry.
+
+What it is not: a medical device, an official health application, or a diagnosis. It has not been reviewed or approved by any health authority and has never been validated against a sleep study. Take the result to a physician; do not take a treatment decision from it, and do not let a reassuring number stop you from seeing someone if you have symptoms.
+
+WHAT IT MEASURES
+
+Periodic limb movements are involuntary leg movements that recur at regular intervals through the night. They are the motor sign associated with restless legs syndrome and periodic limb movement disorder, and most people who have them are unaware of them, because they happen during sleep.
+
+The conventional measure is a count per hour of sleep. Pendulum computes it, and puts it in the report you would hand to a physician, because that is the number a sleep specialist reads. But it is not the number the application follows over time.
+
+WHY THE RHYTHM RATHER THAN THE COUNT
+
+A pendulum's period does not depend on how far it swings. The same split applies here. The hourly count varies by about 43% from one night to the next; the interval between movements varies by 3.6%. Twelve times less. The interval also needs no denominator, since it is computed from the movement times alone, so it avoids a circularity that undermines the count when the sleep period is estimated from the same sensor.
+
+So Pendulum tracks the fundamental rhythm, in seconds, and reports the count separately.
+
+WHAT YOU NEED
+
+Two devices, and this is not a limitation that can be engineered away:
+
+- A Wear OS watch worn at the ankle. It is the only class of consumer device whose raw accelerometer a third-party application can read all night.
+- A separate source of sleep timing that writes to Health Connect — another watch, a ring, or an under-mattress sensor. One sensor cannot honestly measure both the movements and the sleep they happen in.
+
+HOW IT BEHAVES
+
+- It refuses to show any trend before three eligible nights, because a single night carries no information about one.
+- Every aggregate figure carries its uncertainty interval and the number of nights it rests on, in the same line.
+- It never says a change is an improvement or a worsening. When a variation cannot be distinguished from night-to-night noise, it says so before showing the number.
+- Nights excluded from a comparison stay visible with the reason they were excluded. There is no button to remove a night by hand — a night removed after seeing its figure would manufacture the trend.
+
+PRIVACY
+
+The application declares no INTERNET permission. It therefore cannot open a network connection at all: this is a property the operating system enforces, verifiable from the installed package, rather than a promise in a policy. No analytics, no crash reporting, no advertising. Your data leaves the device only through an export you trigger yourself, to a location you choose.
+
+OPEN SOURCE
+
+Source code, the full technical specification, and the reasoning behind every design decision — including the parts that do not work — are published under the AGPL-3.0.

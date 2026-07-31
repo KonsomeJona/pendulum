@@ -1,0 +1,17 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+.kotlin/
+captures/
+*.apk
+*.aab
+*.keystore
+# Donnees de nuit capturees (jamais versionnees : donnees de sante)
+data/
+sessions/
+*.pendulum
+
+# Sorties de build hors projet (voir README, contournement drvfs sous WSL)
+.cache/

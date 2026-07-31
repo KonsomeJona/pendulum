@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Regles d'extraction Android 12+ (`android:dataExtractionRules`).
+
+  POURQUOI CE FICHIER EXISTE, et pourquoi `allowBackup="false"` ne suffit pas.
+  `allowBackup="false"` ne couvre que la sauvegarde cloud. Le **transfert d'appareil a
+  appareil** (D2D, migration vers un nouveau telephone) est un canal distinct, regi par le
+  bloc `<device-transfer>` ci-dessous, et il ignore `allowBackup`. Sans ce fichier, la base
+  Room — qui contient une nuit de sommeil complete, des doses de medicament et des reponses de
+  questionnaire — part dans l'infrastructure du constructeur au premier changement de telephone.
+
+  On exclut la racine des deux cotes : rien de cette application ne doit quitter l'appareil
+  autrement que par l'export explicite de l'utilisateur (`export/`, via SAF).
+-->
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 456 456" width="456" height="456" role="img" aria-labelledby="ti de">
+  <title id="ti">Pendulum sur la montre — écran unique d'enregistrement</title>
+  <desc id="de">Maquette. Écran rond 456 par 456, fond noir pur. Durée écoulée en gros chiffres tabulaires, puis nombre d'échantillons, fréquence mesurée et compteur de trous, mégaoctets écrits et espace libre, batterie, mode FIFO et indicateur de port. Un seul bouton, ARRÊTER, qui demande une confirmation. Aucun résultat n'est affiché sur la montre, et rien n'est animé.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; text-anchor: middle; }
+    .big { font-size: 60px; font-weight: 400; fill: #E6EAF0; letter-spacing: 1px; }
+    .l   { font-size: 25px; fill: #A3ADBB; }
+    .btn { font-size: 26px; font-weight: 500; fill: #E6EAF0; letter-spacing: 1.5px; }
+  </style>
+
+  <!-- OLED: pure black does not light the pixel -->
+  <rect width="456" height="456" fill="#000000"/>
+  <circle cx="228" cy="228" r="227" fill="none" stroke="#2A313C" stroke-width="1"/>
+
+  <text class="big" x="228" y="124">03:14</text>
+
+  <text class="l" x="228" y="178">564 300 échantillons</text>
+  <text class="l" x="228" y="210">50,2 Hz  ·  0 trou</text>
+  <text class="l" x="228" y="242">138 Mo  ·  1,1 Go libre</text>
+  <text class="l" x="228" y="274">Batterie 71 %</text>
+  <text class="l" x="228" y="306">Mode FIFO groupé 20 s</text>
+
+  <text class="l" x="210" y="338">Porté</text>
+  <path d="M250 331 l5 6 l10 -12" fill="none" stroke="#5FBF8C" stroke-width="2.4"/>
+
+  <rect x="128" y="358" width="200" height="60" rx="20" fill="none" stroke="#A3ADBB" stroke-width="1.8"/>
+  <text class="btn" x="228" y="397">ARRÊTER</text>
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fond noir pur : sur OLED, le noir n'allume pas le pixel. C'est de l'autonomie, pas du
+         style. Le theme XML ne sert qu'a la fenetre : tout le rendu est en Compose. -->
+    <style name="Theme.Pendulum" parent="@android:style/Theme.DeviceDefault">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

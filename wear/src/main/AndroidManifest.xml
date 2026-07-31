@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <!-- Capteur haute cadence. Cette permission qualifie AUSSI le foreground service de type
+         health, sans invite runtime et sans restriction while-in-use : c'est ce qui rend legale
+         la reprise apres reboot, qui part de l'arriere-plan. -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- NE PAS declarer BODY_SENSORS : elle est soumise au while-in-use, elle casserait la
+         reprise depuis l'arriere-plan, et aucun capteur corporel n'est lu.
+         NE PAS declarer INTERNET : son absence est une garantie verifiable — rien de ce qui est
+         enregistre ici ne peut quitter la paire montre/telephone.
+         NE PAS declarer SCHEDULE_EXACT_ALARM : voir Watchdog.kt, le compromis est assume.
+         Repli uniquement si le demarrage du FGS health etait refuse sur un appareil :
+         <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" /> -->
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_pendulum"
+        android:label="@string/app_name"
+        android:supportsRtl="false"
+        android:theme="@style/Theme.Pendulum">
+
+        <!-- L'application depend du module telephone (contexte du soir, ingestion) : elle n'est
+             pas autonome, et le declarer evite de la faire passer pour telle. -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="false" />
+
+        <activity
+            android:name="com.pendulum.wear.ui.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="com.pendulum.wear.record.RecordingService"
+            android:exported="false"
+            android:foregroundServiceType="health"
+            android:stopWithTask="false" />
+
+        <service
+            android:name="com.pendulum.wear.transfer.AckObserver"
+            android:exported="true"
+            android:permission="com.google.android.gms.permission.BIND_WEARABLE_LISTENER">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pendulum/ack" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pendulum/sweep-request" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name="com.pendulum.wear.record.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>

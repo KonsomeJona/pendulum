@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 676" width="880" height="676" role="img" aria-label="Two panels over fourteen synthetic nights. The hourly count scatters widely around its median; the fundamental rhythm stays close to its median.">
+<style>
+  .t{font:600 14px system-ui,sans-serif;fill:#0f172a}
+  .s{font:12px system-ui,sans-serif;fill:#64748b}
+  .a{font:11px system-ui,sans-serif;fill:#64748b}
+  .g{stroke:#e2e8f0;stroke-width:1}
+  .r{stroke:#94a3b8;stroke-width:1;stroke-dasharray:5 4}
+  @media (prefers-color-scheme:dark){
+    .t{fill:#e2e8f0} .s,.a{fill:#94a3b8} .g{stroke:#1e293b} .r{stroke:#475569}
+  }
+</style>
+<g><text x="62" y="20" class="t">Hourly count</text>
+<text x="860" y="20" class="s" text-anchor="end">night-to-night variability 43.2 %</text>
+<line x1="62" y1="284.0" x2="860" y2="284.0" class="g"/>
+<text x="54" y="288.0" class="a" text-anchor="end">0</text>
+<line x1="62" y1="234.0" x2="860" y2="234.0" class="g"/>
+<text x="54" y="238.0" class="a" text-anchor="end">12</text>
+<line x1="62" y1="184.0" x2="860" y2="184.0" class="g"/>
+<text x="54" y="188.0" class="a" text-anchor="end">24</text>
+<line x1="62" y1="134.0" x2="860" y2="134.0" class="g"/>
+<text x="54" y="138.0" class="a" text-anchor="end">36</text>
+<line x1="62" y1="84.0" x2="860" y2="84.0" class="g"/>
+<text x="54" y="88.0" class="a" text-anchor="end">48</text>
+<line x1="62" y1="34.0" x2="860" y2="34.0" class="g"/>
+<text x="54" y="38.0" class="a" text-anchor="end">60</text>
+<line x1="62" y1="192.3" x2="860" y2="192.3" class="r"/>
+<polyline points="90.5,279.8 147.5,224.0 204.5,201.7 261.5,134.5 318.5,169.4 375.5,175.9 432.5,197.2 489.5,154.7 546.5,205.0 603.5,200.1 660.5,266.7 717.5,221.9 774.5,170.0 831.5,143.3" fill="none" stroke="#dc2626" stroke-width="1.4" opacity=".5"/>
+<circle cx="90.5" cy="279.8" r="4" fill="#dc2626"/>
+<circle cx="147.5" cy="224.0" r="4" fill="#dc2626"/>
+<circle cx="204.5" cy="201.7" r="4" fill="#dc2626"/>
+<circle cx="261.5" cy="134.5" r="4" fill="#dc2626"/>
+<circle cx="318.5" cy="169.4" r="4" fill="#dc2626"/>
+<circle cx="375.5" cy="175.9" r="4" fill="#dc2626"/>
+<circle cx="432.5" cy="197.2" r="4" fill="#dc2626"/>
+<circle cx="489.5" cy="154.7" r="4" fill="#dc2626"/>
+<circle cx="546.5" cy="205.0" r="4" fill="#dc2626"/>
+<circle cx="603.5" cy="200.1" r="4" fill="#dc2626"/>
+<circle cx="660.5" cy="266.7" r="4" fill="#dc2626"/>
+<circle cx="717.5" cy="221.9" r="4" fill="#dc2626"/>
+<circle cx="774.5" cy="170.0" r="4" fill="#dc2626"/>
+<circle cx="831.5" cy="143.3" r="4" fill="#dc2626"/>
+<text x="90.5" y="302" class="a" text-anchor="middle">1</text>
+<text x="147.5" y="302" class="a" text-anchor="middle">2</text>
+<text x="204.5" y="302" class="a" text-anchor="middle">3</text>
+<text x="261.5" y="302" class="a" text-anchor="middle">4</text>
+<text x="318.5" y="302" class="a" text-anchor="middle">5</text>
+<text x="375.5" y="302" class="a" text-anchor="middle">6</text>
+<text x="432.5" y="302" class="a" text-anchor="middle">7</text>
+<text x="489.5" y="302" class="a" text-anchor="middle">8</text>
+<text x="546.5" y="302" class="a" text-anchor="middle">9</text>
+<text x="603.5" y="302" class="a" text-anchor="middle">10</text>
+<text x="660.5" y="302" class="a" text-anchor="middle">11</text>
+<text x="717.5" y="302" class="a" text-anchor="middle">12</text>
+<text x="774.5" y="302" class="a" text-anchor="middle">13</text>
+<text x="831.5" y="302" class="a" text-anchor="middle">14</text>
+<text x="461.0" y="322" class="a" text-anchor="middle">night</text>
+<text x="14" y="159.0" class="a" text-anchor="middle" transform="rotate(-90 14 159.0)">movements / h</text></g>
+<g transform="translate(0,346)"><text x="62" y="20" class="t">Fundamental rhythm</text>
+<text x="860" y="20" class="s" text-anchor="end">night-to-night variability 3.6 %</text>
+<line x1="62" y1="284.0" x2="860" y2="284.0" class="g"/>
+<text x="54" y="288.0" class="a" text-anchor="end">0</text>
+<line x1="62" y1="234.0" x2="860" y2="234.0" class="g"/>
+<text x="54" y="238.0" class="a" text-anchor="end">6</text>
+<line x1="62" y1="184.0" x2="860" y2="184.0" class="g"/>
+<text x="54" y="188.0" class="a" text-anchor="end">12</text>
+<line x1="62" y1="134.0" x2="860" y2="134.0" class="g"/>
+<text x="54" y="138.0" class="a" text-anchor="end">18</text>
+<line x1="62" y1="84.0" x2="860" y2="84.0" class="g"/>
+<text x="54" y="88.0" class="a" text-anchor="end">24</text>
+<line x1="62" y1="34.0" x2="860" y2="34.0" class="g"/>
+<text x="54" y="38.0" class="a" text-anchor="end">30</text>
+<line x1="62" y1="109.0" x2="860" y2="109.0" class="r"/>
+<polyline points="90.5,114.0 147.5,110.3 204.5,115.1 261.5,100.6 318.5,105.4 375.5,104.9 432.5,108.7 489.5,120.5 546.5,109.3 603.5,110.6 660.5,116.0 717.5,105.1 774.5,112.0 831.5,106.8" fill="none" stroke="#0d9488" stroke-width="1.4" opacity=".5"/>
+<circle cx="90.5" cy="114.0" r="4" fill="#0d9488"/>
+<circle cx="147.5" cy="110.3" r="4" fill="#0d9488"/>
+<circle cx="204.5" cy="115.1" r="4" fill="#0d9488"/>
+<circle cx="261.5" cy="100.6" r="4" fill="#0d9488"/>
+<circle cx="318.5" cy="105.4" r="4" fill="#0d9488"/>
+<circle cx="375.5" cy="104.9" r="4" fill="#0d9488"/>
+<circle cx="432.5" cy="108.7" r="4" fill="#0d9488"/>
+<circle cx="489.5" cy="120.5" r="4" fill="#0d9488"/>
+<circle cx="546.5" cy="109.3" r="4" fill="#0d9488"/>
+<circle cx="603.5" cy="110.6" r="4" fill="#0d9488"/>
+<circle cx="660.5" cy="116.0" r="4" fill="#0d9488"/>
+<circle cx="717.5" cy="105.1" r="4" fill="#0d9488"/>
+<circle cx="774.5" cy="112.0" r="4" fill="#0d9488"/>
+<circle cx="831.5" cy="106.8" r="4" fill="#0d9488"/>
+<text x="90.5" y="302" class="a" text-anchor="middle">1</text>
+<text x="147.5" y="302" class="a" text-anchor="middle">2</text>
+<text x="204.5" y="302" class="a" text-anchor="middle">3</text>
+<text x="261.5" y="302" class="a" text-anchor="middle">4</text>
+<text x="318.5" y="302" class="a" text-anchor="middle">5</text>
+<text x="375.5" y="302" class="a" text-anchor="middle">6</text>
+<text x="432.5" y="302" class="a" text-anchor="middle">7</text>
+<text x="489.5" y="302" class="a" text-anchor="middle">8</text>
+<text x="546.5" y="302" class="a" text-anchor="middle">9</text>
+<text x="603.5" y="302" class="a" text-anchor="middle">10</text>
+<text x="660.5" y="302" class="a" text-anchor="middle">11</text>
+<text x="717.5" y="302" class="a" text-anchor="middle">12</text>
+<text x="774.5" y="302" class="a" text-anchor="middle">13</text>
+<text x="831.5" y="302" class="a" text-anchor="middle">14</text>
+<text x="461.0" y="322" class="a" text-anchor="middle">night</text>
+<text x="14" y="159.0" class="a" text-anchor="middle" transform="rotate(-90 14 159.0)">seconds</text></g>
+</svg>

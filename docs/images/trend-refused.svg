@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 780" width="360" height="780" role="img" aria-labelledby="ti de">
+  <title id="ti">Pendulum — écran Tendance sous trois nuits : refus d'agréger</title>
+  <desc id="de">Maquette. Avec deux nuits éligibles, l'écran Tendance ne trace aucun graphe, ne calcule aucune médiane et n'affiche aucune catégorie. Il donne la raison chiffrée du refus, trois pastilles pleines ou vides plutôt qu'une barre de progression, et un export désactivé portant son motif.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+    .t   { font-size: 21px; font-weight: 500; fill: #E6EAF0; }
+    .b   { font-size: 12.5px; fill: #A3ADBB; }
+    .bp  { font-size: 13.5px; fill: #E6EAF0; }
+    .c   { font-size: 11.5px; fill: #7C8695; }
+    .lb  { font-size: 11px; font-weight: 500; fill: #7C8695; letter-spacing: .6px; }
+    .nav { font-size: 10.5px; fill: #7C8695; }
+  </style>
+
+  <rect width="360" height="780" fill="#0E1116"/>
+
+  <text class="c" x="16" y="16">08:02</text>
+  <rect x="330" y="8" width="16" height="8" rx="2" fill="none" stroke="#7C8695"/>
+  <rect x="332" y="10" width="12" height="4" fill="#7C8695"/>
+
+  <text class="t" x="16" y="58">Tendance</text>
+
+  <!-- ============ the refusal card ============ -->
+  <rect x="16" y="82" width="328" height="418" rx="14" fill="#161A21" stroke="#2A313C"/>
+
+  <text x="180" y="128" text-anchor="middle" font-size="19px" fill="#E6EAF0"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif"
+        style="font-variant-numeric: tabular-nums;">2 nuits sur 3</text>
+
+  <!-- filled or empty, never a progress bar: a bar suggests a score going up -->
+  <circle cx="150" cy="158" r="6" fill="#6FB2FF"/>
+  <circle cx="180" cy="158" r="6" fill="#6FB2FF"/>
+  <circle cx="210" cy="158" r="6" fill="none" stroke="#7C8695" stroke-width="1.6"/>
+
+  <text class="bp" x="32" y="200">Pendulum ne calcule pas de résultat avant trois nuits.</text>
+
+  <text class="b" x="32" y="228">Sur une nuit isolée, le nombre de mouvements</text>
+  <text class="b" x="32" y="245">varie énormément d'une nuit à l'autre, y compris</text>
+  <text class="b" x="32" y="262">chez des personnes dont le trouble est confirmé :</text>
+  <text class="b" x="32" y="279">le seuil de 15 mouvements par heure n'est dépassé</text>
+  <text class="b" x="32" y="296">que sur environ une nuit sur trois. Un résultat</text>
+  <text class="b" x="32" y="313">affiché maintenant vous tromperait, dans un sens</text>
+  <text class="b" x="32" y="330">ou dans l'autre.</text>
+
+  <text class="bp" x="32" y="360">Enregistrez encore une nuit.</text>
+
+  <text class="lb" x="32" y="392">NUITS ENREGISTRÉES</text>
+  <line x1="32" y1="402" x2="328" y2="402" stroke="#2A313C"/>
+
+  <text class="bp" x="32" y="424">11 mars  ·  7 h 42 de sommeil</text>
+  <text class="c"  x="32" y="440">qualité correcte</text>
+  <path d="M316 425 l6 6 l-6 6" fill="none" stroke="#7C8695" stroke-width="1.4"/>
+  <line x1="32" y1="452" x2="328" y2="452" stroke="#2A313C"/>
+
+  <text class="bp" x="32" y="474">12 mars  ·  6 h 58 de sommeil</text>
+  <text class="c"  x="32" y="490">qualité correcte</text>
+  <path d="M316 475 l6 6 l-6 6" fill="none" stroke="#7C8695" stroke-width="1.4"/>
+
+  <!-- export stays visible, disabled, and says why on the button itself -->
+  <rect x="16" y="516" width="328" height="42" rx="10" fill="#161A21" stroke="#2A313C"/>
+  <text x="180" y="542" text-anchor="middle" font-size="13.5px" font-weight="500" fill="#7C8695"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif">Export indisponible — 3 nuits minimum</text>
+
+  <text class="c" x="16" y="586">Le lien vers le détail d'une nuit reste actif : c'est là que vit</text>
+  <text class="c" x="16" y="601">le chiffre d'une seule nuit, pas dans la tendance.</text>
+
+  <!-- navigation bar -->
+  <line x1="0" y1="724" x2="360" y2="724" stroke="#2A313C"/>
+  <rect x="0" y="724" width="360" height="56" fill="#12161C"/>
+  <path d="M48 750 l8 -8 l6 5 l10 -12" fill="none" stroke="#6FB2FF" stroke-width="1.6"/>
+  <text class="nav" x="60" y="770" text-anchor="middle" fill="#6FB2FF">Tendance</text>
+  <path d="M186 742 a9 9 0 1 0 -8 14 a11 11 0 0 1 8 -14 z" fill="none" stroke="#7C8695" stroke-width="1.5"/>
+  <text class="nav" x="180" y="770" text-anchor="middle">Nuits</text>
+  <path d="M288 743 h14 M288 750 h14 M288 757 h14" stroke="#7C8695" stroke-width="1.5"/>
+  <circle cx="293" cy="743" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <circle cx="299" cy="750" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <circle cx="295" cy="757" r="2.4" fill="#12161C" stroke="#7C8695" stroke-width="1.3"/>
+  <text class="nav" x="300" y="770" text-anchor="middle">Réglages</text>
+</svg>

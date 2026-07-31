@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 780" width="360" height="780" role="img" aria-labelledby="ti de">
+  <title id="ti">Pendulum — premier lancement, écran 1 sur 5 : « Ce que Pendulum ne peut pas faire »</title>
+  <desc id="de">Maquette. Écran d'avertissement affiché au premier lancement, non sautable. Le texte des quatre limites permanentes défile ; le bouton « J'ai lu et compris » reste désactivé tant que le bas du texte n'est pas atteint.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+    .h  { font-size: 21px; font-weight: 500; fill: #E6EAF0; }
+    .b  { font-size: 13.5px; fill: #A3ADBB; }
+    .bp { font-size: 13.5px; fill: #E6EAF0; }
+    .c  { font-size: 11.5px; fill: #7C8695; }
+    .l  { font-size: 11px; font-weight: 500; fill: #7C8695; letter-spacing: .3px; }
+  </style>
+
+  <rect width="360" height="780" fill="#0E1116"/>
+
+  <!-- system bar -->
+  <text class="c" x="16" y="16">23:41</text>
+  <rect x="330" y="8" width="16" height="8" rx="2" fill="none" stroke="#7C8695"/>
+  <rect x="332" y="10" width="12" height="4" fill="#7C8695"/>
+
+  <!-- step indicator: LinearProgressIndicator 1/5 -->
+  <rect x="16" y="30" width="328" height="2" fill="#2A313C"/>
+  <rect x="16" y="30" width="65.6" height="2" fill="#6FB2FF"/>
+  <text class="l" x="16" y="48">1 / 5</text>
+
+  <text class="h" x="16" y="76">Ce que Pendulum ne peut pas faire</text>
+  <line x1="0" y1="90" x2="360" y2="90" stroke="#2A313C"/>
+
+  <clipPath id="scroll"><rect x="0" y="90" width="360" height="602"/></clipPath>
+  <g clip-path="url(#scroll)"><g transform="translate(0,-24)">
+    <!-- the text is scrolled: its first lines are already above the viewport -->
+    <text class="b" x="16" y="72">Pendulum estime le nombre de mouvements de jambes</text>
+    <text class="b" x="16" y="91">par heure de sommeil à partir de l'accéléromètre</text>
+    <text class="b" x="16" y="110">d'une montre portée à la cheville. C'est un</text>
+    <text class="b" x="16" y="129">instrument de mesure personnel. Ce n'est pas un</text>
+    <text class="b" x="16" y="148">dispositif médical et ce n'est pas un diagnostic.</text>
+
+    <text class="bp" x="16" y="177">Quatre limites qui ne disparaîtront jamais,</text>
+    <text class="bp" x="16" y="196">quelle que soit la qualité de vos nuits :</text>
+
+    <text class="b" x="16" y="225">•</text>
+    <text class="b" x="30" y="225">Pendulum ne peut pas diagnostiquer un syndrome</text>
+    <text class="b" x="30" y="244">des jambes sans repos. Ce diagnostic est</text>
+    <text class="b" x="30" y="263">clinique : il repose sur vos symptômes à</text>
+    <text class="b" x="30" y="282">l'éveil, pas sur un capteur. Les mouvements</text>
+    <text class="b" x="30" y="301">pendant le sommeil ne sont qu'un critère de</text>
+    <text class="b" x="30" y="320">support.</text>
+
+    <text class="b" x="16" y="349">•</text>
+    <text class="b" x="30" y="349">Pendulum ne mesure pas votre respiration. Il ne</text>
+    <text class="b" x="30" y="368">peut donc pas distinguer un mouvement</text>
+    <text class="b" x="30" y="387">périodique d'un mouvement provoqué par une</text>
+    <text class="b" x="30" y="406">apnée. Si vous faites des apnées du sommeil,</text>
+    <text class="b" x="30" y="425">le chiffre est surestimé, et l'écart peut</text>
+    <text class="b" x="30" y="444">atteindre plusieurs dizaines de mouvements</text>
+    <text class="b" x="30" y="463">par heure.</text>
+
+    <text class="b" x="16" y="492">•</text>
+    <text class="b" x="30" y="492">Pendulum ne mesure qu'une jambe. Les mouvements</text>
+    <text class="b" x="30" y="511">de l'autre jambe sont manqués. Ce biais tire le</text>
+    <text class="b" x="30" y="530">chiffre vers le bas. Il ne compense pas le</text>
+    <text class="b" x="30" y="549">précédent : les deux erreurs ne s'annulent pas,</text>
+    <text class="b" x="30" y="568">elles s'ajoutent à l'incertitude.</text>
+
+    <text class="b" x="16" y="597">•</text>
+    <text class="b" x="30" y="597">L'American Academy of Sleep Medicine</text>
+    <text class="b" x="30" y="616">recommande explicitement de ne pas remplacer</text>
+    <text class="b" x="30" y="635">l'électromyogramme par l'actigraphie pour</text>
+    <text class="b" x="30" y="654">diagnostiquer un trouble des mouvements</text>
+    <text class="b" x="30" y="673">périodiques des membres.</text>
+
+    <text class="b" x="16" y="702">Ce que Pendulum fait utilement : suivre une tendance</text>
+    <text class="b" x="16" y="721">sur plusieurs nuits, dans des conditions stables,</text>
+  </g></g>
+
+  <!-- scroll position indicator -->
+  <rect x="352" y="90" width="3" height="602" rx="1.5" fill="#161A21"/>
+  <rect x="352" y="330" width="3" height="300" rx="1.5" fill="#2A313C"/>
+
+  <!-- fade: there is more text below -->
+  <defs>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0E1116" stop-opacity="0"/>
+      <stop offset="1" stop-color="#0E1116" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="656" width="360" height="36" fill="url(#fade)"/>
+
+  <line x1="0" y1="692" x2="360" y2="692" stroke="#2A313C"/>
+
+  <!-- primary button, disabled until the text has been scrolled to the bottom -->
+  <rect x="16" y="706" width="328" height="44" rx="10" fill="#161A21" stroke="#2A313C"/>
+  <text class="b" x="180" y="733" text-anchor="middle" fill="#7C8695" font-weight="500">J'ai lu et compris</text>
+  <text class="c" x="180" y="768" text-anchor="middle">Cet avertissement reste consultable dans Réglages › À propos.</text>
+</svg>

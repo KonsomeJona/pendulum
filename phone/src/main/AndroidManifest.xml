@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifeste du module `:phone`.
+
+  ### Ce qui n'y est PAS, et c'est le point le plus important du fichier
+
+  **Aucune permission `INTERNET`.** L'application ne peut donc, par construction du systeme,
+  ouvrir aucune socket : `SecurityException` immediate. C'est une garantie *verifiable* — un
+  `aapt dump permissions` suffit a la controler — la ou une politique de confidentialite est
+  une promesse. Une nuit de sommeil, une dose de medicament et un questionnaire clinique ne
+  quittent cet appareil que par l'export explicite de `export/`, vers un emplacement choisi par
+  l'utilisateur via SAF.
+
+  Corollaire a tenir dans le temps : **aucun SDK d'analytique, de crash reporting ou de
+  publicite.** Tous exigent `INTERNET` ; en ajouter un ferait remonter la permission par fusion
+  de manifeste et retirerait silencieusement la garantie ci-dessus.
+
+  `ACCESS_NETWORK_STATE` n'est pas declaree non plus : WorkManager ne l'exige que pour les
+  contraintes reseau, et aucun worker d'ici n'en pose.
+
+  ### Sauvegarde
+  `allowBackup="false"` **et** les deux fichiers de regles : voir la KDoc de
+  `res/xml/data_extraction_rules.xml` pour la raison — le transfert D2D est un canal distinct
+  qu'`allowBackup` ne couvre pas.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Health Connect. `READ_SLEEP` seul ne suffit pas : `SleepFetchWorker` tourne par
+      construction application fermee (le fournisseur ne synchronise pas au reveil mais quand
+      sa politique batterie le decide), et sans `READ_HEALTH_DATA_IN_BACKGROUND` la lecture
+      echoue silencieusement hors premier plan. C'est un manque de la SPEC v1, corrige ici.
+      `SOURCES-SOMMEIL.md` §6.
+    -->
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
+    <!--
+      Au-dela de 30 jours d'historique, la lecture des donnees ecrites par une AUTRE application
+      est refusee. `RescoreAllWorker` relit l'hypnogramme de toutes les nuits depuis le brut :
+      sans cette permission, un rescore sur une campagne de plus d'un mois perd son denominateur.
+    -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
+
+    <!--
+      Demandee a l'accueil, mais **rien ne poste encore de notification cote telephone** : le rappel
+      du soir est concu (c'est un garde-fou, pas un confort — on oublie de lancer l'enregistrement
+      les soirs de fatigue, c'est-a-dire des soirs correles au resultat) et pas implemente. La
+      permission est donc en avance sur la fonctionnalite. Si le rappel est abandonne, retirer cette
+      ligne et le bouton correspondant : demander une permission inutilisee affaiblit exactement
+      l'argument de minimalisme verifiable que fait le reste de ce fichier.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Visibilite du paquet Health Connect (Android 11+ filtre les requetes de paquet). -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
+
+    <application
+        android:name="com.pendulum.phone.PendulumApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:label="Pendulum"
+        android:supportsRtl="true">
+
+        <!--
+          Activite principale. La CLASSE appartient au paquet `com.pendulum.phone.ui` et n'est pas
+          ecrite ici : ce manifeste ne fait que la declarer, parce qu'un module Android n'a
+          qu'un manifeste.
+        -->
+        <activity
+            android:name="com.pendulum.phone.ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Justification des permissions Health Connect — **deux declarations obligatoires**.
+
+          Le chemin `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` est celui de l'APK
+          Health Connect (Android 13 et anterieur) ; l'alias `ViewPermissionUsageActivity` est
+          celui du framework (Android 14+, Health Connect integre au systeme). Avec
+          `minSdk 30`, les deux parties du parc existent : n'en declarer qu'une fait que Health
+          Connect **refuse d'afficher l'application** sur l'autre moitie, et le symptome est
+          « l'app n'apparait pas dans la liste », pas une erreur.
+        -->
+        <activity
+            android:name="com.pendulum.phone.health.PermissionsRationaleActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity="com.pendulum.phone.health.PermissionsRationaleActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
+        <!--
+          Reception Data Layer. `exported="true"` et la permission GMS sont imposes par le
+          protocole : c'est le service Google Play qui demarre ce service, y compris quand
+          l'application n'a jamais ete ouverte — ce qui est exactement le cas d'usage (le
+          telephone recoit les chunks pendant la nuit, ecran eteint).
+
+          Le filtre `DATA_CHANGED` est restreint par prefixe de chemin : on ne veut pas etre
+          reveille par les items d'une autre application.
+        -->
+        <service
+            android:name="com.pendulum.phone.ingest.PendulumListenerService"
+            android:exported="true"
+            android:permission="com.google.android.gms.permission.BIND_WEARABLE_LISTENER">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/pendulum/"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>

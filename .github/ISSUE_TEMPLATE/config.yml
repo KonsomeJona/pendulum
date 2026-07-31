@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Read the specification first
+    url: https://github.com/KonsomeJona/pendulum/tree/main/docs
+    about: Most design questions are answered there, including the ones where the answer is "this is unknown and we guessed".
+  - name: This is not medical advice
+    url: https://github.com/KonsomeJona/pendulum#limits
+    about: Pendulum diagnoses nothing and has never been validated. If a number worries you, the useful next step is a sleep physician, not an issue.
