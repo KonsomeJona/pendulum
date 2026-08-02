@@ -22,6 +22,15 @@
     <string name="open_on_phone_unreachable">Phone not reachable. Fill the evening form on it directly.</string>
     <string name="open_settings">Open settings</string>
 
+    <!--
+      Notification postee quand le telephone demande le demarrage et qu'Android refuse de laisser
+      un service demarre en arriere-plan lancer un service de premier plan. Le tap est la seule
+      exemption fiable au blocage.
+    -->
+    <string name="notif_channel_action">Actions requested from your phone</string>
+    <string name="notif_ready_title">Context sealed</string>
+    <string name="notif_ready_body">Tap to start recording.</string>
+
     <!-- Écran unique : état enregistrement. -->
     <string name="elapsed_hm">%1$d h %2$02d</string>
     <string name="samples_line">%1$s samples</string>

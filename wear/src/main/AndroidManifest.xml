@@ -82,6 +82,20 @@
                     android:host="*"
                     android:pathPrefix="/pendulum/sweep-request" />
             </intent-filter>
+
+            <!--
+              Demande de demarrage venue du telephone. Le service tente `startForegroundService`
+              et retombe sur une notification quand Android le refuse — il est demarre par GMS,
+              donc depuis l'arriere-plan, ou Android 12 interdit de demarrer un service de premier
+              plan hors exemptions.
+            -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:pathPrefix="/pendulum/start-request" />
+            </intent-filter>
         </service>
 
         <receiver
