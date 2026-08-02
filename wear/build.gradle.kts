@@ -64,6 +64,17 @@ android {
     sourceSets.getByName("main") {
         java.srcDirs("src/main/kotlin")
     }
+    sourceSets.getByName("test") {
+        java.srcDirs("src/test/kotlin")
+    }
+
+    testOptions {
+        // Meme plateforme que `:format`, `:algo` et `:phone` : JUnit 5. Les cibles sont les
+        // classes pures de `record/` (SensorStrategy, GapMonitor, StopConditions), dont les
+        // KDoc promettent explicitement une couverture JVM.
+        unitTests.all { it.useJUnitPlatform() }
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 kotlin {
@@ -94,4 +105,8 @@ dependencies {
     // collecte s'arrete quand l'ecran s'eteint — le critere « zero recomposition entre le coucher
     // et le reveil » — et le second relance le preflight quand l'utilisateur revient des reglages.
     implementation(libs.androidx.lifecycle.runtime.compose)
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
