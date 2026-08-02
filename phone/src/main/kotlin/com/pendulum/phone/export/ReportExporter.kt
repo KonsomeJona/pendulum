@@ -48,7 +48,7 @@ object ReportExporter {
         val params = WorkScheduler.activeParams(context)
         val session = db.nightDao().find(sessionHex) ?: error("session inconnue : $sessionHex")
         val results = db.derivedDao().resultsOf(sessionHex, params.paramsHash)
-        val nightContext = db.contextDao().find(sessionHex)
+        val nightContext = db.contextDao().findForSession(sessionHex)
         val hc = db.hcSnapshotDao().latest(sessionHex)
         val comparable = db.trendDao().forNight(sessionHex, params.paramsHash).firstOrNull()
 

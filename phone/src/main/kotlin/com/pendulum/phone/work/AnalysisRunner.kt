@@ -128,7 +128,7 @@ object AnalysisRunner {
         sessionHex: String,
         anchor: TimeAnchor,
     ): DiaryWindow? {
-        val ctx = db.contextDao().find(sessionHex) ?: return null
+        val ctx = db.contextDao().findForSession(sessionHex) ?: return null
         val bed = ctx.bedTimeLocalMs ?: return null
         val rise = ctx.riseTimeLocalMs ?: return null
         return DiaryWindow(anchor.toMsRel(bed), anchor.toMsRel(rise))
@@ -143,8 +143,12 @@ object AnalysisRunner {
      */
     private suspend fun baselineGainOf(db: PendulumDatabase, sessionHex: String): Float? {
         val ref = db.contextDao().reference() ?: return null
-        if (ref.sessionHex == sessionHex) return null
-        return db.nightDao().find(ref.sessionHex)?.gainCalG?.toFloat()
+        // Le contexte de reference est cle par la soiree, pas par la session : c'est la nuit
+        // enregistree sous cette soiree qui porte l'etalon de gain. Elle peut ne pas exister —
+        // un formulaire scelle un soir ou la montre n'a finalement pas demarre.
+        val refSession = db.nightDao().findByNightKey(ref.nightKey) ?: return null
+        if (refSession.sessionHex == sessionHex) return null
+        return refSession.gainCalG?.toFloat()
     }
 
     // ------------------------------------------------------------------

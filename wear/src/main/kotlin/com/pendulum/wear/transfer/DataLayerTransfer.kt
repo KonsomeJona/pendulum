@@ -265,23 +265,20 @@ object DataLayerTransfer {
         }
     }
 
-    const val CONTEXT_PREFIX = "/pendulum/context/"
-
     /**
-     * Cle de nuit : la date locale de la **soiree**, la bascule ayant lieu a midi. Un START a
-     * 1 h 30 se rattache donc au formulaire rempli la veille au soir, et non a une soiree qui
-     * n'a pas encore eu lieu.
+     * Le contexte du soir et sa cle de nuit vivaient ici, et le telephone ne les connaissait pas :
+     * il n'ecrivait donc jamais l'item que `Preflight` exige, et START restait bloque pour
+     * toujours. Les deux sont remontes dans `:format`, le module partage par les deux
+     * applications, parce que le mode de defaillance du Data Layer est le silence et non
+     * l'erreur — deux constantes recopiees qui divergent d'un caractere ne produisent aucun
+     * message, elles produisent une montre qui ne demarre plus.
+     *
+     * Les alias sont conserves : ce fichier est le point d'entree du Data Layer cote montre, et
+     * y lire le nom du chemin evite d'avoir a savoir dans quel module il est declare.
      */
-    fun nightKey(nowMs: Long): String {
-        val cal = java.util.Calendar.getInstance()
-        cal.timeInMillis = nowMs
-        if (cal.get(java.util.Calendar.HOUR_OF_DAY) < 12) cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
-        return "%04d-%02d-%02d".format(
-            cal.get(java.util.Calendar.YEAR),
-            cal.get(java.util.Calendar.MONTH) + 1,
-            cal.get(java.util.Calendar.DAY_OF_MONTH),
-        )
-    }
+    const val CONTEXT_PREFIX = WirePaths.CONTEXT_PREFIX
+
+    fun nightKey(nowMs: Long): String = WirePaths.nightKey(nowMs)
 
     // --- fermeture de session ---
 

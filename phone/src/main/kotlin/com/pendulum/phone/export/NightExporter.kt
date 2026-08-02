@@ -8,6 +8,7 @@ import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.db.PendulumDatabase
 import com.pendulum.phone.ingest.ChunkStore
 import com.pendulum.phone.work.AnalysisParams
+import com.pendulum.format.wire.WirePaths
 import com.pendulum.phone.work.WorkScheduler
 import java.io.InputStream
 import java.io.OutputStream
@@ -36,7 +37,7 @@ object NightExporter {
         val store = ChunkStore(context)
         val session = db.nightDao().find(sessionHex)
             ?: error("session inconnue : $sessionHex")
-        val nightContext = db.contextDao().find(sessionHex)
+        val nightContext = db.contextDao().findForSession(sessionHex)
         val snapshot = db.hcSnapshotDao().latest(sessionHex)
         val reference = db.contextDao().reference()
         val params = WorkScheduler.activeParams(context)
@@ -52,7 +53,11 @@ object NightExporter {
             NightBundle.Content(
                 manifest = manifestOf(session, snapshot),
                 context = contextOf(nightContext),
-                baseline = baselineOf(db, reference?.sessionHex, params),
+                baseline = baselineOf(
+                    db,
+                    reference?.nightKey?.let { db.nightDao().findByNightKey(it)?.sessionHex },
+                    params,
+                ),
                 hypnogramCsv = snapshot?.selectedStagesCsv.orEmpty(),
                 chunks = chunks,
             ),
@@ -80,6 +85,7 @@ object NightExporter {
         db.nightDao().insertIfAbsent(
             NightSessionEntity(
                 sessionHex = hex,
+                nightKey = WirePaths.nightKey(m.long("startWallMs")),
                 startWallMs = m.long("startWallMs"),
                 plannedStopWallMs = m.long("plannedStopWallMs"),
                 endWallMs = m["endWallMs"]?.toLongOrNull(),
@@ -121,10 +127,14 @@ object NightExporter {
         // recopie, jamais regenere : une date de scellement remise a l'instant de l'import
         // detruirait la seule preuve que le contexte precede la mesure.
         val c = content.context
-        if (c.isNotEmpty() && db.contextDao().find(hex) == null) {
+        if (c.isNotEmpty() && db.contextDao().findForSession(hex) == null) {
             db.contextDao().seal(
                 NightContextEntity(
-                    sessionHex = hex,
+                    // La cle de nuit est **derivee du debut de la session importee**, avec la
+                    // meme bascule a midi que le scellement d'origine. La recalculer plutot que
+                    // de la lire dans le bundle garantit que la nuit reimportee se rattache a son
+                    // contexte par la meme regle que toutes les autres.
+                    nightKey = WirePaths.nightKey(m.long("startWallMs")),
                     sealedAtMs = c.long("sealedAtMs"),
                     leg = c["leg"].orEmpty(),
                     strapId = c["strapId"].orEmpty(),

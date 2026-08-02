@@ -99,6 +99,19 @@ class PendulumListenerService : WearableListenerService() {
         dao.insertIfAbsent(
             NightSessionEntity(
                 sessionHex = h.sessionHex,
+                // La soiree a laquelle cette nuit se rattache, derivee de son heure de debut par
+                // la meme bascule a midi que le chemin du contexte scelle. C'est par elle que la
+                // nuit retrouve le formulaire rempli plusieurs heures avant qu'elle n'existe :
+                // le `sessionHex` n'etait pas connu au moment du scellement, et il ne peut donc
+                // pas servir de rattachement.
+                //
+                // Le fuseau est celui **annonce par la montre**, pas celui du telephone. Les deux
+                // sont normalement identiques ; quand ils ne le sont pas — un vol pendant la
+                // journee — c'est le fuseau ou la nuit a ete vecue qui definit la soiree.
+                nightKey = WirePaths.nightKey(
+                    h.startWallMs,
+                    java.time.ZoneId.of(h.zoneId),
+                ),
                 startWallMs = h.startWallMs,
                 plannedStopWallMs = h.plannedStopWallMs,
                 zoneId = h.zoneId,

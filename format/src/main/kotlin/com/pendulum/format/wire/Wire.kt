@@ -47,6 +47,24 @@ object WirePaths {
     const val SWEEP_PREFIX = "/pendulum/sweep/"
     const val SWEEP_REQUEST = "/pendulum/sweep-request"
 
+    /**
+     * Le contexte du soir scelle, publie par le **telephone** et lu par la montre.
+     *
+     * C'est la seule porte du produit : `Preflight` refuse le demarrage tant que l'item n'existe
+     * pas. Il vivait cote montre uniquement, dans `DataLayerTransfer`, et le telephone ne
+     * l'ecrivait jamais — donc START etait bloque en permanence, avec pour tout symptome le
+     * message « remplissez le formulaire du soir sur le telephone » devant un formulaire qui
+     * n'existait pas.
+     *
+     * Il est ici, dans le module partage, pour la raison qui vaut pour tous les autres chemins :
+     * **le mode de defaillance du Data Layer est le silence, pas l'erreur.** Deux constantes
+     * recopiees qui divergent d'un caractere ne produisent aucun message ; elles produisent une
+     * montre qui ne demarre plus jamais.
+     */
+    const val CONTEXT_PREFIX = "/pendulum/context/"
+
+    fun context(nightKey: String) = CONTEXT_PREFIX + nightKey
+
     fun session(sessionHex: String) = SESSION_PREFIX + sessionHex
 
     /**
@@ -61,6 +79,32 @@ object WirePaths {
     fun ack(sessionHex: String) = ACK_PREFIX + sessionHex
 
     fun sweep(sessionHex: String) = SWEEP_PREFIX + sessionHex
+
+    /**
+     * Cle de nuit : la date locale de la **soiree**, la bascule ayant lieu a midi.
+     *
+     * Un START a 1 h 30 se rattache donc au formulaire rempli la veille au soir, et non a une
+     * soiree qui n'a pas encore eu lieu. Sans cette bascule, quiconque se couche apres minuit
+     * verrait son contexte scelle rattache a la mauvaise nuit — et la montre refuserait de
+     * demarrer en affirmant qu'il n'a rien rempli.
+     *
+     * La fonction est ici plutot que dans chacun des deux modules parce que les deux cotes
+     * doivent produire **exactement** la meme chaine : le telephone ecrit `context(nightKey(...))`
+     * et la montre lit `context(nightKey(...))`, et un decalage d'un jour est indiscernable d'une
+     * absence de contexte.
+     *
+     * @param zone fuseau explicite. Les deux appareils sont normalement dans le meme, mais le
+     *   defaut implicite rendrait le decalage invisible a la lecture du code le jour ou ils ne le
+     *   seraient plus.
+     */
+    fun nightKey(nowMs: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        val local = java.time.Instant.ofEpochMilli(nowMs).atZone(zone)
+        val soiree = if (local.hour < BASCULE_SOIREE_HEURE) local.minusDays(1) else local
+        return "%04d-%02d-%02d".format(soiree.year, soiree.monthValue, soiree.dayOfMonth)
+    }
+
+    /** Midi. Avant, on est encore dans la nuit de la veille ; apres, dans la soiree du jour. */
+    const val BASCULE_SOIREE_HEURE = 12
 }
 
 /** Etat d'une session vu du telephone (ARCHI-CAPTURE §2.7). */

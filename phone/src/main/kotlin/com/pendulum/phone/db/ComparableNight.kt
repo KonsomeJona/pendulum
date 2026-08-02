@@ -182,7 +182,7 @@ internal object ComparableNightSql {
                 s.truncated           AS truncated,
                 s.revealedAtMs        AS revealedAtMs,
                 CASE
-                    WHEN c.sessionHex IS NULL THEN 0
+                    WHEN c.nightKey IS NULL THEN 0
                     WHEN ref.refLeg IS NULL OR ref.refStrapId IS NULL THEN 0
                     WHEN c.leg <> ref.refLeg THEN 0
                     WHEN c.strapId <> ref.refStrapId THEN 0
@@ -194,7 +194,7 @@ internal object ComparableNightSql {
                     ELSE 1
                 END AS comparable,
                 CASE
-                    WHEN c.sessionHex IS NULL THEN 'NO_CONTEXT'
+                    WHEN c.nightKey IS NULL THEN 'NO_CONTEXT'
                     WHEN ref.refLeg IS NULL OR ref.refStrapId IS NULL THEN 'NO_CONTEXT'
                     WHEN c.leg <> ref.refLeg THEN 'LEG_CHANGED'
                     WHEN c.strapId <> ref.refStrapId THEN 'STRAP_CHANGED'
@@ -209,11 +209,11 @@ internal object ComparableNightSql {
                 END AS exclusionReason
             FROM plm_result r
             JOIN night_session s ON s.sessionHex = r.sessionHex
-            LEFT JOIN night_context c ON c.sessionHex = r.sessionHex
+            LEFT JOIN night_context c ON c.nightKey = s.nightKey
             LEFT JOIN (
                 SELECT nc.leg AS refLeg, nc.strapId AS refStrapId, ns.gainCalG AS refGainCalG
                 FROM night_context nc
-                JOIN night_session ns ON ns.sessionHex = nc.sessionHex
+                JOIN night_session ns ON ns.nightKey = nc.nightKey
                 ORDER BY nc.sealedAtMs ASC
                 LIMIT 1
             ) ref ON 1 = 1

@@ -26,6 +26,16 @@ interface NightDao {
     @Query("SELECT * FROM night_session WHERE sessionHex = :hex")
     suspend fun find(hex: String): NightSessionEntity?
 
+    /**
+     * La nuit enregistree sous une soiree donnee, s'il y en a une.
+     *
+     * Une soiree peut avoir un contexte scelle et aucune nuit — c'est le cas de tout formulaire
+     * rempli avant que la montre ne demarre, donc de **toutes** les soirees entre 20 h et le
+     * coucher. `null` est ici un etat normal et non une anomalie.
+     */
+    @Query("SELECT * FROM night_session WHERE nightKey = :nightKey LIMIT 1")
+    suspend fun findByNightKey(nightKey: String): NightSessionEntity?
+
     @Query("SELECT * FROM night_session ORDER BY startWallMs DESC")
     fun observeAll(): Flow<List<NightSessionEntity>>
 
@@ -213,8 +223,33 @@ interface ContextDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun seal(context: NightContextEntity)
 
-    @Query("SELECT * FROM night_context WHERE sessionHex = :hex")
-    suspend fun find(hex: String): NightContextEntity?
+    @Query("SELECT * FROM night_context WHERE nightKey = :nightKey")
+    suspend fun find(nightKey: String): NightContextEntity?
+
+    /**
+     * Le contexte d'une nuit deja enregistree, retrouve par sa session.
+     *
+     * Le rattachement passe par `night_session.nightKey` et non par une egalite de cle : la
+     * session connait la soiree a laquelle elle appartient, le contexte a ete scelle sous cette
+     * meme soiree, et c'est la seule jointure possible puisque le scellement precede la session
+     * de plusieurs heures.
+     */
+    @Query(
+        """
+        SELECT c.* FROM night_context c
+        JOIN night_session s ON s.nightKey = c.nightKey
+        WHERE s.sessionHex = :sessionHex
+        """
+    )
+    suspend fun findForSession(sessionHex: String): NightContextEntity?
+
+    /**
+     * Le contexte scelle est-il celui de la soiree en cours ? C'est la question que pose la carte
+     * « Ce soir », et elle est distincte de [find] : ici on veut un flux, parce que le scellement
+     * doit faire disparaitre le bouton sans qu'on ait a revenir sur l'ecran.
+     */
+    @Query("SELECT * FROM night_context WHERE nightKey = :nightKey")
+    fun observe(nightKey: String): Flow<NightContextEntity?>
 
     @Query("SELECT * FROM night_context ORDER BY sealedAtMs ASC LIMIT 1")
     suspend fun reference(): NightContextEntity?

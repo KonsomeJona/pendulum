@@ -44,10 +44,20 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "night_session",
-    indices = [Index("startWallMs")],
+    indices = [Index("startWallMs"), Index("nightKey")],
 )
 data class NightSessionEntity(
     @PrimaryKey val sessionHex: String,
+    /**
+     * La soiree a laquelle cette nuit se rattache, `AAAA-MM-JJ`, bascule a midi
+     * (`WirePaths.nightKey`). C'est par elle que la nuit retrouve le contexte scelle avant
+     * qu'elle n'existe — le rattachement ne peut pas se faire par `sessionHex`, qui n'est connu
+     * qu'au moment ou la montre annonce la session, c'est-a-dire apres le scellement.
+     *
+     * Indexee : c'est la jointure de la vue `comparable_night`, donc elle est parcourue une fois
+     * par nuit et par lecture de tendance.
+     */
+    val nightKey: String = "",
     val startWallMs: Long,
     val plannedStopWallMs: Long,
     val endWallMs: Long? = null,
@@ -292,6 +302,20 @@ data class PlmResultEntity(
  * la correlation qu'on cherchait. Le scellement doit precer la mesure : la montre refuse de
  * demarrer tant que cette ligne n'est pas ecrite.
  *
+ * ### Pourquoi la cle est la nuit et non la session
+ *
+ * Le scellement **precede** la nuit : au moment ou l'utilisateur remplit le formulaire, aucune
+ * session n'existe, et il n'y a donc pas de `sessionHex` a poser. La v1 exigeait pourtant cette
+ * colonne en cle primaire, ce qui rendait le scellement litteralement impossible — et comme les
+ * declencheurs interdisent tout `UPDATE`, on ne pouvait pas non plus la renseigner apres coup.
+ *
+ * La cle est donc la **cle de nuit** de `WirePaths.nightKey` — date locale de la soiree, bascule
+ * a midi — c'est-a-dire exactement la chaine que porte le chemin du `DataItem` publie vers la
+ * montre. Une seule convention, partagee par la base et par le protocole : un decalage entre les
+ * deux serait indiscernable d'une absence de contexte, et la montre refuserait de demarrer sans
+ * rien pouvoir expliquer.
+ *
+ * @param nightKey `AAAA-MM-JJ` de la soiree. Un coucher a 1 h 30 se rattache a la veille.
  * @param sealedAtMs instant du scellement. Doit etre **anterieur** a `night_session.startWallMs`.
  * @param leg `LEFT | RIGHT`. Critere de comparabilite : un capteur unilateral voit un intervalle
  *   double en cas d'alternance, changer de jambe change la mesure.
@@ -301,7 +325,7 @@ data class PlmResultEntity(
  */
 @Entity(tableName = "night_context")
 data class NightContextEntity(
-    @PrimaryKey val sessionHex: String,
+    @PrimaryKey val nightKey: String,
     val sealedAtMs: Long,
     val leg: String,
     val strapId: String,

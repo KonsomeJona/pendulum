@@ -62,7 +62,7 @@ abstract class PendulumDatabase : RoomDatabase() {
     abstract fun maintenanceDao(): MaintenanceDao
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val NAME = "pendulum.db"
 
         @Volatile
@@ -144,8 +144,7 @@ private fun createTriggers(db: SupportSQLiteDatabase) {
 }
 
 /**
- * Les migrations. Vide en v1 — la liste existe des maintenant pour que l'ajout d'une migration
- * soit un geste evident plutot qu'une decision d'architecture prise en urgence.
+ * Les migrations.
  *
  * Regle a tenir : **une migration ne perd jamais une colonne du brut.** Renommer, oui ;
  * recopier dans une table neuve, oui ; supprimer une colonne de `chunk` ou de `night_context`,
@@ -153,7 +152,98 @@ private fun createTriggers(db: SupportSQLiteDatabase) {
  */
 object Migrations {
 
-    val ALL: Array<Migration> = arrayOf()
+    /**
+     * v1 → v2 : le contexte du soir cesse d'etre cle par la session.
+     *
+     * ### Le defaut corrige
+     *
+     * En v1, `night_context` avait `sessionHex` en cle primaire. Or **le scellement precede la
+     * nuit** : quand l'utilisateur remplit le formulaire du soir, la montre n'a rien annonce et
+     * il n'existe aucun `sessionHex` a ecrire. Les declencheurs interdisant tout `UPDATE`, on ne
+     * pouvait pas davantage le renseigner ensuite. Le garde-fou 1 etait donc, litteralement,
+     * impossible a satisfaire — et son seul symptome visible etait une montre qui refusait de
+     * demarrer en renvoyant vers un formulaire qui n'existait pas.
+     *
+     * La cle devient la **cle de nuit** (`AAAA-MM-JJ`, bascule a midi), exactement la chaine que
+     * porte le chemin du `DataItem` publie vers la montre. `night_session` gagne la meme colonne,
+     * et c'est par elle que la vue `comparable_night` rattache une nuit a son contexte.
+     *
+     * ### Ce qui est recopie, et ce qui ne peut pas l'etre
+     *
+     * Les lignes de `night_context` existantes sont conservees : leur `sessionHex` sert a
+     * retrouver la `startWallMs` de la session correspondante, dont on derive la cle de nuit avec
+     * la meme bascule a midi que `WirePaths.nightKey`. Une ligne dont la session a disparu garde
+     * son ancien `sessionHex` comme cle — elle ne se rattachera a rien, mais elle n'est pas
+     * perdue, et c'est la regle ci-dessus.
+     *
+     * En pratique aucune base ne contient de telles lignes : le scellement n'a jamais pu
+     * reussir. La migration est ecrite comme si elles existaient parce qu'une migration qu'on
+     * ecrit en supposant la table vide est une migration qu'on ne peut pas relire.
+     *
+     * SQLite ne sait pas changer une cle primaire : il faut recreer la table et recopier. Les
+     * declencheurs disparaissent avec l'ancienne table, ce que `Callback.onOpen` repose a chaque
+     * ouverture — c'est precisement le cas que ce doublon `onCreate`/`onOpen` existe pour couvrir.
+     */
+    val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // La bascule a midi, en SQL. `startWallMs` est en millisecondes UTC et la cle de nuit
+            // est une date **locale** : `'unixepoch'` puis `'localtime'`, dans cet ordre, puis on
+            // retire douze heures pour que tout ce qui precede midi retombe sur la veille.
+            db.execSQL(
+                """
+                ALTER TABLE night_session ADD COLUMN nightKey TEXT NOT NULL DEFAULT ''
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                UPDATE night_session
+                SET nightKey = date((startWallMs / 1000) - 43200, 'unixepoch', 'localtime')
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_night_session_nightKey ON night_session (nightKey)")
+
+            db.execSQL("DROP TRIGGER IF EXISTS night_context_no_update")
+            db.execSQL("DROP TRIGGER IF EXISTS night_context_no_delete")
+
+            db.execSQL(
+                """
+                CREATE TABLE night_context_v2 (
+                    nightKey TEXT NOT NULL PRIMARY KEY,
+                    sealedAtMs INTEGER NOT NULL,
+                    leg TEXT NOT NULL,
+                    strapId TEXT NOT NULL,
+                    aloneInBed INTEGER NOT NULL,
+                    bedTimeLocalMs INTEGER,
+                    riseTimeLocalMs INTEGER,
+                    medicationJson TEXT NOT NULL,
+                    caffeineAfter16h INTEGER NOT NULL,
+                    alcoholUnits REAL NOT NULL,
+                    unusualExercise INTEGER NOT NULL,
+                    notes TEXT
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT OR IGNORE INTO night_context_v2
+                SELECT COALESCE(s.nightKey, c.sessionHex), c.sealedAtMs, c.leg, c.strapId,
+                       c.aloneInBed, c.bedTimeLocalMs, c.riseTimeLocalMs, c.medicationJson,
+                       c.caffeineAfter16h, c.alcoholUnits, c.unusualExercise, c.notes
+                FROM night_context c
+                LEFT JOIN night_session s ON s.sessionHex = c.sessionHex
+                """.trimIndent()
+            )
+            db.execSQL("DROP TABLE night_context")
+            db.execSQL("ALTER TABLE night_context_v2 RENAME TO night_context")
+
+            // Les declencheurs sont reposes ici **et** a chaque ouverture. Ici parce qu'une
+            // migration doit laisser la base dans un etat correct sans dependre de ce qui suit ;
+            // a l'ouverture parce que ce genre de ligne s'oublie dans la prochaine migration.
+            createTriggers(db)
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
 }
 
 /**
