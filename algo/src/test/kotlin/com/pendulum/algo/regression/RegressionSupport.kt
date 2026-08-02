@@ -35,8 +35,11 @@ import com.pendulum.algo.synth.SeriesSpec
 import com.pendulum.algo.synth.SleepSpec
 import com.pendulum.algo.synth.SynthNight
 import com.pendulum.algo.synth.TruthEvent
+import com.pendulum.algo.synth.TruthKind
 import com.pendulum.algo.synth.truthAsClms
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.ln
 
 /**
  * Outillage commun de la suite de non-regression du tableau `docs/ALGO-v2.md` §5.5.
@@ -405,3 +408,30 @@ internal fun probeEffectiveFloorG(seed: Long, clmCfg: ClmConfig = ClmConfig()): 
  */
 internal fun aboveEnvelope(events: List<TruthEvent>, amplitudeG: Double): List<TruthEvent> =
     events.filter { it.envPeakG >= amplitudeG }
+
+/**
+ * Rythme fondamental **reellement injecte** cette nuit-la : moyenne geometrique des intervalles
+ * onset-a-onset entre mouvements consecutifs d'une meme serie, a l'echelle EMG.
+ *
+ * Mesure plutot que lue dans `NightSpec.imiMeanSec` : la loi est tronquee a [2 ; 120] s et les series
+ * sont placees dans des creneaux, si bien que la valeur realisee n'est pas exactement la valeur
+ * demandee. Comparer l'estimation a une consigne plutot qu'a la realisation ferait porter a la
+ * deconvolution une erreur qui n'est pas la sienne.
+ *
+ * La moyenne geometrique, et non arithmetique, parce que `fundamentalSec = exp(mu)` est la
+ * **mediane** de la log-normale ajustee : c'est la meme grandeur des deux cotes de la comparaison.
+ */
+internal fun injectedFundamentalSec(truth: GroundTruth): Double {
+    val logs = ArrayList<Double>()
+    truth.emgTruth
+        .filter { it.kind == TruthKind.PLM_IN_SERIES && it.seriesId != null }
+        .groupBy { it.seriesId }
+        .forEach { (_, events) ->
+            val ordered = events.sortedBy { it.onsetMsRel }
+            for (i in 1 until ordered.size) {
+                val d = (ordered[i].onsetMsRel - ordered[i - 1].onsetMsRel) / 1000.0
+                if (d > 0.0) logs.add(ln(d))
+            }
+        }
+    return if (logs.isEmpty()) Double.NaN else exp(logs.sum() / logs.size)
+}

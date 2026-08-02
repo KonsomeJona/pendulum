@@ -206,8 +206,8 @@ specified in [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §5.5.
 
 ## 4. Current status, stated plainly
 
-**147 tests in the `algo` module. 145 run and all 145 pass**; the other two are long-running
-measurements kept `@Disabled` and run by hand. **T6 no longer fails — because its denominator was changed, deliberately and with the
+**148 tests in the `algo` module. 145 run and all 145 pass**; the other three are long-running
+parametric measurements kept `@Disabled` and run by hand. **T6 no longer fails — because its denominator was changed, deliberately and with the
 measurement in hand.** §4.1 is the whole account: what was measured, what it overturned, what was
 decided, and what is now known to be wrong elsewhere in this repository as a result.
 
@@ -222,6 +222,13 @@ a moved goalpost; the pair is what makes it a measurement.
 to publish day to day — the fundamental rhythm in seconds is. Measured for the first time under the
 miss rate the detector actually produces, the rhythm is wrong by 11 % where it answers at all, and the
 deconvolution refuses to answer on 18 nights out of 20. The refusal is the part that works.
+
+**§4.4 asks whether one parameter can undo all of it, and answers no.** `calFraction` sets the
+threshold on 99 % of the night, and sweeping it improves everything — valid rhythm fits go from 2/20
+to 11/20, the published index from 5 % of truth to 47 %, with no measured cost in precision. But it
+**saturates against `Θ_abs` = 20 mg** before the miss rate reaches 0.50, stopping at 0.546. Under
+`Θ_abs` lies Terrill's mechanical 39 %, which no parameter reaches. The margin available to the entire
+threshold policy is a miss rate between 0.39 and 0.55, and identifiability needs below 0.50.
 
 The previous edition of this section stopped one step short. It correctly identified that most truth
 events sit below `Θ_on`, and then attributed that threshold to the relative term `k_on · floor`, with
@@ -516,6 +523,37 @@ Two further things fall out of this table, and neither was expected.
   Two inverted assertions in `RhythmMeasurementTest` now pin both of these facts, so that whoever
   fixes them is told to come back and rewrite this section.
 
+#### What an adequacy statistic would have to be instead — proposed, not decided
+
+The diagnosis is one sentence: **KS and `geometricMisfit` measure goodness of fit, and what needs
+bounding is the identifiability of `μ`.** Those are different quantities, and at high `p` they move in
+opposite directions. A mixture with a free `σ` can absorb almost any smooth spread of intervals; what
+degrades is not how well the model matches the histogram but how sharply the likelihood pins the
+location of the fundamental. Three candidates, in the order I would try them:
+
+1. **The curvature of the profile log-likelihood in `μ`.** Its inverse is a standard error on `μ`,
+   which converts directly into a confidence interval on `fundamentalSec`. This is the principled
+   answer and it changes the shape of the output for the better: instead of a boolean `valid`, publish
+   `fundamentalSec ± CI` and refuse when the interval is wider than the effect the metric claims to
+   track — the 3.6 % night-to-night variability that justifies the metric in the first place. It is
+   also the quantity that provably degrades as the fundamental component loses weight.
+2. **A likelihood-ratio against the neighbouring harmonics.** The specific failure is the EM latching
+   onto the wrong peak and reporting 2× or ½× the true period. Refit with `μ` pinned at `μ + ln 2` and
+   `μ − ln 2` and compare log-likelihoods; a small margin means the mode is not identified. It targets
+   the actual failure mode, and it costs two extra EM runs on a grid the module already builds.
+3. **Split-half stability of `exp(μ)`.** Fit the first and second half of the night's intervals
+   separately and compare. Non-parametric, needs no new theory, and it measures reproducibility —
+   which is precisely the property the product claims. Two extra fits.
+
+The existing statistics should stay as *diagnostics*; they are informative about the shape of the
+miss process, which is what they were built for. What should stop is using them as the gate.
+`TOO_FEW_INTERVALS` and `MISS_RATE_SATURATED` are doing all the useful refusing today and should be
+kept: they are capacity guards, and capacity is genuinely what is short.
+
+**Not decided here.** Which of the three, and where the acceptance bound goes, determines how often
+Pendulum shows a number at all — a product decision with a clinical edge, and the same class of call
+as T6's denominator. It is written down instead.
+
 #### What this means, and what is deliberately not decided here
 
 The honest summary is that **the two things the project publishes both fail on the nominal night, and
@@ -523,28 +561,135 @@ they fail differently.** The index collapses to 6 % of truth and says so through
 wrong by 11 % when it answers, and refuses to answer on 18 nights out of 20. Only the refusal is
 working as designed.
 
-Nothing has been changed in response. `calFraction`, the series rule and `RhythmConfig`'s thresholds
-are all left exactly as they were, for the same reason §4.1 refused to move T6's denominator before
-the sweep existed: these are clinical and product decisions, and taking them inside a measurement
-commit is how a project talks itself into a number. What the measurement supports, in order:
+The chain of causation runs end to end and through a single parameter: `calFraction` → `Θ_on` → a miss
+rate of 0.73–0.83 → 30 % raw detections → 6 % of the index through the four-in-a-row rule, and 11 %
+error on the rhythm. §4.4 sweeps that parameter, which is the only way to find out whether the chain
+can be broken.
 
-1. **`calFraction` is the lever, and it is the only one that helps both metrics at once.** Every
-   number above follows from a miss rate of 0.73–0.83, and that miss rate is set by
-   `Θ_on = f_cal · gainCal` on 99 % of the night. Halving `f_cal` to 0.06 would put the threshold near
-   27 mg, below the 38.7 mg median event. It is also the parameter with the least published backing
-   in the whole table — "12 % of a comfortable voluntary dorsiflexion, an engineering choice, no
-   published equivalent". Sweeping it is the next measurement, and the harness now exists.
-2. **`alternationSuspect` should not be shown to anyone while the miss rate is this high.** It is the
-   one output that is actively misleading rather than merely absent, and gating it on the estimated
-   `p` being *below* saturation costs nothing.
-3. **The adequacy gate needs a statistic that rises with the error.** The two it has do not. Until
-   then, `TOO_FEW_INTERVALS` and `MISS_RATE_SATURATED` are doing all the useful refusing, and they are
-   capacity guards rather than adequacy ones.
+`calFraction`, the series rule and `RhythmConfig`'s acceptance thresholds are all left exactly as they
+were, for the same reason §4.1 refused to move T6's denominator before the sweep existed. One thing
+*was* changed, and only because it is not a calibration question: see §4.4 on `alternationSuspect`.
 
 Confidence: **high** for the measurements — 20 seeds, deterministic, reproducible, and the thinning
 experiment removes the detector entirely. **High** for the differential diagnosis of the index
-collapse: the arithmetic predicts 0.085 and the measurement gives 0.061. **Medium** for the claim that
-`calFraction` fixes it, which follows from the dominance measurement but has not been swept.
+collapse: the arithmetic predicts 0.085 and the measurement gives 0.061.
+
+### 4.4 Sweeping `calFraction` — the answer is no, and the reason matters more than the answer
+
+`calFraction` is swept over [0.03, 0.12] on the nominal night with all twelve distractor families
+active, 20 seeds per value, medians. `p_true` is the miss rate on the EMG series train — the abscissa
+of §4.3's breakage curve. Precision and false-positive count are measured against the whole of
+`accelTruth`, because a lower threshold letting artefacts in is exactly the counterpart to watch for.
+
+| `f_cal` | `Θ_on` | below | raw | `p_true` | `p` est. | idx ideal | idx measured | Precision | FP | rhythm err | valid | T5 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.03 | **20.0 mg** | 0.137 | 0.727 | **0.546** | 0.485 | 0.806 | 0.592 | 0.976 | 4 | 0.083 | 7/20 | yes |
+| 0.04 | **20.0 mg** | 0.137 | 0.727 | **0.546** | 0.485 | 0.806 | 0.592 | 0.976 | 4 | 0.083 | 7/20 | yes |
+| 0.06 | 26.8 mg | 0.272 | 0.641 | 0.598 | 0.532 | 0.591 | 0.468 | 0.983 | 3 | 0.066 | **11/20** | yes |
+| 0.08 | 35.8 mg | 0.449 | 0.498 | 0.694 | 0.652 | 0.316 | 0.249 | 0.976 | 3 | 0.062 | **11/20** | yes |
+| 0.10 | 44.7 mg | 0.593 | 0.385 | 0.773 | 0.789 | 0.120 | 0.102 | 0.945 | 6 | 0.043 | 2/20 | yes |
+| **0.12** | 53.7 mg | 0.697 | 0.301 | 0.830 | 0.835 | 0.061 | 0.052 | 0.917 | 7 | 0.113 | 2/20 | yes |
+
+#### The direct answer: no, and it stops at 0.546
+
+**There is no value of `calFraction` that brings the miss rate under 0.50.** The best reachable is
+**0.546**, and it is reached at `f_cal` ≈ 0.045 and does not improve below it. The reason is in the
+`Θ_on` column: at `f_cal` = 0.04 the calibration term is 0.04 × 447 mg = 17.9 mg, which falls *below*
+`Θ_abs` = 20 mg, and the absolute floor takes over. **`calFraction` saturates against `Θ_abs`.** Below
+that point the parameter is disconnected from the threshold entirely — rows 0.03 and 0.04 are
+identical to the last digit, which is the signature of a term that has stopped mattering.
+
+So the attenuation is only partly parametric. Underneath `calFraction` there are two further floors,
+and both are structural rather than tuned:
+
+- **`Θ_abs` = 20 mg**, which cuts 13.7 % of `accelTruth` on its own and exists to stop the detector
+  counting micro-vibration on a very quiet night — T1's whole purpose;
+- **Terrill's 39 %**, the movements that are mechanically invisible to an ankle sensor at any
+  threshold. `p_true` can never go below 0.39 by any amount of tuning, and with `Θ_abs` in place the
+  measured floor is 0.546.
+
+That is the "conclusion of a different weight": **at the current `Θ_abs`, the miss rate cannot be
+brought into the region where the deconvolution is identifiable.** Getting there means moving
+`Θ_abs` too, and `Θ_abs` is guarding a different failure — a detector that invents movements out of
+thermal noise.
+
+#### The expected trade-off does not appear, and that is a result in itself
+
+Precision was supposed to be the price. It is not: it goes **0.917 → 0.976** as `f_cal` falls, and the
+false-positive count goes **7 → 3**. Lowering the threshold made precision *better*. The reading is
+that on this generator the amplitude threshold is not what defends against the twelve distractor
+families — the morphology criterion, the posture detector and the gross-movement classifier are, and
+they keep working when the threshold drops, while the extra detections that come in mostly have a real
+counterpart to match.
+
+**This must not be read as a clean bill of health, and the sweep does not establish one.** Precision
+here is measured on the nominal night. The dedicated artefact tests — T1 (MEMS noise alone), T2
+(respiration), T3 (mattress vibration), T4 (posture) — were **not** re-run at other `calFraction`
+values, and T1 and T3 are the ones that would actually break. Re-running T1–T4 across the sweep is the
+required next step before anyone changes the default, and it is cheap.
+
+#### What the rhythm does about it
+
+The best operating point for the metric the product is built on is `f_cal` ≈ 0.06–0.08: **11 valid
+fits out of 20** against 2 today, with the fundamental's error around 0.062–0.066 against 0.113. The
+index follows too — the measured index rises from 5 % of truth to 25–47 %.
+
+Even at its best, that is a headline number available on **just over half of nights**, with a residual
+error near 6 % against a metric whose entire claim is a 3.6 % night-to-night variability. `calFraction`
+moves everything in the right direction and moves nothing far enough.
+
+**T5 is unaffected at every value** — 0.000 / 0.407 / 1.000 throughout, all three criteria holding.
+That was expected, because T5 runs with calibration disabled and `f_cal` is inert there by
+construction, but expecting it and checking it are different things and the check was nearly free.
+
+#### The one thing that was changed: `alternationSuspect`
+
+This was not a calibration question, which is why it is the exception. The flag asserted something
+clinical — *movements may be alternating between the legs* — from a half-line condition, `p ≥ 0.48`,
+with no upper bound. At a miss rate of 0.83 caused entirely by an amplitude threshold, that condition
+was satisfied for a reason having nothing to do with lateralisation, and the flag fired on **14 nights
+out of 20** where the generator contains no alternation whatsoever. It was the only output of the
+system that was actively wrong rather than merely absent.
+
+`RhythmConfig` now carries `alternationMaxMissRate = 0.65`, making the condition a band. The value is
+not chosen to pass a test: it is the one the module already stated two paragraphs earlier — beyond
+`p` = 0.65 the truncated tail weighs 7.5 % and "the estimate of `p` is no longer reliable". A flag
+cannot rest on a quantity the module itself declares unreliable. The count falls from 14/20 to **1/20**,
+and `RhythmTest`'s existing assertion that a genuine stochastic lateralisation *does* raise the flag
+still passes.
+
+**It does not fix the flag, and the sweep is what shows why.** At `f_cal` = 0.06 — precisely where the
+miss rate approaches 0.5 — the flag climbs back to **11/20**, still with no alternation anywhere. This
+is not a tuning residue. `p` and the fundamental's share are *the same* whether half the movements are
+missing because they fall under the threshold or because they are on the other leg; the module sees
+only intervals, and the one quantity that would separate the two causes is the amplitude of what was
+detected — lateralisation is amplitude-blind, a threshold is not. Symmetrically, at the miss rate the
+flag exists for (0.50) it fires on only 3 of 20 realistic trains, because a train mixing series with
+isolated and respiratory-related movements reads `p` = 0.333, under the 0.48 lower bound.
+
+**False positive on one side, nearly blind on the other.** The flag needs a design decision — either a
+second input that carries amplitude, or removal — and that decision is not taken here. Three
+assertions in `RhythmMeasurementTest` hold the measured ceilings so the state cannot drift unnoticed.
+
+#### What this supports
+
+1. **`f_cal` ≈ 0.06 is the value to argue about**, not 0.12: it multiplies valid rhythm fits by five
+   and the published index by nine, at no measured cost in precision on the nominal night. **Re-run
+   T1–T4 first.** If T3 survives it, the case is strong; if it does not, the amplitude threshold was
+   load-bearing after all and the sweep's precision column was measuring the wrong night.
+2. **`Θ_abs` is the next question, and it is a harder one.** It is what stops the miss rate reaching
+   the identifiable region, and it is guarding T1. That is a genuine conflict between two guard rails
+   rather than a parameter with a free value.
+3. **Below both of them sits Terrill's 39 %, which no parameter reaches.** If the identifiability
+   requirement really is `p` < 0.50, and mechanics alone impose `p` ≥ 0.39, the margin available to
+   the whole threshold policy is 0.39 to 0.50. That is the number that should frame any further
+   discussion of what this device can measure at the ankle.
+
+Confidence: **high** for the sweep itself. **High** for the saturation against `Θ_abs`, which is
+visible as two identical rows. **Medium** for "precision does not collapse" — it is a real measurement
+on the nominal night but the dedicated artefact tests were not re-run, and they are the ones that
+count. **High** for the non-identifiability of `alternationSuspect`, which is an argument from what the
+module can and cannot see, confirmed at two separate operating points.
 
 ---
 

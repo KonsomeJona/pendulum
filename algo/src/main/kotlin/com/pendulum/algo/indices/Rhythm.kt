@@ -89,6 +89,19 @@ import kotlin.math.sqrt
  *      `p` s'y lit alors comme un **taux moyen sur la nuit**, ce qu'il est. La dépendance ne fait
  *      donc pas dérailler l'estimation tant qu'elle ne creuse pas un harmonique particulier.
  *
+ *    **Réserve mesurée, et elle est sérieuse : ces deux mesures d'adéquation ne sont pas des mesures
+ *    de confiance.** `docs/07-validation.md` §4.3 les mesure à taux de manqués imposé sur le train
+ *    vrai : quand `p` monte de 0,00 à 0,70, l'erreur sur le fondamental est multipliée par trois
+ *    (0,067 → 0,201) alors que le KS **descend** de 0,116 à 0,071 et que le `geometricMisfit` reste
+ *    plat. Il est accepté davantage d'ajustements à `p = 0,70` (4/20) qu'à `p = 0,00` (0/20), où
+ *    l'estimation est trois fois meilleure. Le mécanisme se comprend après coup : éclaircir un train
+ *    étale la distribution des intervalles, et un mélange log-normal à `σ` libre épouse **mieux** un
+ *    histogramme large et lisse, quoi qu'il advienne de la position du mode. Ces deux statistiques
+ *    mesurent l'**adéquation globale** du mélange ; ce qu'il faudrait borner est l'**identifiabilité
+ *    de `μ`**, qui est une autre grandeur. Ce sont donc `TOO_FEW_INTERVALS` et
+ *    `MISS_RATE_SATURATED` — des gardes de capacité, pas d'adéquation — qui font tout le refus utile
+ *    aujourd'hui. §4.3 propose ce qu'il faudrait à la place ; la décision n'est pas prise ici.
+ *
  * # Une limite d'identifiabilité, à connaître avant de lire `alternationSuspect`
  *
  * Une alternance **strictement déterministe** gauche/droite (un mouvement sur deux exactement) est
@@ -143,13 +156,52 @@ data class RhythmConfig(
     /** Sous cette dispersion, la statistique KS n'a plus de sens : le gain KS est neutralisé. */
     val ksMinSigma: Double = 0.02,
     /**
-     * Seuil du drapeau d'alternance. Posé à 0,48 et non à 0,50 parce que l'estimation de `p` est
-     * biaisée **vers le haut** d'environ +0,03 par la troncature à [maxHarmonics] : sur simulation,
-     * un taux vrai de 0,39 (manqués purement mécaniques, Terrill) ressort entre 0,40 et 0,44, et un
-     * taux vrai de 0,50 (latéralisation stochastique) entre 0,53 et 0,55. Le seuil sépare les deux
-     * avec une marge des deux côtés.
+     * Borne **basse** du drapeau d'alternance. Posée à 0,48 et non à 0,50 parce que sur un train
+     * purement périodique l'estimation de `p` est biaisée **vers le haut** d'environ +0,03 par la
+     * troncature à [maxHarmonics] : un taux vrai de 0,39 (manqués purement mécaniques, Terrill)
+     * ressort entre 0,40 et 0,44, et un taux vrai de 0,50 (latéralisation stochastique) entre 0,53
+     * et 0,55. Le seuil sépare les deux avec une marge des deux côtés, et `RhythmTest` l'assertionne
+     * dans les deux sens.
+     *
+     * **Réserve mesurée, de signe opposé.** Ce +0,03 vaut pour un train dont *tous* les intervalles
+     * appartiennent au mélange harmonique. Sur une nuit nominale complète — où des mouvements isolés
+     * et des RRLM s'intercalent entre les séries — `p` est au contraire **sous**-estimé :
+     * `docs/07-validation.md` §4.3 le mesure à 0,098 pour un taux vrai de 0,00, 0,213 pour 0,30 et
+     * 0,333 pour 0,50. Sur une telle nuit, une latéralisation réelle ressortirait donc **sous** 0,48
+     * et ce drapeau ne se lèverait pas. Le corriger demanderait de calibrer le seuil sur des trains
+     * mêlés, ce qui est une décision de calibration clinique et non une correction : elle n'est pas
+     * prise ici, elle est écrite.
      */
     val alternationMinMissRate: Double = 0.48,
+    /**
+     * Borne **haute** du drapeau d'alternance. Sans elle, la condition était une demi-droite, et
+     * « une fois sur deux » ne se distinguait pas de « presque tout le temps ».
+     *
+     * Le drapeau affirme quelque chose de clinique — les mouvements alternent peut-être entre les
+     * jambes — et il le déduisait d'un `p` élevé, quelle qu'en soit la cause. Mesuré sur la nuit
+     * nominale (§4.3), où le générateur ne produit **aucune** alternance et où le taux de manqués
+     * vaut 0,73 à 0,83 pour une raison purement amplitudinaire, il se levait **14 fois sur 20**.
+     * C'était la seule sortie du système à être activement fausse plutôt que simplement absente.
+     *
+     * La valeur 0,65 n'est pas choisie pour faire passer une mesure : c'est celle que ce fichier
+     * énonçait déjà deux paragraphes plus haut, à l'approximation nº 2 — au-delà de `p = 0,65` la
+     * queue tronquée pèse 7,5 % et « l'estimation de `p` n'est plus fiable ». Un drapeau ne peut pas
+     * s'appuyer sur une grandeur que le module déclare lui-même non fiable. Elle laisse intacte la
+     * plage 0,53–0,55 où ressort une latéralisation vraie sur train pur, que `RhythmTest` assertionne.
+     *
+     * **Ce que la borne ne répare pas, et il faut le lire avant de croire ce drapeau.** Elle fait
+     * tomber le compte de 14/20 à 1/20 sur la nuit nominale, mais le balayage de `calFraction` (§4.4)
+     * montre qu'à `f_cal = 0,06`, où le taux de manqués descend justement vers 0,5, il remonte à
+     * **11/20** — toujours sans la moindre alternance dans le générateur. C'est attendu et ce n'est
+     * pas réglable : `p` et la part du fondamental sont **les mêmes** selon qu'une moitié des
+     * mouvements manque parce qu'ils sont sous le seuil ou parce qu'ils sont sur l'autre jambe. La
+     * seule grandeur qui séparerait les deux est l'amplitude des événements détectés — une
+     * latéralisation est aveugle à l'amplitude, un seuil ne l'est pas — et `Rhythm` ne reçoit que des
+     * intervalles. Symétriquement, au taux fait pour lui (0,50) le drapeau ne se lève que 3 fois sur
+     * 20 sur un train réaliste. **Faux positif d'un côté, presque aveugle de l'autre :** ce drapeau
+     * demande une décision de conception, pas un réglage.
+     */
+    val alternationMaxMissRate: Double = 0.65,
     /**
      * « Pic fondamental faible », mesuré sur la part **empirique** de la première composante et non
      * sur le poids du modèle — sans quoi la condition serait une simple redite de `p`.
@@ -337,7 +389,12 @@ object Rhythm {
         val valid = reject == null
         // Le drapeau d'alternance ne depend pas de `valid` : il se lit AVEC lui. Une nuit invalide
         // dont p vaut 0,5 reste une nuit ou l'hypothese d'alternance merite d'etre posee.
+        //
+        // C'est une **bande** et non une demi-droite : au-dela de `alternationMaxMissRate`, `p` ne
+        // dit plus « une fois sur deux » mais « presque tout le temps », ce qui est un defaut de
+        // detection et non une lateralisation. Voir la KDoc de ce parametre.
         val alternation = em.p >= cfg.alternationMinMissRate &&
+            em.p <= cfg.alternationMaxMissRate &&
             share[0] <= cfg.alternationMaxFundamentalShare
 
         return RhythmFit(

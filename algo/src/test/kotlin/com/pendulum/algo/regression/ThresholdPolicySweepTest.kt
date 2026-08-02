@@ -2,10 +2,14 @@ package com.pendulum.algo.regression
 
 import com.pendulum.algo.detect.ClmConfig
 import com.pendulum.algo.detect.ThresholdConfig
+import com.pendulum.algo.model.SeriesRule
 import com.pendulum.algo.synth.MatchResult
 import com.pendulum.algo.synth.Scoring
+import com.pendulum.algo.synth.SynthNight
 import com.pendulum.algo.synth.TruthEvent
+import com.pendulum.algo.synth.TruthKind
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import org.junit.jupiter.api.Disabled
@@ -101,6 +105,79 @@ class ThresholdPolicySweepTest {
         for (row in rows) out.append(row.line())
         out.append("\nT5 = les trois criteres tiennent ensemble : Se(4x) <= 0,05, ")
         out.append("Se(8x) dans [0,35 ; 0,65], Se(16x) >= 0,95.\n")
+        println(out)
+    }
+
+    /**
+     * Balayage de `calFraction` sur [0,03 ; 0,12], 20 graines par valeur — **la mesure qui decide.**
+     *
+     * Le balayage de `k_on` a montre que ce n'est pas `k_on` qui commande le seuil sur une nuit
+     * calibree, mais le troisieme terme `f_cal x gainCal`, dominant 99 % du temps. Toute la chaine de
+     * consequences mesuree depuis part de la : `f_cal` -> `Theta_on` -> taux de manques 0,73-0,83 ->
+     * 30 % de detections brutes -> 6 % d'indice par la regle des quatre consecutifs -> 11 % d'erreur
+     * sur le rythme, et 2 ajustements valides sur 20. **Un seul parametre commande les deux metriques
+     * publiees**, et il est le moins etaye du tableau §8.3 : « 12 % d'une dorsiflexion volontaire
+     * confortable, choix d'ingenierie, aucun equivalent publie ».
+     *
+     * La plage encadre la mediane des evenements de `accelTruth`, 38,7 mg : a `gainCal ~ 447 mg`,
+     * `f_cal = 0,09` place le seuil dessus et `f_cal = 0,08` dessous.
+     *
+     * **La question a laquelle ce tableau doit repondre**, et elle est chiffree : existe-t-il une
+     * valeur ou le taux de manques passe sous **0,50** — la zone ou la courbe de rupture de
+     * `RhythmMeasurementTest` montre que la deconvolution tient encore — **sans que la precision
+     * s'effondre** ? Les douze familles de distracteurs sont toutes actives ; c'est leur raison
+     * d'etre. Si la precision tombe, ce n'est pas une correction.
+     *
+     * Les trois criteres de T5 sont rapportes a chaque valeur. On s'attend a ce qu'ils ne bougent
+     * pas — T5 tourne calibration desactivee, donc `f_cal` y est sans effet par construction — mais
+     * l'attendre et le verifier sont deux choses differentes, et la verification est presque gratuite
+     * dans un test deja `@Disabled`.
+     */
+    @Test
+    @Disabled(
+        "Mesure de decision, pas assertion. ~25 min. A relancer a la main avant toute discussion " +
+            "sur la valeur de calFraction, qui est la seule qui deplace les deux metriques publiees.",
+    )
+    @DisplayName("Balayage de calFraction sur [0,03 ; 0,12] : taux de manques, rythme, et le prix en faux positifs")
+    fun calFractionSweepAsksWhetherTheMissRateCanBeBroughtUnderFifty() {
+        val rows = listOf(0.03, 0.04, 0.06, 0.08, 0.10, 0.12).map { CalRow(it) }
+
+        for (seed in SEEDS) {
+            val night = nominalNight(seed)
+            for (row in rows) row.recordNominalNight(night, analyse(night, clmCfg = row.cfg))
+        }
+
+        val ratios = doubleArrayOf(4.0, 8.0, 16.0)
+        for (row in rows) {
+            for (seed in SEEDS) {
+                val floor = probeEffectiveFloorG(seed, row.cfg)
+                for ((k, ratio) in ratios.withIndex()) {
+                    val night = fixedAmplitudeNight(seed, minutes = 20.0, envelopeAmplitudeG = ratio * floor)
+                    val a = analyse(night, clmCfg = row.cfg, calibrated = false)
+                    row.t5[k].add(Scoring.match(a.retained, night.truth.accelLegMovements).sensitivity)
+                }
+            }
+        }
+
+        val out = StringBuilder()
+        out.append("\n=== Balayage de calFraction, ").append(SEEDS.size).append(" graines, medianes ===\n")
+        out.append("sous = fraction de accelTruth sous Theta_on ; brut = CLM retenus / accelTruth ; ")
+        out.append("p_vrai = manques sur le train EMG de serie ; p_est = manques rendus par la ")
+        out.append("deconvolution ; idx_id = indice d'un detecteur parfait sous ce seuil / indice vrai ; ")
+        out.append("idx_ms = indice mesure / indice vrai ; Pr et FP contre accelTruth entier ; ")
+        out.append("err_ryt = erreur relative sur fundamentalSec ; valid = ajustements de rythme valides.\n\n")
+        out.append(
+            String.format(
+                Locale.ROOT,
+                "%6s %8s | %6s %6s | %6s %6s | %6s %6s | %6s %5s | %7s %6s | %6s %6s %6s %-4s%n",
+                "f_cal", "Th_on", "sous", "brut", "p_vrai", "p_est", "idx_id", "idx_ms",
+                "Pr", "FP", "err_ryt", "valid", "Se_4x", "Se_8x", "Se_16x", "T5",
+            ),
+        )
+        for (row in rows) out.append(row.line())
+        out.append("\nalternationSuspect leve : ")
+        out.append(rows.joinToString(" ") { "${fmt(it.calFraction, 2)}:${it.alternations}" })
+        out.append("\n")
         println(out)
     }
 
@@ -201,6 +278,86 @@ private class SweepRow(val kOn: Double) {
         fmt(medianOf(abs.n), 0), fmt(medianOf(abs.f1), 3),
         fmt(medianOf(on.n), 0), fmt(medianOf(on.se), 3), fmt(medianOf(on.pr), 3), fmt(medianOf(on.f1), 3),
         fmt(medianOf(subThreshold), 3),
+        fmt(medianOf(t5[0]), 3), fmt(medianOf(t5[1]), 3), fmt(medianOf(t5[2]), 3),
+        if (t5Holds()) "oui" else "NON",
+    )
+}
+
+/**
+ * Une valeur de `calFraction` et tout ce qu'elle change. Colonnes differentes de [SweepRow] parce que
+ * la question posee est differente : le balayage de `k_on` cherchait ou le F1 bouge, celui-ci cherche
+ * ou le **taux de manques** passe sous le seuil d'identifiabilite de la deconvolution, et a quel prix
+ * en faux positifs.
+ */
+private class CalRow(val calFraction: Double) {
+    val cfg: ClmConfig = ClmConfig(thresholds = ThresholdConfig(calFraction = calFraction))
+
+    val thOn = ArrayList<Double>()
+    val subThreshold = ArrayList<Double>()
+    val rawRatio = ArrayList<Double>()
+    val missTrue = ArrayList<Double>()
+    val missEstimated = ArrayList<Double>()
+    val idxIdeal = ArrayList<Double>()
+    val idxMeasured = ArrayList<Double>()
+    val precision = ArrayList<Double>()
+    val falsePositives = ArrayList<Double>()
+    val rhythmErr = ArrayList<Double>()
+    var validFits = 0
+    var alternations = 0
+
+    /** Les trois points de T5, dans l'ordre 4x, 8x, 16x le plancher effectif. */
+    val t5 = List(3) { ArrayList<Double>() }
+
+    fun recordNominalNight(night: SynthNight, a: Analysis) {
+        val truth = night.truth.accelLegMovements
+        val thresholdOn = a.thresholdOnG
+        thOn.add(thresholdOn)
+        subThreshold.add(truth.count { it.envPeakG < thresholdOn }.toDouble() / truth.size)
+        rawRatio.add(a.retained.size.toDouble() / truth.size)
+
+        // La precision et le compte de faux positifs se lisent contre `accelTruth` **entier** : c'est
+        // la contrepartie attendue d'un seuil plus bas, et la restreindre au-dessus du seuil la
+        // rendrait aveugle a ce qu'on cherche justement a surveiller.
+        val m = Scoring.match(a.retained, truth)
+        precision.add(m.precision)
+        falsePositives.add(m.fp.toDouble())
+
+        // Le taux de manques qui compte est celui du **train EMG**, parce que c'est l'abscisse de la
+        // courbe de rupture de la deconvolution (`RhythmMeasurementTest`, docs §4.3).
+        val emgSeries = night.truth.emgTruth.filter { it.kind == TruthKind.PLM_IN_SERIES }
+        missTrue.add(1.0 - Scoring.match(a.retained, emgSeries).sensitivity)
+
+        val full = a.truthResult(SeriesRule.AASM_V3).plmi
+        idxIdeal.add(
+            if (full > 0.0) a.truthResult(SeriesRule.AASM_V3, aboveEnvelope(truth, thresholdOn)).plmi / full
+            else Double.NaN,
+        )
+        idxMeasured.add(if (full > 0.0) a.result(SeriesRule.AASM_V3).plmi / full else Double.NaN)
+
+        val fit = a.rhythmFit()
+        val trueFund = injectedFundamentalSec(night.truth)
+        rhythmErr.add(
+            if (trueFund > 0.0) abs(fit.result.fundamentalSec - trueFund) / trueFund else Double.NaN,
+        )
+        missEstimated.add(fit.result.missRate)
+        if (fit.result.valid) validFits++
+        if (fit.result.alternationSuspect) alternations++
+    }
+
+    fun t5Holds(): Boolean {
+        val se8 = medianOf(t5[1])
+        return medianOf(t5[0]) <= 0.05 && se8 >= 0.35 && se8 <= 0.65 && medianOf(t5[2]) >= 0.95
+    }
+
+    fun line(): String = String.format(
+        Locale.ROOT,
+        "%6s %8s | %6s %6s | %6s %6s | %6s %6s | %6s %5s | %7s %6s | %6s %6s %6s %-4s%n",
+        fmt(calFraction, 2), mg(medianOf(thOn)),
+        fmt(medianOf(subThreshold), 3), fmt(medianOf(rawRatio), 3),
+        fmt(medianOf(missTrue), 3), fmt(medianOf(missEstimated), 3),
+        fmt(medianOf(idxIdeal), 3), fmt(medianOf(idxMeasured), 3),
+        fmt(medianOf(precision), 3), fmt(medianOf(falsePositives), 0),
+        fmt(medianOf(rhythmErr), 3), "$validFits/${SEEDS.size}",
         fmt(medianOf(t5[0]), 3), fmt(medianOf(t5[1]), 3), fmt(medianOf(t5[2]), 3),
         if (t5Holds()) "oui" else "NON",
     )

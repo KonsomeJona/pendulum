@@ -2,14 +2,11 @@ package com.pendulum.algo.regression
 
 import com.pendulum.algo.indices.Rhythm
 import com.pendulum.algo.indices.RhythmReject
-import com.pendulum.algo.synth.GroundTruth
 import com.pendulum.algo.synth.Scoring
 import com.pendulum.algo.synth.SynthRandom
 import com.pendulum.algo.synth.TruthKind
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.ln
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -53,8 +50,11 @@ class RhythmMeasurementTest {
      *     module **invalide**. Sa KDoc affirme qu'il prefere invalider plutot que rendre un chiffre
      *     faux avec l'air sur. C'est une affirmation verifiable, et elle n'avait pas ete verifiee a
      *     ce taux de manques ;
-     *  4. `alternationSuspect`, dont le seuil est a `p >= 0,48` : a 70 % de manques mecaniques il
-     *     devrait se lever tout le temps, et dire alors quelque chose de faux.
+     *  4. `alternationSuspect`. Le generateur ne produit **aucune** alternance, donc ce drapeau ne
+     *     doit jamais se lever ici. Avant correction il se levait 14 fois sur 20 : sa condition etait
+     *     une demi-droite `p >= 0,48`, et a 0,83 de manques amplitudinaires elle etait satisfaite pour
+     *     une raison qui n'a rien a voir avec la lateralisation. `RhythmConfig` porte desormais une
+     *     borne haute et cette mesure l'assertionne.
      */
     @Test
     @DisplayName("Rythme — deconvolution sur la nuit nominale : fondamental, missRate, adequation")
@@ -133,6 +133,22 @@ class RhythmMeasurementTest {
         assertThat(valid)
             .`as`("ajustements de rythme declares valides sur la nuit nominale")
             .isLessThanOrEqualTo(SEEDS.size / 4)
+
+        // Le generateur ne produit aucune alternance gauche/droite. Un drapeau qui se leve ici est
+        // une affirmation clinique fausse — la seule sortie du systeme qui puisse l'etre.
+        //
+        // **Plafond et non zero, et c'est une mesure et non un compromis.** La borne haute de
+        // `RhythmConfig.alternationMaxMissRate` fait tomber le compte de 14/20 a 1/20 : elle supprime
+        // le cas absurde ou « presque tout manque » se lisait « une fois sur deux ». Le reste est
+        // irreductible par reglage : le drapeau est une fonction de `p` et de la part du fondamental,
+        // et ces deux grandeurs sont **identiques** selon qu'une moitie des mouvements manque parce
+        // qu'ils sont sous le seuil ou parce qu'ils sont sur l'autre jambe. Le balayage de
+        // `calFraction` le rend visible : a `f_cal = 0,06`, ou le taux de manques tombe justement vers
+        // 0,5, le drapeau remonte a 11/20. Separer les deux causes demande l'amplitude des evenements
+        // detectes, que `Rhythm` ne recoit pas. Voir `docs/07-validation.md` §4.4.
+        assertThat(alternation)
+            .`as`("alternationSuspect leve sur une nuit sans aucune alternance (14/20 avant la borne haute)")
+            .isLessThanOrEqualTo(SEEDS.size / 10)
     }
 
     /**
@@ -226,34 +242,22 @@ class RhythmMeasurementTest {
         assertThat(medianOf(kss[last]))
             .`as`("KS a 70 %% de manques, contre %.3f sans manque", medianOf(kss[0]))
             .isLessThan(medianOf(kss[0]))
+        // 3. Non inversee, celle-ci : le train eclairci ne contient aucune alternance, quel que soit
+        //    le taux. Avant la borne haute de `RhythmConfig.alternationMaxMissRate`, le drapeau se
+        //    levait 18 fois sur 20 a 70 % de manques ; il en reste 4. Comme sur la nuit nominale, le
+        //    residu n'est pas un defaut de reglage : voir la KDoc de l'assertion jumelle plus haut.
+        assertThat(alternation[last])
+            .`as`("alternationSuspect a 70 %% de manques imposes, sans alternance (18/20 avant la borne haute)")
+            .isLessThanOrEqualTo(SEEDS.size / 4)
+        // 4. Et le pendant, qui est la vraie mauvaise nouvelle : au taux de manques **fait pour lui**
+        //    — 0,50, la lateralisation stochastique — le drapeau ne se leve que 3 fois sur 20. Sur un
+        //    train melant series, mouvements isoles et RRLM, `p` ressort a 0,333 et tombe sous la
+        //    borne basse de 0,48. Le drapeau est donc a la fois faux-positif quand le seuil manque des
+        //    mouvements et quasi aveugle au cas qu'il existe pour signaler.
+        assertThat(alternation[3])
+            .`as`("alternationSuspect a 50 %% de manques, le cas meme qu'il doit detecter")
+            .isLessThan(SEEDS.size / 2)
     }
-}
-
-/**
- * Rythme fondamental **reellement injecte** cette nuit-la : moyenne geometrique des intervalles
- * onset-a-onset entre mouvements consecutifs d'une meme serie, a l'echelle EMG.
- *
- * Mesure plutot que lue dans `NightSpec.imiMeanSec` : la loi est tronquee a [2 ; 120] s et les series
- * sont placees dans des creneaux, si bien que la valeur realisee n'est pas exactement la valeur
- * demandee. Comparer l'estimation a une consigne plutot qu'a la realisation ferait porter a la
- * deconvolution une erreur qui n'est pas la sienne.
- *
- * La moyenne geometrique, et non arithmetique, parce que `fundamentalSec = exp(mu)` est la
- * **mediane** de la log-normale ajustee : c'est la meme grandeur des deux cotes de la comparaison.
- */
-private fun injectedFundamentalSec(truth: GroundTruth): Double {
-    val logs = ArrayList<Double>()
-    truth.emgTruth
-        .filter { it.kind == TruthKind.PLM_IN_SERIES && it.seriesId != null }
-        .groupBy { it.seriesId }
-        .forEach { (_, events) ->
-            val ordered = events.sortedBy { it.onsetMsRel }
-            for (i in 1 until ordered.size) {
-                val d = (ordered[i].onsetMsRel - ordered[i - 1].onsetMsRel) / 1000.0
-                if (d > 0.0) logs.add(ln(d))
-            }
-        }
-    return if (logs.isEmpty()) Double.NaN else exp(logs.sum() / logs.size)
 }
 
 private fun line(label: String, values: List<Double>): String = String.format(
