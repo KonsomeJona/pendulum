@@ -181,6 +181,42 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
             "Evening dose, leg, strap, alcohol, coffee after 16:00, alone in bed. " +
                 "This information is recorded before the night and cannot be changed afterwards: " +
                 "entered after the fact, it would be swayed by the result."
+        // --- le formulaire du soir ---------------------------------------------------------
+        //
+        // Les champs sont exactement les colonnes de `NightContextEntity`. Chaque libelle dit ce
+        // que la donnee sert a decider, parce qu'un formulaire de sante qu'on remplit sans savoir
+        // pourquoi se remplit mal.
+
+        const val SECTION_PORT = "How the watch is worn"
+        const val SECTION_CONTEXTE = "The evening"
+        const val SECTION_DOSE = "Medication"
+
+        const val JAMBE_GAUCHE = "Left leg"
+        const val JAMBE_DROITE = "Right leg"
+
+        const val CHAMP_BRACELET = "Strap and hole"
+        const val CHAMP_BRACELET_AIDE =
+            "The same strap at the same hole every night. Play in the strap changes the recorded " +
+                "amplitude by a factor of 2 to 3, which makes two nights incomparable without " +
+                "anything else showing it."
+        const val CHAMP_BRACELET_MANQUANT = "Strap and hole required"
+
+        const val CHAMP_SEUL = "Alone in bed"
+        const val CHAMP_SEUL_AIDE = "A bed partner transmits their own movements through the mattress."
+        const val CHAMP_CAFE = "Coffee after 16:00"
+        const val CHAMP_EXERCICE = "Unusual exercise today"
+        const val CHAMP_ALCOOL = "Alcohol, units"
+
+        const val CHAMP_DOSE = "Dose taken this evening"
+        const val CHAMP_DOSE_AIDE =
+            "Free text, kept as typed. A structured field would need the list of molecules, their " +
+                "units and their equivalences; a structured field that is half right is worth " +
+                "less than a line a physician reads for themselves."
+        const val CHAMP_NOTES = "Anything else worth noting"
+
+        const val ANNULER = "Not now"
+        const val RELIRE = "Read it again"
+
         const val SCELLEMENT_BOUTON = "Seal the context for tonight"
         const val SCELLEMENT_FAIT = "Context sealed — the watch can start recording."
         const val SCELLEMENT_MANQUANT =

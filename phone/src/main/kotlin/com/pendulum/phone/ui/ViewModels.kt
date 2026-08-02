@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pendulum.phone.data.EtatTendance
+import com.pendulum.phone.data.EveningContextSealer
+import com.pendulum.phone.data.SaisieDuSoir
 import com.pendulum.phone.data.PendulumPreferences
 import com.pendulum.phone.data.PendulumRepository
 import com.pendulum.phone.ui.chart.BandeMediane
@@ -19,6 +21,7 @@ import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.settings.ReglagesUi
 import com.pendulum.phone.ui.text.Textes
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -156,6 +159,70 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 }
+
+/**
+ * Le formulaire du soir et son scellement.
+ *
+ * L'horloge est un parametre et non `System.currentTimeMillis()` appele au fond d'une fonction :
+ * la cle de nuit bascule a midi, donc toute la logique de rattachement depend de l'heure qu'il
+ * est, et une horloge cachee rend cette regle intestable.
+ */
+class EveningViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val sealer = EveningContextSealer(app)
+    private val prefs = PendulumPreferences(app)
+
+    /** Vrai des que le contexte de la soiree en cours est scelle — donc que la montre peut partir. */
+    val scelle: StateFlow<Boolean> = sealer
+        .observerSoireeCourante(horloge())
+        .map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val repereDeSerrage: StateFlow<String> = prefs.repereDeSerrage
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /**
+     * Resultat du scellement, consomme une fois par l'ecran puis remis a `null`.
+     *
+     * [ResultatScellement.PublicationEchouee] n'est pas une erreur au sens habituel : le contexte
+     * **est** scelle, ce qui est l'essentiel et ce qui est irreversible. Seule la montre ne le
+     * sait pas encore, et le Data Layer la rattrapera a la reconnexion. L'ecran doit le dire —
+     * annoncer un succes complet ferait chercher pendant dix minutes pourquoi START reste bloque.
+     */
+    private val _resultat = MutableStateFlow<ResultatScellement?>(null)
+    val resultat: StateFlow<ResultatScellement?> = _resultat
+
+    fun sceller(saisie: SaisieDuSoir) {
+        viewModelScope.launch {
+            val maintenant = horloge()
+            _resultat.value = try {
+                if (sealer.sceller(saisie, maintenant)) {
+                    // Le repere de serrage est retenu pour les soirs suivants : il doit etre
+                    // identique d'une nuit a l'autre, donc le retaper serait une occasion de
+                    // divergence plutot qu'une verification.
+                    prefs.poserRepereDeSerrage(saisie.bracelet)
+                    ResultatScellement.Scelle
+                } else {
+                    prefs.poserRepereDeSerrage(saisie.bracelet)
+                    ResultatScellement.PublicationEchouee
+                }
+            } catch (e: Exception) {
+                // `OnConflictStrategy.ABORT` : sceller deux fois la meme soiree leve plutot que
+                // d'ecraser en silence. C'est le comportement voulu, et l'ecran doit dire
+                // laquelle des deux choses s'est produite.
+                ResultatScellement.DejaScelle
+            }
+        }
+    }
+
+    fun resultatConsomme() {
+        _resultat.value = null
+    }
+
+    private fun horloge(): Long = System.currentTimeMillis()
+}
+
+enum class ResultatScellement { Scelle, PublicationEchouee, DejaScelle }
 
 /** La liste des nuits. Rien a decider : la vue SQL a deja annote, [Mapping] a deja traduit. */
 class NightsViewModel(app: Application) : AndroidViewModel(app) {

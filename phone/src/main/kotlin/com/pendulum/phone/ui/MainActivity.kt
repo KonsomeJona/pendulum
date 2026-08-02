@@ -11,6 +11,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -34,6 +35,7 @@ import com.pendulum.phone.ui.nights.apercuNuitDetail
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
 import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.tonight.EveningContextScreen
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.trend.ComparePeriodsScreen
@@ -71,6 +73,17 @@ enum class Destination(val route: String, val libelle: String) {
     NUITS("nights", Textes.Nuits.TITRE),
     REGLAGES("settings", Textes.Reglages.TITRE),
 }
+
+/**
+ * Le formulaire du soir. Empile, sans barre de navigation : c'est une tache, pas un lieu.
+ *
+ * Il n'est pas une quatrieme entree de navigation, et ce n'est pas qu'une question de hierarchie.
+ * On ne « va » pas dans le contexte du soir comme on va dans les reglages : on le remplit une
+ * fois, le soir, et il devient inaccessible — les declencheurs SQLite refusent toute modification
+ * ensuite. Une entree permanente vers un ecran qu'on ne peut ouvrir qu'une fois par jour, et qui
+ * echoue si on l'ouvre deux fois, serait une invitation a l'erreur.
+ */
+const val ROUTE_SOIR = "evening"
 
 /**
  * Les trois icones sont dessinees a la main, en contour, plutot que tirees d'un jeu importe.
@@ -151,7 +164,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                     onComparer = { nav.navigate("compare") },
                     onQuestionnaire = { nav.navigate("quiz") },
                     onExport = { nav.navigate("export") },
-                    onSceller = {},
+                    onSceller = { nav.navigate(ROUTE_SOIR) },
                     onActionReveil = {},
                 )
             }
@@ -166,6 +179,32 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 SettingsScreen(reglages, {}, {}, {})
             }
             // Destinations empilees : pas de barre de navigation, ce sont des taches.
+            //
+            // Le formulaire du soir en fait partie, et c'est la plus consequente : c'est la seule
+            // porte du produit. Tant qu'il n'a pas ete rempli et scelle, la montre refuse de
+            // demarrer — non par avertissement, mais parce que le `DataItem` que `Preflight`
+            // attend n'existe pas.
+            composable(ROUTE_SOIR) {
+                val vm: EveningViewModel = viewModel()
+                val repere by vm.repereDeSerrage.collectAsStateWithLifecycle()
+                val resultat by vm.resultat.collectAsStateWithLifecycle()
+
+                EveningContextScreen(
+                    repereDeSerrage = repere,
+                    onSceller = { vm.sceller(it) },
+                    onAnnuler = { nav.popBackStack() },
+                )
+
+                // Le retour n'a lieu qu'une fois le scellement acte en base. Fermer l'ecran des
+                // le clic laisserait croire au succes d'une insertion qui peut echouer — sceller
+                // deux fois la meme soiree leve, et c'est voulu.
+                LaunchedEffect(resultat) {
+                    if (resultat != null) {
+                        vm.resultatConsomme()
+                        nav.popBackStack()
+                    }
+                }
+            }
             composable("night/{hex}") {
                 NightDetailScreen(apercuNuitDetail, onVoirTendance = { nav.popBackStack() }, {})
             }
