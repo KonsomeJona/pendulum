@@ -1,15 +1,11 @@
 package com.pendulum.phone.ui.settings
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -18,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
+import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
@@ -63,13 +60,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(Spacing.screen.dp),
-        verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
-    ) {
+    PendulumScreen(modifier) {
         PendulumCard {
             SectionHeader(Textes.Reglages.MESURE)
             InlineValue(Textes.Tendance.REGLE_COMPTAGE, etat.regle)

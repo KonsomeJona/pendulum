@@ -1,15 +1,11 @@
 package com.pendulum.phone.ui.export
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,9 +13,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.pendulum.phone.ui.common.BandeauProfilPersonnalise
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
+import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.text.Textes
@@ -83,13 +81,7 @@ fun ExportScreen(
         null
     }
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(Spacing.screen.dp),
-        verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
-    ) {
+    PendulumScreen(modifier) {
         Text(Textes.Export.TITRE, style = PendulumType.titleL, color = c.textPrimary)
 
         PendulumCard {
@@ -98,11 +90,7 @@ fun ExportScreen(
             Paragraphe(Textes.Avertissement.BANDEAU_EXPORT, couleur = c.textPrimary)
         }
 
-        etat.profilPersonnalise?.let {
-            PendulumCard {
-                Paragraphe(Textes.Tendance.PARAMS_PERSONNALISES.format(it), couleur = c.attention)
-            }
-        }
+        BandeauProfilPersonnalise(etat.profilPersonnalise)
 
         PendulumCard {
             SectionHeader("Format")

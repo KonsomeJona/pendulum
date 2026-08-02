@@ -5,12 +5,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.pendulum.phone.ui.chart.GrapheTendance
+import com.pendulum.phone.ui.common.BandeauProfilPersonnalise
 import com.pendulum.phone.ui.common.BlockingState
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.CollectionProgress
@@ -31,6 +29,7 @@ import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.MetricHeadline
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
+import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.PositionBox
 import com.pendulum.phone.ui.common.StatusStrip
 import com.pendulum.phone.ui.common.formaterValeur
@@ -86,13 +85,7 @@ fun TrendScreen(
     val c = LocalPendulumColors.current
     var valeursOuvertes by remember { mutableStateOf(false) }
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(Spacing.screen.dp),
-        verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
-    ) {
+    PendulumScreen(modifier) {
         when (etat) {
             TendanceUiState.Chargement -> Unit
 
@@ -126,14 +119,7 @@ fun TrendScreen(
 
                 etat.situationSommeil?.let { ErrorCard(it, onAction = onSituationSommeil) }
 
-                etat.profilPersonnalise?.let {
-                    // Bandeau permanent : il apparait ici ET dans l'export, des qu'un profil non
-                    // par defaut est actif. Sans lui, un chiffre obtenu avec un seuil modifie
-                    // ressemble a s'y meprendre a un chiffre de reference.
-                    PendulumCard {
-                        Paragraphe(Textes.Tendance.PARAMS_PERSONNALISES.format(it), couleur = c.attention)
-                    }
-                }
+                BandeauProfilPersonnalise(etat.profilPersonnalise)
                 if (etat.hashsMelanges) {
                     PendulumCard { Paragraphe(Textes.Tendance.HASHS_MELANGES, couleur = c.attention) }
                 }

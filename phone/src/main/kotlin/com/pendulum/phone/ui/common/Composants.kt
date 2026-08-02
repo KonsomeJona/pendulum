@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,7 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -49,7 +53,7 @@ import com.pendulum.phone.ui.theme.Spacing
 @Composable
 fun PendulumCard(
     modifier: Modifier = Modifier,
-    contenu: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    contenu: @Composable ColumnScope.() -> Unit,
 ) {
     val c = LocalPendulumColors.current
     Column(
@@ -61,6 +65,55 @@ fun PendulumCard(
             .padding(Spacing.card.dp),
         content = contenu,
     )
+}
+
+/**
+ * La colonne defilante que huit ecrans ouvraient de la meme facon.
+ *
+ * Marge d'ecran, defilement vertical, espacement entre cartes : cinq lignes recopiees a
+ * l'identique dans `Tendance`, `Accueil`, `Detail de nuit`, `Rapport P1`, `Reglages`, `Ce soir`,
+ * `Comparaison` et `Export`. Le probleme n'etait pas le volume — c'est que la marge d'ecran et
+ * l'ecart entre cartes sont une **regle de mise en page unique**, et qu'une regle unique ecrite
+ * huit fois se corrige sept fois sur huit.
+ *
+ * L'`@Composable` ne prend pas de `verticalArrangement` : un ecran qui voudrait un autre
+ * espacement ne veut pas ce composable, il veut sa propre colonne, et le dire ainsi est plus
+ * lisible qu'un parametre par defaut que personne ne surcharge.
+ */
+@Composable
+fun PendulumScreen(
+    modifier: Modifier = Modifier,
+    contenu: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(Spacing.screen.dp),
+        verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
+        content = contenu,
+    )
+}
+
+/**
+ * Le bandeau « parametres personnalises », et l'invariant qu'il porte.
+ *
+ * Il doit apparaitre **partout ou un chiffre est montre**, des qu'un profil autre que celui par
+ * defaut est actif : sans lui, un chiffre obtenu avec un seuil modifie ressemble a s'y meprendre a
+ * un chiffre de reference. C'est une regle, pas une decoration — et elle etait ecrite deux fois,
+ * a la tendance et a l'export, avec un commentaire dans l'un des deux disant qu'elle etait ecrite
+ * dans l'autre. Un invariant garanti par un commentaire n'est pas garanti.
+ *
+ * Rien n'est rendu quand [profil] est nul, ce qui permet de l'appeler sans condition.
+ */
+@Composable
+fun BandeauProfilPersonnalise(profil: String?, modifier: Modifier = Modifier) {
+    val c = LocalPendulumColors.current
+    profil?.let {
+        PendulumCard(modifier) {
+            Paragraphe(Textes.Tendance.PARAMS_PERSONNALISES.format(it), couleur = c.attention)
+        }
+    }
 }
 
 @Composable

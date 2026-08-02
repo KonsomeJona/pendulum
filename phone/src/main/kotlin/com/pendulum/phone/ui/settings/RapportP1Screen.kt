@@ -1,13 +1,9 @@
 package com.pendulum.phone.ui.settings
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -16,6 +12,7 @@ import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
+import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.model.PorteP1
 import com.pendulum.phone.ui.text.Textes
@@ -60,13 +57,7 @@ fun RapportP1Screen(
 ) {
     val c = LocalPendulumColors.current
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(Spacing.screen.dp),
-        verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
-    ) {
+    PendulumScreen(modifier) {
         Text(Textes.P1.TITRE, style = PendulumType.titleL, color = c.textPrimary)
         Text(Textes.P1.SOUS_TITRE, style = PendulumType.caption, color = c.textTertiary)
 

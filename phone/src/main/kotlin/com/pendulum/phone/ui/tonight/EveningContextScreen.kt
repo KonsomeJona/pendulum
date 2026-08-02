@@ -4,13 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.pendulum.phone.data.SaisieDuSoir
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
+import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
@@ -87,13 +85,7 @@ fun EveningContextScreen(
     // scellee sans lui sortira ecartee au matin. Tous les autres ont un defaut defendable.
     val complet = bracelet.isNotBlank()
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(Spacing.screen.dp),
-        verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
-    ) {
+    PendulumScreen(modifier) {
         Text(Textes.CeSoir.SCELLEMENT_TITRE, style = PendulumType.titleL, color = c.textPrimary)
         Paragraphe(Textes.CeSoir.SCELLEMENT_CORPS)
 
