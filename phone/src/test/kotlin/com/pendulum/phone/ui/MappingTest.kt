@@ -126,6 +126,41 @@ class MappingTest {
     }
 
     // -------------------------------------------------------------------------------------
+    // Le rythme : absent est le cas normal
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Le defaut que ce test fixe.
+     *
+     * `:algo` refuse la plupart des ajustements de rythme — 2 acceptes sur 20 nuits nominales — et
+     * deux de ses six motifs de refus (`MISS_RATE_SATURATED`, `SIGMA_SATURATED`) laissent un
+     * `fundamentalSec` **fini** dans la colonne. L'interface lisait cette colonne sans consulter
+     * `rhythmValid` : elle affichait donc, avec la meme mise en forme qu'un rythme mesure, une
+     * periode que le modele avait refuse de publier.
+     */
+    @Test
+    @DisplayName("un ajustement refuse n'a pas de rythme, meme quand la colonne porte un nombre fini")
+    fun `rythme refuse`() {
+        assertThat(Mapping.rythmeSec(nuit("a", fundamentalSec = 42.0, rhythmValid = false))).isNull()
+        assertThat(Mapping.rythmeSec(nuit("a", fundamentalSec = 21.0, rhythmValid = true))).isEqualTo(21.0)
+    }
+
+    /**
+     * `NaN` est ce que `:algo` ecrit quand il n'a meme pas pu tenter l'ajustement — « pas de
+     * valeur » doit empoisonner visiblement tout calcul aval. `Math.round(NaN)` vaut 0, donc
+     * l'ecran affichait « 0 s » : un rythme nul, qui est la seule valeur physiquement impossible.
+     */
+    @Test
+    @DisplayName("un rythme absent ne s'arrondit jamais en 0 s")
+    fun `rythme absent`() {
+        assertThat(Mapping.rythmeSec(nuit("a", fundamentalSec = Double.NaN))).isNull()
+        assertThat(Mapping.rythmeLisible(null)).doesNotContain("0 s")
+        assertThat(Mapping.rythmeLisible(null))
+            .isEqualTo(com.pendulum.phone.ui.text.Textes.Nuits.Detail.RYTHME_NON_AJUSTE)
+        assertThat(Mapping.rythmeLisible(21.4)).isEqualTo("21 s")
+    }
+
+    // -------------------------------------------------------------------------------------
     // Mise en forme
     // -------------------------------------------------------------------------------------
 
@@ -177,6 +212,7 @@ class MappingTest {
     private fun nuit(
         hex: String,
         fundamentalSec: Double = 21.0,
+        rhythmValid: Boolean = true,
         plmi: Double = 18.0,
         gate: String = Mapping.GATE_COMPLET,
         comparable: Boolean = true,
@@ -196,6 +232,7 @@ class MappingTest {
         plmi = plmi,
         plmiSpt = plmi,
         fundamentalSec = fundamentalSec,
+        rhythmValid = rhythmValid,
         periodicityIndex = 0.58,
         missRate = missRate,
         analysableTstMin = 312.0,

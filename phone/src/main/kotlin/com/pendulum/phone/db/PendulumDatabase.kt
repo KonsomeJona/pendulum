@@ -62,7 +62,7 @@ abstract class PendulumDatabase : RoomDatabase() {
     abstract fun maintenanceDao(): MaintenanceDao
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
         const val NAME = "pendulum.db"
 
         @Volatile
@@ -243,7 +243,29 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
+    /**
+     * v2 → v3 : la vue expose `rhythmValid`.
+     *
+     * Aucune table ne change et aucune donnee n'est touchee — `plm_result.rhythmValid` est ecrit
+     * depuis le debut et n'etait simplement pas remonte. Ce qui change est ce que l'interface a
+     * le droit de lire : jusqu'ici elle affichait `fundamentalSec` sans savoir que `:algo` avait
+     * refuse l'ajustement dans la majorite des cas, et un refus assorti d'un `MISS_RATE_SATURATED`
+     * rend un nombre **fini**, donc indiscernable d'un resultat accepte.
+     *
+     * Une vue n'est pas recreee toute seule par Room a la migration : la validation de schema la
+     * relit telle qu'elle est en base, donc il faut la reposer ici. C'est aussi la raison pour
+     * laquelle le `CREATE VIEW` reutilise [ComparableNightSql.SQL] au lieu d'en recopier le texte —
+     * deux redactions de la meme vue divergeraient a la migration suivante, et la divergence ne se
+     * verrait que sur un appareil deja installe.
+     */
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP VIEW IF EXISTS comparable_night")
+            db.execSQL("CREATE VIEW `comparable_night` AS ${ComparableNightSql.SQL}")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }
 
 /**

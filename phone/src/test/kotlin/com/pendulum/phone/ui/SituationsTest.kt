@@ -86,6 +86,7 @@ class SituationsTest {
         plmi = 18.4,
         plmiSpt = 9.0,
         fundamentalSec = 21.0,
+        rhythmValid = true,
         periodicityIndex = 0.58,
         missRate = 0.21,
         analysableTstMin = 312.0,

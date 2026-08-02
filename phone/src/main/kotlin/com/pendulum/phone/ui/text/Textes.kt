@@ -585,6 +585,40 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
         const val REFUS_ACTION = "Record one more night."
         const val REFUS_LISTE = "Nights recorded"
 
+        // --- refus quand les nuits sont la mais que le rythme n'a pas ete ajuste
+        //
+        // C'est le second motif de refus, et il n'a rien a voir avec le premier. Le compter avec
+        // les nuits manquantes ferait annoncer « 2 nuits sur 3 » a quelqu'un qui en a neuf, ce
+        // qui envoie chercher un defaut de mesure la ou il n'y en a pas.
+
+        /** `2 nights with an identified rhythm out of 3`. Jamais le compte des nuits tout court. */
+        fun compteurRythme(ajustes: Int, requis: Int) =
+            "$ajustes nights with an identified rhythm out of $requis"
+
+        const val REFUS_RYTHME_TITRE = "Pendulum has no rhythm to report yet."
+
+        /**
+         * Le texte qui presente le refus pour ce qu'il est : une propriete du produit, pas une
+         * panne. Le chiffre cite est mesure — `RhythmMeasurementTest`, 2 ajustements acceptes sur
+         * 20 nuits nominales — et il est ecrit parce qu'un refus sans ordre de grandeur se lit
+         * comme un incident isole.
+         */
+        const val REFUS_RYTHME_CORPS =
+            "Your nights were recorded and analysed. What is missing is the rhythm itself: the " +
+                "model that reads the interval between movements refuses to publish a period when " +
+                "the intervals it received do not identify one, and it refuses far more often than " +
+                "it accepts — on simulated nights, 2 fits out of 20 are accepted.\n\n" +
+                "That refusal is the safeguard doing its job, not a fault of the watch or of your " +
+                "night. A period fitted on too few intervals would carry a number and no meaning, " +
+                "and it would sit on this screen looking exactly like a measured one."
+
+        const val REFUS_RYTHME_ACTION =
+            "Keep recording. Each night is kept, and the rhythm appears once enough of them carry " +
+                "an interval train the model can identify."
+
+        /** La ligne qui accompagne la liste : ce que chaque nuit porte quand le rythme manque. */
+        const val REFUS_RYTHME_LISTE = "Nights recorded — each one keeps its own detail"
+
         // --- la grandeur suivie (SPEC-v2 §5)
         const val RYTHME_LABEL = "Fundamental rhythm between movements, median across nights"
         const val COMPTE_LABEL = "Ankle periodic movement index, estimated, unvalidated"
@@ -846,6 +880,25 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
             const val SERIES = "Series (≥ 4 movements)"
             const val IMI_MEDIAN = "Median onset-to-onset interval"
             const val RYTHME_FONDAMENTAL = "Estimated fundamental rhythm"
+
+            /**
+             * Ce qui s'affiche a la place du rythme quand l'ajustement a ete refuse — c'est-a-dire
+             * le plus souvent. Un tiret dirait « pas encore calcule » ; ici le calcul a eu lieu et
+             * s'est conclu par un refus, ce qui n'est pas la meme information.
+             */
+            const val RYTHME_NON_AJUSTE = "no identified rhythm"
+
+            /** La note quand il y a bien un rythme : d'ou il sort, et ce qu'il faut en craindre. */
+            const val RYTHME_DECONVOLUTION_NOTE =
+                "Estimated by deconvolution of the harmonics: a sensor on a single leg sees a " +
+                    "doubled interval when movements alternate left/right."
+
+            /** La note qui accompagne ce refus au detail de nuit, une nuit a la fois. */
+            const val RYTHME_NON_AJUSTE_NOTE =
+                "The intervals of this night did not identify a period. Pendulum reports nothing " +
+                    "rather than a figure fitted on too little — the movement count below stands " +
+                    "on its own."
+
             const val TOUS_EVENEMENTS = "All events"
 
             const val QUALITE = "Quality of the night"

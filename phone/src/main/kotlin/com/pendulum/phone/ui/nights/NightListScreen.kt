@@ -28,6 +28,7 @@ import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.QualityChip
 import com.pendulum.phone.ui.model.EtatNuit
+import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
@@ -141,7 +142,7 @@ fun NightRow(n: NuitUi, onNuit: (String) -> Unit) {
         Spacer(Modifier.height(Spacing.xs.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (devoile) "${Math.round(n.rythmeSec)} s" else Textes.EcranAccueil.Resultat.MASQUE_LIGNE,
+                if (devoile) Mapping.rythmeLisible(n.rythmeSec) else Textes.EcranAccueil.Resultat.MASQUE_LIGNE,
                 style = PendulumType.bodyNum,
                 color = if (devoile) c.textSecondary else c.textTertiary,
                 textDecoration = if (ecartee && devoile) TextDecoration.LineThrough else null,

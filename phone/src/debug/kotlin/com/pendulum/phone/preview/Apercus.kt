@@ -164,6 +164,18 @@ private fun ApercuTendanceRefus() = PendulumTheme {
     TrendScreen(ApercuDonnees.tendanceRefus, {}, {}, {}, {}, {}, {})
 }
 
+/**
+ * Le refus qu'on verra le plus souvent : neuf nuits eligibles, deux rythmes identifies.
+ *
+ * Il merite son propre apercu parce que sa mise en forme est le sujet — il doit se lire comme le
+ * produit qui tient parole, pas comme une panne, et cela ne se juge pas sur un extrait de texte.
+ */
+@Preview(name = "Trend — refusal, no identified rhythm", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuTendanceRefusRythme() = PendulumTheme {
+    TrendScreen(ApercuDonnees.tendanceRefusRythme, {}, {}, {}, {}, {}, {})
+}
+
 @Preview(name = "Trend — provisional 4 nights", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendanceProvisoire() = PendulumTheme {

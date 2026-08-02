@@ -33,6 +33,7 @@ import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.model.CheminDeCalcul
 import com.pendulum.phone.ui.model.ErreurPendulum
+import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
@@ -148,7 +149,7 @@ fun NightDetailScreen(
             Spacer(Modifier.height(Spacing.sm.dp))
             if (devoile) {
                 Text(
-                    "${Math.round(detail.nuit.rythmeSec)} s  ·  ${Math.round(detail.nuit.comptePlmi)}/h",
+                    "${Mapping.rythmeLisible(detail.nuit.rythmeSec)}  ·  ${Math.round(detail.nuit.comptePlmi)}/h",
                     style = PendulumType.metricL,
                     color = c.textSecondary,
                 )
@@ -209,11 +210,17 @@ fun NightDetailScreen(
             InlineValue(Textes.Nuits.Detail.ECARTES_DUREE, detail.ecartesDuree.toString())
             InlineValue(Textes.Nuits.Detail.SERIES, "${detail.series}   covering ${detail.couvertureSeries}")
             InlineValue(Textes.Nuits.Detail.IMI_MEDIAN, "%.1f s".format(detail.imiMedianSec))
+            // La note change avec la valeur : quand l'ajustement a ete refuse, expliquer la
+            // deconvolution des harmoniques repondrait a une question que la ligne ne pose plus.
+            // Ce qu'il faut dire alors est **pourquoi il n'y a rien**, et que c'est voulu.
             InlineValue(
                 Textes.Nuits.Detail.RYTHME_FONDAMENTAL,
-                "${Math.round(detail.nuit.rythmeSec)} s",
-                note = "Estimated by deconvolution of the harmonics: a sensor on a single leg " +
-                    "sees a doubled interval when movements alternate left/right.",
+                Mapping.rythmeLisible(detail.nuit.rythmeSec),
+                note = if (detail.nuit.rythmeSec == null) {
+                    Textes.Nuits.Detail.RYTHME_NON_AJUSTE_NOTE
+                } else {
+                    Textes.Nuits.Detail.RYTHME_DECONVOLUTION_NOTE
+                },
             )
         }
 

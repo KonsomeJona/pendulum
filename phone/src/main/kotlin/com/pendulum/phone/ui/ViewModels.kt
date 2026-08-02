@@ -120,12 +120,17 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
         }
         val situation = Situations.sommeil(disponibilite, sourcesRecentes, originesDerniereNuit)
 
-        // Sous trois nuits eligibles : aucun agregat n'existe, donc aucun graphe n'est construit.
-        // Pas meme un graphe vide avec ses axes — un axe vide invite l'oeil a imaginer la courbe
-        // qui manque, ce qui est exactement le contraire de ce que le refus veut dire.
+        // Aucun agregat n'existe, donc aucun graphe n'est construit. Pas meme un graphe vide avec
+        // ses axes — un axe vide invite l'oeil a imaginer la courbe qui manque, ce qui est
+        // exactement le contraire de ce que le refus veut dire.
+        //
+        // Deux causes menent ici et `Refus` les distingue par ses deux comptes : pas assez de
+        // nuits eligibles, ou assez de nuits mais trop peu d'ajustements de rythme acceptes. La
+        // seconde est la plus frequente et elle n'est pas une panne — voir `MotifRefus`.
         if (r == null || c == null) {
             return TendanceUiState.Refus(
                 nuitsEligibles = nuitsEligibles,
+                nuitsRythmeAjuste = nuitsRythmeAjuste,
                 nuitsRequises = Aggregat.MIN_NUITS_AGREGAT,
                 nuitsEnregistrees = nuits,
                 reveil = reveil,
@@ -169,13 +174,15 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
      * de tout calcul. Les cacher donnerait une image plus propre et une lecture fausse.
      */
     private fun EtatTendance.grapheTendance(r: Aggregat.Resultat): TendanceChartSpec {
+        // Une nuit sans ajustement accepte n'a pas de point : elle n'a pas de valeur du tout.
+        // C'est la meme regle qu'a la liste et au detail, portee par la nullite de `rythmeSec`.
         val points = nuits
-            .filter { it.rythmeSec > 0.0 }
-            .map { n ->
+            .mapNotNull { n ->
+                val valeur = n.rythmeSec ?: return@mapNotNull null
                 PointNuit(
                     sessionHex = n.sessionHex,
                     dateMs = n.startWallMs,
-                    valeur = n.rythmeSec.toFloat(),
+                    valeur = valeur.toFloat(),
                     etat = when (n.etat) {
                         EtatNuit.ELIGIBLE -> EtatPoint.ELIGIBLE
                         EtatNuit.PROVISOIRE -> EtatPoint.MASQUE_ACCELERO

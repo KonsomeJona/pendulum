@@ -35,8 +35,11 @@ data class NuitUi(
     val etat: EtatNuit,
     /** Motif d'exclusion deja traduit. Non nul si et seulement si [etat] vaut ECARTEE. */
     val motif: String?,
-    /** Rythme fondamental de cette nuit, en secondes. */
-    val rythmeSec: Double,
+    /**
+     * Rythme fondamental de cette nuit, en secondes, ou `null` quand `:algo` a refuse
+     * l'ajustement — voir [Mapping.rythmeSec], qui explique pourquoi c'est le cas frequent.
+     */
+    val rythmeSec: Double?,
     /** Compte horaire de cette nuit. Present, jamais mis en avant (P7). */
     val comptePlmi: Double,
     val drapeaux: List<Drapeau>,
@@ -184,18 +187,38 @@ data class EnregistrementUi(
 )
 
 /**
+ * Ce qui manque pour agreger. Deux causes sans rapport l'une avec l'autre, et les confondre fait
+ * dire a l'ecran une chose fausse : « 2 nuits sur 3 » a quelqu'un qui en a neuf.
+ */
+enum class MotifRefus {
+    /** Moins de trois nuits eligibles. Le refus historique, celui qui se comble en dormant. */
+    NUITS_INSUFFISANTES,
+
+    /**
+     * Les nuits sont la, mais trop peu portent un ajustement de rythme accepte.
+     *
+     * **C'est le cas normal, pas la panne** : `RhythmMeasurementTest` mesure 2 ajustements
+     * acceptes sur 20 nuits nominales. Le refus vient du produit lui-meme, qui prefere ne rien
+     * rapporter plutot que de rapporter une periode que les intervalles n'identifient pas.
+     */
+    RYTHME_NON_AJUSTE,
+}
+
+/**
  * L'etat de l'ecran Tendance.
  *
- * [Refus] n'est pas un etat d'erreur : c'est le comportement normal du produit sous trois nuits
- * eligibles. Aucun graphe n'est construit, aucune mediane n'existe, l'export est desactive avec
- * son motif. La difference avec « un graphe vide » est essentielle — un axe vide invite l'oeil a
- * imaginer une courbe.
+ * [Refus] n'est pas un etat d'erreur : c'est le comportement normal du produit tant qu'il n'a pas
+ * de quoi agreger. Aucun graphe n'est construit, aucune mediane n'existe, l'export est desactive
+ * avec son motif. La difference avec « un graphe vide » est essentielle — un axe vide invite
+ * l'oeil a imaginer une courbe.
  */
 sealed interface TendanceUiState {
     data object Chargement : TendanceUiState
 
     data class Refus(
         val nuitsEligibles: Int,
+        /** Combien de ces nuits portent un ajustement de rythme accepte. Voir [MotifRefus]. */
+        val nuitsRythmeAjuste: Int,
         val nuitsRequises: Int,
         val nuitsEnregistrees: List<NuitUi>,
         val reveil: EtatReveil,
@@ -205,7 +228,24 @@ sealed interface TendanceUiState {
          * avant d'avoir accumule six nuits scorees sur le seul masque accelerometrique.
          */
         val situationSommeil: ErreurPendulum? = null,
-    ) : TendanceUiState
+    ) : TendanceUiState {
+
+        /**
+         * Le motif se **derive** des deux comptes plutot que d'etre porte par un champ de plus :
+         * assez de nuits eligibles et pas assez d'ajustements ne laisse qu'une lecture possible,
+         * et un champ que l'appelant remplirait pourrait le remplir de travers.
+         */
+        val motif: MotifRefus
+            get() = if (nuitsEligibles >= nuitsRequises) {
+                MotifRefus.RYTHME_NON_AJUSTE
+            } else {
+                MotifRefus.NUITS_INSUFFISANTES
+            }
+
+        /** Le compte qui manque — celui que le compteur et la barre doivent montrer. */
+        val nuitsAcquises: Int
+            get() = if (motif == MotifRefus.RYTHME_NON_AJUSTE) nuitsRythmeAjuste else nuitsEligibles
+    }
 
     data class Pret(
         /** Le rythme fondamental : la grandeur suivie. */

@@ -114,6 +114,7 @@ class PendulumRepository(context: Context) {
                 val hash = profil?.paramsHash ?: AnalysisParams.DEFAULT.paramsHash
                 val toutes = db.trendDao().allNights(hash, REGLE_PAR_DEFAUT, MASQUE_PAR_DEFAUT)
                 val agregeables = nuitsAgregeables(hash)
+                val ajustees = agregeables.filter { Mapping.rythmeSec(it) != null }
                 val parHex = sessions.associateBy { it.sessionHex }
 
                 // `observeAll` trie par `startWallMs DESC` : la premiere ligne est la nuit dont la
@@ -127,9 +128,14 @@ class PendulumRepository(context: Context) {
                         .map { n -> versNuitUi(n, parHex[n.sessionHex], sourcePreferee) }
                         .sortedByDescending { it.startWallMs },
                     nuitsAgregeables = agregeables,
+                    nuitsRythmeAjuste = ajustees.size,
+                    // La mediane du rythme ne porte que sur les nuits dont l'ajustement a ete
+                    // **accepte**. Sans ce filtre, les nuits refusees entraient dans le bootstrap
+                    // avec un `fundamentalSec` fini mais non identifie — ou avec `NaN`, qui rend
+                    // la mediane entiere `NaN` des qu'il tombe du bon cote du tri.
                     rythme = Mapping.agregat(
                         Aggregat.Grandeur.RYTHME_SECONDES,
-                        agregeables,
+                        ajustees,
                     ) { it.fundamentalSec },
                     compte = Mapping.agregat(
                         Aggregat.Grandeur.COMPTE_HORAIRE,
@@ -438,6 +444,13 @@ class PendulumRepository(context: Context) {
 data class EtatTendance(
     val nuits: List<NuitUi>,
     val nuitsAgregeables: List<ComparableNight>,
+    /**
+     * Combien de nuits agregeables portent un ajustement de rythme accepte. C'est le
+     * denominateur du refus : sous [Aggregat.MIN_NUITS_AGREGAT], l'ecran doit dire **lequel**
+     * des deux comptes manque, faute de quoi il annonce « pas assez de nuits » a quelqu'un qui
+     * en a neuf.
+     */
+    val nuitsRythmeAjuste: Int,
     val rythme: Aggregat.Resultat?,
     val compte: Aggregat.Resultat?,
     val tauxManquesMedian: Double,

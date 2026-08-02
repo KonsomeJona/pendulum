@@ -64,13 +64,37 @@ object Mapping {
             // Non nul si et seulement si l'etat est ECARTEE : le modele l'exige, et afficher un
             // motif a cote d'une nuit retenue serait incomprehensible.
             motif = if (etat == EtatNuit.ECARTEE) Textes.Nuits.motif(n.exclusionReason) else null,
-            rythmeSec = n.fundamentalSec,
+            rythmeSec = rythmeSec(n),
             comptePlmi = n.plmi,
             drapeaux = drapeaux,
             startWallMs = n.startWallMs,
             devoileeAtMs = n.revealedAtMs,
         )
     }
+
+    /**
+     * Le rythme d'une nuit, ou `null` quand il n'y en a pas a montrer.
+     *
+     * **`null` est le cas frequent et non l'exception** : `RhythmMeasurementTest` mesure 2
+     * ajustements acceptes sur 20 nuits nominales. La deconvolution refuse de rendre une periode
+     * quand le train d'intervalles ne l'identifie pas, ce qui est la qualite qu'on lui demande —
+     * mais l'interface lisait `fundamentalSec` sans consulter ce refus, et deux des six motifs de
+     * refus laissent un nombre **fini** dans la colonne. Un rythme refuse s'affichait donc comme
+     * un rythme mesure, et un rythme absent (`NaN`) s'arrondissait a « 0 s ».
+     *
+     * Le type porte desormais la regle : il n'existe aucune valeur a afficher quand l'ajustement
+     * n'a pas ete accepte, donc aucun ecran ne peut en montrer une par distraction.
+     */
+    fun rythmeSec(n: ComparableNight): Double? =
+        n.fundamentalSec.takeIf { n.rhythmValid && it.isFinite() && it > 0.0 }
+
+    /**
+     * `21 s`, ou la mention du refus. **Le seul endroit ou un rythme se met en forme** : la liste,
+     * le detail et l'export l'ecrivaient chacun a leur facon, et deux d'entre eux arrondissaient un
+     * `NaN` en « 0 s » — c'est-a-dire qu'ils annoncaient un rythme nul la ou il n'y en avait aucun.
+     */
+    fun rythmeLisible(sec: Double?): String =
+        sec?.let { "${kotlin.math.round(it).toInt()} s" } ?: Textes.Nuits.Detail.RYTHME_NON_AJUSTE
 
     /** `23:12`, dans le fuseau ou la nuit a ete vecue. */
     fun heureLisible(ms: Long, zoneId: String): String =

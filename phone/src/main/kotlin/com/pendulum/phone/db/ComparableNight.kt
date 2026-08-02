@@ -139,6 +139,19 @@ data class ComparableNight(
     val plmi: Double,
     val plmiSpt: Double,
     val fundamentalSec: Double,
+    /**
+     * L'ajustement du rythme a-t-il ete accepte par `:algo` ?
+     *
+     * **Faux est le cas normal**, pas l'exception : sur la nuit nominale, `RhythmMeasurementTest`
+     * mesure 2 ajustements valides sur 20 — la deconvolution refuse le plus souvent, parce que le
+     * detecteur ne lui livre pas assez d'intervalles exploitables. `fundamentalSec` vaut alors
+     * `NaN`, et non 0, precisement pour empoisonner visiblement tout calcul qui l'ignorerait.
+     *
+     * La colonne est dans la vue parce que `gate = 'FULL'` ne la couvre pas : la porte de
+     * publication porte sur le denominateur et la troncature, jamais sur l'ajustement du rythme.
+     * Une nuit peut donc etre comparable, publiable, et n'avoir aucun rythme a montrer.
+     */
+    val rhythmValid: Boolean,
     val periodicityIndex: Double,
     val missRate: Double,
     val analysableTstMin: Double,
@@ -175,6 +188,7 @@ internal object ComparableNightSql {
                 r.plmi                AS plmi,
                 r.plmiSpt             AS plmiSpt,
                 r.fundamentalSec      AS fundamentalSec,
+                r.rhythmValid         AS rhythmValid,
                 r.periodicityIndex    AS periodicityIndex,
                 r.missRate            AS missRate,
                 r.analysableTstMin    AS analysableTstMin,

@@ -17,6 +17,7 @@ import com.pendulum.phone.ui.Destination
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.onboarding.DisclaimerPage
+import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.trend.TrendScreen
@@ -187,7 +188,7 @@ class GardeFousTest {
 
         compose.onNodeWithText(Textes.EcranAccueil.Resultat.BOUTON, substring = true)
             .performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText("${Math.round(nuit.rythmeSec)} s", substring = true)
+        compose.onAllNodesWithText(Mapping.rythmeLisible(nuit.rythmeSec), substring = true)
             .assertCountEquals(0)
     }
 

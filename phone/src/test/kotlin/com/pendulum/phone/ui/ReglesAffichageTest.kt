@@ -5,6 +5,9 @@ import com.pendulum.phone.ui.chart.EtatPoint
 import com.pendulum.phone.ui.chart.PointNuit
 import com.pendulum.phone.ui.chart.TendanceChartSpec
 import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.EtatReveil
+import com.pendulum.phone.ui.model.MotifRefus
+import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.text.Textes
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.within
@@ -198,5 +201,49 @@ class ReglesAffichageTest {
         assertThat(Aggregat.mediane(avec)).isEqualTo(22.0)
         // Un ecart-type classique exploserait ; la MAD × 1,4826 bouge a peine.
         assertThat(Aggregat.dispersion(avec)).isCloseTo(Aggregat.dispersion(sans), within(0.5))
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Le refus : deux motifs sans rapport, et l'ecran doit dire lequel
+    // -------------------------------------------------------------------------------------
+
+    private fun refus(eligibles: Int, ajustes: Int) = TendanceUiState.Refus(
+        nuitsEligibles = eligibles,
+        nuitsRythmeAjuste = ajustes,
+        nuitsRequises = Aggregat.MIN_NUITS_AGREGAT,
+        nuitsEnregistrees = emptyList(),
+        reveil = EtatReveil.Rien,
+    )
+
+    /**
+     * Le defaut que ce test empeche : neuf nuits eligibles, deux rythmes identifies, et l'ecran
+     * qui annonce « 2 nuits sur 3 ». La phrase est fausse et elle envoie chercher un defaut de
+     * mesure la ou le modele a simplement refuse de publier une periode qu'il n'identifie pas.
+     */
+    @Test
+    fun `le refus distingue les nuits qui manquent des rythmes qui manquent`() {
+        assertThat(refus(eligibles = 2, ajustes = 2).motif).isEqualTo(MotifRefus.NUITS_INSUFFISANTES)
+        assertThat(refus(eligibles = 2, ajustes = 2).nuitsAcquises).isEqualTo(2)
+
+        val rythme = refus(eligibles = 9, ajustes = 2)
+        assertThat(rythme.motif).isEqualTo(MotifRefus.RYTHME_NON_AJUSTE)
+        // Le compteur affiche le compte qui manque, pas celui qui est deja atteint.
+        assertThat(rythme.nuitsAcquises).isEqualTo(2)
+
+        // La borne exacte : trois nuits eligibles suffisent a basculer le motif, parce que le
+        // compte des nuits n'est alors plus ce qui manque.
+        assertThat(refus(eligibles = 3, ajustes = 0).motif).isEqualTo(MotifRefus.RYTHME_NON_AJUSTE)
+    }
+
+    /** Le texte du second motif ne doit pas se lire comme une panne, et il cite sa mesure. */
+    @Test
+    fun `le refus de rythme se presente comme une propriete du produit`() {
+        val corps = Textes.Tendance.REFUS_RYTHME_CORPS
+        assertThat(corps).contains("2 fits out of 20")
+        assertThat(corps).contains("refuses")
+        // Ni panne, ni erreur, ni echec : ce qui s'est produit est un refus documente.
+        listOf("error", "failed", "failure", "broken").forEach {
+            assertThat(corps.lowercase()).doesNotContain(it)
+        }
     }
 }

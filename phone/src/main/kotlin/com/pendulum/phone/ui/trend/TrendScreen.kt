@@ -35,6 +35,7 @@ import com.pendulum.phone.ui.common.PositionBox
 import com.pendulum.phone.ui.common.StatusStrip
 import com.pendulum.phone.ui.common.formaterValeur
 import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.MotifRefus
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.text.Textes
@@ -104,9 +105,18 @@ fun TrendScreen(
                 RefusCard(etat, onNuit)
                 // L'export est visible mais desactive, avec son motif ecrit sur le bouton :
                 // jamais un bouton actif qui echoue.
+                //
+                // La porte de l'export est le **compte de nuits eligibles**, la meme qu'en
+                // `Pret.exportPossible`. Un rythme que le modele a refuse ne retire aucune nuit,
+                // et le rapport est precisement l'endroit ou ce refus doit etre ecrit : le
+                // desactiver ici priverait le medecin du document qui l'explique.
                 BoutonMotive(
                     libelle = Textes.Tendance.RAPPORT,
-                    motifIndisponible = Textes.Export.indisponible(Aggregat.MIN_NUITS_AGREGAT),
+                    motifIndisponible = if (etat.motif == MotifRefus.RYTHME_NON_AJUSTE) {
+                        null
+                    } else {
+                        Textes.Export.indisponible(Aggregat.MIN_NUITS_AGREGAT)
+                    },
                     onClick = onExport,
                 )
             }
@@ -271,38 +281,53 @@ fun TrendScreen(
 }
 
 /**
- * Le refus d'agreger.
+ * Le refus d'agreger, dans ses deux motifs.
  *
  * La raison est donnee **en chiffres** et non en consigne. L'utilisateur vise est technicien : le
  * chiffre « une nuit sur trois » le convainc, « veuillez patienter » l'agace et le pousse a
  * chercher un contournement.
  *
- * Le lien vers le detail d'une nuit reste actif : c'est la que vit le chiffre par nuit, et le
- * technicien doit pouvoir verifier que sa mesure a fonctionne.
+ * Les deux motifs partagent la meme forme et ne partagent rien d'autre. Le second —
+ * [MotifRefus.RYTHME_NON_AJUSTE] — est le plus frequent : le modele refuse de publier une periode
+ * que les intervalles n'identifient pas, 18 fois sur 20 sur des nuits simulees. Le presenter avec
+ * le compteur de nuits ferait lire « il manque des nuits » a quelqu'un qui en a neuf, et le
+ * presenter en rouge ferait lire une panne la ou le produit fait exactement ce qu'on lui demande.
+ *
+ * Le lien vers le detail d'une nuit reste actif dans les deux cas : c'est la que vit le chiffre
+ * par nuit, et le technicien doit pouvoir verifier que sa mesure a fonctionne.
  */
 @Composable
 private fun RefusCard(etat: TendanceUiState.Refus, onNuit: (String) -> Unit) {
     val c = LocalPendulumColors.current
+    val rythme = etat.motif == MotifRefus.RYTHME_NON_AJUSTE
     BlockingState(
-        titre = Textes.Tendance.REFUS_TITRE,
-        corps = Textes.Tendance.REFUS_CORPS,
-        action = Textes.Tendance.REFUS_ACTION,
+        titre = if (rythme) Textes.Tendance.REFUS_RYTHME_TITRE else Textes.Tendance.REFUS_TITRE,
+        corps = if (rythme) Textes.Tendance.REFUS_RYTHME_CORPS else Textes.Tendance.REFUS_CORPS,
+        action = if (rythme) Textes.Tendance.REFUS_RYTHME_ACTION else Textes.Tendance.REFUS_ACTION,
         entete = {
             Column(
                 Modifier.fillMaxWidth().padding(bottom = Spacing.m.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    Textes.Tendance.compteurNuits(etat.nuitsEligibles, etat.nuitsRequises),
+                    if (rythme) {
+                        Textes.Tendance.compteurRythme(etat.nuitsAcquises, etat.nuitsRequises)
+                    } else {
+                        Textes.Tendance.compteurNuits(etat.nuitsAcquises, etat.nuitsRequises)
+                    },
                     style = PendulumType.titleL,
                     color = c.textPrimary,
                 )
                 Spacer(Modifier.height(Spacing.s.dp))
-                CollectionProgress(etat.nuitsEligibles, etat.nuitsRequises)
+                CollectionProgress(etat.nuitsAcquises, etat.nuitsRequises)
             }
         },
         pied = {
-            Text(Textes.Tendance.REFUS_LISTE, style = PendulumType.label, color = c.textTertiary)
+            Text(
+                if (rythme) Textes.Tendance.REFUS_RYTHME_LISTE else Textes.Tendance.REFUS_LISTE,
+                style = PendulumType.label,
+                color = c.textTertiary,
+            )
             etat.nuitsEnregistrees.forEach { n -> LigneNuitCompacte(n, onNuit) }
         },
     )

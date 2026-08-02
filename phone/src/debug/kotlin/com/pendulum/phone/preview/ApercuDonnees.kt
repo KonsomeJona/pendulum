@@ -227,9 +227,12 @@ object ApercuDonnees {
             // Devoilee : c'est l'etat d'une nuit dont on a demande le resultat.
             devoileeAtMs = BASE_MS + 7 * 3_600_000L,
         ),
+        // Rythme nul : l'ajustement a ete refuse, ce qui est le cas le plus frequent. L'apercu le
+        // porte parce que c'est cette ligne-la que la liste affichera le plus souvent, et qu'un
+        // jeu d'apercu ou toutes les nuits ont un rythme donne une idee fausse de l'ecran.
         NuitUi(
             "a6", "11 March", "Thu", "23:41", "07:04", "7 h 02 of sleep", "Health Connect",
-            EtatNuit.PROVISOIRE, null, 22.9, 19.0,
+            EtatNuit.PROVISOIRE, null, null, 19.0,
             listOf(Drapeau("accelerometer mask")), BASE_MS - JOUR,
         ),
         NuitUi(
@@ -314,9 +317,23 @@ object ApercuDonnees {
 
     val tendanceRefus = TendanceUiState.Refus(
         nuitsEligibles = 2,
+        nuitsRythmeAjuste = 2,
         nuitsRequises = Aggregat.MIN_NUITS_AGREGAT,
         nuitsEnregistrees = nuits.take(2),
         reveil = EtatReveil.Rien,
+    )
+
+    /**
+     * Le second motif de refus : les nuits sont la, le rythme non.
+     *
+     * C'est le cas **frequent** — 2 ajustements acceptes sur 20 nuits nominales — et l'apercu
+     * existe parce qu'un ecran qu'on ne voit jamais en maquette est un ecran qu'on redige a
+     * l'aveugle. Neuf nuits eligibles, deux rythmes identifies.
+     */
+    val tendanceRefusRythme = tendanceRefus.copy(
+        nuitsEligibles = 9,
+        nuitsRythmeAjuste = 2,
+        nuitsEnregistrees = nuits,
     )
 
     // ---------------------------------------------------------------------------------
