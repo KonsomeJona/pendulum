@@ -167,7 +167,8 @@ worst-case assertion where indicated.
 | **T15** | ALMA / hypnagogic foot tremor | **0 movements** attributed to those bursts | A real clinical distractor that would inflate the index |
 | **T16** | Gain jump ×0.7 at mid-night | \|first-half index − second-half index\| **≤ 20 %** | That the noise floor adapts within a night |
 | **T17** | Golden file | 5 min of real signal plus expected JSON, exact comparison of movements and index | Regression across refactors |
-| **T22** | Nominal night, threshold policy | Fraction of `accelTruth` below `Θ_on`: **0.70 ± 0.07**. Share of the true index that survives the threshold: **0.06 ± 0.03** | The under-count itself, as a published number. It is what makes T6's restricted denominator honest rather than a moved goalpost |
+| **T22** | Nominal night, threshold policy | Fraction of `accelTruth` below `Θ_on`: **0.70 ± 0.07**. Raw retained count before any series rule: **0.30 ± 0.06**. Share of the true index that survives the threshold: **0.06 ± 0.03** | The under-count itself, as a published number. It is what makes T6's restricted denominator honest rather than a moved goalpost, and the middle row is the differential diagnosis of the last one |
+| `RhythmMeasurementTest` | Rhythm under the real miss rate: nominal night, and the true train thinned at imposed rates. Unnumbered — it is not in the specification's table | Measurements, printed. Three **inverted** assertions: at most a quarter of fits are valid, the fundamental's error at least doubles between 30 % and 70 % missed, and the KS statistic *falls* as the miss rate rises | §4.3. The metric the product is actually built on, checked outside the regime the module was designed for |
 
 T22 is numbered 22 and not 18 because [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §5.5 already assigns T18–T21
 to the four assertions described below, none of which is written yet. Reusing T18 would have created
@@ -205,7 +206,7 @@ specified in [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §5.5.
 
 ## 4. Current status, stated plainly
 
-**145 tests in the `algo` module. 143 run and all 143 pass**; the other two are long-running
+**147 tests in the `algo` module. 145 run and all 145 pass**; the other two are long-running
 measurements kept `@Disabled` and run by hand. **T6 no longer fails — because its denominator was changed, deliberately and with the
 measurement in hand.** §4.1 is the whole account: what was measured, what it overturned, what was
 decided, and what is now known to be wrong elsewhere in this repository as a result.
@@ -216,6 +217,11 @@ mechanically visible truth**, and once the AASM four-in-a-row series rule is app
 the true index survives. T6 now scores the first sentence; **T22 publishes the second**, and the second
 is the one that matters clinically. Restricting T6's denominator without T22 beside it would have been
 a moved goalpost; the pair is what makes it a measurement.
+
+**§4.3 is the harder half, and it is newer.** The hourly index is not the metric this project intends
+to publish day to day — the fundamental rhythm in seconds is. Measured for the first time under the
+miss rate the detector actually produces, the rhythm is wrong by 11 % where it answers at all, and the
+deconvolution refuses to answer on 18 nights out of 20. The refusal is the part that works.
 
 The previous edition of this section stopped one step short. It correctly identified that most truth
 events sit below `Θ_on`, and then attributed that threshold to the relative term `k_on · floor`, with
@@ -413,6 +419,132 @@ intermediate bins receive only the residue of the amplitude calibration: measure
 against a neighbouring bin of 1 077 events. `Scoring.sensitivityCurve` now takes a `minCount` and the
 test passes 20, which is not a weakening of the assertion: comparing a rate estimated on three draws
 to one estimated on a thousand tests the draw, not the detector.
+
+### 4.3 The rhythm — the metric the product is actually built on, measured for the first time under the real miss rate
+
+§4.1 ends with the index at 6 % of truth. That would not by itself sink the project, because the
+**index is not the metric Pendulum publishes for day-to-day tracking**. That metric is the fundamental
+rhythm in seconds, recovered by harmonic deconvolution (`Rhythm`), and the whole argument for it is
+that it has no denominator and a night-to-night variability of 3.6 % against 43.2 % for the hourly
+count — twelve times less. `Rhythm`'s own KDoc states an identifiability limit in passing (the
+fundamental component carries weight `1 − p`) but never says where it breaks. Nobody had measured it,
+and the detector operates far outside the regime the module was designed for.
+
+#### First, the differential diagnosis: it is the series rule, not the detector
+
+Before asking about the rhythm, T22 now publishes a third quantity: the **raw retained count**, before
+any series rule, against the whole of `accelTruth`. Measured, median over 20 seeds:
+
+| Quantity | Median | Per-seed range |
+|---|---|---|
+| Raw retained count / `accelTruth` | **0.301** | 0.225 – 0.349 |
+| Index surviving the threshold | 0.061 | 0.000 – 0.148 |
+
+0.30 raw against 0.06 on the index settles it. At a detection probability of 0.30 and a 22 s rhythm,
+a perceived interval survives the 90 s bound with probability `p + (1−p)p + (1−p)²p = 0.657`; a
+four-movement series needs three consecutive such intervals, `0.657³ = 0.283`; total `0.30 × 0.283 =
+0.085`. Measured 0.061 — the same number to within the variance, and slightly worse because misses are
+not independent of amplitude. **The AASM four-in-a-row rule acts as an exponential suppressor, not as
+a diluter.** The generator and the denominator are exonerated; nothing else needs looking for.
+
+#### Then the measurement that matters: the rhythm on the nominal night, 20 seeds
+
+| Quantity | Median | Per-seed range |
+|---|---|---|
+| Injected fundamental | 22.13 s | 21.36 – 23.31 s |
+| Estimated fundamental | 20.25 s | **16.69 – 26.03 s** |
+| **Relative error on the fundamental** | **0.113** | 0.003 – 0.243 |
+| `missRate` estimated | 0.835 | 0.434 – 0.900 |
+| True miss rate, EMG train | 0.830 | 0.781 – 0.869 |
+| True miss rate, accelerometric train | 0.727 | 0.660 – 0.777 |
+| Intervals available to the fit | 32.5 | 17 – 45 |
+| **Fits declared valid** | **2 / 20** | — |
+| `alternationSuspect` raised | **14 / 20** | — |
+
+Four readings, and only one of them is good news.
+
+- **`missRate` is estimated well.** 0.835 against a true 0.830 on the EMG train. The deconvolution
+  really does measure what it claims to measure, at a rate more than twice the one it was calibrated
+  for. That is a genuine result and it deserves saying before the rest.
+- **The fundamental does not survive.** Median error 11.3 %, up to 24.3 %. The injected value spans
+  21.4–23.3 s across seeds — ± 4 % — while the estimate spans 16.7–26.0 s, ± 23 %. **The estimator
+  adds five times more dispersion than the quantity it is estimating has.** The "3.6 % night-to-night
+  variability" that justifies making this the headline metric is not reachable from here; it is not
+  that the number is unstable, it is that it is wrong by three times the effect it is meant to track.
+- **The module refuses, and that is the part that works.** 2 fits out of 20 are declared valid.
+  Reject reasons: 5 `TOO_FEW_INTERVALS`, 5 `MISS_RATE_SATURATED`, 4 `DISTRIBUTION_MISFIT`,
+  2 `GEOMETRIC_MISFIT`, 2 `NOT_CONVERGED`. The claim in `Rhythm`'s KDoc — invalidate rather than
+  return a confident wrong number — holds on this data. **The product does not report a false rhythm;
+  it reports nothing, on 90 % of nights.**
+- **`alternationSuspect` is a false positive here, and a clinically loaded one.** It fires on 14 of
+  20 seeds. There is no lateral alternation anywhere in the generator; the flag is calibrated to
+  separate a true miss rate of 0.39 from one of 0.50, and at 0.83 it is meaningless. It says
+  "movements may be alternating between the legs", which is a clinical statement, on the basis of a
+  miss rate produced entirely by an amplitude threshold.
+
+#### Where the deconvolution breaks, on the model's own best case
+
+Same 20 nights, but the detector is removed: the true movement train is thinned with an imposed,
+independent, exactly geometric miss probability — the model's ideal assumptions — and refitted.
+Anything that degrades here is a **floor** on the real degradation, not an estimate of it.
+
+| Imposed `p` | Relative error | `p` estimated | `σ` | `geometricMisfit` | KS | Valid | `alternationSuspect` |
+|---|---|---|---|---|---|---|---|
+| 0.00 | 0.067 | 0.098 | 0.392 | 0.023 | 0.116 | 0/20 | 0/20 |
+| 0.10 | 0.047 | 0.134 | 0.425 | 0.014 | 0.104 | 0/20 | 0/20 |
+| 0.30 | **0.031** | 0.213 | 0.437 | 0.006 | 0.089 | 2/20 | 0/20 |
+| 0.50 | 0.083 | 0.333 | 0.501 | 0.004 | 0.079 | 3/20 | 4/20 |
+| 0.70 | **0.201** | 0.777 | 0.439 | 0.013 | 0.071 | 4/20 | 18/20 |
+
+**The break is between 0.5 and 0.7**, which confirms the "not identifiable much beyond 50 % missed"
+reading — and the detector sits at 0.73–0.83. The error is 3.1 % at `p` = 0.30, the regime the module
+was designed for, so the method is sound where it was meant to be used.
+
+Two further things fall out of this table, and neither was expected.
+
+- **`p` is under-estimated wherever it is not saturated** — 0.098 for a true 0.00, 0.213 for 0.30,
+  0.333 for 0.50 — the opposite direction from the `+0.03` upward truncation bias `RhythmConfig`
+  documents. The residual at `p` = 0 comes from the isolated and respiratory-related movements
+  interleaved with the series, which are genuine intervals the mixture has to absorb somewhere.
+  `alternationMinMissRate = 0.48` is calibrated on the wrong sign of bias.
+- **The two adequacy statistics move the wrong way.** `geometricMisfit` and KS both *fall* as the
+  miss rate rises — KS from 0.116 to 0.071 — while the error rises fourfold. More is accepted at
+  `p` = 0.70 (4/20) than at `p` = 0.00 (0/20), where the estimate is three times more accurate.
+  **The guard rail is anti-correlated with the error it exists to guard.** The mechanism is
+  understandable in hindsight: thinning spreads the interval distribution out, and a wider, smoother
+  histogram fits a wide log-normal mixture *better*, whatever it does to the location of the mode.
+  Two inverted assertions in `RhythmMeasurementTest` now pin both of these facts, so that whoever
+  fixes them is told to come back and rewrite this section.
+
+#### What this means, and what is deliberately not decided here
+
+The honest summary is that **the two things the project publishes both fail on the nominal night, and
+they fail differently.** The index collapses to 6 % of truth and says so through T22. The rhythm is
+wrong by 11 % when it answers, and refuses to answer on 18 nights out of 20. Only the refusal is
+working as designed.
+
+Nothing has been changed in response. `calFraction`, the series rule and `RhythmConfig`'s thresholds
+are all left exactly as they were, for the same reason §4.1 refused to move T6's denominator before
+the sweep existed: these are clinical and product decisions, and taking them inside a measurement
+commit is how a project talks itself into a number. What the measurement supports, in order:
+
+1. **`calFraction` is the lever, and it is the only one that helps both metrics at once.** Every
+   number above follows from a miss rate of 0.73–0.83, and that miss rate is set by
+   `Θ_on = f_cal · gainCal` on 99 % of the night. Halving `f_cal` to 0.06 would put the threshold near
+   27 mg, below the 38.7 mg median event. It is also the parameter with the least published backing
+   in the whole table — "12 % of a comfortable voluntary dorsiflexion, an engineering choice, no
+   published equivalent". Sweeping it is the next measurement, and the harness now exists.
+2. **`alternationSuspect` should not be shown to anyone while the miss rate is this high.** It is the
+   one output that is actively misleading rather than merely absent, and gating it on the estimated
+   `p` being *below* saturation costs nothing.
+3. **The adequacy gate needs a statistic that rises with the error.** The two it has do not. Until
+   then, `TOO_FEW_INTERVALS` and `MISS_RATE_SATURATED` are doing all the useful refusing, and they are
+   capacity guards rather than adequacy ones.
+
+Confidence: **high** for the measurements — 20 seeds, deterministic, reproducible, and the thinning
+experiment removes the detector entirely. **High** for the differential diagnosis of the index
+collapse: the arithmetic predicts 0.085 and the measurement gives 0.061. **Medium** for the claim that
+`calFraction` fixes it, which follows from the dominance measurement but has not been swept.
 
 ---
 

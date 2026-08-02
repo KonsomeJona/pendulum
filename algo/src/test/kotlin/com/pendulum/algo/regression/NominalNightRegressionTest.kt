@@ -170,7 +170,10 @@ class NominalNightRegressionTest {
      *  1. **[SUB_THRESHOLD_FRACTION] — la fraction d'evenements ecartes.** Meme fonction que
      *     `emgToAccelRatio`, un cran plus bas : `emgToAccelRatio` dit de combien le capteur rate ce
      *     que l'EMG voit, celui-ci dit de combien le seuil rate ce que le capteur voit.
-     *  2. **[INDEX_RATIO] — ce qu'il en reste sur l'indice publie**, c'est-a-dire le rapport entre
+     *  2. **[RAW_COUNT_RATIO] — le compte brut retenu, avant toute regle de serie.** C'est le
+     *     diagnostic differentiel : il dit si l'effondrement de l'indice vient du detecteur ou de la
+     *     regle des quatre consecutifs. Voir sa KDoc pour l'arithmetique.
+     *  3. **[INDEX_RATIO] — ce qu'il en reste sur l'indice publie**, c'est-a-dire le rapport entre
      *     l'`aPLM-i` qu'un detecteur parfait produirait sous cette politique de seuil et l'`aPLM-i`
      *     vrai a l'echelle accelerometrique. **C'est le chiffre grave, et il est bien pire que le
      *     premier** : une serie AASM demande quatre CLM consecutifs, donc ecarter deux tiers des
@@ -190,6 +193,7 @@ class NominalNightRegressionTest {
     @DisplayName("T22 — sous-comptage publie : fraction d'evenements sous Theta_on, et ce qu'il reste de l'indice")
     fun t22_thresholdPolicyCostStaysWhereItWasMeasured() {
         val subThreshold = ArrayList<Double>()
+        val rawRatio = ArrayList<Double>()
         val indexRatio = ArrayList<Double>()
         val thresholds = ArrayList<Double>()
         val calLimited = ArrayList<Double>()
@@ -211,6 +215,11 @@ class NominalNightRegressionTest {
             )
             subThreshold.add(truth.count { it.envPeakG < a.thresholdOnG }.toDouble() / truth.size)
 
+            // Le compte **brut**, avant toute regle de serie : combien de CLM la chaine retient-elle
+            // pour 100 mouvements mecaniquement presents. C'est le diagnostic differentiel entre les
+            // deux explications possibles de l'effondrement de l'indice — voir la KDoc.
+            rawRatio.add(a.retained.size.toDouble() / truth.size)
+
             // Les deux indices traversent les memes etapes 6 et 7 et le meme masque : leur rapport
             // ne contient donc que l'effet du seuil, et rien de l'arithmetique du denominateur.
             val full = a.truthResult(SeriesRule.AASM_V3).plmi
@@ -223,10 +232,11 @@ class NominalNightRegressionTest {
         // signalerait pas un deplacement, elle signalerait le tirage.
         println(
             ("T22 — Theta_on median %.1f mg, commande par le terme de calibration %.0f %% du temps ; " +
-                "fraction sous seuil %.3f [%.3f ; %.3f] ; part de l'indice qui survit %.3f " +
-                "[%.3f ; %.3f]").format(
+                "fraction sous seuil %.3f [%.3f ; %.3f] ; compte brut retenu %.3f [%.3f ; %.3f] ; " +
+                "part de l'indice qui survit %.3f [%.3f ; %.3f]").format(
                 medianOf(thresholds) * 1000.0, medianOf(calLimited) * 100.0,
                 medianOf(subThreshold), worstMin(subThreshold), worstMax(subThreshold),
+                medianOf(rawRatio), worstMin(rawRatio), worstMax(rawRatio),
                 medianOf(indexRatio), worstMin(indexRatio), worstMax(indexRatio),
             ),
         )
@@ -234,6 +244,9 @@ class NominalNightRegressionTest {
         assertThat(medianOf(subThreshold))
             .`as`("fraction mediane de accelTruth sous Theta_on")
             .isBetween(SUB_THRESHOLD_FRACTION - SUB_THRESHOLD_BAND, SUB_THRESHOLD_FRACTION + SUB_THRESHOLD_BAND)
+        assertThat(medianOf(rawRatio))
+            .`as`("compte brut de CLM retenus, rapporte a accelTruth entier")
+            .isBetween(RAW_COUNT_RATIO - RAW_COUNT_BAND, RAW_COUNT_RATIO + RAW_COUNT_BAND)
         assertThat(medianOf(indexRatio))
             .`as`("part mediane de l'aPLM-i vrai qui survit au seuil")
             .isBetween(INDEX_RATIO - INDEX_RATIO_BAND, INDEX_RATIO + INDEX_RATIO_BAND)
@@ -249,6 +262,23 @@ class NominalNightRegressionTest {
         const val SUB_THRESHOLD_FRACTION: Double = 0.70
 
         /**
+         * Compte **brut** de CLM retenus, rapporte a `accelTruth` entier, avant toute regle de serie.
+         *
+         * C'est le diagnostic differentiel entre les deux lectures possibles de [INDEX_RATIO]. Si le
+         * compte brut vaut ~0,30 alors que l'indice n'en garde que 0,06, l'effondrement est
+         * entierement produit par la regle des quatre CLM consecutifs, qui agit en **suppresseur
+         * exponentiel** et non en diluteur. S'il etait deja tres en dessous de 0,30, il y aurait
+         * autre chose a chercher — dans le generateur ou dans le denominateur.
+         *
+         * L'arithmetique de reference : a `p = 0,30` de detection et un rythme de 25 s, un intervalle
+         * percu survit a la borne des 90 s avec `p + (1-p)p + (1-p)^2 p = 0,657` ; une serie de
+         * quatre demande trois intervalles consecutifs, soit `0,657^3 = 0,283` ; total
+         * `0,30 x 0,283 = 0,085`. Mesure : 0,06. L'ecart tient a la variance et au fait que les
+         * manques ne sont pas independants de l'amplitude.
+         */
+        const val RAW_COUNT_RATIO: Double = 0.30
+
+        /**
          * Part de l'`aPLM-i` vrai qui survit a la politique de seuil, mediane des 20 graines. Meme
          * statut que [SUB_THRESHOLD_FRACTION] : mesuree, publiee, surveillee.
          *
@@ -259,6 +289,9 @@ class NominalNightRegressionTest {
 
         /** Demi-largeur de la bande de [SUB_THRESHOLD_FRACTION], soit +/- 10 % relatifs. */
         const val SUB_THRESHOLD_BAND: Double = 0.07
+
+        /** Demi-largeur de la bande de [RAW_COUNT_RATIO]. */
+        const val RAW_COUNT_BAND: Double = 0.06
 
         /**
          * Demi-largeur de la bande de [INDEX_RATIO]. Elle est absolue et non relative parce que la

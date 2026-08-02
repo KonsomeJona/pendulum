@@ -146,6 +146,9 @@ internal class Analysis(
     /** Rythme fondamental estime (`SPEC-v2.md` §5), sur les CLM de sommeil consecutifs. */
     fun rhythm() = Rhythm.fromClms(retained, mask)
 
+    /** Le meme ajustement, avec ses diagnostics d'adequation. Sortie de `RhythmMeasurementTest`. */
+    fun rhythmFit() = Rhythm.fitFromClms(retained, mask)
+
     private fun indexOf(events: List<Clm>, rule: SeriesRule): PlmiResult {
         val cfg = if (rule == SeriesRule.AASM_V3) SeriesConfig.aasmV3() else SeriesConfig.wasm2016()
         // `SeriesBuilder` recoit TOUS les evenements — il a besoin des `LM_LONG` et des `TRUNCATED`
