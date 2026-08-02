@@ -4,6 +4,7 @@ import android.content.Context
 import com.pendulum.format.wire.WirePaths
 import com.pendulum.phone.db.ComparableNight
 import com.pendulum.phone.db.NightSessionEntity
+import com.pendulum.phone.db.ParamProfileEntity
 import com.pendulum.phone.db.PendulumDatabase
 import com.pendulum.phone.ui.home.SessionAccueil
 import com.pendulum.phone.ui.home.SourceAccueil
@@ -72,6 +73,26 @@ class PendulumRepository(context: Context) {
      * et le saut entre les deux se lirait comme un changement clinique.
      */
     fun observerNuits(): Flow<List<NuitUi>> =
+        observerLecture().map { it.nuits }.flowOn(Dispatchers.IO)
+
+    /**
+     * Ce que trois ecrans lisent tous les trois : les sessions, le hash actif, la source de
+     * sommeil preferee, et les nuits deja traduites.
+     *
+     * Les trois assemblaient le meme `combine` et le meme `map` — douze lignes identiques,
+     * recopiees deux fois et demie. Ce n'etait pas seulement du volume : le repli
+     * `?: AnalysisParams.DEFAULT.paramsHash` et le tri antichronologique y figuraient trois fois,
+     * donc un ecran pouvait en perdre un sans que rien ne le dise.
+     */
+    private data class Lecture(
+        val sessions: List<NightSessionEntity>,
+        val profil: ParamProfileEntity?,
+        val hash: String,
+        val sourcePreferee: String?,
+        val nuits: List<NuitUi>,
+    )
+
+    private fun observerLecture(): Flow<Lecture> =
         combine(
             db.nightDao().observeAll(),
             db.paramDao().observeActive(),
@@ -79,12 +100,20 @@ class PendulumRepository(context: Context) {
         ) { sessions, profil, sourcePreferee -> Triple(sessions, profil, sourcePreferee) }
             .map { (sessions, profil, sourcePreferee) ->
                 val hash = profil?.paramsHash ?: AnalysisParams.DEFAULT.paramsHash
-                val nuits = db.trendDao().allNights(hash, REGLE_PAR_DEFAUT, MASQUE_PAR_DEFAUT)
-                val parHex = sessions.associateBy { it.sessionHex }
-                nuits.map { n -> versNuitUi(n, parHex[n.sessionHex], sourcePreferee) }
-                    .sortedByDescending { it.startWallMs }
+                Lecture(sessions, profil, hash, sourcePreferee, nuitsDe(hash, sessions, sourcePreferee))
             }
-            .flowOn(Dispatchers.IO)
+
+    /** Les nuits du hash actif, traduites et triees de la plus recente a la plus ancienne. */
+    private suspend fun nuitsDe(
+        hash: String,
+        sessions: List<NightSessionEntity>,
+        sourcePreferee: String?,
+    ): List<NuitUi> {
+        val parHex = sessions.associateBy { it.sessionHex }
+        return db.trendDao().allNights(hash, REGLE_PAR_DEFAUT, MASQUE_PAR_DEFAUT)
+            .map { n -> versNuitUi(n, parHex[n.sessionHex], sourcePreferee) }
+            .sortedByDescending { it.startWallMs }
+    }
 
     /**
      * Les nuits qui ont le droit d'entrer dans un agregat : comparables **et** publiables.
@@ -105,17 +134,10 @@ class PendulumRepository(context: Context) {
      * ignorant de ce qui s'affiche.
      */
     fun observerTendance(): Flow<EtatTendance> =
-        combine(
-            db.nightDao().observeAll(),
-            db.paramDao().observeActive(),
-            prefs.sourceSommeilPreferee,
-        ) { sessions, profil, sourcePreferee -> Triple(sessions, profil, sourcePreferee) }
-            .map { (sessions, profil, sourcePreferee) ->
-                val hash = profil?.paramsHash ?: AnalysisParams.DEFAULT.paramsHash
-                val toutes = db.trendDao().allNights(hash, REGLE_PAR_DEFAUT, MASQUE_PAR_DEFAUT)
+        observerLecture()
+            .map { (sessions, profil, hash, _, nuits) ->
                 val agregeables = nuitsAgregeables(hash)
                 val ajustees = agregeables.filter { Mapping.rythmeSec(it) != null }
-                val parHex = sessions.associateBy { it.sessionHex }
 
                 // `observeAll` trie par `startWallMs DESC` : la premiere ligne est la nuit dont la
                 // bande d'etat parle. On ne filtre pas sur une cle de nuit — une nuit d'avant-hier
@@ -124,9 +146,7 @@ class PendulumRepository(context: Context) {
                 val dernierSnapshot = recente?.let { db.hcSnapshotDao().latest(it.sessionHex) }
 
                 EtatTendance(
-                    nuits = toutes
-                        .map { n -> versNuitUi(n, parHex[n.sessionHex], sourcePreferee) }
-                        .sortedByDescending { it.startWallMs },
+                    nuits = nuits,
                     nuitsAgregeables = agregeables,
                     nuitsRythmeAjuste = ajustees.size,
                     // La mediane du rythme ne porte que sur les nuits dont l'ajustement a ete
@@ -192,13 +212,13 @@ class PendulumRepository(context: Context) {
                     // recouvrant cette nuit. Deux ou plus, et le denominateur depend de celle
                     // qu'on lit : c'est exactement E-HC-03.
                     originesDerniereNuit = dernierSnapshot?.originCount ?: 0,
-                    // Le fuseau de la nuit la plus recente. L'axe des X de la tendance est
-                    // calendaire : il lui faut un calendrier, et le seul defendable est celui ou
-                    // les nuits ont ete vecues. Une campagne a cheval sur deux fuseaux — un
-                    // voyage — se lira dans le dernier des deux ; c'est une approximation
-                    // assumee, la seule alternative etant un axe dont l'echelle change au milieu.
-                    zoneId = toutes.lastOrNull()?.zoneId
-                        ?: java.time.ZoneId.systemDefault().id,
+                    // Le fuseau de la nuit la plus recente — `observeAll` trie deja par
+                    // `startWallMs DESC`. L'axe des X de la tendance est calendaire : il lui faut
+                    // un calendrier, et le seul defendable est celui ou les nuits ont ete vecues.
+                    // Une campagne a cheval sur deux fuseaux — un voyage — se lira dans le dernier
+                    // des deux ; c'est une approximation assumee, la seule alternative etant un
+                    // axe dont l'echelle change au milieu.
+                    zoneId = recente?.zoneId ?: java.time.ZoneId.systemDefault().id,
                 )
             }
             .flowOn(Dispatchers.IO)
@@ -236,11 +256,7 @@ class PendulumRepository(context: Context) {
             prefs.sourceSommeilPreferee,
         ) { sessions, contexte, profil, repere, sourcePreferee ->
             val hash = profil?.paramsHash ?: AnalysisParams.DEFAULT.paramsHash
-            val parHex = sessions.associateBy { it.sessionHex }
-            val nuits = db.trendDao()
-                .allNights(hash, REGLE_PAR_DEFAUT, MASQUE_PAR_DEFAUT)
-                .map { n -> versNuitUi(n, parHex[n.sessionHex], sourcePreferee) }
-                .sortedByDescending { it.startWallMs }
+            val nuits = nuitsDe(hash, sessions, sourcePreferee)
 
             // `observeAll` trie deja par `startWallMs DESC` : la premiere ligne est la session la
             // plus recente, quelle que soit la soiree a laquelle elle se rattache. On ne filtre

@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -52,6 +53,42 @@ import com.pendulum.phone.ui.theme.Spacing
 import kotlinx.coroutines.launch
 
 /**
+ * Ce que l'assistant sait, a un instant donne.
+ *
+ * @param startPage l'etape de reprise, derivee du compteur persiste. Elle n'est lue qu'a la
+ *   premiere composition : voir [OnboardingPager].
+ * @param montre etat de l'appairage, **observe** et non lu une fois — l'etape 3 se coche
+ *   d'elle-meme quand l'application apparait sur la montre.
+ * @param sante `null` tant que Health Connect n'a pas ete interroge. Une liste vide de sources,
+ *   elle, est une reponse.
+ * @param installation dernier resultat d'ouverture du magasin sur la montre, consomme une fois.
+ */
+@Immutable
+data class AssistantUi(
+    val startPage: Int,
+    val montre: EtatMontre,
+    val sante: EtatSante?,
+    val sourcePreferee: String?,
+    val installation: Boolean?,
+)
+
+/**
+ * Ce que l'assistant peut demander. Six rappels, nommes, dans un seul type.
+ *
+ * Les regrouper n'est pas cosmetique : alignes dans une signature, `onRelireLaSante` et
+ * `onInstallerSurLaMontre` ont la meme forme `() -> Unit`, donc les intervertir compile.
+ */
+@Immutable
+data class AssistantActions(
+    val onEtapeFranchie: (page: Int) -> Unit,
+    val onOuvrirCompagnon: () -> Boolean,
+    val onInstallerSurLaMontre: () -> Unit,
+    val onRelireLaSante: () -> Unit,
+    val onChoisirSource: (String) -> Unit,
+    val onRepere: (String) -> Unit,
+)
+
+/**
  * Le premier lancement : cinq etapes, non sautables, **dans un pager non swipable**.
  *
  * La progression se fait par bouton uniquement. Ce n'est pas une contrainte gratuite : un pager
@@ -60,31 +97,28 @@ import kotlinx.coroutines.launch
  *
  * ### Reprenable, parce que l'abandon est le mode de defaillance principal
  *
- * [startPage] vient du compteur d'etapes franchies persiste dans `PendulumPreferences`, et
- * [onEtapeFranchie] l'incremente **a la sortie** de chaque page. Quitter a l'etape 3 y ramene :
+ * [AssistantUi.startPage] vient du compteur d'etapes franchies persiste dans
+ * `PendulumPreferences`, et [AssistantActions.onEtapeFranchie] l'incremente **a la sortie** de
+ * chaque page. Quitter a l'etape 3 y ramene :
  * refaire trois ecrans d'avertissement pour arriver a celui qu'on cherchait est la facon la plus
  * sure de faire desinstaller une application. La regle elle-meme vit dans [RepriseAssistant],
  * hors du composable, parce que c'est la partie qui merite un test.
  *
- * @param montre etat de l'appairage, **observe** et non lu une fois : l'etape 3 se coche
- *   d'elle-meme quand l'application apparait sur la montre.
- * @param sante `null` tant que Health Connect n'a pas ete interroge.
+ * ### Deux paquets plutot que douze arguments
+ *
+ * L'etat d'un cote, les actions de l'autre. La signature en portait onze plus le `Modifier`, et
+ * la regle d'architecture du projet — « un composable d'ecran ne prend que son etat et des
+ * lambdas » — n'y etait plus lisible : cinq valeurs et six rappels alignes se lisent comme une
+ * liste de courses, et une erreur d'appariement entre deux `() -> Unit` voisins ne se compile pas
+ * moins bien. [AssistantUi] et [AssistantActions] portent la separation dans le type.
  */
 @Composable
 fun OnboardingPager(
-    startPage: Int,
-    montre: EtatMontre,
-    sante: EtatSante?,
-    sourcePreferee: String?,
-    installation: Boolean?,
-    onEtapeFranchie: (page: Int) -> Unit,
-    onOuvrirCompagnon: () -> Boolean,
-    onInstallerSurLaMontre: () -> Unit,
-    onRelireLaSante: () -> Unit,
-    onChoisirSource: (String) -> Unit,
-    onRepere: (String) -> Unit,
+    etatUi: AssistantUi,
+    actions: AssistantActions,
     modifier: Modifier = Modifier,
 ) {
+    val (startPage, montre, sante, sourcePreferee, installation) = etatUi
     val c = LocalPendulumColors.current
     // `initialPage` n'est lu qu'a la premiere composition, ce qui est exactement ce qu'on veut :
     // les emissions suivantes du compteur — celles que nos propres sorties de page provoquent —
@@ -95,7 +129,7 @@ fun OnboardingPager(
 
     fun suivant() {
         val page = etat.currentPage
-        onEtapeFranchie(page)
+        actions.onEtapeFranchie(page)
         if (page < RepriseAssistant.PAGES - 1) {
             portee.launch { etat.animateScrollToPage(page + 1) }
         }
@@ -121,15 +155,15 @@ fun OnboardingPager(
                 2 -> PairingPage(
                     montre = montre,
                     installation = installation,
-                    onOuvrirCompagnon = onOuvrirCompagnon,
-                    onInstaller = onInstallerSurLaMontre,
+                    onOuvrirCompagnon = actions.onOuvrirCompagnon,
+                    onInstaller = actions.onInstallerSurLaMontre,
                     onContinuer = ::suivant,
                 )
                 3 -> SleepSourcePage(
                     sante = sante,
                     sourcePreferee = sourcePreferee,
-                    onRelire = onRelireLaSante,
-                    onChoisirSource = onChoisirSource,
+                    onRelire = actions.onRelireLaSante,
+                    onChoisirSource = actions.onChoisirSource,
                     onContinuer = ::suivant,
                 )
                 else -> NotificationsPage(
@@ -139,7 +173,7 @@ fun OnboardingPager(
                         // Le repere est persiste **avant** de fermer l'assistant. Il etait saisi
                         // et jete : le champ existait, son texte remontait a un appelant qui
                         // n'existait pas, et le formulaire du soir repartait vide chaque nuit.
-                        onRepere(repere)
+                        actions.onRepere(repere)
                         suivant()
                     },
                 )

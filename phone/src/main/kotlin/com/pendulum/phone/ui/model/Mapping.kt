@@ -222,7 +222,17 @@ object Mapping {
      */
     const val SEUIL_BATTERIE_BASSE_PCT = 10
 
-    private const val TIRET = "—"
+    /**
+     * Le tiret cadratin, une seule fois.
+     *
+     * Il ne veut pas dire zero, il veut dire « pas de valeur », et c'est pour cela qu'il merite
+     * une constante : trois fichiers le declaraient chacun de leur cote, et un `-` ASCII glisse
+     * dans l'un des trois passerait la relecture sans se voir.
+     */
+    const val TIRET = "—"
+
+    /** `99,0%`, avec la ponctuation decimale epinglee. Voir [dureeLisible] pour le motif. */
+    fun pourcent(v: Double): String = "%.1f%%".format(Locale.UK, v * 100)
 
     private val FORMAT_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM", Locale.UK)
     private val FORMAT_JOUR: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE", Locale.UK)

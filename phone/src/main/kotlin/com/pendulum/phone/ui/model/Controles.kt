@@ -71,6 +71,37 @@ object Controles {
     /** Ecart tolere entre la cadence demandee et la cadence delivree. */
     const val TOLERANCE_FS = 0.05
 
+    // -------------------------------------------------------------------------------------
+    // Les trois predicats de la porte P1, ecrits une seule fois
+    // -------------------------------------------------------------------------------------
+    //
+    // Ils sont ici et non dans [PorteP1] pour la raison que ce dernier donne deja de ne pas
+    // recalculer la couverture : deux implementations d'un meme seuil finissent par diverger, et
+    // la divergence porte sur le chiffre qui decide de la suite du projet. Le seuil de batterie
+    // l'a fait — deux `>=` la ou le document ecrit « above » — et cela n'est apparu qu'en les
+    // relisant cote a cote.
+    //
+    // `null` veut dire **on ne sait pas**, et non « non tenu » : la ligne de controle rend alors
+    // un tiret, et la porte rend `INDETERMINE`. Les deux ecrans lisent la meme inconnue.
+
+    /** Vrai si la couverture atteint le seuil, bornes comprises. `null` si elle est inconnue. */
+    fun couvertureTenue(couverture: Double?): Boolean? = couverture?.let { it >= COUVERTURE_MIN }
+
+    /** Vrai si la batterie est **strictement** au-dessus du seuil. Voir [BATTERIE_MIN_PCT]. */
+    fun batterieTenue(pct: Int?): Boolean? = pct?.let { it > BATTERIE_MIN_PCT }
+
+    /**
+     * Vrai si la cadence delivree tient la tolerance. `null` quand elle n'a pas ete mesuree, ou
+     * quand la cadence nominale est absurde — diviser par elle donnerait un verdict, pas une
+     * mesure.
+     *
+     * La cadence demandee n'est pas la cadence delivree : 50 Hz sort couramment a 50,3 ou
+     * 52,6 Hz, et un `fs` faux decale toute la datation des mouvements.
+     */
+    fun cadenceTenue(fs: Double?, nominalHz: Int): Boolean? =
+        if (fs == null || nominalHz <= 0) null
+        else kotlin.math.abs(fs - nominalHz) / nominalHz <= TOLERANCE_FS
+
     /** Le plus grand trou tolerable avant que le signal ne cesse d'etre exploitable. */
     const val PLUS_GRAND_TROU_MAX_S = 5.0
 
@@ -88,7 +119,7 @@ object Controles {
                 libelle = Textes.Nuits.Detail.COUVERTURE,
                 valeur = couv?.let { pourcent(it) } ?: TIRET,
                 seuil = pourcent(COUVERTURE_MIN),
-                ok = couv != null && couv >= COUVERTURE_MIN,
+                ok = couvertureTenue(couv) == true,
             )
         )
 
@@ -118,12 +149,9 @@ object Controles {
         add(
             Controle(
                 libelle = Textes.Nuits.Detail.FREQUENCE,
-                valeur = fs?.let { "%.2f Hz".format(Locale.UK, it) } ?: TIRET,
+                valeur = cadenceLisible(fs),
                 seuil = "${session.nominalRateHz} Hz",
-                // La cadence demandee n'est pas la cadence delivree : 50 Hz sort couramment a
-                // 50,3 ou 52,6 Hz, et un `fs` faux decale toute la datation des mouvements.
-                ok = fs != null &&
-                    kotlin.math.abs(fs - session.nominalRateHz) / session.nominalRateHz <= TOLERANCE_FS,
+                ok = cadenceTenue(fs, session.nominalRateHz) == true,
             )
         )
 
@@ -133,9 +161,7 @@ object Controles {
                 libelle = Textes.Nuits.Detail.BATTERIE_FIN,
                 valeur = batterie?.let { "$it%" } ?: TIRET,
                 seuil = "$BATTERIE_MIN_PCT%",
-                // Strictement au-dessus : voir [BATTERIE_MIN_PCT]. Le meme comparateur qu'en
-                // [PorteP1.batterie], sans quoi la meme nuit aurait deux verdicts.
-                ok = batterie != null && batterie > BATTERIE_MIN_PCT,
+                ok = batterieTenue(batterie) == true,
             )
         )
 
@@ -184,7 +210,11 @@ object Controles {
     /** Quatre heures. Sous ce seuil l'indice explose sur une poignee de mouvements groupes. */
     const val MIN_TST_MIN = 240.0
 
-    private const val TIRET = "—"
+    /** `50.31 Hz`, ou le tiret. Partage avec [PorteP1], qui affiche la meme valeur. */
+    internal fun cadenceLisible(fs: Double?): String =
+        fs?.let { "%.2f Hz".format(Locale.UK, it) } ?: TIRET
 
-    private fun pourcent(v: Double) = "%.1f%%".format(Locale.UK, v * 100)
+    private const val TIRET = Mapping.TIRET
+
+    private fun pourcent(v: Double) = Mapping.pourcent(v)
 }

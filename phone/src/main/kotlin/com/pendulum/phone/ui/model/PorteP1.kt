@@ -5,8 +5,6 @@ import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.ui.text.Textes
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.Locale
-import kotlin.math.abs
 
 /**
  * La porte P1, rendue **calculable** — c'est-a-dire verifiable sans le souvenir de personne.
@@ -171,9 +169,10 @@ object PorteP1 {
 
     /**
      * Couverture d'echantillons, telle que [Controles.couverture] la calcule — sur le temps
-     * capteur, jamais sur l'heure d'arrivee. Le comparateur est celui de la ligne de controle du
-     * detail de nuit : deux comparateurs pour un meme seuil rendraient deux verdicts sur la meme
-     * nuit, et le desaccord ne se verrait qu'au moment de trancher.
+     * capteur, jamais sur l'heure d'arrivee — et jugee par [Controles.couvertureTenue].
+     *
+     * Ni le calcul ni le comparateur ne sont refaits ici. Deux ecritures d'un meme seuil rendent
+     * deux verdicts sur la meme nuit, et le desaccord ne se voit qu'au moment de trancher.
      */
     private fun couverture(session: NightSessionEntity): Critere {
         val c = Controles.couverture(session)
@@ -181,12 +180,18 @@ object PorteP1 {
             libelle = Textes.Nuits.Detail.COUVERTURE,
             valeur = c?.let(::pourcent) ?: TIRET,
             seuil = Textes.P1.auMoins(pourcent(Controles.COUVERTURE_MIN)),
-            etat = when {
-                c == null -> Conformite.INDETERMINE
-                c >= Controles.COUVERTURE_MIN -> Conformite.CONFORME
-                else -> Conformite.NON_CONFORME
-            },
+            etat = verdict(Controles.couvertureTenue(c)),
         )
+    }
+
+    /**
+     * Un predicat a trois issues. `null` est **on ne sait pas**, jamais « non tenu » : une nuit
+     * dont la cadence n'a pas ete mesuree n'a pas echoue, elle n'a pas ete jugee.
+     */
+    private fun verdict(tenu: Boolean?): Conformite = when (tenu) {
+        null -> Conformite.INDETERMINE
+        true -> Conformite.CONFORME
+        false -> Conformite.NON_CONFORME
     }
 
     /**
@@ -220,11 +225,12 @@ object PorteP1 {
                 else -> "$pct%  ·  ${Mapping.dureeLisible(heures * 60.0)}"
             },
             seuil = Textes.P1.batterieSeuil(Controles.BATTERIE_MIN_PCT, DUREE_CIBLE_H.toInt()),
-            etat = when {
-                pct == null -> Conformite.INDETERMINE
-                pct <= Controles.BATTERIE_MIN_PCT -> Conformite.NON_CONFORME
-                atteintHuitHeures -> Conformite.CONFORME
-                else -> Conformite.INDETERMINE
+            // Le seul des trois criteres qui ne se reduise pas a [verdict] : un niveau tenu ne
+            // conclut que si la nuit a effectivement atteint huit heures.
+            etat = when (Controles.batterieTenue(pct)) {
+                null -> Conformite.INDETERMINE
+                false -> Conformite.NON_CONFORME
+                true -> if (atteintHuitHeures) Conformite.CONFORME else Conformite.INDETERMINE
             },
         )
     }
@@ -236,17 +242,12 @@ object PorteP1 {
      * pas mesure le nominal, pas le capteur.
      */
     private fun frequence(session: NightSessionEntity): Critere {
-        val fs = session.fsMeasuredHz
         val nominal = session.nominalRateHz
         return Critere(
             libelle = Textes.Nuits.Detail.FREQUENCE,
-            valeur = fs?.let { "%.2f Hz".format(Locale.UK, it) } ?: TIRET,
+            valeur = Controles.cadenceLisible(session.fsMeasuredHz),
             seuil = Textes.P1.frequenceSeuil(nominal, pourcent(Controles.TOLERANCE_FS)),
-            etat = when {
-                fs == null || nominal <= 0 -> Conformite.INDETERMINE
-                abs(fs - nominal) / nominal <= Controles.TOLERANCE_FS -> Conformite.CONFORME
-                else -> Conformite.NON_CONFORME
-            },
+            etat = verdict(Controles.cadenceTenue(session.fsMeasuredHz, nominal)),
         )
     }
 
@@ -264,7 +265,7 @@ object PorteP1 {
         return if (ms <= 0) null else ms / 3_600_000.0
     }
 
-    private const val TIRET = "—"
+    private const val TIRET = Mapping.TIRET
 
-    private fun pourcent(v: Double) = "%.1f%%".format(Locale.UK, v * 100)
+    private fun pourcent(v: Double) = Mapping.pourcent(v)
 }

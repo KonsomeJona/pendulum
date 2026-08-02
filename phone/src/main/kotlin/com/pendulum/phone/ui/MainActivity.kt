@@ -40,6 +40,8 @@ import com.pendulum.phone.ui.export.ExportUi
 import com.pendulum.phone.ui.home.HomeScreen
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.nights.NightListScreen
+import com.pendulum.phone.ui.onboarding.AssistantActions
+import com.pendulum.phone.ui.onboarding.AssistantUi
 import com.pendulum.phone.ui.onboarding.OnboardingPager
 import com.pendulum.phone.ui.onboarding.RepriseAssistant
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
@@ -127,17 +129,21 @@ fun PortailPendulum() {
     val contexte = LocalContext.current
 
     OnboardingPager(
-        startPage = RepriseAssistant.pageDeDepart(e),
-        montre = montre,
-        sante = sante,
-        sourcePreferee = sourcePreferee,
-        installation = installation,
-        onEtapeFranchie = vm::franchir,
-        onOuvrirCompagnon = { AppairageMontre.ouvrirLApplicationCompagnon(contexte) },
-        onInstallerSurLaMontre = vm::installerSurLaMontre,
-        onRelireLaSante = vm::relireLaSante,
-        onChoisirSource = vm::choisirSource,
-        onRepere = vm::poserLeRepere,
+        etatUi = AssistantUi(
+            startPage = RepriseAssistant.pageDeDepart(e),
+            montre = montre,
+            sante = sante,
+            sourcePreferee = sourcePreferee,
+            installation = installation,
+        ),
+        actions = AssistantActions(
+            onEtapeFranchie = vm::franchir,
+            onOuvrirCompagnon = { AppairageMontre.ouvrirLApplicationCompagnon(contexte) },
+            onInstallerSurLaMontre = vm::installerSurLaMontre,
+            onRelireLaSante = vm::relireLaSante,
+            onChoisirSource = vm::choisirSource,
+            onRepere = vm::poserLeRepere,
+        ),
     )
 }
 
