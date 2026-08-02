@@ -64,7 +64,6 @@ val apercuNuitDetail = NuitDetailUi(
     ecartesPosture = 57,
     ecartesDuree = 13,
     series = 31,
-    couvertureSeries = "3 h 12",
     imiMedianSec = 23.4,
     controles = listOf(
         Controle(Textes.Nuits.Detail.COUVERTURE, "99.2%", "97%", true),
@@ -81,13 +80,13 @@ val apercuNuitDetail = NuitDetailUi(
 @Preview(name = "Night — detail", widthDp = 411, heightDp = 1600, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuDetail() = PendulumTheme {
-    NightDetailScreen(apercuNuitDetail, {}, {}, {})
+    NightDetailScreen(apercuNuitDetail, {}, {}, {}, {}, {})
 }
 
 @Preview(name = "Night — detail without hypnogram", widthDp = 411, heightDp = 1600, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuDetailSansHypno() = PendulumTheme {
-    NightDetailScreen(apercuNuitDetail.copy(hypnogramme = ApercuDonnees.hypnogrammeAbsent), {}, {}, {})
+    NightDetailScreen(apercuNuitDetail.copy(hypnogramme = ApercuDonnees.hypnogrammeAbsent), {}, {}, {}, {}, {})
 }
 
 // --- issu de ui/nights/NightListScreen.kt -----------------------------------
@@ -155,13 +154,13 @@ private fun ApercuAccueilMatin() = PendulumTheme {
 @Preview(name = "Trend — 6 nights, full screen", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendance() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendancePrete, {}, {}, {}, {}, {}, {})
+    TrendScreen(ApercuDonnees.tendancePrete, {}, {}, {}, {}, {}, {}, {})
 }
 
 @Preview(name = "Trend — refusal below 3 nights", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendanceRefus() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendanceRefus, {}, {}, {}, {}, {}, {})
+    TrendScreen(ApercuDonnees.tendanceRefus, {}, {}, {}, {}, {}, {}, {})
 }
 
 /**
@@ -173,7 +172,7 @@ private fun ApercuTendanceRefus() = PendulumTheme {
 @Preview(name = "Trend — refusal, no identified rhythm", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendanceRefusRythme() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendanceRefusRythme, {}, {}, {}, {}, {}, {})
+    TrendScreen(ApercuDonnees.tendanceRefusRythme, {}, {}, {}, {}, {}, {}, {})
 }
 
 @Preview(name = "Trend — provisional 4 nights", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
@@ -186,7 +185,7 @@ private fun ApercuTendanceProvisoire() = PendulumTheme {
             position = Aggregat.position(9.0, 38.0, 4),
             periodiciteQualifiee = null,
         ),
-        {}, {}, {}, {}, {}, {},
+        {}, {}, {}, {}, {}, {}, {},
     )
 }
 

@@ -108,10 +108,18 @@ object Controles {
     /** Cumul de trous tolerable sur une nuit. */
     const val CUMUL_TROUS_MAX_S = 120.0
 
+    /**
+     * @param sourceSommeil le libelle **deja resolu** par [Mapping.libelleSource], et resolu une
+     *   seule fois par l'appelant. Cette ligne l'ecrivait en dur (`HEALTH_CONNECT` des que le
+     *   masque n'etait pas l'accelerometre) pendant que le bloc « pourquoi ce chiffre », sur le
+     *   meme ecran, passait par `Mapping` : la meme nuit portait donc deux libelles de source
+     *   differents, et rien ne disait lequel etait le bon. Le libelle a une seule origine.
+     */
     fun de(
         session: NightSessionEntity,
         nuit: ComparableNight,
         resultat: PlmResultEntity?,
+        sourceSommeil: String,
     ): List<Controle> = buildList {
         val couv = couverture(session)
         add(
@@ -179,11 +187,7 @@ object Controles {
         add(
             Controle(
                 libelle = Textes.Nuits.Detail.SOURCE_SOMMEIL,
-                valeur = if (nuit.maskSource == Mapping.MASQUE_ACCELERO) {
-                    Textes.Reglages.MASQUE_ACCELERO_SEUL
-                } else {
-                    Textes.Reglages.HEALTH_CONNECT
-                },
+                valeur = sourceSommeil,
                 seuil = Textes.Reglages.HEALTH_CONNECT,
                 // Le denominateur doit venir d'un **autre** capteur que le numerateur. Quand il
                 // vient du meme, le chiffre est circulaire : un traitement qui supprime des

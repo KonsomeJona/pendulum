@@ -1,9 +1,12 @@
 package com.pendulum.phone.export
 
 import android.content.Context
-import com.pendulum.phone.db.ComparableNight
+import com.pendulum.phone.data.EtatTendance
 import com.pendulum.phone.db.PlmResultEntity
 import com.pendulum.phone.db.PendulumDatabase
+import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.EtatNuit
+import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.work.WorkScheduler
 import java.io.OutputStream
 import java.time.Instant
@@ -13,6 +16,19 @@ import java.util.Locale
 
 /**
  * Le rapport, destine a etre lu par un medecin du sommeil.
+ *
+ * ### Pourquoi il est en anglais alors qu'il l'etait en francais
+ *
+ * Il l'etait, et c'etait une incoherence et non une decision : toute l'interface est en anglais
+ * depuis que le depot est public (voir la KDoc de `TextesTest`, dont les racines proscrites sont
+ * anglaises pour cette raison), et ce document est **la seule chose que l'application produise
+ * pour un tiers**. Un rapport ecrit dans une langue que son porteur ne lit pas ne peut pas etre
+ * relu avant d'etre remis, donc ne peut pas etre corrige ni assume par celui qui le remet — or
+ * tout ce fichier repose sur l'idee qu'un document circule sans son contexte et doit donc porter
+ * ses propres limites. Le document suit desormais la langue de l'interface qui l'a produit.
+ *
+ * La KDoc, elle, reste en francais sans accents : c'est la langue de travail du projet, et elle
+ * s'adresse a qui lit le code, pas a qui lit le rapport.
  *
  * ### Le cadrage, ecrit dans le rapport lui-meme et pas seulement dans la documentation
  *
@@ -41,11 +57,174 @@ import java.util.Locale
  * c'est de la variabilite nuit a nuit — et la variabilite du compte horaire est de l'ordre de
  * 43 % de sa moyenne. Le rapport donne des valeurs et des bornes ; l'interpretation appartient
  * au lecteur.
+ *
+ * ### Deux documents, et pas un
+ *
+ * [exportNight] rend compte d'**une** nuit : c'est le document d'une anomalie, celui qu'on sort
+ * quand une nuit precise pose question. [exportCampagne] rend compte de **la campagne**, avec ses
+ * agregats, leur incertitude et leur `n` — c'est celui qu'on pose devant un medecin, parce
+ * qu'une nuit isolee ne signifie rien et que le produit refuse d'agreger sous trois nuits.
  */
 object ReportExporter {
 
     private val stamp: DateTimeFormatter =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.UK).withZone(ZoneId.systemDefault())
+
+    // -------------------------------------------------------------------------------------
+    // Le rapport de campagne — celui qu'on pose devant un medecin
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Le rapport de la campagne, construit a partir de l'etat **deja calcule** de la tendance.
+     *
+     * Il ne recalcule rien : les medianes, les intervalles bootstrap a graine deterministe et la
+     * plus petite variation detectable viennent de `Aggregat` par le meme chemin que l'ecran. Un
+     * rapport qui recalculerait de son cote pourrait afficher un autre chiffre que celui qui est
+     * a l'ecran, et c'est exactement l'ecart qu'on ne saurait pas expliquer devant un medecin.
+     *
+     * @param inclureEcartees quand il est faux, le tableau ne porte pas les nuits ecartees — mais
+     *   leur nombre reste ecrit. Retirer des nuits d'un document medical sans dire combien serait
+     *   choisir ses preuves en silence.
+     */
+    suspend fun exportCampagne(
+        context: Context,
+        etat: EtatTendance,
+        inclureQuestionnaire: Boolean,
+        inclureEcartees: Boolean,
+        out: OutputStream,
+    ) {
+        val db = PendulumDatabase.get(context)
+        val params = WorkScheduler.activeParams(context)
+        val zone = runCatching { ZoneId.of(etat.zoneId) }.getOrDefault(ZoneId.systemDefault())
+        val nuits = etat.nuits.sortedBy { it.startWallMs }
+        val questionnaires = if (inclureQuestionnaire) db.questionnaireDao().all() else emptyList()
+
+        val text = buildString {
+            appendLine("# Pendulum — report for the physician")
+            appendLine()
+            appendLine(PREAMBLE)
+            appendLine()
+
+            appendLine("## The campaign")
+            appendLine()
+            if (nuits.isEmpty()) {
+                appendLine("No night recorded.")
+            } else {
+                appendLine("- Period: ${nuits.first().dateLisible} → ${nuits.last().dateLisible}")
+            }
+            appendLine(
+                "- Nights recorded: ${etat.nuitsEnregistrees} · eligible: ${etat.nuitsEligibles} " +
+                    "· excluded: ${etat.nuitsEcartees}"
+            )
+            etat.profilPersonnalise?.let {
+                appendLine("- Non-default parameter profile in use: `$it`")
+            }
+            if (etat.hashsMelanges) {
+                appendLine("- **Two parameter sets are present across the recorded nights.** " +
+                    "Only the nights of the active set enter the figures below.")
+            }
+            appendLine()
+
+            appendLine("## Follow-up metric — fundamental rhythm")
+            appendLine()
+            val rythme = etat.rythme
+            if (rythme == null) {
+                appendLine(
+                    "Not reported: ${etat.nuitsEligibles} eligible night(s) and " +
+                        "${etat.nuitsRythmeAjuste} of them with an accepted rhythm fit, for " +
+                        "${Aggregat.MIN_NUITS_AGREGAT} required."
+                )
+                appendLine()
+                appendLine(RYTHME_REFUSE)
+            } else {
+                appendLine(ligneAgregat(rythme, "s"))
+                appendLine("- Night-to-night dispersion: ${fmt(rythme.dispersion)} s")
+                appendLine("- Smallest detectable change (95 %): ${fmt(rythme.mdc95)} s")
+                appendLine()
+                appendLine(RYTHME_SANS_SEUIL)
+            }
+            appendLine()
+
+            appendLine("## Hourly count — aPLM-i")
+            appendLine()
+            appendLine(APLMI_NOTE)
+            appendLine()
+            appendLine(SOUS_COMPTAGE)
+            appendLine()
+            val compte = etat.compte
+            if (compte == null) {
+                appendLine(
+                    "Not reported: ${etat.nuitsEligibles} eligible night(s) for " +
+                        "${Aggregat.MIN_NUITS_AGREGAT} required."
+                )
+            } else {
+                appendLine(ligneAgregat(compte, "/h"))
+                appendLine("- Night-to-night dispersion: ${fmt(compte.dispersion)} /h")
+                appendLine("- Smallest detectable change (95 %): ${fmt(compte.mdc95)} /h")
+                appendLine()
+                // La phrase de position est celle de l'ecran, mot pour mot. Il n'en existe que
+                // cinq dans toute l'application, et aucune ne dit une direction.
+                appendLine(Aggregat.position(compte.ciBas, compte.ciHaut, compte.nuits).texte())
+            }
+            appendLine()
+
+            appendLine("## Estimated miss rate and periodicity")
+            appendLine()
+            appendLine("- Median estimated miss rate: ${fmt(etat.tauxManquesMedian)}")
+            appendLine("- Median periodicity index: ${fmt(etat.periodiciteMediane)}")
+            appendLine()
+            appendLine(MANQUES_NOTE)
+            appendLine()
+
+            appendLine("## Night by night")
+            appendLine()
+            appendLine("| Date | From → to | Analysable sleep | Sleep source | Rhythm (s) | aPLM-i (/h) | State | Reason |")
+            appendLine("|---|---|---|---|---|---|---|---|")
+            val retenues = if (inclureEcartees) nuits else nuits.filter { it.etat != EtatNuit.ECARTEE }
+            for (n in retenues) appendLine(ligneNuit(n))
+            appendLine()
+            if (!inclureEcartees && etat.nuitsEcartees > 0) {
+                appendLine(
+                    "**${etat.nuitsEcartees} excluded night(s) are not listed above**, at the " +
+                        "request of the person who produced this document. They are counted in " +
+                        "the campaign totals and were never part of the aggregates."
+                )
+                appendLine()
+            }
+            appendLine(EXCLUSION_NOTE)
+            appendLine()
+
+            if (inclureQuestionnaire) {
+                appendLine("## Screening questionnaire")
+                appendLine()
+                if (questionnaires.isEmpty()) {
+                    appendLine("Not filled in.")
+                } else {
+                    for (q in questionnaires) {
+                        appendLine("- ${format(q.answeredAtMs, zone)} · `${q.kind}` · ${q.answersJson}")
+                    }
+                }
+                appendLine()
+                appendLine(QUESTIONNAIRE_NOTE)
+                appendLine()
+            }
+
+            appendLine("## Traceability")
+            appendLine()
+            appendLine("- Parameter set: `${params.paramsHash}` · algorithm version: `${params.algoVersion}`")
+            appendLine("- Nights whose result was never asked for: " +
+                nuits.count { it.devoileeAtMs == null })
+            appendLine("- Report generated on ${format(System.currentTimeMillis(), zone)}")
+            appendLine()
+            appendLine(LIMITS)
+        }
+        out.write(text.toByteArray(Charsets.UTF_8))
+        out.flush()
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Le rapport d'une nuit
+    // -------------------------------------------------------------------------------------
 
     suspend fun exportNight(context: Context, sessionHex: String, out: OutputStream) {
         val db = PendulumDatabase.get(context)
@@ -58,111 +237,113 @@ object ReportExporter {
 
         val zone = runCatching { ZoneId.of(session.zoneId) }.getOrDefault(ZoneId.systemDefault())
         val text = buildString {
-            appendLine("# Pendulum — nuit du ${format(session.startWallMs, zone)}")
+            appendLine("# Pendulum — night of ${format(session.startWallMs, zone)}")
             appendLine()
             appendLine(PREAMBLE)
             appendLine()
+            appendLine(UNE_NUIT_SEULE)
+            appendLine()
 
-            appendLine("## Metrique de suivi")
+            appendLine("## Follow-up metric")
             appendLine()
             val primary = results.firstOrNull { it.maskSource == "HEALTH_CONNECT" }
                 ?: results.firstOrNull()
             if (primary == null) {
-                appendLine("Aucun resultat calcule pour cette nuit.")
+                appendLine("No result computed for this night.")
             } else {
                 if (primary.rhythmValid) {
-                    appendLine("- Rythme fondamental : ${fmt(primary.fundamentalSec)} s")
+                    appendLine("- Fundamental rhythm: ${fmt(primary.fundamentalSec)} s")
                 } else {
-                    appendLine("- Rythme fondamental : **non rapporte pour cette nuit**")
+                    appendLine("- Fundamental rhythm: **not reported for this night**")
                     appendLine()
                     appendLine(RYTHME_REFUSE)
                     appendLine()
                 }
-                appendLine("- Index de periodicite : ${fmt(primary.periodicityIndex)}" +
-                    if (primary.periodicityValid) "" else " (non valide : trop peu d'intervalles)")
-                appendLine("- Taux de manques estime : ${fmt(primary.missRate)}")
+                appendLine("- Periodicity index: ${fmt(primary.periodicityIndex)}" +
+                    if (primary.periodicityValid) "" else " (not valid: too few intervals)")
+                appendLine("- Estimated miss rate: ${fmt(primary.missRate)}")
                 if (primary.alternationSuspect) {
                     appendLine(
-                        "- Profil des harmoniques compatible avec une **alternance gauche/droite** : " +
-                            "un capteur unilateral voit alors un intervalle double."
+                        "- Harmonic profile consistent with **left/right alternation**: a " +
+                            "one-sided sensor then sees a doubled interval."
                     )
                 }
             }
             appendLine()
 
-            appendLine("## Compte horaire — aPLM-i")
+            appendLine("## Hourly count — aPLM-i")
             appendLine()
             appendLine(APLMI_NOTE)
             appendLine()
             appendLine(SOUS_COMPTAGE)
             appendLine()
-            appendLine("| Regles | Masque | Mouvements | Sommeil analysable | aPLM-i | Borne haute respiratoire | Publication |")
+            appendLine("| Rules | Mask | Movements | Analysable sleep | aPLM-i | Respiratory upper bound | Publication |")
             appendLine("|---|---|---|---|---|---|---|")
             for (r in results.sortedWith(compareBy({ it.maskSource }, { it.rule }))) {
                 appendLine(row(r))
             }
             appendLine()
 
-            appendLine("## Denominateur")
+            appendLine("## Denominator")
             appendLine()
             if (hc?.selectedPackage != null) {
-                appendLine("- Source de l'hypnogramme : `${hc.selectedPackage}`")
-                appendLine("- Stades distincts : ${hc.distinctStageTypes} · segments : ${hc.stageCount}")
-                appendLine("- Couverture par les stades : ${fmt(hc.stageCoverageMin)} min")
+                appendLine("- Hypnogram source: `${hc.selectedPackage}`")
+                appendLine("- Distinct stages: ${hc.distinctStageTypes} · segments: ${hc.stageCount}")
+                appendLine("- Coverage by stages: ${fmt(hc.stageCoverageMin)} min")
                 hc.aggregateTstMin?.let {
-                    appendLine("- Controle croise `aggregate()` (dedoublonne par le systeme) : ${fmt(it)} min")
+                    appendLine("- Cross-check with `aggregate()` (de-duplicated by the system): ${fmt(it)} min")
                 }
-                appendLine("- Derniere modification cote fournisseur : ${hc.lastModifiedTimeMs?.let { format(it, zone) } ?: "inconnue"}")
+                appendLine("- Last modified on the provider side: ${hc.lastModifiedTimeMs?.let { format(it, zone) } ?: "unknown"}")
             } else {
                 appendLine(NO_HC_NOTE)
             }
             appendLine()
 
-            appendLine("## Qualite de l'enregistrement")
+            appendLine("## Recording quality")
             appendLine()
-            appendLine("- Duree analysable : ${fmt(session.analysableMin)} min")
-            appendLine("- Trous : ${session.gapCount} (${session.gapTotalMs / 1000} s cumulees)")
-            appendLine("- Frequence mesuree : ${session.fsMeasuredHz?.let { fmt(it) } ?: "?"} Hz")
-            appendLine("- Blocs rejetes par le controle d'integrite : ${fmt(session.integrityRejectedFraction * 100)} %")
-            if (session.truncated) appendLine("- **Nuit tronquee** : index biaise a la hausse, hors tendance.")
-            session.batteryPctLast?.let { appendLine("- Derniere batterie montre rapportee : $it %") }
-            session.stopReason?.let { appendLine("- Cause d'arret annoncee : $it") }
+            appendLine("- Analysable duration: ${fmt(session.analysableMin)} min")
+            appendLine("- Gaps: ${session.gapCount} (${session.gapTotalMs / 1000} s in total)")
+            appendLine("- Measured sampling rate: ${session.fsMeasuredHz?.let { fmt(it) } ?: "?"} Hz")
+            appendLine("- Blocks rejected by the integrity check: ${fmt(session.integrityRejectedFraction * 100)} %")
+            if (session.truncated) appendLine("- **Truncated night**: index biased upwards, kept out of the trend.")
+            session.batteryPctLast?.let { appendLine("- Last watch battery level reported: $it %") }
+            session.stopReason?.let { appendLine("- Stop reason announced: $it") }
             appendLine()
 
-            appendLine("## Comparabilite")
+            appendLine("## Comparability")
             appendLine()
             if (comparable == null) {
-                appendLine("Non evaluee (aucun resultat pour le jeu de parametres courant).")
+                appendLine("Not assessed (no result for the current parameter set).")
             } else if (comparable.comparable) {
-                appendLine("Nuit comparable aux autres nuits de la campagne.")
+                appendLine("Night comparable with the other nights of the campaign.")
             } else {
-                appendLine("Nuit **ecartee de la tendance**, motif : `${comparable.exclusionReason}`.")
+                appendLine("Night **kept out of the trend**, reason: `${comparable.exclusionReason}`.")
                 appendLine()
                 appendLine(EXCLUSION_NOTE)
             }
             appendLine()
 
-            appendLine("## Contexte du soir (scelle avant l'enregistrement)")
+            appendLine("## Evening context (sealed before the recording)")
             appendLine()
             if (nightContext == null) {
-                appendLine("Aucun contexte scelle pour cette nuit.")
+                appendLine("No context sealed for this night.")
             } else {
-                appendLine("- Scelle le : ${format(nightContext.sealedAtMs, zone)}")
-                appendLine("- Jambe : ${nightContext.leg} · bracelet : ${nightContext.strapId}")
-                appendLine("- Seul dans le lit : ${if (nightContext.aloneInBed) "oui" else "non"}")
-                appendLine("- Traitement : ${nightContext.medicationJson}")
-                appendLine("- Alcool : ${nightContext.alcoholUnits} unite(s) · cafeine apres 16 h : " +
-                    if (nightContext.caffeineAfter16h) "oui" else "non")
-                nightContext.notes?.let { appendLine("- Notes : $it") }
+                appendLine("- Sealed on: ${format(nightContext.sealedAtMs, zone)}")
+                appendLine("- Leg: ${nightContext.leg} · strap: ${nightContext.strapId}")
+                appendLine("- Alone in bed: ${if (nightContext.aloneInBed) "yes" else "no"}")
+                appendLine("- Medication: ${nightContext.medicationJson}")
+                appendLine("- Alcohol: ${nightContext.alcoholUnits} unit(s) · caffeine after 16:00: " +
+                    if (nightContext.caffeineAfter16h) "yes" else "no")
+                nightContext.notes?.let { appendLine("- Notes: $it") }
             }
             appendLine()
 
-            appendLine("## Tracabilite")
+            appendLine("## Traceability")
             appendLine()
-            appendLine("- Jeu de parametres : `${params.paramsHash}` · version de l'algorithme : `${params.algoVersion}`")
-            appendLine("- Rapport genere le ${format(System.currentTimeMillis(), zone)}")
-            appendLine("- Devoilement du resultat : " +
-                (session.revealedAtMs?.let { format(it, zone) } ?: "jamais"))
+            appendLine("- Parameter set: `${params.paramsHash}` · algorithm version: `${params.algoVersion}`")
+            appendLine("- Report generated on ${format(System.currentTimeMillis(), zone)}")
+            appendLine("- Result asked for on: " +
+                (session.revealedAtMs?.let { format(it, zone) } ?: "never"))
             appendLine()
             appendLine(LIMITS)
         }
@@ -170,9 +351,36 @@ object ReportExporter {
         out.flush()
     }
 
+    // -------------------------------------------------------------------------------------
+
     private fun row(r: PlmResultEntity): String =
         "| ${r.rule} | ${r.maskSource} | ${r.plmsCount} | ${fmt(r.analysableTstMin)} min | " +
             "${fmt(r.plmi)} /h | ${fmt(r.plmiRespWorstCase)} /h | ${r.gate} |"
+
+    private fun ligneNuit(n: NuitUi): String = listOf(
+        n.dateLisible,
+        "${n.debut} → ${n.fin}",
+        n.sommeilLisible,
+        n.sourceSommeil,
+        n.rythmeSec?.let { fmt(it) } ?: "—",
+        fmt(n.comptePlmi),
+        when (n.etat) {
+            EtatNuit.ELIGIBLE -> "eligible"
+            EtatNuit.PROVISOIRE -> "provisional"
+            EtatNuit.ECARTEE -> "excluded"
+        },
+        n.motif ?: "",
+    ).joinToString(" | ", prefix = "| ", postfix = " |")
+
+    /**
+     * Une mediane ne sort jamais sans son intervalle ni son `n` : c'est P2, et le rapport est le
+     * dernier endroit ou l'on pourrait etre tente de ne garder que le chiffre rond.
+     */
+    private fun ligneAgregat(r: Aggregat.Resultat, unite: String): String {
+        val etiquette = if (r.icCalibre) "95 % CI" else "interval (not calibrated below ${Aggregat.MIN_NUITS_IC_CALIBRE} nights)"
+        return "- Median: ${fmt(r.mediane)} $unite — $etiquette ${fmt(r.ciBas)}–${fmt(r.ciHaut)} $unite, " +
+            "n = ${r.nuits} nights"
+    }
 
     /**
      * `21,34` en francais et `21.34` en anglais **ne sont pas le meme document**, et un rapport
@@ -186,21 +394,37 @@ object ReportExporter {
     private fun format(ms: Long, zone: ZoneId): String = stamp.withZone(zone).format(Instant.ofEpochMilli(ms))
 
     private val PREAMBLE = """
-        Ce document est produit par un dispositif personnel non valide cliniquement : un
-        accelerometre de montre grand public porte a la cheville. Il ne remplace aucun examen.
+        This document is produced by a personal device that has never been clinically validated:
+        the accelerometer of a consumer smartwatch worn at the ankle. It replaces no examination.
 
-        La personne mesuree suit deja un traitement. Sans periode de reference sans traitement,
-        ce dispositif ne peut pas mesurer l'effet du traitement — il mesure la variabilite sous
-        traitement. Aucune dose ne devrait etre ajustee a partir de ces chiffres.
+        The person measured is already under treatment. Without a reference period without
+        treatment, this device cannot measure the effect of that treatment — it measures the
+        night-to-night variability under treatment. No dose should be adjusted from these figures.
+    """.trimIndent()
+
+    /**
+     * Le rapport d'une seule nuit dit qu'il est le rapport d'une seule nuit.
+     *
+     * C'est le seul des deux documents qui peut etre lu comme un resultat, et il ne doit pas
+     * l'etre : la variabilite nuit a nuit du compte horaire est de l'ordre de 43 % de sa moyenne,
+     * donc une nuit prise seule ne situe rien. Le produit refuse d'agreger sous trois nuits ; un
+     * document d'une nuit qui ne le rappellerait pas contournerait ce refus par la porte de
+     * derriere.
+     */
+    private val UNE_NUIT_SEULE = """
+        **This is the report of a single night, and a single night situates nothing.** The
+        night-to-night variability of the hourly count is of the order of 43 % of its mean, so the
+        figures below describe this night and not the person. Pendulum computes no aggregate below
+        three eligible nights; the campaign report is the document meant to be read as a whole.
     """.trimIndent()
 
     private val APLMI_NOTE = """
-        La metrique est nommee **aPLM-i** — « index de mouvements periodiques de cheville, estime,
-        non valide » — et non PLMI. Ce n'est pas une precaution de langage : 39 % des mouvements
-        scores a l'electromyographie ne s'accompagnent d'aucun mouvement detectable en
-        accelerometrie (une dorsiflexion pure ne deplace pas un capteur situe au-dessus de l'axe
-        articulaire). Le compte accelerometrique est donc sur une **autre echelle** que le compte
-        polysomnographique, et le seuil publie de 15/h ne s'y transpose pas.
+        The metric is called **aPLM-i** — "ankle periodic limb movement index, estimated, not
+        validated" — and not PLMI. This is not a wording precaution: 39 % of the movements scored
+        by electromyography come with no movement detectable by accelerometry (a pure
+        dorsiflexion does not displace a sensor sitting above the joint axis). The accelerometric
+        count is therefore on a **different scale** from the polysomnographic count, and the
+        published threshold of 15/h does not transpose onto it.
     """.trimIndent()
 
     /**
@@ -220,31 +444,30 @@ object ReportExporter {
      * comme peu de mouvements.
      */
     private val SOUS_COMPTAGE = """
-        ### Ce que la politique de seuil retire, en trois chiffres
+        ### What the threshold policy removes, in three figures
 
-        Ils sont **mesures sur signal synthetique** — nuit nominale, mediane de 20 tirages, verite
-        connue par construction — et **jamais valides contre polysomnographie**. Ils ne mesurent
-        donc pas l'erreur de cet appareil chez cette personne : ils mesurent ce que cette chaine
-        de traitement retire d'un signal dont on connait la reponse.
+        They are **measured on synthetic signal** — nominal night, median of 20 draws, ground
+        truth known by construction — and **never validated against polysomnography**. They
+        therefore do not measure the error of this device on this person: they measure what this
+        processing chain removes from a signal whose answer is known.
 
-        | Grandeur | Valeur |
+        | Quantity | Value |
         |---|---|
-        | Mouvements de jambe presents dans le signal mais **sous le seuil de detection** | 0,70 |
-        | Compte brut retenu, rapporte a la verite accelerometrique, avant toute regle de serie | 0,30 |
-        | **Part de l'indice vrai qui survit au seuil** | **0,06** |
+        | Leg movements present in the signal but **below the detection threshold** | 0.70 |
+        | Raw count retained, against accelerometric ground truth, before any series rule | 0.30 |
+        | **Share of the true index that survives the threshold** | **0.06** |
 
-        Le troisieme n'est pas la moyenne des deux premiers et il ne s'en deduit pas. Une serie
-        demande **quatre mouvements consecutifs** : ecarter 70 % des evenements ne dilue pas les
-        series, il les detruit, parce qu'il faut trois intervalles consecutifs survivants pour
-        qu'une serie subsiste. Sur ces donnees, l'indice publie vaut de l'ordre de **6 % du compte
-        vrai**.
+        The third is not the average of the first two and does not follow from them. A series
+        requires **four consecutive movements**: discarding 70 % of the events does not dilute the
+        series, it destroys them, because three consecutive surviving intervals are needed for a
+        series to remain. On this data, the published index is of the order of **6 % of the true
+        count**.
 
-        **Un chiffre bas dans ce rapport ne peut donc pas se lire « peu de mouvements ».** Un
-        index bas est le comportement attendu de cette chaine, y compris lorsque les mouvements
-        sont nombreux. L'ecart entre 0,06 et 1 n'est pas une marge d'erreur, c'est un changement
-        d'echelle : la comparaison au seuil de 15/h reste sans objet, et la seule lecture que ce
-        nombre autorise est sa variation d'une nuit a l'autre, chez la meme personne, avec le
-        meme montage.
+        **A low figure in this report can therefore not be read as "few movements".** A low index
+        is the expected behaviour of this chain, including when movements are numerous. The gap
+        between 0.06 and 1 is not a margin of error, it is a change of scale: the comparison with
+        the 15/h threshold remains beside the point, and the only reading this number allows is
+        its variation from one night to the next, in the same person, with the same setup.
     """.trimIndent()
 
     /**
@@ -256,50 +479,77 @@ object ReportExporter {
      * une exception.
      */
     private val RYTHME_REFUSE = """
-      La deconvolution des harmoniques a **refuse** l'ajustement pour cette nuit : les intervalles
-      recueillis n'identifient pas de periode. Ce refus est le comportement ordinaire du modele et
-      non un incident — sur des nuits simulees, 2 ajustements sur 20 sont acceptes. Une periode
-      ajustee sur trop peu d'intervalles porterait un chiffre et aucune information, et rien ne la
-      distinguerait, sur cette feuille, d'une periode reellement mesuree.
+      The harmonic deconvolution **refused** the fit: the intervals collected do not identify a
+      period. This refusal is the ordinary behaviour of the model and not an incident — on
+      simulated nights, 2 fits out of 20 are accepted. A period fitted on too few intervals would
+      carry a figure and no information, and nothing on this sheet would tell it apart from a
+      period that was really measured.
+    """.trimIndent()
+
+    /**
+     * Le rythme n'a pas de seuil publie, et c'est ecrit a cote de lui.
+     *
+     * C'est la meme phrase que l'ecran porte sous le chiffre de tete. Sans elle, un lecteur
+     * habitue au 15/h du compte horaire cherche le seuil equivalent du rythme, et l'invente.
+     */
+    private val RYTHME_SANS_SEUIL = """
+        No published threshold applies to this quantity. It is measured at the ankle, on a
+        consumer accelerometer, and the thresholds of the literature are established on
+        polysomnography for the hourly count. What this figure allows is a comparison with
+        itself, from one night to the next, in the same person.
+    """.trimIndent()
+
+    private val MANQUES_NOTE = """
+        The miss rate is **measured** by the harmonic deconvolution, not assumed. It is both a
+        quality indicator and the criterion that says whether two nights measure the same thing:
+        two nights whose miss rates differ widely do not compare with one another.
+    """.trimIndent()
+
+    private val QUESTIONNAIRE_NOTE = """
+        This questionnaire is a screening tool and makes no diagnosis. The five diagnostic
+        criteria must be checked by a physician, in particular to rule out the conditions that
+        mimic restless legs syndrome (cramps, neuropathy, positional discomfort, drug-induced
+        akathisia). It is about what is felt while awake; the watch measures what happens during
+        sleep. Neither replaces the other.
     """.trimIndent()
 
     private val NO_HC_NOTE = """
-        Aucun hypnogramme externe pour cette nuit. Le denominateur provient alors du masque
-        d'immobilite calcule sur le meme accelerometre que les mouvements comptes : il est
-        **circulaire**. Chaque salve de mouvements pousse le masque a declarer « eveil », donc le
-        numerateur monte pendant que le denominateur descend. Le chiffre reste affiche a titre
-        indicatif ; il ne porte pas le resultat principal et n'entre dans aucune tendance.
+        No external hypnogram for this night. The denominator then comes from the immobility mask
+        computed on the same accelerometer as the movements counted: it is **circular**. Every
+        burst of movement pushes the mask towards "awake", so the numerator rises while the
+        denominator falls. The figure is still shown for information; it does not carry the main
+        result and enters no trend.
     """.trimIndent()
 
     private val EXCLUSION_NOTE = """
-        Les exclusions sont des predicats deterministes evalues avant le calcul (meme jambe, meme
-        bracelet, seul dans le lit, etalon de calibration dans la tolerance, au moins 4 h
-        analysables, hors nuit de changement d'heure). Il n'existe aucun moyen d'exclure une nuit
-        apres avoir vu son resultat : cette nuit reste visible avec son motif.
+        Exclusions are deterministic predicates evaluated before the computation (same leg, same
+        strap, alone in bed, calibration reference within tolerance, at least 4 h analysable,
+        outside a daylight-saving night). There is no way to exclude a night after seeing its
+        result: such a night stays visible with its reason.
     """.trimIndent()
 
     private val LIMITS = """
-        ## Limites, nommees separement
+        ## Limits, named separately
 
-        - **Le numerateur est massivement sous-compte, et c'est mesure.** Trois chiffres, dans la
-          section « Compte horaire » : 70 % des mouvements presents dans le signal tombent sous le
-          seuil de detection, le compte brut retenu vaut 0,30 de la verite accelerometrique, et il
-          n'en reste que **0,06 sur l'indice publie**. C'est la limite qui commande toutes les
-          autres, et la raison pour laquelle un index bas ne se lit pas « peu de mouvements ».
-        - **Le denominateur est surestime.** Les montres grand public declarent « endormi » pres
-          d'une epoque d'eveil sur deux (specificite ~0,52). Le temps de sommeil etant au
-          denominateur, l'index en ressort **sous-estime**.
-        - **Le numerateur peut etre surestime** en presence de mouvements lies a la respiration.
-          La colonne « borne haute respiratoire » donne l'index recalcule en supposant que toute
-          serie dont l'intervalle median tombe dans la bande apneique est d'origine respiratoire.
-        - **Ces deux biais ne se compensent pas.** Ils vont en sens inverse, leurs amplitudes sont
-          inconnues et independantes ; les additionner mentalement pour conclure « ca s'annule »
-          serait une erreur.
-        - **La mesure est unilaterale.** En cas d'alternance entre les jambes, un capteur unique
-          voit un intervalle exactement double — un harmonique, pas du bruit. Le taux de manques
-          estime est l'indicateur a surveiller.
-        - **Une nuit isolee ne signifie rien.** La variabilite nuit a nuit du compte horaire est
-          de l'ordre de 43 % de sa moyenne chez les sujets non traites ; celle du rythme
-          fondamental est d'environ 3,6 %.
+        - **The numerator is massively under-counted, and this is measured.** Three figures, in
+          the "Hourly count" section: 70 % of the movements present in the signal fall below the
+          detection threshold, the raw count retained is 0.30 of the accelerometric ground truth,
+          and only **0.06 of the published index remains**. This is the limit that commands all
+          the others, and the reason a low index cannot be read as "few movements".
+        - **The denominator is overestimated.** Consumer watches declare "asleep" on close to one
+          awake epoch in two (specificity ~0.52). Sleep time being the denominator, the index
+          comes out **under-estimated**.
+        - **The numerator may be overestimated** in the presence of breathing-related movements.
+          The "respiratory upper bound" column gives the index recomputed assuming that every
+          series whose median interval falls in the apnoeic band is of respiratory origin.
+        - **These two biases do not cancel out.** They run in opposite directions, their
+          magnitudes are unknown and independent; adding them up mentally to conclude "it evens
+          out" would be a mistake.
+        - **The measurement is one-sided.** With alternation between the legs, a single sensor
+          sees an exactly doubled interval — a harmonic, not noise. The estimated miss rate is
+          the indicator to watch.
+        - **A single night means nothing.** The night-to-night variability of the hourly count is
+          of the order of 43 % of its mean in untreated subjects; that of the fundamental rhythm
+          is about 3.6 %.
     """.trimIndent()
 }

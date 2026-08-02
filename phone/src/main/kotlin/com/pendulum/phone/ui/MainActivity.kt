@@ -15,6 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -36,7 +39,6 @@ import com.pendulum.phone.export.PorteP1Exporter
 import com.pendulum.phone.health.SleepReader
 import com.pendulum.phone.ui.export.ExportScreen
 import com.pendulum.phone.ui.model.TendanceUiState
-import com.pendulum.phone.ui.export.ExportUi
 import com.pendulum.phone.ui.home.HomeScreen
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.nights.NightListScreen
@@ -45,6 +47,9 @@ import com.pendulum.phone.ui.onboarding.AssistantUi
 import com.pendulum.phone.ui.onboarding.OnboardingPager
 import com.pendulum.phone.ui.onboarding.RepriseAssistant
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
+import com.pendulum.phone.ui.model.Mapping
+import com.pendulum.phone.ui.settings.AvertissementScreen
+import com.pendulum.phone.ui.settings.EffacementScreen
 import com.pendulum.phone.ui.settings.RapportP1Screen
 import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.text.Textes
@@ -200,6 +205,21 @@ const val ROUTE_SOIR = "evening"
 const val ROUTE_P1 = "p1"
 
 /**
+ * L'avertissement, relu depuis Reglages › A propos.
+ *
+ * `06-interface.md` demande qu'il reste accessible en permanence : quelqu'un qui consulte un
+ * chiffre trois mois plus tard doit pouvoir relire, en deux gestes, pourquoi ce chiffre n'est pas
+ * un diagnostic. La ligne existait et appelait un `{}`.
+ */
+const val ROUTE_AVERTISSEMENT = "notice"
+
+/**
+ * L'effacement total. Empile, et non une boite de dialogue posee sur les reglages : le texte qui
+ * dit ce qui part fait dix lignes, et une modale de dix lignes se ferme sans etre lue.
+ */
+const val ROUTE_EFFACER = "erase"
+
+/**
  * Les trois icones sont dessinees a la main, en contour, plutot que tirees d'un jeu importe.
  *
  * Deux raisons. Le jeu `Filled` de Material est ecarte par principe — il est visuellement lourd
@@ -240,6 +260,17 @@ private fun DrawScope.iconeDestination(d: Destination, couleur: Color) {
 
 /** `E-HC-02` : la permission de lecture du sommeil a ete retiree. Voir `Situations.sommeil`. */
 private const val CODE_PERMISSION_REVOQUEE = "E-HC-02"
+
+/**
+ * La nuit dont la bande d'etat parle. Elle vient de l'etat et non d'une seconde lecture : l'action
+ * doit porter sur la nuit que l'utilisateur a sous les yeux, pas sur la plus recente au moment ou
+ * il appuie.
+ */
+private fun sessionDeLaBande(etat: TendanceUiState): String? = when (etat) {
+    is TendanceUiState.Pret -> etat.sessionReveil
+    is TendanceUiState.Refus -> etat.sessionReveil
+    TendanceUiState.Chargement -> null
+}
 
 private fun codeSituationSommeil(etat: TendanceUiState): String? = when (etat) {
     is TendanceUiState.Pret -> etat.situationSommeil?.code
@@ -336,10 +367,11 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 TrendScreen(
                     etat = etat,
                     onNuit = { nav.navigate("night/$it") },
+                    onNuits = { nav.navigate(ROUTE_NUITS) },
                     onComparer = { nav.navigate("compare") },
                     onQuestionnaire = { nav.navigate("quiz") },
                     onExport = { nav.navigate("export") },
-                    onActionReveil = {},
+                    onActionReveil = { sessionDeLaBande(etat)?.let(vm::relancerLeReveil) },
                     onSituationSommeil = {
                         if (codeSituationSommeil(etat) == CODE_PERMISSION_REVOQUEE) {
                             lanceurSante.launch(
@@ -360,7 +392,37 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
             composable(Destination.REGLAGES.route) {
                 val vm: SettingsViewModel = viewModel()
                 val reglages by vm.reglages.collectAsStateWithLifecycle()
-                SettingsScreen(reglages, {}, {}, {}, onRapportP1 = { nav.navigate(ROUTE_P1) })
+
+                // Le retour du paquet d'une nuit. `OpenDocument` et non `GetContent` : le premier
+                // rend un `Uri` de document persistable et laisse choisir dans n'importe quel
+                // fournisseur, le second passe par une intention de partage que tous n'honorent
+                // pas. Le filtre est `*/*` parce qu'un `.bundle` n'a pas de type MIME enregistre :
+                // filtrer sur un type inconnu grise le seul fichier que l'on cherche.
+                val ouvreur = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocument(),
+                ) { uri -> uri?.let(vm::importerNuit) }
+
+                // L'espace occupe est relu a chaque entree sur l'ecran : il vient d'une lecture
+                // disque, et un effacement ou un import a pu avoir lieu entre deux passages.
+                LaunchedEffect(Unit) { vm.relireLEspace() }
+
+                SettingsScreen(
+                    reglages,
+                    onRelireAvertissement = { nav.navigate(ROUTE_AVERTISSEMENT) },
+                    onEffacer = { nav.navigate(ROUTE_EFFACER) },
+                    onImporterNuit = { ouvreur.launch(arrayOf("*/*")) },
+                    onRapportP1 = { nav.navigate(ROUTE_P1) },
+                )
+            }
+            // L'avertissement, en lecture seule. Pas de defilement bloquant ni de cases a cocher :
+            // la porte est celle de l'assistant, et la redemander a chaque relecture ferait de la
+            // relecture une corvee, donc une chose qu'on ne fait pas.
+            composable(ROUTE_AVERTISSEMENT) { AvertissementScreen() }
+            composable(ROUTE_EFFACER) {
+                val vm: EffacementViewModel = viewModel()
+                val espace by vm.espace.collectAsStateWithLifecycle()
+                val efface by vm.efface.collectAsStateWithLifecycle()
+                EffacementScreen(espaceOccupe = espace, efface = efface, onEffacer = vm::effacer)
             }
             // Le rapport de la porte P1. Empile : c'est une verification, pas un lieu.
             composable(ROUTE_P1) {
@@ -424,12 +486,33 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 // Rien tant que la lecture n'a pas abouti. Pas de squelette anime, pas de valeurs
                 // par defaut : un ecran de detail qui affiche des zeros pendant deux cents
                 // millisecondes apprend a lire des chiffres avant qu'ils ne soient vrais.
-                detail?.let {
+                // Les deux sorties d'une nuit, par le meme chemin SAF que tout le reste :
+                // `ACTION_CREATE_DOCUMENT`, emplacement choisi par l'utilisateur. L'application
+                // n'ecrit dans aucun repertoire partage de sa propre initiative et ne declare pas
+                // la permission `INTERNET` — le fichier ne peut aller qu'ou il a ete demande.
+                val createurRapport = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("text/markdown"),
+                ) { uri -> uri?.let { vm.exporterRapport(hex, it) } }
+                val createurPaquet = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
+                ) { uri -> uri?.let { vm.exporterPaquet(hex, it) } }
+
+                detail?.let { d ->
+                    val jour = Mapping.jourIso(
+                        d.nuit.startWallMs,
+                        java.time.ZoneId.systemDefault().id,
+                    )
                     NightDetailScreen(
-                        detail = it,
+                        detail = d,
                         onVoirTendance = { nav.popBackStack() },
-                        onAppliquerATout = {},
+                        onAppliquerATout = vm::appliquerATout,
                         onDevoiler = { vm.devoiler(hex) },
+                        onExporterRapport = {
+                            createurRapport.launch(Textes.Nuits.Detail.nomRapport(jour))
+                        },
+                        onExporterPaquet = {
+                            createurPaquet.launch(Textes.Nuits.Detail.nomPaquet(jour))
+                        },
                     )
                 }
             }
@@ -442,13 +525,44 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 )
             }
             composable("quiz") {
-                ScreeningQuizScreen(null, {}, {}, {})
-            }
-            composable("export") {
-                ExportScreen(
-                    ExportUi(true, false, true, true, 6, "1–15 March", null),
-                    {}, {}, {}, {}, {},
+                val vm: QuizViewModel = viewModel()
+                val issue by vm.issue.collectAsStateWithLifecycle()
+                ScreeningQuizScreen(
+                    issue = issue,
+                    onOui = { vm.repondre(true) },
+                    onNon = { vm.repondre(false) },
+                    onRevoir = vm::revoir,
                 )
+            }
+            // L'export du rapport pour le medecin — le seul but que `README.md` juge defendable,
+            // et qu'aucun geste n'atteignait : les cinq lambdas de cet ecran etaient vides et
+            // `ReportExporter` n'avait aucun appelant.
+            composable("export") {
+                val vm: ExportViewModel = viewModel()
+                val etat by vm.etat.collectAsStateWithLifecycle()
+
+                // Le nom propose est retenu jusqu'au retour du selecteur : c'est lui que l'ecran
+                // affiche ensuite. Le recalculer dans le rappel donnerait un autre nom si le
+                // choix de l'emplacement a traverse minuit.
+                var nomPropose by remember { mutableStateOf("") }
+                val createur = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("text/markdown"),
+                ) { uri -> uri?.let { vm.enregistrer(it, nomPropose) } }
+
+                // Rien tant que la lecture n'a pas abouti : un compteur de nuits eligibles qui
+                // s'affiche a zero avant d'etre lu ferait apparaitre le bouton desactive avec son
+                // motif, puis actif — c'est-a-dire un refus qui se retracte.
+                etat?.let {
+                    ExportScreen(
+                        etat = it,
+                        onQuestionnaire = vm::poserQuestionnaire,
+                        onEcartees = vm::poserEcartees,
+                        onEnregistrer = {
+                            nomPropose = vm.nomFichier()
+                            createur.launch(nomPropose)
+                        },
+                    )
+                }
             }
         }
     }

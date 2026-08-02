@@ -49,10 +49,12 @@ class GardeFousTest {
                 TrendScreen(
                     etat = etat,
                     onNuit = {},
+                    onNuits = {},
                     onComparer = {},
                     onQuestionnaire = {},
                     onExport = {},
                     onActionReveil = {},
+                    onSituationSommeil = {},
                 )
             }
         }
@@ -182,7 +184,7 @@ class GardeFousTest {
         val nuit = ApercuDonnees.nuits.first().copy(devoileeAtMs = null)
         compose.setContent {
             PendulumTheme {
-                NightDetailScreen(apercuNuitDetail.copy(nuit = nuit), {}, {}, {})
+                NightDetailScreen(apercuNuitDetail.copy(nuit = nuit), {}, {}, {}, {}, {})
             }
         }
 
@@ -197,7 +199,7 @@ class GardeFousTest {
         val nuit = ApercuDonnees.nuits.first().copy(devoileeAtMs = 1L)
         compose.setContent {
             PendulumTheme {
-                NightDetailScreen(apercuNuitDetail.copy(nuit = nuit), {}, {}, {})
+                NightDetailScreen(apercuNuitDetail.copy(nuit = nuit), {}, {}, {}, {}, {})
             }
         }
 

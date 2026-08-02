@@ -27,14 +27,14 @@ import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 data class ExportUi(
-    val pdf: Boolean,
-    val csv: Boolean,
     val inclureQuestionnaire: Boolean,
     /** Par defaut **oui** : masquer les nuits ratees a un medecin est trompeur. */
     val inclureEcartees: Boolean,
     val nuitsEligibles: Int,
     val periode: String,
     val profilPersonnalise: String?,
+    /** Le nom du fichier ecrit, une fois l'ecriture faite. `null` tant qu'il n'y en a pas. */
+    val ecrit: String? = null,
 )
 
 /**
@@ -56,7 +56,12 @@ data class ExportUi(
  *
  * Aucun chemin reseau. L'application ne declare pas la permission `INTERNET` : c'est une garantie
  * **verifiable** — un `aapt dump permissions` suffit — la ou une politique de confidentialite est
- * une promesse. Le partage passe par un `Intent` et un `FileProvider`, donc par un geste explicite.
+ * une promesse.
+ *
+ * Et **aucun `ACTION_SEND` non plus** : il exigerait un `FileProvider` au manifeste, c'est-a-dire
+ * une seconde surface de sortie, en plus de celle que SAF ouvre deja. Le fichier est ecrit a
+ * l'endroit que l'utilisateur designe, geste par geste ; ce qu'il en fait ensuite appartient a
+ * son gestionnaire de fichiers, qui sait deja partager. Une porte de sortie de moins a defendre.
  *
  * ### Si l'export est impossible
  *
@@ -67,11 +72,9 @@ data class ExportUi(
 @Composable
 fun ExportScreen(
     etat: ExportUi,
-    onPdf: (Boolean) -> Unit,
-    onCsv: (Boolean) -> Unit,
     onQuestionnaire: (Boolean) -> Unit,
     onEcartees: (Boolean) -> Unit,
-    onPartager: () -> Unit,
+    onEnregistrer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
@@ -94,8 +97,7 @@ fun ExportScreen(
 
         PendulumCard {
             SectionHeader("Format")
-            Case(etat.pdf, Textes.Export.FORMAT_PDF, Textes.Export.FORMAT_PDF_NOTE, onPdf)
-            Case(etat.csv, Textes.Export.FORMAT_CSV, Textes.Export.FORMAT_CSV_NOTE, onCsv)
+            Paragraphe(Textes.Export.FORMAT_NOTE)
         }
 
         PendulumCard {
@@ -123,8 +125,14 @@ fun ExportScreen(
             }
         }
 
-        BoutonMotive(Textes.Export.PARTAGER, motif, onPartager)
+        BoutonMotive(Textes.Export.ENREGISTRER, motif, onEnregistrer)
         Text(Textes.Export.PAS_DE_RESEAU, style = PendulumType.caption, color = c.textTertiary)
+        // Le nom du fichier ecrit, et rien d'autre : le chemin complet d'un `Uri` SAF est un
+        // identifiant de fournisseur illisible, et l'afficher ferait chercher un dossier qui
+        // n'existe pas sous ce nom.
+        etat.ecrit?.let {
+            Text(Textes.Export.ecrit(it), style = PendulumType.caption, color = c.textSecondary)
+        }
         Spacer(Modifier.height(Spacing.l.dp))
     }
 }
@@ -144,17 +152,11 @@ private fun Case(coche: Boolean, titre: String, note: String?, onChange: (Boolea
 @Preview(name = "Export — possible", widthDp = 411, heightDp = 1000, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuExport() = PendulumTheme {
-    ExportScreen(
-        ExportUi(true, false, true, true, 6, "1–15 March", null),
-        {}, {}, {}, {}, {},
-    )
+    ExportScreen(ExportUi(true, true, 6, "1–15 March", null), {}, {}, {})
 }
 
 @Preview(name = "Export — refused below 3 nights", widthDp = 411, heightDp = 1000, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuExportRefus() = PendulumTheme {
-    ExportScreen(
-        ExportUi(true, false, true, true, 2, "1–15 March", "threshold 6×"),
-        {}, {}, {}, {}, {},
-    )
+    ExportScreen(ExportUi(true, true, 2, "1–15 March", "threshold 6×"), {}, {}, {})
 }

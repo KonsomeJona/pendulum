@@ -986,6 +986,26 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
             const val PAS_DE_REGLAGE_PAR_NUIT =
                 "A parameter is not set night by night. Changing it recomputes every night from " +
                     "the raw signal, so that the trend stays comparable with itself."
+
+            /**
+             * Les deux sorties d'une nuit, et elles ne servent pas au meme lecteur.
+             *
+             * Le rapport est un document : il se lit, il s'imprime, il se pose sur un bureau. Le
+             * paquet est le signal brut avec son contexte scelle : il ne se lit pas, il se
+             * reimporte — c'est ce qui permet de rejouer une nuit apres un changement de
+             * parametres, ou sur un autre telephone. Les nommer separement evite qu'on emporte
+             * chez le medecin quatre-vingt-dix megaoctets d'accelerometrie.
+             */
+            const val EXPORT = "Export this night"
+            const val EXPORTER_RAPPORT = "Report for the physician"
+            const val EXPORTER_RAPPORT_NOTE = "One night, in text. A few kilobytes."
+            const val EXPORTER_PAQUET = "Raw bundle"
+            const val EXPORTER_PAQUET_NOTE =
+                "The raw signal, the sealed context and the hypnogram, so that this night can be " +
+                    "recomputed later or on another phone. Tens of megabytes."
+
+            fun nomRapport(jour: String) = "pendulum-night-$jour.md"
+            fun nomPaquet(jour: String) = "pendulum-night-$jour.bundle"
         }
     }
 
@@ -1053,11 +1073,42 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
 
         const val DONNEES = "Data"
         const val ESPACE_OCCUPE = "Space used"
-        const val PURGER = "Purge raw signals older than 90 days"
-        const val PURGER_NOTE = "The results and the charts are kept; only the raw signal is deleted."
-        const val JOURNAL = "Technical log"
+
+        /**
+         * Le reimport d'un paquet de nuit. Il vit dans « Donnees » et non dans l'export, parce
+         * que c'est la meme operation vue de l'autre cote : un paquet ecrit par [Export] revient
+         * ici, avec ses octets bruts, son contexte scelle et son hypnogramme retenu.
+         */
+        const val IMPORTER = "Import a night bundle"
+        const val IMPORTER_NOTE = "A bundle written by Pendulum, from this phone or another one."
+        fun importee(date: String) = "Night of $date imported."
+        const val IMPORT_REFUSE = "This file is not a Pendulum night bundle."
+
         const val EFFACER = "Erase all data"
         const val EFFACER_CONFIRMATION = "Type ERASE to confirm."
+
+        /**
+         * Ce que l'effacement detruit, nomme piece par piece.
+         *
+         * Un texte du type « toutes vos donnees » laisse chacun s'imaginer ce qu'il veut, et
+         * l'operation est irreversible : les nuits ne se reconstituent pas, ni depuis la montre
+         * (elle n'archive rien) ni depuis Health Connect (qui ne detient que l'hypnogramme).
+         * La liste est donc explicite, et le mot a taper est ce qui separe la lecture du geste.
+         */
+        const val EFFACER_CORPS =
+            "This erases, on this phone and for good:\n\n" +
+                "• the raw accelerometer signal of every night, the largest part of the space used;\n" +
+                "• every night, its results, its charts and its quality checks;\n" +
+                "• every sealed evening context — leg, strap, medication, alcohol, notes;\n" +
+                "• every questionnaire answer;\n" +
+                "• the sleep stages read from Health Connect and kept alongside each night.\n\n" +
+                "Nothing rebuilds them. The watch keeps no archive, and Health Connect holds " +
+                "only the sleep stages, never the movements. Export first if you want to keep " +
+                "a copy."
+        const val EFFACER_MOT = "ERASE"
+        const val EFFACER_CHAMP = "Confirmation"
+        const val EFFACER_BOUTON = "Erase everything"
+        const val EFFACER_FAIT = "Everything has been erased."
 
         const val APPARENCE = "Appearance"
         const val THEME_SYSTEME = "System"
@@ -1068,7 +1119,6 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
         const val VERSION_APP = "Application version"
         const val VERSION_ALGO = "Algorithm version"
         const val RELIRE_AVERTISSEMENT = "Read the notice again"
-        const val SOURCES_SCIENTIFIQUES = "Scientific sources"
 
         const val MASQUE_ACCELERO_INTERDIT =
             "The accelerometer mask alone cannot carry the main result: the denominator would be " +
@@ -1082,20 +1132,41 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
 
     object Export {
         const val TITRE = "Report for the physician"
-        const val FORMAT_PDF = "PDF report (1 to 2 pages)"
-        const val FORMAT_PDF_NOTE = "Meant to be printed and read in consultation."
-        const val FORMAT_CSV = "CSV data"
-        const val FORMAT_CSV_NOTE = "Three zipped files: nights.csv, events.csv, params.csv."
+
+        /**
+         * Le format ecrit, annonce tel qu'il est.
+         *
+         * Cette carte proposait un « PDF report (1 to 2 pages) » et un « CSV data — three zipped
+         * files » ; ni l'un ni l'autre n'existait, et les deux cases ne changeaient rien. Ce qui
+         * existe est un document texte structure, qu'un telephone imprime et qu'un cabinet ouvre
+         * sans logiciel particulier. Annoncer le format reellement ecrit vaut mieux que proposer
+         * un choix entre deux formats dont aucun n'est produit.
+         */
+        const val FORMAT_NOTE =
+            "One Markdown text file. It prints from the phone, opens in any text editor, and " +
+                "carries its own limits so that it can be read away from this application."
 
         const val INCLURE_QUESTIONNAIRE = "Include the questionnaire"
         const val INCLURE_ECARTEES = "Include the excluded nights, with their reason"
         const val INCLURE_ECARTEES_NOTE =
             "On by default: hiding failed nights from a physician is misleading."
 
-        const val PARTAGER = "Share"
+        /**
+         * Le libelle disait « Share », et il n'y a rien a partager : l'application ne declare ni
+         * `INTERNET` ni `FileProvider`, donc aucun `ACTION_SEND`. Ce que le bouton fait est
+         * ecrire un fichier a l'endroit que l'utilisateur designe, geste par geste. Le partage
+         * qui suit appartient au gestionnaire de fichiers, et le dire evite de promettre une
+         * surface d'envoi que ce manifeste refuse.
+         */
+        const val ENREGISTRER = "Save the report"
         const val PAS_DE_RESEAU =
-            "The file stays on your phone until you share it. " +
+            "The file is written where you choose it, and nowhere else. " +
                 "Pendulum declares no network access permission."
+
+        /** Le nom propose dans le selecteur SAF. `2026-03-15` : triable, sans ambiguite. */
+        fun nomFichier(jour: String) = "pendulum-report-$jour.md"
+
+        fun ecrit(nom: String) = "Written: $nom"
 
         fun indisponible(minimum: Int) = "Export unavailable — $minimum nights minimum"
 

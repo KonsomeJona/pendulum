@@ -181,8 +181,12 @@ class MappingTest {
         assertThat(Mapping.libelleSource(Mapping.MASQUE_ACCELERO, "com.oura.app"))
             .isEqualTo(com.pendulum.phone.ui.text.Textes.Reglages.MASQUE_ACCELERO_SEUL)
         assertThat(Mapping.libelleSource("HEALTH_CONNECT", "com.oura.app")).isEqualTo("App")
+        // Paquet inconnu : ce qui manque est le **nom de l'application**, pas l'origine du
+        // denominateur — `maskSource` la porte. Rendre « source non identifiee » ici mettait
+        // l'ecran de detail en contradiction avec sa propre ligne de controle qualite, qui
+        // ecrivait « Health Connect » pour la meme nuit.
         assertThat(Mapping.libelleSource("HEALTH_CONNECT", null))
-            .isEqualTo(com.pendulum.phone.ui.text.Textes.Reglages.SOURCE_INCONNUE)
+            .isEqualTo(com.pendulum.phone.ui.text.Textes.Reglages.HEALTH_CONNECT)
     }
 
     @Test

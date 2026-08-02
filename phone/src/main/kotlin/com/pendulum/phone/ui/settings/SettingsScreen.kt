@@ -35,6 +35,12 @@ data class ReglagesUi(
     val versionApp: String,
     val versionAlgo: String,
     val theme: String,
+    /**
+     * Le compte rendu du dernier reimport de paquet, ou `null` quand il n'y en a pas eu dans
+     * cette session. Il est ici et pas dans une bulle : un import qui a echoue doit rester lisible
+     * apres coup, et un import reussi doit dire quelle nuit est entree.
+     */
+    val dernierImport: String? = null,
 )
 
 /**
@@ -55,7 +61,7 @@ fun SettingsScreen(
     etat: ReglagesUi,
     onRelireAvertissement: () -> Unit,
     onEffacer: () -> Unit,
-    onJournal: () -> Unit,
+    onImporterNuit: () -> Unit,
     onRapportP1: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -84,12 +90,23 @@ fun SettingsScreen(
             InlineValue(Textes.Reglages.HEALTH_CONNECT, etat.healthConnect)
         }
 
+        // Trois lignes ont disparu de cette carte et de la suivante, et c'est deliberement une
+        // suppression et non un report : « Purge raw signals older than 90 days », « Technical
+        // log » et « Scientific sources » se cliquaient et appelaient un `{}`. Aucune purge
+        // selective, aucun journal persiste et aucun corpus hors-ligne n'existe dans ce module —
+        // ni table, ni fichier, ni fonction. Une ligne de reglages qui ouvre le vide ne se
+        // distingue pas, pour celui qui appuie, d'une application cassee ; et une ligne qui
+        // annonce une purge automatique que rien n'execute est une affirmation fausse sur le
+        // traitement de donnees de sante. Elles reviendront avec leur implementation.
         PendulumCard {
             SectionHeader(Textes.Reglages.DONNEES)
             InlineValue(Textes.Reglages.ESPACE_OCCUPE, etat.espaceOccupe)
-            Ligne(Textes.Reglages.PURGER, Textes.Reglages.PURGER_NOTE) {}
-            Ligne(Textes.Reglages.JOURNAL, null, onJournal)
+            Ligne(Textes.Reglages.IMPORTER, Textes.Reglages.IMPORTER_NOTE, onImporterNuit)
             Ligne(Textes.Reglages.EFFACER, Textes.Reglages.EFFACER_CONFIRMATION, onEffacer)
+            etat.dernierImport?.let {
+                Spacer(Modifier.height(Spacing.xs.dp))
+                Text(it, style = PendulumType.caption, color = c.textSecondary)
+            }
         }
 
         PendulumCard {
@@ -104,7 +121,6 @@ fun SettingsScreen(
             InlineValue(Textes.Reglages.VERSION_APP, etat.versionApp)
             InlineValue(Textes.Reglages.VERSION_ALGO, etat.versionAlgo)
             Ligne(Textes.Reglages.RELIRE_AVERTISSEMENT, null, onRelireAvertissement)
-            Ligne(Textes.Reglages.SOURCES_SCIENTIFIQUES, "Offline, inside the application") {}
             Spacer(Modifier.height(Spacing.s.dp))
             Paragraphe(Textes.Avertissement.BANDEAU_EXPORT, couleur = c.textSecondary)
         }

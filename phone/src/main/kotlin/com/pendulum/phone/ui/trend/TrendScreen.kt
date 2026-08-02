@@ -74,6 +74,8 @@ import com.pendulum.phone.ui.theme.Spacing
 fun TrendScreen(
     etat: TendanceUiState,
     onNuit: (String) -> Unit,
+    /** La liste des nuits, ou mene le compteur « N nights recorded … (see Nights) ». */
+    onNuits: () -> Unit,
     onComparer: () -> Unit,
     onQuestionnaire: () -> Unit,
     onExport: () -> Unit,
@@ -233,10 +235,14 @@ fun TrendScreen(
                 }
 
                 PendulumCard {
+                    // Le compteur porte « (see Nights) » dans son texte, et il se cliquait sans
+                    // rien faire. Une ligne qui annonce ou aller et qui n'y va pas apprend a ne
+                    // plus essayer les autres.
                     LigneAction(
                         Textes.Reveil.compteur(etat.nuitsEnregistrees, etat.nuitsEligibles, etat.nuitsEcartees),
                         null,
-                    ) { }
+                        onNuits,
+                    )
                     LigneAction(Textes.Tendance.QUESTIONNAIRE, etat.questionnaireEtat, onQuestionnaire)
                 }
 

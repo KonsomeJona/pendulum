@@ -332,6 +332,10 @@ class PendulumRepository(context: Context) {
         val resultat = db.derivedDao().resultsOf(sessionHex, hash)
             .firstOrNull { it.rule == REGLE_PAR_DEFAUT && it.maskSource == MASQUE_PAR_DEFAUT }
         val sourcePreferee = prefs.sourceSommeilPreferreeMaintenant()
+        // Resolu **une fois** et passe aux trois endroits qui l'affichent. Il l'etait deux fois
+        // par deux chemins differents, dont l'un ecrivait le libelle en dur : le detail d'une
+        // nuit montrait alors deux libelles de source pour la meme nuit.
+        val sourceSommeil = Mapping.libelleSource(nuit.maskSource, sourcePreferee)
 
         NuitDetailUi(
             nuit = versNuitUi(nuit, session, sourcePreferee),
@@ -347,9 +351,8 @@ class PendulumRepository(context: Context) {
             ecartesPosture = evenements.count { it.rejectReason == REJET_POSTURE },
             ecartesDuree = evenements.count { it.rejectReason in REJETS_DUREE },
             series = evenements.count { it.inSeriesAasm },
-            couvertureSeries = Mapping.dureeLisible(nuit.analysableTstMin),
             imiMedianSec = intervalleMedianSec(evenements.map { it.onsetMsRel }),
-            controles = Controles.de(session, nuit, resultat),
+            controles = Controles.de(session, nuit, resultat, sourceSommeil),
             regleAppliquee = "${Textes.Reglages.REGLE_AASM} · ${session.algoVersion.orEmpty()}",
             // Le taux de manques et l'encadrement respiratoire etaient calcules par `:algo` et
             // persistes dans `plm_result` depuis le debut, et affiches nulle part. Le bloc ne
@@ -360,7 +363,7 @@ class PendulumRepository(context: Context) {
                 dureeEnregistreeMin = dureeEnregistreeMin(session),
                 mouvementsRetenus = (resultat?.plmsCount ?: 0) + (resultat?.plmwCount ?: 0),
                 regle = Textes.Reglages.REGLE_AASM,
-                sourceSommeil = Mapping.libelleSource(nuit.maskSource, sourcePreferee),
+                sourceSommeil = sourceSommeil,
             ),
             situation = Situations.nuit(nuit, session),
         )

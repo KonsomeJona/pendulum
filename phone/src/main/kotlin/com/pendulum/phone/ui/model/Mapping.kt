@@ -189,16 +189,57 @@ object Mapping {
     }
 
     /**
-     * Le libelle de la source de sommeil, ou la mention explicite du repli.
+     * Le libelle de la source de sommeil, **produit ici et nulle part ailleurs**.
      *
-     * Il n'y a pas de troisieme cas : soit une application tierce a fourni la periode de sommeil,
-     * soit c'est le masque accelerometrique de Pendulum, et il faut le dire — c'est la seule
-     * information qui permette de savoir si le chiffre repose sur un denominateur independant.
+     * Il n'y a pas de troisieme cas : soit une periode de sommeil externe a fourni le
+     * denominateur, soit c'est le masque accelerometrique de Pendulum, et il faut le dire — c'est
+     * la seule information qui permette de savoir si le chiffre repose sur un denominateur
+     * independant.
+     *
+     * ### Pourquoi le repli n'est plus « source non identifiee »
+     *
+     * Il l'etait, et le detail d'une nuit affichait alors **deux libelles differents pour le meme
+     * champ** : le bloc « pourquoi ce chiffre » passait par cette fonction et rendait
+     * `SOURCE_INCONNUE`, pendant que la ligne de controle qualite, trois cartes plus bas, ecrivait
+     * `HEALTH_CONNECT` en dur pour la meme nuit. Deux valeurs sur un ecran sont deux valeurs dont
+     * une est fausse, et rien ne disait laquelle.
+     *
+     * Celle qui est juste est `HEALTH_CONNECT`. Ce que le paquet manquant rend inconnu est **quelle
+     * application** a publie la session, pas d'ou vient le denominateur : `maskSource` le dit, il
+     * vient de la base, et c'est le seul fait qui porte l'independance numerateur/denominateur.
+     * Ecrire « source non identifiee » a cote d'un controle qui passe au vert ferait douter du
+     * controle. Le nom du paquet reste affiche des qu'il est connu.
      */
     fun libelleSource(maskSource: String, paquet: String?): String = when {
         maskSource == MASQUE_ACCELERO -> Textes.Reglages.MASQUE_ACCELERO_SEUL
-        paquet.isNullOrBlank() -> Textes.Reglages.SOURCE_INCONNUE
+        paquet.isNullOrBlank() -> Textes.Reglages.HEALTH_CONNECT
         else -> paquet.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+    }
+
+    /**
+     * `2026-03-12` : le jour d'une nuit, pour un **nom de fichier**.
+     *
+     * Ce n'est pas [dateLisible], et les deux ne doivent pas se confondre : « 12 March » se lit,
+     * ne se trie pas, et depend de la locale. Un dossier d'exports doit s'ordonner tout seul.
+     */
+    fun jourIso(ms: Long, zoneId: String): String {
+        val zone = runCatching { java.time.ZoneId.of(zoneId) }
+            .getOrDefault(java.time.ZoneId.systemDefault())
+        return java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate().toString()
+    }
+
+    /**
+     * Une taille sur disque, en unites decimales (Mo = 10^6 octets) et non binaires.
+     *
+     * C'est l'unite qu'Android affiche dans ses propres reglages de stockage, et l'ecran
+     * d'effacement sera lu a cote de celui-la : deux chiffres differents pour la meme chose
+     * feraient douter du plus alarmant des deux, qui est justement le notre.
+     */
+    fun octetsLisibles(octets: Long): String = when {
+        octets >= 1_000_000_000L -> "%.1f GB".format(Locale.UK, octets / 1_000_000_000.0)
+        octets >= 1_000_000L -> "%.0f MB".format(Locale.UK, octets / 1_000_000.0)
+        octets >= 1_000L -> "%.0f kB".format(Locale.UK, octets / 1_000.0)
+        else -> "$octets B"
     }
 
     /** `FULL` : la nuit a le droit de porter un chiffre. Voir `PublicationGate` dans `:algo`. */

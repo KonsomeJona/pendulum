@@ -61,7 +61,6 @@ data class NuitDetailUi(
     val ecartesPosture: Int,
     val ecartesDuree: Int,
     val series: Int,
-    val couvertureSeries: String,
     val imiMedianSec: Double,
     val controles: List<Controle>,
     val regleAppliquee: String,
@@ -115,6 +114,8 @@ fun NightDetailScreen(
     onVoirTendance: () -> Unit,
     onAppliquerATout: () -> Unit,
     onDevoiler: () -> Unit,
+    onExporterRapport: () -> Unit,
+    onExporterPaquet: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val devoile = detail.nuit.devoileeAtMs != null
@@ -197,7 +198,10 @@ fun NightDetailScreen(
             InlineValue(Textes.Nuits.Detail.DONT_EVEIL, detail.plmw.toString())
             InlineValue(Textes.Nuits.Detail.ECARTES_POSTURE, detail.ecartesPosture.toString())
             InlineValue(Textes.Nuits.Detail.ECARTES_DUREE, detail.ecartesDuree.toString())
-            InlineValue(Textes.Nuits.Detail.SERIES, "${detail.series}   covering ${detail.couvertureSeries}")
+            // La couverture des series etait un champ a part de `NuitDetailUi`, alimente par
+            // exactement la meme valeur que `nuit.sommeilLisible`, deja porte par le meme objet.
+            // Deux champs pour une valeur, c'est deux endroits ou elle peut diverger.
+            InlineValue(Textes.Nuits.Detail.SERIES, "${detail.series}   covering ${detail.nuit.sommeilLisible}")
             InlineValue(Textes.Nuits.Detail.IMI_MEDIAN, "%.1f s".format(detail.imiMedianSec))
             // La note change avec la valeur : quand l'ajustement a ete refuse, expliquer la
             // deconvolution des harmoniques repondrait a une question que la ligne ne pose plus.
@@ -258,6 +262,24 @@ fun NightDetailScreen(
                 OutlinedButton(onClick = onAppliquerATout, shape = PendulumShapes.button) {
                     Text(Textes.Nuits.Detail.RECALCULER_TOUTES)
                 }
+            }
+        }
+
+        // --- Section 6 : les deux sorties de cette nuit
+        //
+        // Elles sont ici et pas dans l'ecran d'export, qui porte la campagne : ce sont deux
+        // documents d'une nuit precise, qu'on sort quand cette nuit-la pose question. Le chemin
+        // est le meme que partout ailleurs — SAF, emplacement choisi par l'utilisateur.
+        PendulumCard {
+            SectionHeader(Textes.Nuits.Detail.EXPORT)
+            Paragraphe(Textes.Nuits.Detail.EXPORTER_RAPPORT_NOTE)
+            OutlinedButton(onClick = onExporterRapport, shape = PendulumShapes.button) {
+                Text(Textes.Nuits.Detail.EXPORTER_RAPPORT)
+            }
+            Spacer(Modifier.height(Spacing.s.dp))
+            Paragraphe(Textes.Nuits.Detail.EXPORTER_PAQUET_NOTE)
+            OutlinedButton(onClick = onExporterPaquet, shape = PendulumShapes.button) {
+                Text(Textes.Nuits.Detail.EXPORTER_PAQUET)
             }
         }
 

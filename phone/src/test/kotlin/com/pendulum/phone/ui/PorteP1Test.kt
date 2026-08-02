@@ -151,7 +151,7 @@ class PorteP1Test {
     }
 
     private fun ligneBatterie(pct: Int) = Controles
-        .de(nuit(batterie = pct), nuitComparable(), null)
+        .de(nuit(batterie = pct), nuitComparable(), null, Textes.Reglages.HEALTH_CONNECT)
         .firstOrNull { it.libelle == Textes.Nuits.Detail.BATTERIE_FIN }
 
     @Test

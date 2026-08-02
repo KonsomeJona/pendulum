@@ -228,6 +228,16 @@ sealed interface TendanceUiState {
          * avant d'avoir accumule six nuits scorees sur le seul masque accelerometrique.
          */
         val situationSommeil: ErreurPendulum? = null,
+        /**
+         * La nuit dont la bande d'etat parle, quand il y en a une.
+         *
+         * Elle est ici parce que l'action de la bande — « Transfer now », « Try again now »,
+         * « Resume the transfer », « Run the analysis again » — porte sur **une nuit precise**, et
+         * qu'aucun des cinq [EtatReveil] ne transporte son identifiant : ils portent une date
+         * lisible, faite pour l'oeil et non pour une requete. Sans ce champ, le bouton de la bande
+         * ne pouvait rien appeler, ce qui est exactement ce qu'il faisait.
+         */
+        val sessionReveil: String? = null,
     ) : TendanceUiState {
 
         /**
@@ -268,6 +278,8 @@ sealed interface TendanceUiState {
         val questionnaireEtat: String,
         val exportPossible: Boolean,
         val situationSommeil: ErreurPendulum? = null,
+        /** La nuit dont la bande d'etat parle. Voir [Refus.sessionReveil]. */
+        val sessionReveil: String? = null,
     ) : TendanceUiState {
 
         /**

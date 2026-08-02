@@ -12,6 +12,9 @@ import com.pendulum.phone.data.SaisieDuSoir
 import com.pendulum.phone.data.PendulumPreferences
 import com.pendulum.phone.data.PendulumRepository
 import com.pendulum.phone.data.WatchCommands
+import com.pendulum.phone.DataEraser
+import com.pendulum.phone.export.NightExporter
+import com.pendulum.phone.export.ReportExporter
 import com.pendulum.phone.health.SleepReader
 import com.pendulum.phone.health.SourcesSommeil
 import com.pendulum.phone.ui.onboarding.RepriseAssistant
@@ -30,6 +33,11 @@ import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.model.Situations
 import com.pendulum.phone.ui.nights.NuitDetailUi
 import com.pendulum.phone.ui.model.TendanceUiState
+import com.pendulum.phone.db.PendulumDatabase
+import com.pendulum.phone.db.QuestionnaireResponseEntity
+import com.pendulum.phone.export.ReportExporter as RapportExporteur
+import com.pendulum.phone.ui.export.ExportUi
+import com.pendulum.phone.ui.quiz.IssueQuestionnaire
 import com.pendulum.phone.ui.settings.RapportP1Ui
 import com.pendulum.phone.ui.settings.ReglagesUi
 import com.pendulum.phone.ui.text.Textes
@@ -39,8 +47,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 /**
  * Les ViewModels. Ils sont volontairement minces, et c'est le point.
@@ -135,6 +146,7 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
                 nuitsEnregistrees = nuits,
                 reveil = reveil,
                 situationSommeil = situation,
+                sessionReveil = faitsReveil?.sessionHex,
             )
         }
 
@@ -154,12 +166,34 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             masque = Textes.Reglages.HEALTH_CONNECT,
             plmw = nuitsAgregeables.map { it.plmiSpt }.average().takeIf { !it.isNaN() } ?: 0.0,
             reveil = reveil,
+            sessionReveil = faitsReveil?.sessionHex,
             profilPersonnalise = profilPersonnalise,
             hashsMelanges = hashsMelanges,
             questionnaireEtat = Textes.Questionnaire.NON_REMPLI,
             exportPossible = nuitsEligibles >= Aggregat.MIN_NUITS_AGREGAT,
             situationSommeil = situation,
         )
+    }
+
+    /**
+     * L'action de la bande d'etat du reveil, pour les quatre etats qui en portent une.
+     *
+     * Les quatre libelles disent des choses differentes — « Transfer now », « Try again now »,
+     * « Resume the transfer », « Run the analysis again » — et **demandent tous la meme chose** :
+     * que la nuit reparte dans la chaine du bouton de fin de nuit. Le balayage demande a la montre
+     * de pousser ce qu'elle detient encore ; la chaine reconcilie le disque, relit Health Connect,
+     * puis score. Un etat qui manque des chunks les recoit, un etat qui attend l'hypnogramme le
+     * redemande, une analyse en echec repart sur le brut conserve.
+     *
+     * On n'attend pas le succes du balayage : c'est le meme raisonnement qu'a l'accueil — la
+     * montre a peut-etre deja tout pousse, et subordonner l'analyse a sa joignabilite rendrait une
+     * nuit complete inexploitable parce que le bracelet est reste dans la salle de bain.
+     */
+    fun relancerLeReveil(sessionHex: String) {
+        viewModelScope.launch {
+            WatchCommands.demanderLeBalayage(getApplication())
+            WorkScheduler.enqueueFinDeNuit(getApplication(), sessionHex)
+        }
     }
 
     /**
@@ -405,6 +439,50 @@ class NightDetailViewModel(app: Application) : AndroidViewModel(app) {
             _detail.value = repo.detailDeNuit(sessionHex)
         }
     }
+
+    /**
+     * Garde-fou 3 : un parametre ne se regle pas nuit par nuit.
+     *
+     * Le bouton s'appelle « Apply to every night » et il n'en existe pas d'autre : `RescoreAllWorker`
+     * recalcule **toutes** les nuits depuis le brut, sous le hash courant. Il n'y a volontairement
+     * pas de variante « ne recalculer que les recentes » — une tendance a trois points dont deux
+     * ont ete calcules autrement n'est pas une tendance partielle, c'est un graphe faux.
+     *
+     * L'ecran ne se rafraichit pas dans la foulee, et c'est exact : le rescore est un travail de
+     * fond qui peut durer, et afficher un nouveau chiffre avant qu'il ne soit calcule apprendrait
+     * a lire des chiffres avant qu'ils ne soient vrais. La nuit se relit quand on y revient.
+     */
+    fun appliquerATout() {
+        WorkScheduler.enqueueRescoreAll(getApplication())
+    }
+
+    /**
+     * Le rapport d'une nuit, ecrit dans l'`Uri` que l'utilisateur vient de designer.
+     *
+     * Le flux vient de SAF et de nulle part ailleurs : l'application n'ecrit jamais dans un
+     * repertoire partage de sa propre initiative, et ne declare pas `INTERNET`. Voir la KDoc de
+     * [com.pendulum.phone.export.NightExporter].
+     */
+    fun exporterRapport(sessionHex: String, uri: android.net.Uri) {
+        viewModelScope.launch {
+            ecrire(uri) { ReportExporter.exportNight(getApplication(), sessionHex, it) }
+        }
+    }
+
+    /** Le paquet brut d'une nuit, meme chemin SAF. Voir [exporterRapport]. */
+    fun exporterPaquet(sessionHex: String, uri: android.net.Uri) {
+        viewModelScope.launch {
+            ecrire(uri) { NightExporter.exportBundle(getApplication(), sessionHex, it) }
+        }
+    }
+
+    private suspend fun ecrire(uri: android.net.Uri, bloc: suspend (java.io.OutputStream) -> Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                getApplication<Application>().contentResolver.openOutputStream(uri)?.use { bloc(it) }
+            }
+        }
+    }
 }
 
 /** La liste des nuits. Rien a decider : la vue SQL a deja annote, [Mapping] a deja traduit. */
@@ -570,11 +648,37 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = PendulumPreferences(app)
 
+    /**
+     * L'espace occupe, relu a la demande et non observe.
+     *
+     * Ce n'est pas un flux : c'est une somme de tailles de fichiers plus celle du fichier de base,
+     * donc une lecture disque. La relire a chaque emission d'une preference ferait un acces disque
+     * par frappe de theme. Elle est relue a l'ouverture de l'ecran et apres un effacement — les
+     * deux seuls moments ou elle change de facon que l'utilisateur puisse constater.
+     */
+    private val _espace = MutableStateFlow(NON_RENSEIGNE)
+
+    /** Compte rendu du dernier reimport de paquet. Nul tant qu'il n'y en a pas eu. */
+    private val _import = MutableStateFlow<String?>(null)
+
+    init {
+        relireLEspace()
+    }
+
+    fun relireLEspace() {
+        viewModelScope.launch {
+            val octets = withContext(Dispatchers.IO) { DataEraser.bytesOnDisk(getApplication()) }
+            _espace.value = Mapping.octetsLisibles(octets)
+        }
+    }
+
     val reglages: StateFlow<ReglagesUi> = combine(
         prefs.sourceSommeilPreferee,
         prefs.repereDeSerrage,
         prefs.theme,
-    ) { source, repere, theme ->
+        _espace,
+        _import,
+    ) { source, repere, theme, espace, importe ->
         ReglagesUi(
             regle = Textes.Reglages.REGLE_AASM,
             sourcePreferee = source ?: Textes.Reglages.SOURCE_INCONNUE,
@@ -583,12 +687,58 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             arretAutomatique = Textes.Reglages.ARRET_AUTO,
             montre = NON_RENSEIGNE,
             healthConnect = NON_RENSEIGNE,
-            espaceOccupe = NON_RENSEIGNE,
+            espaceOccupe = espace,
             versionApp = com.pendulum.phone.BuildConfig.VERSION_NAME,
             versionAlgo = NON_RENSEIGNE,
             theme = theme,
+            dernierImport = importe,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), REGLAGES_VIDES)
+
+    /**
+     * Le retour du paquet d'une nuit — l'autre moitie de [NightExporter], et la seule qui rende
+     * l'aller verifiable.
+     *
+     * Un export dont personne ne sait relire le produit n'est pas un export, c'est une perte
+     * differee : `BundleRoundTripTest` prouve qu'une base reconstruite depuis un paquet rend un
+     * resultat identique, et cette prouve ne vaut que s'il existe un chemin utilisateur qui
+     * l'emprunte. C'est aussi ce qui permet de porter une campagne d'un telephone a un autre sans
+     * passer par un serveur, ce que l'absence de permission `INTERNET` interdit de toute facon.
+     *
+     * L'echec est annonce et n'est pas une exception qui remonte : un fichier choisi au hasard
+     * dans le selecteur est le cas ordinaire, pas un incident.
+     */
+    fun importerNuit(uri: android.net.Uri) {
+        viewModelScope.launch {
+            val resultat = withContext(Dispatchers.IO) {
+                runCatching {
+                    getApplication<Application>().contentResolver.openInputStream(uri)?.use {
+                        NightExporter.importBundle(getApplication(), it)
+                    }
+                }.getOrNull()
+            }
+            _import.value = if (resultat == null) {
+                Textes.Reglages.IMPORT_REFUSE
+            } else {
+                // La nuit importee est nommee par sa date : « import reussi » ne permet pas de
+                // verifier qu'on a repris le bon fichier. La date vient de la session ecrite par
+                // l'import, pas de `comparable_night` — cette vue n'a pas encore de ligne, la
+                // nuit n'ayant pas ete analysee.
+                val session = withContext(Dispatchers.IO) {
+                    PendulumDatabase.get(getApplication()).nightDao().find(resultat)
+                }
+                // Le paquet porte le brut, jamais les resultats : c'est un choix de
+                // `NightExporter`, pour qu'on ne compare pas un chiffre exporte a un chiffre
+                // recalcule par une version ulterieure. Une nuit importee doit donc etre
+                // **analysee**, sans quoi elle entre en base et n'apparait nulle part.
+                WorkScheduler.enqueueNightChain(getApplication(), resultat)
+                Textes.Reglages.importee(
+                    session?.let { Mapping.dateLisible(it.startWallMs, it.zoneId) } ?: resultat
+                )
+            }
+            relireLEspace()
+        }
+    }
 
     fun poserTheme(theme: String) {
         viewModelScope.launch { prefs.poserTheme(theme) }
@@ -611,5 +761,202 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             versionAlgo = NON_RENSEIGNE,
             theme = PendulumPreferences.THEME_SOMBRE,
         )
+    }
+}
+
+/**
+ * L'ecran d'export, et le document qui est la raison d'etre du projet.
+ *
+ * ### Ce qu'il repare
+ *
+ * `ReportExporter` etait ecrit, complet, et **n'avait aucun appelant** : les cinq lambdas de
+ * l'ecran d'export etaient vides dans `MainActivity`. Le seul but que `README.md` juge defendable
+ * — « produire un document a poser devant un medecin » — n'etait atteignable par aucun geste.
+ *
+ * ### Le garde-fou tient au meme endroit qu'a l'ecran
+ *
+ * Le bouton reste visible et desactive sous [Aggregat.MIN_NUITS_AGREGAT] nuits eligibles, avec son
+ * motif ecrit dessus : c'est `ExportScreen` qui le decide, a partir du seul champ
+ * `nuitsEligibles`, et non ce ViewModel. Il n'y a donc pas deux endroits ou la regle peut diverger,
+ * et aucun chemin ou le bouton serait actif et l'ecriture echouerait.
+ */
+class ExportViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val repo = PendulumRepository(app)
+
+    private val _questionnaire = MutableStateFlow(true)
+
+    /** Par defaut **oui** : masquer les nuits ratees a un medecin est trompeur. */
+    private val _ecartees = MutableStateFlow(true)
+
+    /** Le nom du fichier ecrit, une fois l'ecriture faite. Consomme par l'ecran, pas efface. */
+    private val _ecrit = MutableStateFlow<String?>(null)
+
+    val etat: StateFlow<ExportUi?> = combine(
+        repo.observerTendance(),
+        _questionnaire,
+        _ecartees,
+        _ecrit,
+    ) { tendance, questionnaire, ecartees, ecrit ->
+        val nuits = tendance.nuits.sortedBy { it.startWallMs }
+        ExportUi(
+            inclureQuestionnaire = questionnaire,
+            inclureEcartees = ecartees,
+            nuitsEligibles = tendance.nuitsEligibles,
+            periode = when {
+                nuits.isEmpty() -> "—"
+                nuits.size == 1 -> nuits.first().dateLisible
+                else -> "${nuits.first().dateLisible} – ${nuits.last().dateLisible}"
+            },
+            profilPersonnalise = tendance.profilPersonnalise,
+            ecrit = ecrit,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun poserQuestionnaire(inclus: Boolean) {
+        _questionnaire.value = inclus
+    }
+
+    fun poserEcartees(inclus: Boolean) {
+        _ecartees.value = inclus
+    }
+
+    /** Le nom propose dans le selecteur SAF. Le jour de la generation, pas celui d'une nuit. */
+    fun nomFichier(): String =
+        Textes.Export.nomFichier(Mapping.jourIso(System.currentTimeMillis(), java.time.ZoneId.systemDefault().id))
+
+    /**
+     * L'ecriture, dans l'`Uri` que l'utilisateur vient de designer, et nulle part ailleurs.
+     *
+     * L'etat de la tendance est relu au moment de l'ecriture plutot que capture a l'affichage :
+     * entre l'ouverture de l'ecran et le choix de l'emplacement, un rescore a pu se terminer, et
+     * un document qui porterait les chiffres d'avant sans le dire serait un document faux.
+     */
+    fun enregistrer(uri: android.net.Uri, nom: String) {
+        viewModelScope.launch {
+            val tendance = repo.observerTendance().first()
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    getApplication<Application>().contentResolver.openOutputStream(uri)?.use {
+                        RapportExporteur.exportCampagne(
+                            context = getApplication(),
+                            etat = tendance,
+                            inclureQuestionnaire = _questionnaire.value,
+                            inclureEcartees = _ecartees.value,
+                            out = it,
+                        )
+                    }
+                }
+            }
+            _ecrit.value = nom
+        }
+    }
+}
+
+/**
+ * Le questionnaire de depistage.
+ *
+ * ### Une seule question, et une reponse qui se garde
+ *
+ * `questionnaire_response` est append-only par usage : on ajoute une passation, on ne corrige pas.
+ * « Revoir mes reponses » ne modifie donc rien — il repose la question, et la reponse suivante
+ * s'ajoute avec sa date. C'est ce qui permet de dire quand une reponse a ete donnee, et le
+ * rapport pour le medecin les liste toutes.
+ *
+ * ### Pourquoi la reponse « non » n'efface pas la mesure
+ *
+ * L'issue est une phrase, jamais un score, et elle ne conditionne aucun autre ecran : le
+ * questionnaire porte sur ce qui est ressenti a l'eveil, la montre mesure ce qui se passe pendant
+ * le sommeil. Faire dependre l'un de l'autre reviendrait a laisser un depistage clore une mesure.
+ */
+class QuizViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val dao = PendulumDatabase.get(app).questionnaireDao()
+
+    private val _issue = MutableStateFlow<IssueQuestionnaire?>(null)
+    val issue: StateFlow<IssueQuestionnaire?> = _issue
+
+    init {
+        viewModelScope.launch {
+            _issue.value = withContext(Dispatchers.IO) {
+                dao.all().firstOrNull()?.let { issueDe(it.answersJson) }
+            }
+        }
+    }
+
+    fun repondre(urgenceDeBouger: Boolean) {
+        viewModelScope.launch {
+            val json = """{"urge_to_move":$urgenceDeBouger}"""
+            withContext(Dispatchers.IO) {
+                dao.append(
+                    QuestionnaireResponseEntity(
+                        kind = KIND,
+                        answeredAtMs = System.currentTimeMillis(),
+                        answersJson = json,
+                    )
+                )
+            }
+            _issue.value = issueDe(json)
+        }
+    }
+
+    /** Reposer la question. La passation precedente reste en base avec sa date. */
+    fun revoir() {
+        _issue.value = null
+    }
+
+    private fun issueDe(json: String): IssueQuestionnaire = when {
+        json.contains("\"urge_to_move\":true") -> IssueQuestionnaire.COMPATIBLE
+        json.contains("\"urge_to_move\":false") -> IssueQuestionnaire.NON_COMPATIBLE
+        else -> IssueQuestionnaire.INCOMPLET
+    }
+
+    private companion object {
+        /** Le nom de la passation. Une seule question ; le questionnaire detaille viendra a cote. */
+        const val KIND = "screening-single"
+    }
+}
+
+/**
+ * L'effacement total.
+ *
+ * `DataEraser` etait ecrit — travaux annules, fichiers avant base, `VACUUM` — et **n'avait aucun
+ * appelant** : la ligne « Erase all data » des reglages appelait un `{}`. Une application de sante
+ * dont le bouton d'effacement ne fait rien promet exactement ce qu'elle ne tient pas.
+ *
+ * L'espace occupe est relu avant et apres, et affiche : c'est la seule confirmation verifiable que
+ * les huit heures d'accelerometrie par nuit sont bien parties de `filesDir`, la ou une base vide
+ * et un ecran vide ne prouvent rien.
+ */
+class EffacementViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val _espace = MutableStateFlow("—")
+    val espace: StateFlow<String> = _espace
+
+    private val _efface = MutableStateFlow(false)
+    val efface: StateFlow<Boolean> = _efface
+
+    init {
+        relire()
+    }
+
+    fun effacer() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { DataEraser.eraseEverything(getApplication()) }
+            // `DataEraser` annule **tous** les travaux, et c'est voulu : un `SleepFetchWorker`
+            // deja en file recreerait une ligne quelques minutes apres l'effacement. Le chien de
+            // garde, lui, ne recree rien — il constate qu'aucune session n'est ouverte — et sans
+            // lui l'application reste sans surveillance jusqu'au prochain demarrage.
+            WorkScheduler.ensureWatchdog(getApplication())
+            _efface.value = true
+            relire()
+        }
+    }
+
+    private fun relire() {
+        viewModelScope.launch {
+            val octets = withContext(Dispatchers.IO) { DataEraser.bytesOnDisk(getApplication()) }
+            _espace.value = Mapping.octetsLisibles(octets)
+        }
     }
 }
