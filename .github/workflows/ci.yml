@@ -7,7 +7,7 @@ name: CI
 # Un point de méthode : le projet a longtemps toléré **nommément** un échec, T6, par une étape qui
 # lisait les rapports XML et vérifiait que rien d'autre n'était rouge. Cette exception n'existe plus
 # — T6 passe depuis que son dénominateur a été redéfini et que le sous-comptage qu'il écartait est
-# devenu une grandeur publiée et surveillée, T18 (docs/07-validation.md §4.1). **Aucun test n'est
+# devenu une grandeur publiée et surveillée, T22 (docs/07-validation.md §4.1). **Aucun test n'est
 # plus toléré rouge.**
 #
 # Ce qui reste de cette étape, et qui n'était pas l'exception, c'est la garde qui échoue quand Gradle
@@ -82,7 +82,7 @@ jobs:
           retention-days: 14
 
   android-build:
-    name: Assemble both applications
+    name: Assemble both applications and run their unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +97,52 @@ jobs:
 
       - name: Assemble debug
         run: ./gradlew :wear:assembleDebug :phone:assembleDebug --console=plain
+
+      # Les tests JVM des deux modules **Android**, qui ne tournaient dans aucun pipeline.
+      #
+      # Le job d'a cote ne lance que `:format:test` et `:algo:test` : ce sont des modules Kotlin
+      # purs, dont la tache s'appelle `test` et dont les rapports sortent dans
+      # `build/test-results/test/`. Un module Android n'a pas de tache `test` — il a
+      # `testDebugUnitTest`, et ses rapports sortent dans `test-results/testDebugUnitTest/`.
+      # Le glob de verification ne les voyait donc pas, et l'omission etait invisible des deux
+      # cotes : rien n'echouait, et le total affiche restait juste pour les modules qu'il
+      # comptait. Plus de deux cents tests ne s'executaient nulle part.
+      #
+      # Meme mecanique que le job JVM : `continue-on-error` pour que l'etape reste rouge a l'oeil
+      # sans arreter le job, et une verification qui decide a partir des rapports.
+      - name: Run Android unit tests
+        id: android-tests
+        continue-on-error: true
+        run: ./gradlew :wear:testDebugUnitTest :phone:testDebugUnitTest --console=plain --continue
+
+      - name: Check the Android tests ran, and that all of them passed
+        shell: python
+        run: |
+          import glob, sys, xml.etree.ElementTree as ET
+          total, echecs = 0, []
+          for p in glob.glob('*/build/test-results/testDebugUnitTest/*.xml'):
+              r = ET.parse(p).getroot()
+              total += int(r.get('tests', 0))
+              for tc in r.iter('testcase'):
+                  if tc.find('failure') is not None or tc.find('error') is not None:
+                      echecs.append(f"{tc.get('classname')}.{tc.get('name')}")
+          # Zero rapport ne veut pas dire zero echec : cela veut dire que la compilation a
+          # echoue avant d'arriver aux tests. C'est la garde qui manquait au glob precedent.
+          if total == 0:
+              print('No test results at all - the build failed before running tests.')
+              sys.exit(1)
+          print(f'{total} tests, {len(echecs)} failure(s)')
+          for e in echecs:
+              print(f'  {e}')
+          sys.exit(1 if echecs else 0)
+
+      - name: Upload Android test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: '*/build/reports/tests/testDebugUnitTest'
+          retention-days: 14
 
       # 7 jours et non 14 : ces APK pesent ~21 Mo par execution et ne servent qu'a essayer une
       # branche avant fusion. Les artefacts qui comptent — ceux qu'on installe — sont attaches a
