@@ -26,6 +26,10 @@ androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx"
 androidx-lifecycle-service = { module = "androidx.lifecycle:lifecycle-service", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+# `collectAsStateWithLifecycle` : c'est lui qui garantit que la collecte s'arrete quand l'ecran
+# s'eteint. Le module `:wear` le declarait en dur dans son `build.gradle.kts` ; il est remonte ici
+# le jour ou `:phone` en a eu besoin a son tour, pour que les deux suivent la meme version.
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 # Contrainte explicite : `lintVital` (release uniquement) refuse `registerForActivityResult` si une
 # version de Fragment anterieure a 1.3.0 est resolue transitivement. Les anciennes n'appelaient pas

@@ -89,7 +89,8 @@ dependencies {
     // Version geree par le BOM Compose ; pas dans le catalogue, ajoutee ici pour ne pas
     // toucher a `gradle/libs.versions.toml` que d'autres modules editent en parallele.
     implementation("androidx.compose.foundation:foundation")
-    // `collectAsStateWithLifecycle` : c'est lui qui garantit que la collecte s'arrete quand
-    // l'ecran s'eteint — le critere « zero recomposition entre le coucher et le reveil ».
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:${libs.versions.lifecycle.get()}")
+    // `collectAsStateWithLifecycle` et `LifecycleResumeEffect` : le premier garantit que la
+    // collecte s'arrete quand l'ecran s'eteint — le critere « zero recomposition entre le coucher
+    // et le reveil » — et le second relance le preflight quand l'utilisateur revient des reglages.
+    implementation(libs.androidx.lifecycle.runtime.compose)
 }

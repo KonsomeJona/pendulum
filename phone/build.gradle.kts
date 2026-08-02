@@ -58,6 +58,10 @@ android {
 
     buildFeatures {
         compose = true
+        // `BuildConfig.VERSION_NAME` alimente la ligne « version » de l'ecran Reglages. Elle y
+        // etait ecrite en dur (« 0.1.0 »), donc juste jusqu'au premier bump et fausse ensuite —
+        // exactement le genre de valeur qu'un utilisateur cite dans un rapport de defaut.
+        buildConfig = true
     }
 
     compileOptions {
@@ -96,6 +100,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.fragment)
     implementation(libs.androidx.datastore.preferences)

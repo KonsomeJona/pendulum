@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,12 +28,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.pendulum.phone.ui.export.ExportScreen
 import com.pendulum.phone.ui.export.ExportUi
-import com.pendulum.phone.ui.model.ApercuDonnees
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.nights.NightListScreen
 import com.pendulum.phone.ui.nights.apercuNuitDetail
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
-import com.pendulum.phone.ui.settings.ReglagesUi
 import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.PendulumTheme
@@ -143,9 +143,10 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
             modifier = Modifier.padding(padding),
         ) {
             composable(Destination.TENDANCE.route) {
-                // Le ViewModel branchera l'etat reel ; l'apercu sert de squelette de navigation.
+                val vm: TrendViewModel = viewModel()
+                val etat by vm.etat.collectAsStateWithLifecycle()
                 TrendScreen(
-                    etat = ApercuDonnees.tendancePrete,
+                    etat = etat,
                     onNuit = { nav.navigate("night/$it") },
                     onComparer = { nav.navigate("compare") },
                     onQuestionnaire = { nav.navigate("quiz") },
@@ -155,10 +156,14 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 )
             }
             composable(Destination.NUITS.route) {
-                NightListScreen(ApercuDonnees.nuits, onNuit = { nav.navigate("night/$it") })
+                val vm: NightsViewModel = viewModel()
+                val nuits by vm.nuits.collectAsStateWithLifecycle()
+                NightListScreen(nuits, onNuit = { nav.navigate("night/$it") })
             }
             composable(Destination.REGLAGES.route) {
-                SettingsScreen(reglagesParDefaut, {}, {}, {})
+                val vm: SettingsViewModel = viewModel()
+                val reglages by vm.reglages.collectAsStateWithLifecycle()
+                SettingsScreen(reglages, {}, {}, {})
             }
             // Destinations empilees : pas de barre de navigation, ce sont des taches.
             composable("night/{hex}") {
@@ -185,16 +190,3 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
     }
 }
 
-private val reglagesParDefaut = ReglagesUi(
-    regle = Textes.Reglages.REGLE_AASM,
-    sourcePreferee = "Samsung Health",
-    profil = "default",
-    repereDePort = "4th hole, right leg",
-    arretAutomatique = "On charger",
-    montre = "Pixel Watch 3",
-    healthConnect = "Sleep read access granted",
-    espaceOccupe = "3.4 GB",
-    versionApp = "0.1.0",
-    versionAlgo = "1.4.0",
-    theme = Textes.Reglages.THEME_SOMBRE,
-)

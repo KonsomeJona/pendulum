@@ -448,6 +448,31 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
             else -> "not comparable"
         }
 
+        /**
+         * Les puces de qualite d'une nuit. Courtes par necessite — au plus trois tiennent sur une
+         * ligne de liste — et **factuelles** : chacune porte la valeur mesuree, pas un jugement.
+         * « gap 47 s » se verifie ; « signal de mauvaise qualite » ne se verifie pas.
+         *
+         * Ce ne sont pas des erreurs. Une nuit avec trois puces reste une nuit exploitable ; les
+         * puces disent dans quelles conditions son chiffre a ete obtenu, ce qui est exactement ce
+         * qu'il faut pour decider si deux nuits se comparent.
+         */
+        object Drapeaux {
+            const val MASQUE_ACCELERO = "accel mask"
+            const val TRONQUEE = "truncated"
+
+            fun trous(nombre: Int, secondes: Long): String = "gap ${secondes}s ×$nombre"
+            fun batterie(pct: Int): String = "battery $pct%"
+
+            /**
+             * Le taux de manques vient de la deconvolution harmonique, qui le mesure au lieu de
+             * le supposer. Il est affiche parce qu'il est le critere de comparabilite entre deux
+             * nuits : deux nuits dont les taux de manques different beaucoup ne mesurent pas tout
+             * a fait la meme chose.
+             */
+            fun manques(taux: Double): String = "missed %d%%".format(Math.round(taux * 100))
+        }
+
         const val PAS_DE_BOUTON_EXCLURE =
             "Nights are excluded by criteria set before the computation: same leg, same " +
                 "strap, alone in bed, stable calibration, and at least 4 h of analysable data. Pendulum offers " +
@@ -541,6 +566,13 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
         const val REGLE_WASM = "WASM 2016 (10–90 s)"
         const val SOURCE_PREFEREE = "Preferred sleep source"
         const val MASQUE_ACCELERO_SEUL = "Accelerometer mask alone"
+
+        /**
+         * Aucune source n'a encore ete identifiee — a distinguer de « pas de source » : on n'a
+         * pas cherche, ou la lecture n'a rien rendu, ce qui n'est pas la meme chose que savoir
+         * qu'il n'y en a pas.
+         */
+        const val SOURCE_INCONNUE = "sleep source not identified"
         const val PROFIL_PARAMS = "Parameter profile"
         const val REPERE_PORT = "Wearing reference"
         const val ARRET_AUTO = "Automatic stop"
