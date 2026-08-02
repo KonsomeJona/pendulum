@@ -230,6 +230,13 @@ to 11/20, the published index from 5 % of truth to 47 %, with no measured cost i
 `Θ_abs` lies Terrill's mechanical 39 %, which no parameter reaches. The margin available to the entire
 threshold policy is a miss rate between 0.39 and 0.55, and identifiability needs below 0.50.
 
+**§4.5 re-runs the whole suite at the recommended value so the recommendation arrives complete.** At
+`f_cal` = 0.06, **142 of 145 tests pass**. None of the artefact defences — T1 to T4 — is among the
+three, which is the result that mattered. Of the three, one is a tripwire on a published constant
+doing its job, one is an inverted assertion whose failure is the good news, and one is a genuine
+regression in a *relative* fidelity bound that coincides with a ninefold improvement in the *absolute*
+number. **The default is unchanged**; the decision goes to whoever owns it, with the list in hand.
+
 The previous edition of this section stopped one step short. It correctly identified that most truth
 events sit below `Θ_on`, and then attributed that threshold to the relative term `k_on · floor`, with
 `k_on = 8.0` described as an anti-artefact budget carried over from v1 "for want of anything better".
@@ -667,16 +674,23 @@ detected — lateralisation is amplitude-blind, a threshold is not. Symmetricall
 flag exists for (0.50) it fires on only 3 of 20 realistic trains, because a train mixing series with
 isolated and respiratory-related movements reads `p` = 0.333, under the 0.48 lower bound.
 
-**False positive on one side, nearly blind on the other.** The flag needs a design decision — either a
-second input that carries amplitude, or removal — and that decision is not taken here. Three
-assertions in `RhythmMeasurementTest` hold the measured ceilings so the state cannot drift unnoticed.
+**False positive on one side, nearly blind on the other.** Three assertions in `RhythmMeasurementTest`
+hold the measured ceilings so the state cannot drift unnoticed, and the flag is left as it is.
+
+The reason it is left alone is worth stating precisely, because it is not caution: **the fix is an
+interface change between two stages, not a setting.** `Rhythm` receives a list of intervals. The one
+quantity that separates the two causes — the amplitude of the events that were detected, since a
+lateralisation is amplitude-blind and a threshold is not — exists in `Clm.peakAmpG` and is discarded
+at the boundary, by `Rhythm.intervalsOf`, which keeps only onsets. Making the flag correct therefore
+means deciding that the rhythm estimator is entitled to amplitude, which changes what `indices`
+depends on and what the incremental path has to carry. That is an architectural call with a clinical
+consequence, and it belongs to whoever owns the stage boundary, not to a measurement commit.
 
 #### What this supports
 
 1. **`f_cal` ≈ 0.06 is the value to argue about**, not 0.12: it multiplies valid rhythm fits by five
-   and the published index by nine, at no measured cost in precision on the nominal night. **Re-run
-   T1–T4 first.** If T3 survives it, the case is strong; if it does not, the amplitude threshold was
-   load-bearing after all and the sweep's precision column was measuring the wrong night.
+   and the published index by nine, at no measured cost in precision on the nominal night. §4.5 is the
+   full list of what it breaks, which is what such a recommendation has to arrive with.
 2. **`Θ_abs` is the next question, and it is a harder one.** It is what stops the miss rate reaching
    the identifiable region, and it is guarding T1. That is a genuine conflict between two guard rails
    rather than a parameter with a free value.
@@ -686,10 +700,81 @@ assertions in `RhythmMeasurementTest` hold the measured ceilings so the state ca
    discussion of what this device can measure at the ankle.
 
 Confidence: **high** for the sweep itself. **High** for the saturation against `Θ_abs`, which is
-visible as two identical rows. **Medium** for "precision does not collapse" — it is a real measurement
-on the nominal night but the dedicated artefact tests were not re-run, and they are the ones that
-count. **High** for the non-identifiability of `alternationSuspect`, which is an argument from what the
-module can and cannot see, confirmed at two separate operating points.
+visible as two identical rows. **High** for the non-identifiability of `alternationSuspect`, which is
+an argument from what the module can and cannot see, confirmed at two separate operating points.
+
+### 4.5 What `f_cal` = 0.06 actually breaks — the whole suite, re-run
+
+A recommendation to move a parameter arrives with the list of what it costs, or it is half an
+argument. The whole `algo` suite was re-run under `f_cal` = 0.06 and 0.08 — not only T1–T4, because
+if something else breaks it is better to know now. The default is untouched; `RegressionSupport`
+reads `-Palgo.calFraction` and falls back to the shipped value, so `./gradlew :algo:test
+-Palgo.calFraction=0.06` reproduces the table below.
+
+**Result: 142 of 145 pass at both values, against 145 today. The same three fail at both, and the
+artefact defences are not among them.**
+
+| | `f_cal` = 0.06 | `f_cal` = 0.08 | 0.12 (shipped) |
+|---|---|---|---|
+| **T1** MEMS noise, 0 CLM worst case | **pass** | **pass** | pass |
+| **T2** respiration, 0 CLM | **pass** | **pass** | pass |
+| **T3** 300 mattress rings, ≤ 2 CLM | **pass** | **pass** | pass |
+| **T4** posture, 0 CLM + recall ≥ 0.95 | **pass** | **pass** | pass |
+| **T5** sensitivity curve | **pass** | **pass** | pass |
+| **T6** index error ≤ 0.10 | **fail, 0.193** | **fail, 0.170** | pass |
+| **T7** negative night ≤ 5/h | **pass** | **pass** | pass |
+| **T22** sub-threshold band | **fail, 0.272** | **fail, 0.449** | pass |
+| Rhythm, valid fits ≤ 5/20 (inverted) | **fail, 11/20** | **fail, 11/20** | pass |
+| everything else (139 tests) | pass | pass | pass |
+
+Each of the three deserves its own reading, because they are three different kinds of failure and only
+one of them is a regression.
+
+**T22 fails as a tripwire, and that is what it is for.** Its three bands are the numbers the product
+publishes — the fraction of movements the threshold discards, and what survives of the index — measured
+at the shipped default. **They should stay constants and must not become a function of `calFraction`.**
+A band that followed the parameter would make the project's most important honesty metric silently
+self-adjusting: change the threshold, and the published under-count would re-centre itself on whatever
+the new policy produces, with no test going red. That is exactly the moved goalpost T22 was created to
+prevent. The correct behaviour when the default moves is for T22 to fail, for someone to re-measure,
+and for the new numbers to be written down deliberately. At 0.06 they would become 0.27 / 0.64 / 0.59
+against today's 0.70 / 0.30 / 0.06.
+
+**The rhythm assertion fails because the situation improved, and it was written to.** `valid fits ≤ 5`
+is an inverted assertion in the style of T11: its KDoc says that the day it fails, either the chain
+finally detects enough movements or the guard was relaxed, and either way §4.3 must be reopened. It
+fails with **11 valid fits out of 20** against 2 today. **This is the single strongest signal in the
+matrix in favour of the change**, and it arrives dressed as a red test on purpose.
+
+**T6 is the only genuine regression, and it is a real tension rather than a tautology.** The question
+worth asking of every failure here — the one T5 turned out to answer badly for `k_on`, where the test
+pinned the parameter by construction of its own abscissa — is whether T6 encodes the old threshold.
+It does not: the expected index is recomputed against `Θ_on` as it stands (`truthResult(rule,
+visible)`), so the criterion follows the parameter. What degrades is the detector's fidelity **to its
+own policy**: at a lower threshold the marginal events just above it are precisely the ones detected
+about half the time, so the measured index tracks the ideal-detector index less well — 0.19 against a
+bound of 0.10.
+
+And here is the tension, stated as plainly as it deserves: over the same move, the measured index goes
+from **5 % of the true index to 47 %**. T6 bounds *relative* fidelity to the threshold policy; the
+product cares about *absolute* accuracy; at `f_cal` = 0.06 the two point in opposite directions. The
+strongest argument for staying at 0.12 is that T6 passes there — and that argument is weak, because
+being faithful to a policy that discards 94 % of the index is not a virtue. Whether T6's 0.10 bound is
+the right criterion at all is a question this measurement raises and does not answer.
+
+**One hole remains, and it is in T3.** T3 passes at every value, but at the shipped default it may
+have been passing vacuously: the mattress distractor draws peak amplitudes of 3–40 mg while `Θ_on`
+sits at 53.7 mg, so no ring could cross the threshold at all and the WASM morphology criterion — the
+thing T3 exists to measure — was never exercised. At 26.8 mg it is much closer to being exercised, and
+T3 still passes, which is the encouraging reading. **It is not proof.** The coarse envelope is a 0.5 s
+RMS of a 0.05–0.4 s ring, so the envelope of a 40 mg ring is well under 40 mg, and how many rings
+actually produce a candidate at 26.8 mg was **not measured**. Counting raw candidates and morphology
+rejections in T3 across the sweep is what would settle it, it is cheap, and it has not been done. Until
+it is, "precision does not collapse" rests on the nominal night plus a T3 that may still be too easy.
+
+Confidence: **high** for the pass/fail matrix, which is a direct re-run. **High** for the readings of
+T22 and the rhythm assertion, which follow from what those tests were written to do. **Medium** for
+T3 — it passes, but it has not been shown to be testing anything at either value.
 
 ---
 

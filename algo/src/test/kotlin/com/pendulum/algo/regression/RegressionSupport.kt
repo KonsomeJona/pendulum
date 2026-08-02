@@ -6,6 +6,7 @@ import com.pendulum.algo.detect.PostureConfig
 import com.pendulum.algo.detect.PostureDetector
 import com.pendulum.algo.detect.SeriesBuilder
 import com.pendulum.algo.detect.SeriesConfig
+import com.pendulum.algo.detect.ThresholdConfig
 import com.pendulum.algo.dsp.Preprocess
 import com.pendulum.algo.dsp.PreprocessConfig
 import com.pendulum.algo.dsp.Preprocessed
@@ -61,6 +62,25 @@ import kotlin.math.ln
 internal val SEEDS: List<Long> = (0 until 20).map { 20_260_729L + it * 7_919L }
 
 internal const val FS: Double = 50.0
+
+/**
+ * Configuration de detection sous laquelle tourne **toute** la suite de non-regression.
+ *
+ * C'est la valeur publiee du produit, sauf si `-Palgo.calFraction=<x>` est passe a Gradle. Ce
+ * crochet existe pour une raison precise et bornee : le balayage de `calFraction`
+ * (`ThresholdPolicySweepTest`, `docs/07-validation.md` §4.4) recommande `f_cal` proche de 0,06, et
+ * une recommandation de ce genre ne se presente pas sans **la liste de ce qu'elle casse**. Rejouer
+ * T1 a T22 sous une autre valeur est la seule facon d'etablir cette liste, et le faire en editant le
+ * defaut — meme temporairement — reviendrait a mesurer un arbre de travail que personne ne relira.
+ *
+ * Sans le drapeau, rien ne change : le defaut du produit reste celui de [ThresholdConfig].
+ */
+internal val REGRESSION_CAL_FRACTION: Double =
+    System.getProperty("algo.calFraction")?.toDoubleOrNull() ?: ThresholdConfig().calFraction
+
+/** @see REGRESSION_CAL_FRACTION */
+internal val REGRESSION_CLM_CFG: ClmConfig =
+    ClmConfig(thresholds = ThresholdConfig(calFraction = REGRESSION_CAL_FRACTION))
 
 // ---------------------------------------------------------------------------------------------
 // Statistiques d'agregation sur les graines
@@ -199,7 +219,7 @@ internal fun analyse(
     night: SynthNight,
     nominalHz: Double = FS,
     cfg: PreprocessConfig = PreprocessConfig(),
-    clmCfg: ClmConfig = ClmConfig(),
+    clmCfg: ClmConfig = REGRESSION_CLM_CFG,
     postureCfg: PostureConfig = PostureConfig(),
     calibrated: Boolean = true,
 ): Analysis = analyseBlocks(night, night.blocks, nominalHz, cfg, clmCfg, postureCfg, calibrated)
@@ -210,7 +230,7 @@ internal fun analyseBlocks(
     blocks: List<SampleBlock>,
     nominalHz: Double = FS,
     cfg: PreprocessConfig = PreprocessConfig(),
-    clmCfg: ClmConfig = ClmConfig(),
+    clmCfg: ClmConfig = REGRESSION_CLM_CFG,
     postureCfg: PostureConfig = PostureConfig(),
     calibrated: Boolean = true,
 ): Analysis {
@@ -393,7 +413,7 @@ internal fun fixedAmplitudeNight(
  *   configuration par defaut tout en detectant avec une autre placerait les evenements ailleurs que
  *   la ou l'enonce de T5 les veut.
  */
-internal fun probeEffectiveFloorG(seed: Long, clmCfg: ClmConfig = ClmConfig()): Double {
+internal fun probeEffectiveFloorG(seed: Long, clmCfg: ClmConfig = REGRESSION_CLM_CFG): Double {
     val probe = distractorOnlyNight(seed, minutes = 12.0, distractors = DistractorSpec.NONE)
     return analyse(probe, clmCfg = clmCfg, calibrated = false).effectiveFloorG
 }

@@ -26,4 +26,9 @@ tasks.test {
         systemProperty("junit.jupiter.conditions.deactivate", "org.junit.*DisabledCondition")
         testLogging { showStandardStreams = true }
     }
+
+    // Rejoue la suite de non-regression sous une autre valeur de `calFraction`, sans toucher au
+    // defaut du produit. Voir `RegressionSupport.REGRESSION_CAL_FRACTION` pour le pourquoi : une
+    // recommandation de reglage ne se presente pas sans la liste de ce qu'elle casse.
+    project.findProperty("algo.calFraction")?.let { systemProperty("algo.calFraction", it.toString()) }
 }
