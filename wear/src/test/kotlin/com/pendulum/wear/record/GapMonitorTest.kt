@@ -266,34 +266,80 @@ class GapMonitorTest {
     }
 
     // -------------------------------------------------------------------------------------
-    // Comportement observe, en tension avec la KDoc — voir le rapport de revue
+    // Le double comptage, et les deux defauts trouves avec lui
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("DEFAUT DOCUMENTE : un meme trou physique est compte par les deux signaux a la fois")
-    fun `double comptage d un gros trou par la fenetre`() {
+    @DisplayName("un trou physique n'est compte qu'une fois, meme quand la fenetre le voit aussi")
+    fun `pas de double comptage d un gros trou`() {
         val monitor = GapMonitor(50)
         val flux = Flux(monitor, T0)
 
-        // Un unique trou de 25 s. Le signal intra-lot le compte a son arrivee ; puis la fenetre
-        // de 60 s, qui ne sait pas que ce deficit a deja ete vu, le recompte a sa cloture.
+        // Un unique trou de 25 s. Le signal intra-lot le compte a son arrivee ; la fenetre de
+        // 60 s constate ensuite le meme deficit, et doit reconnaitre qu'il a deja ete impute.
         flux.regularUntil(T0 + 10_000_000_000L)
         flux.hole(25_000_000_000L)
         flux.regularUntil(T0 + 60_000_000_000L)
 
-        // Ce test fige le comportement REEL, pas le comportement souhaite. La KDoc annonce que
-        // la fenetre « rattrape un trou tombant entre deux lots » et que l'escalade demande
-        // « trois gros trous » ; en pratique un seul trou > 3 s produit deux entrees de gros
-        // trou, donc DEUX trous physiques dans la meme fenetre suffisent a escalader. Si ce
-        // test casse parce que le double comptage a ete corrige, c'est une amelioration :
-        // mettre a jour les assertions, pas restaurer le comportement.
-        assertThat(monitor.gapCount).isEqualTo(2)
+        // Un trou physique, une entree. Avant correction il y en avait deux : `gapCount` et
+        // `gapTotalMs` doublaient, et surtout **deux** trous physiques dans une meme fenetre
+        // suffisaient a escalader la ou la regle en annonce trois.
+        //
+        // Ce n'etait pas une imprecision cosmetique. Chaque palier prend un `PARTIAL_WAKE_LOCK` :
+        // escalader une fois et demie trop vite, c'est passer la nuit sous wake lock, depenser
+        // 65 % de batterie et invalider la mesure d'autonomie de la phase P1 — le cout exact que
+        // la KDoc de `GapMonitor` dit vouloir eviter.
+        assertThat(monitor.gapCount).isEqualTo(1)
         assertThat(monitor.step).isZero()
 
+        // Deux trous physiques : toujours pas d'escalade. La regle des trois tient.
         flux.regularUntil(T0 + 70_000_000_000L)
-        flux.hole(25_000_000_000L) // deuxieme trou physique : troisieme entree de gros trou
+        flux.hole(25_000_000_000L)
+        assertThat(monitor.step).isZero()
 
+        // Trois : elle monte, et pas avant.
+        flux.regularUntil(T0 + 130_000_000_000L)
+        flux.hole(25_000_000_000L)
         assertThat(monitor.step).isEqualTo(1)
         assertThat(monitor.consumePendingStep()).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("un capteur plus rapide que sa cadence nominale ne fait pas REGRESSER le temps perdu")
+    fun `pas de deficit negatif`() {
+        val monitor = GapMonitor(50)
+
+        // 51 Hz delivres pour 50 demandes : la fenetre recoit plus d'echantillons qu'attendu.
+        // Avant correction, `expected - windowCount` etait negatif et `gapTotalMs` **diminuait** —
+        // le compteur de temps perdu se mettait a en regagner, ce qu'aucune lecture ne detecte.
+        val periode = 1_000_000_000L / 51
+        var t = T0
+        repeat(3_500) {
+            monitor.onSample(t)
+            t += periode
+        }
+
+        assertThat(monitor.gapTotalMs).isGreaterThanOrEqualTo(0)
+        assertThat(monitor.gapCount).isZero()
+    }
+
+    @Test
+    @DisplayName("un horodatage qui recule est ignore, il ne corrompt pas la fenetre")
+    fun `horodatage retrograde`() {
+        val monitor = GapMonitor(50)
+        val flux = Flux(monitor, T0)
+        flux.regularUntil(T0 + 30_000_000_000L)
+        val comptesAvant = monitor.gapCount
+
+        // Les couches capteur d'Android font parfois repartir les horodatages en arriere en mode
+        // batche. Laisser passer l'echantillon rendait `spanNs` negatif a la cloture, donc
+        // `expected` aussi, donc le deficit ne se declenchait plus jamais — et `windowStartNs`
+        // repartait dans le passe, ce dont la fenetre suivante ne se remettait pas.
+        assertThat(monitor.onSample(T0 + 10_000_000_000L)).isFalse()
+        assertThat(monitor.gapCount).isEqualTo(comptesAvant)
+
+        // La suite normale reprend sans sequelle.
+        flux.regularUntil(T0 + 65_000_000_000L)
+        assertThat(monitor.measuredRateHz).isCloseTo(50.0, within(2.0))
     }
 }

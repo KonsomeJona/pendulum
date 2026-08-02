@@ -36,6 +36,26 @@ class GapMonitor(rateHz: Int) {
     private var lastTsNs = 0L
     private var windowStartNs = 0L
     private var windowCount = 0
+
+    /**
+     * Echantillons manquants **deja imputes** par le signal intra-lot dans la fenetre courante.
+     *
+     * Sans ce compteur, un meme trou physique etait compte deux fois : une fois a son arrivee par
+     * l'intra-lot, une seconde fois a la cloture de la fenetre, parce que les echantillons qu'il a
+     * emportes ressortent comme deficit. Consequence mesuree : `gapCount` et `gapTotalMs`
+     * doublaient sur ces trous, et surtout **deux** trous physiques dans une meme fenetre
+     * suffisaient a faire monter d'un palier la ou la regle en annonce trois.
+     *
+     * Ce n'etait pas une imprecision cosmetique. Chaque palier prend un `PARTIAL_WAKE_LOCK` :
+     * escalader une fois et demie trop vite, c'est passer la nuit sous wake lock, depenser 65 %
+     * de batterie, et invalider la mesure d'autonomie que la phase P1 existe pour obtenir — le
+     * cout exact que la KDoc de ce fichier dit vouloir eviter.
+     *
+     * La fenetre reste ce que sa documentation annonce : **un rattrapage de ce que l'intra-lot ne
+     * peut pas voir** — un trou tombant entre deux lots — et non un amplificateur de ce qu'il a
+     * deja vu.
+     */
+    private var manquantsDejaComptes = 0
     private val bigGapTimestamps = ArrayDeque<Long>()
 
     /** Nombre de trous detectes, tous signaux confondus. */
@@ -79,6 +99,13 @@ class GapMonitor(rateHz: Int) {
             return false
         }
 
+        // Horodatage qui recule. Les couches capteur d'Android le font parfois en mode batche, et
+        // le laisser passer corrompt tout ce qui suit : `spanNs` devient negatif a la cloture,
+        // donc `expected` aussi, donc la comparaison de deficit ne se declenche plus jamais — et
+        // `windowStartNs` repart dans le passe, ce dont la fenetre suivante ne se remet pas.
+        // L'echantillon est ignore plutot que corrige : on ne sait pas ou il devrait aller.
+        if (tsNs <= lastTsNs) return false
+
         val dt = tsNs - lastTsNs
         lastTsNs = tsNs
         windowCount++
@@ -88,6 +115,7 @@ class GapMonitor(rateHz: Int) {
             gapHere = true
             gapCount++
             gapTotalMs += (dt - periodNs) / 1_000_000
+            manquantsDejaComptes += ((dt - periodNs) / periodNs).toInt()
             if (dt >= bigGapNs) recordBigGap(tsNs)
         }
 
@@ -105,6 +133,7 @@ class GapMonitor(rateHz: Int) {
         lastTsNs = 0L
         windowStartNs = 0L
         windowCount = 0
+        manquantsDejaComptes = 0
     }
 
     fun consumePendingStep(): Int? = pendingStep.also { pendingStep = null }
@@ -116,9 +145,15 @@ class GapMonitor(rateHz: Int) {
         rateDeviates = Math.abs(measuredRateHz - nominal) / nominal > 0.05
 
         val expected = (spanNs / periodNs).toInt()
-        if (windowCount < 0.95 * expected) {
-            val missing = expected - windowCount
-            val missingNs = missing * periodNs
+
+        // Le deficit **inexplique** : ce que la fenetre constate, moins ce que l'intra-lot a deja
+        // impute. `coerceAtLeast(0)` n'est pas une precaution de style — sans lui, un capteur qui
+        // delivre un peu plus vite que sa cadence nominale (51 Hz demandes a 50) rend
+        // `windowCount > expected`, donc un `missing` negatif, donc un `gapTotalMs` qui
+        // **diminue**. Le compteur de temps perdu se mettait a en regagner.
+        val manquantsNonVus = (expected - windowCount - manquantsDejaComptes).coerceAtLeast(0)
+        if (manquantsNonVus > 0.05 * expected) {
+            val missingNs = manquantsNonVus * periodNs
             gapCount++
             gapTotalMs += missingNs / 1_000_000
             // Un deficit de fenetre superieur a 3 s vaut un gros trou : il est simplement
@@ -128,6 +163,7 @@ class GapMonitor(rateHz: Int) {
 
         windowStartNs = tsNs
         windowCount = 0
+        manquantsDejaComptes = 0
     }
 
     /** Trois gros trous dans une fenetre glissante de 10 min font monter d'un palier. */
@@ -141,6 +177,15 @@ class GapMonitor(rateHz: Int) {
             pendingStep = step
             // Le compteur repart a zero : le palier suivant se merite sur les dix minutes qui
             // suivent, sinon les memes trous declencheraient les trois paliers d'affilee.
+            //
+            // Objection connue et ecartee : apres l'escalade il faut trois trous **nouveaux**, ce
+            // qui freine la montee quand le materiel lache franchement — quatre gros trous en
+            // cinq minutes ne produisent qu'un palier. C'est assume. Chaque palier prend un wake
+            // lock supplementaire, et le cout d'escalader trop vite est une nuit entiere de
+            // batterie plus une mesure d'autonomie invalidee ; le cout d'escalader trop lentement
+            // est quelques trous de plus dans un signal que l'analyse sait deja marquer. Les deux
+            // ne se valent pas. Si une campagne reelle montre l'inverse, c'est ici qu'il faudra
+            // revenir — avec la mesure, pas avec l'intuition.
             bigGapTimestamps.clear()
         }
     }
