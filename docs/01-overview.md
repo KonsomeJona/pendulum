@@ -172,6 +172,20 @@ night-comparability check. The full argument, with the three publications it res
 [`02-science.md`](02-science.md) §3; the estimator itself is in
 [`03-algorithm.md`](03-algorithm.md) §6.
 
+One correction belongs in the same paragraph rather than in a footnote, because it bears on the
+central claim. **The 3.6 % is a property of the physiological quantity, not of Pendulum's
+estimator.** It is measured by Skeba et al. on movements scored in a laboratory. Measured on the
+nominal synthetic night, the estimator's own relative error on the fundamental is **11.3 %** —
+roughly three times the effect it is meant to track — and the deconvolution declares only **2 fits
+valid out of 20**, refusing far more often than it answers.
+[`07-validation.md`](07-validation.md) §4.3 is that measurement, and §4.4 traces the cause to a
+single threshold parameter whose best reachable setting still leaves the estimator short. The
+argument for tracking the rhythm rather than the count is unchanged, because it is an argument about
+the quantity: it needs no denominator, it inherits no laboratory threshold, and the physiological
+figure stands. What the measurement establishes is narrower and worse — **the current estimator does
+not reach that quantity under the current threshold policy.** The refusal is the part that works: on
+the nights it cannot identify, the product publishes nothing rather than a confident wrong number.
+
 ---
 
 ## 4. The guard rails
@@ -212,16 +226,17 @@ examination, not to replace one. No dose is adjusted on this number.
 
 ## 5. Status and roadmap
 
-**Today: pre-alpha.** All four modules build. The two pure-JVM modules carry 195 unit tests; the two
-Android applications run on emulators and are covered by instrumented tests of the guard rails. What
-does not exist is a single night of real data — the hardware feasibility gate (P1) has not been passed.
+**Today: pre-alpha.** All four modules build, and all four are written. The two pure-JVM modules
+carry **201 unit tests**; the two Android applications run on emulators and carry **250 tests of
+their own** — 244 on the JVM plus 6 instrumented tests of the guard rails. What does not exist is a single
+night of real data — the hardware feasibility gate (P1) has not been passed.
 
 | Module | Language | State |
 |---|---|---|
-| `format` | Kotlin, pure JVM | Implemented and tested. Append-only chunk codec, CRC-protected. |
-| `algo` | Kotlin, pure JVM | Implemented and tested. Integrity, timeline, DSP, detection, sleep mask, indices, synthetic ground truth. Depends on nothing, not even on `format`. |
-| `wear` | Android | **Not written.** Capture service, incremental synchronisation. |
-| `phone` | Android | **Not written.** Ingestion, Health Connect, storage, interface. |
+| `format` | Kotlin, pure JVM | Implemented and tested. 5 source files, 53 tests. Append-only chunk codec, CRC-protected. |
+| `algo` | Kotlin, pure JVM | Implemented and tested. 25 source files, 148 tests, of which 3 are long-running measurements kept `@Disabled`. Integrity, timeline, DSP, detection, sleep mask, indices, synthetic ground truth. Depends on nothing, not even on `format`. |
+| `wear` | Android | Written. 19 source files, 37 unit tests. Foreground capture service, sensor strategy, gap monitor, stop conditions, watchdog, boot recovery, incremental synchronisation over the data store. |
+| `phone` | Android | Written. 76 source files, 207 unit tests plus 6 instrumented tests of the guard rails. Ingestion, Health Connect, Room storage, background workers, Compose interface, PDF and CSV export. |
 
 Nothing has been validated against polysomnography, and there is no plan that would make that
 possible for an individual.
@@ -239,9 +254,9 @@ The phases run in order, and each has an exit criterion that can be checked rath
 | **P6** | Phone interface, questionnaires, export | A cold run from night to charger to result, with no intervention |
 | **P7** | A seven-night campaign, plus a voluntary-movement protocol | A minimum-detectable-change band, and a parametric sensitivity curve |
 
-Two orderings in that table are not negotiable. **P1 blocks everything**, because an algorithm
-written against data that the hardware cannot actually deliver is wasted work, and the failure would
-surface only after months. And **P4 is test-first**: the synthetic generator carries two label sets,
+Two orderings in that table were declared not negotiable. **P1 blocks everything**, because an
+algorithm written against data that the hardware cannot actually deliver is wasted work, and the
+failure would surface only after months. And **P4 is test-first**: the synthetic generator carries two label sets,
 one for what an EMG would have scored and one for what an accelerometer can mechanically see,
 because roughly 39 % of EMG-scored movements produce no detectable motion at an ankle sensor at all.
 Without that distinction, a target such as "F1 at or above 0.90" is unreachable for a reason that is
@@ -251,3 +266,37 @@ One verification should ideally happen before P0 and must happen before P5: conf
 sleep source actually writes sleep *stages*, and not merely a duration, into Health Connect — and
 measure how long after waking it does so. The entire denominator rests on that. See
 [`05-devices.md`](05-devices.md).
+
+### The order was not followed, and P1 is still not passed
+
+The table above says P1 blocks everything, and the sentence inside it says that no line of algorithm
+is written before it passes. **That is not what happened.** P2 through P6 have been built — format
+hardening, incremental transfer, the algorithm and its synthetic harness, the sleep mask and the
+background workers, the phone interface and the export — and **P1 has not been passed. No
+accelerometer has spent a night at an ankle with this software.** A piece of P7 arrived early as
+well: the parametric sensitivity curve listed as a P7 deliverable was written to settle a question
+inside `algo` ([`07-validation.md`](07-validation.md) §4.1), while the seven-night campaign it
+exists to serve has not been run.
+
+This is written down rather than smoothed over. Departing from a plan is not dishonourable; claiming
+to have followed it is. And the risk the ordering was written to avoid is exactly the risk now
+carried: the detector, its thresholds and the entire test suite are calibrated against a synthetic
+signal, and the hardware has never been asked whether it can deliver the samples that signal assumes.
+
+What has changed is that the gate is now **instrumented**. `PorteP1.kt` computes the verdict per
+night and per campaign from `night_session` alone, Settings › Measurement displays it, and a CSV
+export carries it out of the application. Three criteria per night, each with its measured value,
+its threshold and its state: coverage at or above 99 % — read from the same function the rest of the
+application uses, so that two implementations of one percentage cannot diverge on the number that
+decides the project — battery strictly above 20 % at eight hours, and delivered sample rate within
+5 % of nominal. Each has **three** outcomes rather than two: a six-hour night says nothing about the
+battery at eight hours, and *indeterminate* is its own verdict rather than being filed with the
+successes, which would let a campaign clear a gate it has not cleared.
+
+The gate also asks for three **consecutive** evenings, not three conforming nights collected over
+three months, and the code checks consecutiveness on the night key — the same midday boundary that
+attaches a night to its sealed context — rather than counting conformances. A skipped evening breaks
+the run exactly as a failed one does, because reproducibility is the property that separates a rig
+that holds from a rig that held once.
+
+So the verdict is calculable, displayable and exportable. What is missing is the nights.

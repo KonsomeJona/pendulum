@@ -30,6 +30,10 @@ movements varies by 3.6 %. Twelve times less, and with no denominator to argue a
 interval is computed from the movement times alone. So Pendulum tracks the period and treats the
 count as something to hand a physician, not something to follow.
 
+Those two figures describe the movements, not this software. How closely Pendulum's estimator gets to
+the 3.6 % has since been measured, and the answer is *not closely* — see
+[below](#what-the-measurement-has-since-retired-from-that-argument).
+
 > ### What this is, and what it is not
 >
 > **It is** a real measurement. The accelerometer readings are real, the processing chain follows
@@ -45,10 +49,13 @@ count as something to hand a physician, not something to follow.
 > reassuring number stop you from seeing someone if you have symptoms.
 
 **Status: pre-alpha.** All four modules build. The two pure-JVM modules (binary format, signal
-processing) carry 195 unit tests; the phone and watch applications run on emulators and are covered by
-instrumented tests of the guard rails. What does not exist yet is a single night of real data: no
-accelerometer has been worn at an ankle by this software, and nothing has been validated against
-polysomnography — nor is there a plan that would make that possible for an individual.
+processing) carry 201 unit tests; the phone and watch applications run on emulators and carry 250
+tests of their own — 244 on the JVM plus 6 instrumented tests of the guard rails. What does not exist
+yet is a single night of real data: no accelerometer has been worn at an ankle by this software, and
+nothing has been validated against polysomnography — nor is there a plan that would make that
+possible for an individual. The hardware feasibility gate the roadmap declares blocking has not been
+passed, and the rest of the project was built anyway; that is recorded, with its consequences, in
+[`docs/01-overview.md`](docs/01-overview.md) §5.
 
 Screens: [`docs/08-screens.md`](docs/08-screens.md).
 
@@ -98,14 +105,37 @@ But it is **not** the number the app tracks over time, for three reasons:
 
 ![Two panels over fourteen nights. The hourly count scatters widely; the fundamental rhythm stays close to its median.](docs/images/why-the-rhythm.svg)
 
-*Fourteen nights, synthetic — the scatter is drawn from the published night-to-night variability, not
-from recorded data. Same person, same disorder, both panels: the count says something different every
-night, the rhythm says the same thing. That is the whole argument.*
+*Fourteen nights, synthetic — the scatter is drawn from the published night-to-night variability of
+the movements themselves, not from recorded data and not from this application's output. Same person,
+same disorder, both panels: the count says something different every night, the rhythm says the same
+thing. That is the argument for tracking the rhythm; what Pendulum's own estimator recovers of it is
+measured below.*
 
 So the tracked quantity is the **fundamental rhythm in seconds**, recovered by deconvolving the
 harmonics of the inter-movement interval distribution. A missed movement merges two 21 s intervals
 into one 42 s interval — a harmonic, not noise. The mixture model that separates them also returns
 the **estimated miss rate**, which doubles as a night-comparability check.
+
+### What the measurement has since retired from that argument
+
+The 3.6 % above is a property of the **physiological quantity**, measured on movements scored in a
+laboratory. It is not a property of Pendulum's estimator, and the difference is now measured rather
+than assumed.
+
+On the nominal synthetic night, the estimator's relative error on the fundamental is **11.3 %** —
+about three times the effect it is meant to track — and the deconvolution declares **2 fits valid out
+of 20**. Sweeping the one threshold parameter that governs this moves it to 11 valid fits out of 20
+at an error near 6 %, and no further: the parameter saturates against a floor that exists to stop the
+detector counting thermal noise, and underneath that floor sits the 39 % of movements that are
+mechanically invisible at an ankle at any threshold. The measurements are in
+[`docs/07-validation.md`](docs/07-validation.md) §4.3 and §4.4.
+
+The reason for tracking the rhythm rather than the count is unchanged, because it is an argument
+about the quantity: no denominator, no borrowed laboratory threshold, and twelve times less
+night-to-night variation in the thing itself. What is now established is narrower and worse — **the
+current estimator does not reach that quantity under the current settings.** The part that works is
+the refusal: on the nights it cannot identify a period, the application publishes nothing rather than
+a confident wrong number, and the screen says so in those terms.
 
 ## Architecture
 
@@ -124,9 +154,10 @@ injected ground truth.
 ### Build
 
 ```bash
-./gradlew :format:test :algo:test          # 195 unit tests, pure JVM
+./gradlew :format:test :algo:test          # 201 unit tests, pure JVM
+./gradlew :wear:testDebugUnitTest :phone:testDebugUnitTest   # 244 unit tests
 ./gradlew :wear:assembleDebug :phone:assembleDebug
-./gradlew :phone:connectedDebugAndroidTest # guard rails, needs a device or emulator
+./gradlew :phone:connectedDebugAndroidTest # 6 guard-rail tests, needs a device or emulator
 ```
 
 Requires JDK 17 and an Android SDK with platform 36. On WSL, if your build directory sits on a `drvfs`/9p Windows mount, Gradle will

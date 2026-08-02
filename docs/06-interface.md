@@ -50,16 +50,36 @@ as a title, in a notification, in a widget, or in the summary block of the expor
 
 ## 2. The screens
 
-Root navigation is three destinations, with **Trend as the start destination**.
+Root navigation is three destinations, with **Home as the start destination**.
 
 | Tab | Route | Contents |
 |---|---|---|
+| Home | `home` | Three fixed cards: prepare the night, end the night, history — see §2.2 |
 | Trend | `trend` | The aggregate, its interval, the trend plot, the report button |
-| Nights | `nights` | Reverse-chronological list, grouped by month, with eligibility state |
-| Settings | `settings` | Counting rule, sleep source, parameter profile, devices, data, about |
+| Settings | `settings` | Counting rule, sleep source, parameter profile, devices, data, measurement (the P1 report), about |
 
-The questionnaire, the night detail and the export are stacked destinations without the navigation
-bar.
+The night list, the evening form, the questionnaire, the night detail, the P1 report and the export
+are stacked destinations without the navigation bar.
+
+> **Deviation from the specification, taken deliberately.** This document originally made **Trend**
+> the start destination and **Nights** a root tab. The code makes Home the start destination and
+> `nights` a stacked destination reached from the History card.
+>
+> The reason Trend is no longer the door is that the start screen was mixing two incompatible
+> cognitive regimes: the daily gesture — quick, memorised, done one-handed — and the reading of a
+> statistical result, which is slow and heavy. The first was being charged for the second. Someone
+> came to press a button and read a figure on the way, at the hour when they are least able to judge
+> it, which is the behaviour §4 of [`01-overview.md`](01-overview.md) spends a guard rail
+> preventing. Trend remains a root destination; it is no longer the entrance.
+>
+> `Nights` left the bar for a narrower reason: a list of nights is a consultation, not a place to
+> stay. You go there from the History card with a question in mind and you come back. Keeping it a
+> permanent entry would have made **four** root destinations, which §6 excludes in as many words.
+> **The rule in §6 therefore still holds**: three entries, not four.
+>
+> The evening form is deliberately not a destination either: it is filled once, it is append-only,
+> and the SQLite triggers refuse any later modification — a permanent entry to a screen that can be
+> opened once a day and fails on the second attempt is an invitation to an error.
 
 ### 2.1 First run
 
@@ -88,10 +108,10 @@ cannot be flicked past. No "Skip".
 
 Two hands: the watch starts the recording, the phone holds the record of the evening.
 
-The **Tonight** card appears at the head of the Trend screen **between 20:00 and 04:00 only**, and
-disappears entirely outside that window (P4: nothing useless on waking). It shows watch battery and
-free space, the strap marker and which leg, and whether the sleep source is active — then says to
-press START on the watch.
+The **Tonight** card was specified to appear at the head of the Trend screen **between 20:00 and
+04:00 only**, and to disappear entirely outside that window (P4: nothing useless on waking). It shows
+watch battery and free space, the strap marker and which leg, and whether the sleep source is active
+— then says to press START on the watch.
 
 ```
 TONIGHT
@@ -110,6 +130,52 @@ refuses to start until the context has been sealed on the phone (see
 During recording the card shows elapsed time, sample count, measured rate, watch battery and gap
 count, refreshed every 60 s and only while the phone screen is on and the app is in the foreground.
 No phone-side service, no persistent notification.
+
+> **Deviation from the specification, taken deliberately: the card no longer comes and goes.** The
+> code has a root `home` destination carrying **three fixed cards — Prepare the night, End of night,
+> History — in an order and at a position that never change.** A card with nothing to do is never
+> removed; it is disabled and carries its reason, using the same button-with-a-reason component as
+> the rest of the application, so there is never an enabled button that fails and never a greyed
+> button without an explanation.
+>
+> Two reasons, one of layout and one of correctness. **Layout:** a card at the head of a screen that
+> appears and disappears shifts everything below it vertically, twice a day, and a target that moves
+> has to be found again each time. **Correctness:** a hard-coded time window is simply wrong for
+> shift work — someone on nights goes to bed at 09:00 — and for anyone who changes time zone without
+> changing habits. In both cases the clock asserts the opposite of what the database knows.
+>
+> So the state comes from a **persisted state machine** (`ui/home/AccueilModel.kt`), reading
+> `night_session.state` (`OPEN`, `STALE`, `CLOSED`, `TRUNCATED`), whether the night has been
+> analysed, and whether the evening context is sealed for the current evening. Persisted state is
+> consulted *before* the clock, always: an `OPEN` session at 15:00 is an `OPEN` session, whether it
+> is a nap, a night worker, or a watch someone forgot to stop. The clock is left exactly one job —
+> **breaking a tie**, and only when the database offers two equally plausible readings: nothing in
+> flight and nothing to analyse, which is either an evening being prepared or a daytime with nothing
+> to do. That is the only place `20:00–04:00` still appears.
+
+#### The phone can ask the watch to start, and the gate is unchanged
+
+The specification reserved starting for a physical press on the watch. The watch now also accepts a
+`/pendulum/start-request` message from the phone. It is recorded here as a deviation rather than
+argued for at length: the two devices already talk in both directions — the watch can ask the phone
+to open the evening form, precisely because the commonest blocker is a form that lives on the other
+device — and this is the symmetric path.
+
+**The guard rail is untouched.** `RecordingService` re-checks `Preflight` before starting a session,
+so a request arriving without a sealed context is refused whatever its origin — the check lives at
+the point of starting, not at the point of asking, which is what makes the origin irrelevant.
+
+One mechanism is worth recording because it looks like a workaround and is not. The listener that
+receives the message is started by Google Play Services, therefore **from the background**, and
+Android 12 forbids starting a foreground service from there outside a short list of exemptions. The
+attempt is made anyway, because it succeeds when an exemption applies; when the system refuses it,
+the fallback is a **notification on the watch** offering exactly the one-tap gesture that was wanted.
+That is not a degraded path to hide — it is the only path the system guarantees.
+
+**What does not exist yet is the phone-side sender.** `WatchCommands` emits `/pendulum/sweep-request`
+and nothing else; no code on the phone currently sends `/pendulum/start-request`. The protocol is
+wired on the receiving side and idle on the sending side, which is the same shape the sweep path had
+before it was connected.
 
 ### 2.3 Waking: five states
 
@@ -191,8 +257,9 @@ itself (`Export unavailable — 3 nights minimum`). Never an enabled button that
 
 ## 3. The trend screen
 
-This is the screen designed first and the start destination. Everything else in the product is a
-detail beside it.
+This is the screen designed first. It is no longer the start destination — see the deviation recorded
+in §2 — but everything else in the product is still a detail beside it, and the waking status strip
+of §2.3 sits at its head.
 
 ### 3.1 Below three eligible nights: refusal
 
@@ -343,6 +410,43 @@ exists anywhere in the app.
 Every sentence ends without an exclamation mark, without an emoji, and **without a semantic
 background colour**. The box is neutral in all five cases. Colouring it red when `ciLow > 15` would
 turn a measurement into a verdict.
+
+### 4.4b Three things the code added that this document did not specify
+
+All three came from the same discomfort: the five sentences above hang a decision on 15/h, on an
+interval, and on a night count, and none of those three was anchored to anything the user could
+check.
+
+**The 15/h line now carries a sentence saying where it comes from and where it does not apply.**
+The chart legend states that above 15/h periodic limb movements are usually counted as frequent in
+polysomnography (ICSD-3), that many physicians are unconcerned below it, and — the part that was
+missing — that **measured at the ankle by actigraphy, which is what Pendulum does, the matching
+threshold is closer to 16/h** (Aritake-Okada et al., *Sleep Medicine* 2014, ankle actigraph against
+polysomnography, n = 41). The 16/h figure is a named constant in the code and **drives no branch at
+all.** One paper, one cohort: substituting it for 15/h would move all five position sentences on the
+strength of a single source, where 15/h has ICSD-3 and clinical usage behind it. The constant exists
+so that the gap is written rather than left unsaid, and a unit test asserts that the legend mentions
+it.
+
+**The number of nights the screen asks for depends on where the interval sits.** This is the one
+place in the product where a rule adds severity instead of removing it, and it comes from the same
+study: the index agrees with itself night to night at an intraclass correlation of 0.90 from **three
+nights above 15/h**, and needs **26 nights below it**. So `nuitsRequises` returns 3 when the interval
+is entirely above the threshold, **7** when it spans it, and **14** when it is entirely below.
+Fourteen is not measured and the text says so in as many words: 26 would make the screen unusable,
+3 would make it confident exactly where it has the least reason to be. The banner never shows a bare
+number — it always shows the reason with it.
+
+**Below six nights the interval is labelled "not a calibrated 95 % interval".** Measured by Monte
+Carlo over 10 000 draws, the percentile bootstrap interval holds the true median about **75 % of the
+time on three nights and 88 % on four**, where the label promises 95 %. That is not an implementation
+defect and BCa does not repair it: the median of a resample of `n` values *is* one of those `n`
+values, so any bootstrap interval is trapped inside the sample's own range, and
+`P(min < θ < max) = 1 − 2·2⁻ⁿ` — 75 % at n = 3, 87.5 % at 4, 93.75 % at 5, 96.9 % at 6. Six is the
+first `n` whose ceiling clears 95 %. The screen therefore changes the wording rather than widening
+the interval by an invented amount, and the explanatory panel gives both the measurement and the
+arithmetic. An interval that lies about its own coverage would undermine the one element the whole
+product rests on.
 
 ### 4.5 What changed with the metric, and what is still open
 

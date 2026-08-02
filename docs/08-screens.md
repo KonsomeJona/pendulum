@@ -94,8 +94,15 @@ a later version. No amount of signal processing gives an ankle accelerometer a r
 
 Two hands: the watch starts the recording, the phone holds the record of the evening. The top card is the
 one the specification draws — watch battery and free space, the strap marker and which leg, whether the
-sleep source is active — and it exists only between 20:00 and 04:00. Outside that window it is not
-collapsed or greyed, it is absent, so that nothing useless is on the screen at 07:00.
+sleep source is active — and the specification had it exist only between 20:00 and 04:00, absent rather
+than greyed outside that window, so that nothing useless is on the screen at 07:00.
+
+*The mock-up predates the code on this point.* The application no longer shows and hides that card:
+Home carries three fixed cards whose order and position never change, and a card with nothing to do is
+disabled with its reason rather than removed. A card that appears and disappears shifts everything below
+it twice a day, and a hard-coded time window is wrong for shift work and for anyone who changes time
+zone. The state comes from a persisted state machine; the clock only breaks ties. See
+[`06-interface.md`](06-interface.md) §2.2.
 
 The battery line is advice: below 85 % it turns amber and says `98 % recommandé — une nuit consomme
 40 à 70 %`, and it blocks nothing. The thing that does block is the second card. **The watch refuses to

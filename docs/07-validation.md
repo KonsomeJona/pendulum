@@ -40,8 +40,11 @@ order from "proves the least about reality" to "proves the least about the algor
 | 5 | **Internal consistency** | That the pipeline does not contradict itself: covered epochs equal decoded samples over the sampling rate; a night rebuilt from an exported bundle reproduces the index bit for bit; the incremental and definitive passes agree within a stated bound | Nothing about correctness. A consistently wrong pipeline passes |
 | 6 | **Golden files** | That a fixed recording produces the same output today as it did last month. This is the only check that survives a refactor of everything else | Nothing at all about the truth of that output — it locks in whatever was there when the file was recorded |
 
-Levels 1, 4, 5 and 6 exist today. Levels 2 and 3 are scheduled for the seven-night campaign at the
-end of the roadmap ([`01-overview.md`](01-overview.md) §5, phase P7) and have not been run.
+Levels 1, 5 and 6 exist today as assertions that run on every build. Level 4 exists only as two
+`@Disabled` sweeps run by hand (§4.1 and §4.4); its non-regression assertion, T12, is not written.
+Levels 2 and 3 are scheduled for the seven-night campaign at the end of the roadmap
+([`01-overview.md`](01-overview.md) §5, phase P7) and have not been run — nor has the hardware gate
+that precedes all of it, P1.
 
 ---
 
@@ -173,6 +176,12 @@ worst-case assertion where indicated.
 T22 is numbered 22 and not 18 because [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §5.5 already assigns T18–T21
 to the four assertions described below, none of which is written yet. Reusing T18 would have created
 a silent collision in a table several documents quote.
+
+**One row of that table is a specification and not a test: T12 is not written.** The ±20 % sweep it
+describes does not exist as an assertion; what exists are the two parameter sweeps of §4.1 and §4.4,
+both `@Disabled` measurements run by hand rather than guards that go red. The distinction matters
+because §4.1 uses one of those sweeps to contradict a figure that had been "awaiting T12" for the
+project's whole history.
 
 ### T22 is a published number, not a pass/fail
 
@@ -405,8 +414,13 @@ Recorded here rather than fixed silently, per the rule in §5.4:
   sweep informative in a way it currently is not. It is not done here because T5 transcribes a
   published statement of the specification, and changing what a test asserts in the same change that
   moves another test's denominator is one goalpost too many.
-- **The two T22 numbers do not yet reach the physician's report.** They are computed and asserted in
-  `algo`; the report generated for a clinician still carries only `emgToAccelRatio`.
+- ~~**The two T22 numbers do not yet reach the physician's report.**~~ **Closed.** All three now do:
+  `ReportExporter` carries a section stating the sub-threshold fraction (0.70), the raw retained
+  count (0.30) and the share of the true index that survives (0.06), together with the sentence the
+  third number exists for — that a low figure in this report cannot be read as "few movements",
+  because discarding 70 % of the events does not dilute the series, it destroys them. The constants
+  are transcribed rather than imported, since they live in a test source the application module does
+  not compile; T22 is what guards them against drifting apart.
 
 Confidence: **high** for the measurements (direct, 20 seeds, both the sweep and T22 reproducible on
 demand). **High** for the decision on T6's denominator, conditional on T22 existing beside it — without
