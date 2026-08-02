@@ -1079,7 +1079,12 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
         /** `at least 99.0%` — le seuil, ecrit a cote de la valeur et jamais ailleurs. */
         fun auMoins(seuil: String) = "at least $seuil"
 
-        fun batterieSeuil(pct: Int, heures: Int) = "at least $pct% at $heures h"
+        /**
+         * `above 20% at 8 h` — et non « at least ». La couverture se lit « at or above », la
+         * batterie « above » : `01-overview.md` §5 distingue les deux, le code aussi, et le
+         * libelle affiche a cote de la valeur doit dire lequel des deux s'applique.
+         */
+        fun batterieSeuil(pct: Int, heures: Int) = "above $pct% at $heures h"
 
         fun frequenceSeuil(nominalHz: Int, tolerance: String) = "$nominalHz Hz ± $tolerance"
 

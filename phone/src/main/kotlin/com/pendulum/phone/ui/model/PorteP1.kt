@@ -200,9 +200,13 @@ object PorteP1 {
      *
      * Restent trois lectures, toutes exactes :
      *  - la nuit a dure huit heures ou plus : le niveau rapporte **est** le niveau a huit heures ;
-     *  - la nuit a ete plus courte et le niveau est deja sous le seuil : il ne remontera pas, donc
-     *    la nuit echoue, et l'affirmer ne suppose rien ;
+     *  - la nuit a ete plus courte et le niveau est deja au seuil ou en dessous : il ne remontera
+     *    pas, donc la nuit echoue, et l'affirmer ne suppose rien ;
      *  - la nuit a ete plus courte et le niveau tient encore : on ne sait pas, et on le dit.
+     *
+     * Le comparateur est **strict** — 20 % pile echoue. C'est la lecture de `01-overview.md` §5
+     * (« battery above 20 % »), et c'est celle de [Controles.BATTERIE_MIN_PCT], ou elle porte sa
+     * justification. Les deux fichiers doivent rendre le meme verdict sur la meme nuit.
      */
     private fun batterie(session: NightSessionEntity): Critere {
         val pct = session.batteryPctLast
@@ -218,7 +222,7 @@ object PorteP1 {
             seuil = Textes.P1.batterieSeuil(Controles.BATTERIE_MIN_PCT, DUREE_CIBLE_H.toInt()),
             etat = when {
                 pct == null -> Conformite.INDETERMINE
-                pct < Controles.BATTERIE_MIN_PCT -> Conformite.NON_CONFORME
+                pct <= Controles.BATTERIE_MIN_PCT -> Conformite.NON_CONFORME
                 atteintHuitHeures -> Conformite.CONFORME
                 else -> Conformite.INDETERMINE
             },

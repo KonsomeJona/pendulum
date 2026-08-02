@@ -1,9 +1,12 @@
 package com.pendulum.phone.ui
 
+import com.pendulum.phone.db.ComparabilityRule
+import com.pendulum.phone.db.ComparableNight
 import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.ui.model.Controles
 import com.pendulum.phone.ui.model.PorteP1
 import com.pendulum.phone.ui.model.PorteP1.Conformite
+import com.pendulum.phone.ui.text.Textes
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
@@ -68,6 +71,32 @@ class PorteP1Test {
         )
     }
 
+    /**
+     * Une nuit comparable quelconque : [Controles.de] en a besoin pour ses autres lignes, et
+     * aucune d'elles n'entre dans ce que ce fichier verifie.
+     */
+    private fun nuitComparable() = ComparableNight(
+        sessionHex = "abcd",
+        startWallMs = COUCHER,
+        zoneId = "Europe/Paris",
+        paramsHash = "h",
+        rule = "AASM_V3",
+        maskSource = "HEALTH_CONNECT",
+        gate = "FULL",
+        independence = "INDEPENDENT",
+        plmi = 18.4,
+        plmiSpt = 9.0,
+        fundamentalSec = 21.0,
+        periodicityIndex = 0.58,
+        missRate = 0.11,
+        analysableTstMin = 312.0,
+        analysableMin = 460.0,
+        truncated = false,
+        revealedAtMs = null,
+        comparable = true,
+        exclusionReason = ComparabilityRule.OK,
+    )
+
     // -------------------------------------------------------------------------------------
     // Couverture
     // -------------------------------------------------------------------------------------
@@ -95,11 +124,34 @@ class PorteP1Test {
 
     @Test
     fun `a huit heures, le niveau rapporte est le niveau a huit heures`() {
-        assertThat(PorteP1.de(nuit(heures = 8.0, batterie = Controles.BATTERIE_MIN_PCT)).batterie.etat)
+        assertThat(PorteP1.de(nuit(heures = 8.0, batterie = Controles.BATTERIE_MIN_PCT + 1)).batterie.etat)
             .isEqualTo(Conformite.CONFORME)
         assertThat(PorteP1.de(nuit(heures = 8.0, batterie = Controles.BATTERIE_MIN_PCT - 1)).batterie.etat)
             .isEqualTo(Conformite.NON_CONFORME)
     }
+
+    /**
+     * La borne exacte, et le seul endroit ou elle etait ambigue.
+     *
+     * `01-overview.md` §5 ecrit « battery **above** 20 % » et la KDoc de
+     * [Controles.BATTERIE_MIN_PCT] disait la meme chose, pendant que les deux comparateurs
+     * ecrivaient `>=`. A 20 % pile la documentation disait echec et le code reussite — un
+     * desaccord qui ne se declenche qu'une nuit sur cinquante et qui, ce jour-la, fait franchir
+     * la porte bloquante du projet a une campagne qui ne l'a pas franchie.
+     */
+    @Test
+    fun `vingt pour cent pile echoue, comme le document le dit`() {
+        assertThat(PorteP1.de(nuit(heures = 8.0, batterie = Controles.BATTERIE_MIN_PCT)).batterie.etat)
+            .isEqualTo(Conformite.NON_CONFORME)
+        // Et la ligne de controle du detail de nuit tranche pareil : un seul seuil, un seul
+        // comparateur, sinon la meme nuit porte deux verdicts selon l'ecran qu'on regarde.
+        assertThat(ligneBatterie(Controles.BATTERIE_MIN_PCT)?.ok).isFalse()
+        assertThat(ligneBatterie(Controles.BATTERIE_MIN_PCT + 1)?.ok).isTrue()
+    }
+
+    private fun ligneBatterie(pct: Int) = Controles
+        .de(nuit(batterie = pct), nuitComparable(), null)
+        .firstOrNull { it.libelle == Textes.Nuits.Detail.BATTERIE_FIN }
 
     @Test
     fun `une nuit courte ne dit rien sur huit heures, sauf si elle est deja sous le seuil`() {

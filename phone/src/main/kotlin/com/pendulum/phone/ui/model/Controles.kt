@@ -55,7 +55,17 @@ object Controles {
     /** Seuil de la porte P1 : au moins 99 % des echantillons attendus. */
     const val COUVERTURE_MIN = 0.99
 
-    /** Seuil de la porte P1 : plus de 20 % de batterie restante a huit heures. */
+    /**
+     * Seuil de la porte P1 : **strictement plus** de 20 % de batterie restante a huit heures.
+     *
+     * La comparaison est stricte parce que `01-overview.md` §5 ecrit « battery **above** 20 % » la
+     * ou la couverture est ecrite « **at or above** 99 % » — la difference entre les deux
+     * formulations est portee par le document et n'est pas une maladresse de redaction. A 20 %
+     * pile, le code rendait « conforme » et la documentation « echec » : la borne exacte est
+     * precisement celle qui bascule en silence, puisqu'elle ne se produit qu'une nuit sur
+     * cinquante et ne ressemble jamais a un defaut. Le desaccord est tranche en faveur du
+     * document, qui est ce que P1 signifie.
+     */
     const val BATTERIE_MIN_PCT = 20
 
     /** Ecart tolere entre la cadence demandee et la cadence delivree. */
@@ -123,7 +133,9 @@ object Controles {
                 libelle = Textes.Nuits.Detail.BATTERIE_FIN,
                 valeur = batterie?.let { "$it%" } ?: TIRET,
                 seuil = "$BATTERIE_MIN_PCT%",
-                ok = batterie != null && batterie >= BATTERIE_MIN_PCT,
+                // Strictement au-dessus : voir [BATTERIE_MIN_PCT]. Le meme comparateur qu'en
+                // [PorteP1.batterie], sans quoi la meme nuit aurait deux verdicts.
+                ok = batterie != null && batterie > BATTERIE_MIN_PCT,
             )
         )
 
