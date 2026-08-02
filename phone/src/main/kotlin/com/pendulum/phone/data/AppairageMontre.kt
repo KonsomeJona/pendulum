@@ -56,12 +56,17 @@ data class EtatMontre(val etat: EtatAppairage, val nom: String? = null)
  * exactement comme une montre prete. Seul `CapabilityClient` repond a la question qui compte, et
  * seulement si les deux cotes declarent leur capacite dans `res/values/wear.xml`.
  *
- * ### Ce qui manque encore, et qu'il faut savoir en lisant ce fichier
+ * ### Les deux moities de la detection
  *
- * Le module `:wear` ne declare **pas** encore [CAPACITE_MONTRE]. Tant que ce fichier de ressources
- * n'existe pas de l'autre cote, [lire] rendra [EtatAppairage.APP_ABSENTE_OU_HORS_PORTEE] meme sur
- * une montre ou l'application tourne. C'est le seul defaut assume ici, et il est reparable en
- * trois lignes de XML cote montre — pas en changeant ce code.
+ * Elle n'a de sens que si les deux cotes declarent leur capacite : `phone/res/values/wear.xml`
+ * annonce [CAPACITE_TELEPHONE], `wear/res/values/wear.xml` annonce [CAPACITE_MONTRE], et chacun
+ * cherche celui d'en face. Les noms sont volontairement distincts — un nom partage rendrait
+ * chaque appareil capable de se detecter lui-meme.
+ *
+ * Les deux fichiers portent un `tools:keep` sur le tableau. Ce n'est pas decoratif : aucune
+ * reference Kotlin ne pointe vers lui — c'est Google Play Services qui le lit, par son nom, a
+ * l'installation — donc le reducteur de ressources le supprime, en release uniquement, en
+ * silence. La detection cesse alors de fonctionner sans qu'aucun message ne soit produit.
  */
 object AppairageMontre {
 

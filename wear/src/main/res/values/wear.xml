@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  La capacite que le telephone cherche pour savoir si cette montre porte l'application.
+
+  Sans ce fichier, `CapabilityClient.getCapability("pendulum_watch_app", FILTER_REACHABLE)` ne
+  trouve aucun noeud **meme sur une montre ou l'application tourne**, et l'assistant du telephone
+  conclut « application absente » en proposant de l'installer une seconde fois. Trois lignes de
+  XML pour la moitie montre d'une detection dont l'autre moitie etait deja ecrite.
+
+  Le `tools:keep` est **critique** et n'est pas une precaution de style : le reducteur de
+  ressources ne voit aucune reference Kotlin vers ce tableau — c'est Google Play Services qui le
+  lit, par son nom, a l'installation — donc il le supprime. Le symptome apparait alors
+  uniquement en release, et il est silencieux : la detection cesse de fonctionner sans qu'aucun
+  message ne soit produit. `isMinifyEnabled` vaut `false` aujourd'hui dans les deux modules, ce
+  qui rend l'oubli invisible jusqu'au jour ou il passera a `true`.
+
+  Les deux noms sont volontairement distincts (`pendulum_watch_app` ici, `pendulum_phone_app` cote
+  telephone) : chaque cote cherche celui d'en face, et un nom partage rendrait chaque appareil
+  capable de se detecter lui-meme.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@array/android_wear_capabilities">
+    <string-array name="android_wear_capabilities">
+        <item>pendulum_watch_app</item>
+    </string-array>
+</resources>

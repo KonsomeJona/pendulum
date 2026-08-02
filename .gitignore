@@ -9,7 +9,19 @@ captures/
 *.aab
 *.keystore
 # Donnees de nuit capturees (jamais versionnees : donnees de sante)
+#
+# `data/` sans ancrage correspond a **n'importe quel** repertoire de ce nom, a n'importe quelle
+# profondeur. Il a donc avale en silence tout le paquet `com.pendulum.phone.data` — les
+# preferences, le repository, le scellement du contexte du soir — pendant plusieurs commits.
+# Le symptome est le pire qui soit : `git add phone/` ne dit rien, `git status` ne montre rien,
+# le depot compile chez celui qui a les fichiers et **ne compile pas** depuis un clone neuf.
+#
+# La negation retablit tout ce qui vit sous un `src/`, c'est-a-dire du code source. Les donnees
+# capturees, elles, n'y sont jamais : elles vivent dans le stockage prive de l'application sur
+# l'appareil, et dans `sessions/` ou `captures/` quand on en rapatrie pour analyse.
 data/
+!**/src/**/data/
+!**/src/**/data/**
 sessions/
 *.pendulum
 
