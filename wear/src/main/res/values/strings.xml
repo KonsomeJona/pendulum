@@ -17,6 +17,9 @@
     <string name="pending_sync_line">%1$d chunks awaiting sync</string>
     <string name="preflight_recheck">Check again</string>
     <string name="allow_notifications">Allow notifications</string>
+    <string name="open_on_phone">Open on phone</string>
+    <string name="open_on_phone_sent">Opened on your phone.</string>
+    <string name="open_on_phone_unreachable">Phone not reachable. Fill the evening form on it directly.</string>
     <string name="open_settings">Open settings</string>
 
     <!-- Écran unique : état enregistrement. -->

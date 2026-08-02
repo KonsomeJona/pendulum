@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.play.services.wearable)
+    implementation(libs.androidx.wear.remote.interactions)
     // Deja tiree transitivement par WorkManager et Compose ; declaree explicitement parce que
     // le service et les workers en dependent directement.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

@@ -79,6 +79,26 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+              Lien profond ouvert **depuis la montre**, par `RemoteActivityHelper`.
+
+              L'API n'accepte qu'un `ACTION_VIEW` avec une URI navigable, d'ou `BROWSABLE`. C'est
+              la contrainte du seul chemin qui fonctionne : envoyer un message et appeler
+              `startActivity` depuis le `WearableListenerService` est bloque depuis Android 10 —
+              le service tourne en arriere-plan — et l'echec est silencieux.
+
+              Schema personnalise plutot qu'un App Link `https` verifie : ce dernier exigerait
+              d'heberger un `assetlinks.json`, donc de dependre d'un domaine, pour une application
+              qui ne declare meme pas la permission Internet. Le prix assume est qu'un
+              constructeur peut afficher une boite « ouvrir avec » au premier usage.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="pendulum" android:host="tonight" />
+            </intent-filter>
         </activity>
 
         <!--
@@ -128,6 +148,19 @@
                 <data
                     android:host="*"
                     android:pathPrefix="/pendulum/"
+                    android:scheme="wear" />
+            </intent-filter>
+
+            <!--
+              Repli quand `RemoteActivityHelper` echoue cote montre. Le service **ne lance pas
+              d'activite** : il poste une notification, dont le tap est la seule exemption fiable
+              au blocage des lancements depuis l'arriere-plan.
+            -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/pendulum/open-phone"
                     android:scheme="wear" />
             </intent-filter>
         </service>

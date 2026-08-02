@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import com.pendulum.wear.transfer.DataLayerTransfer
+import com.pendulum.wear.transfer.RemoteCommands
 import androidx.wear.compose.material.Colors
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
@@ -55,6 +57,7 @@ import com.pendulum.wear.record.RecordPhase
 import com.pendulum.wear.record.RecordUiState
 import com.pendulum.wear.record.RecordingState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -87,6 +90,8 @@ fun RecordRoute(
     val context = LocalContext.current
     var refreshKey by remember { mutableIntStateOf(0) }
     var preflight by remember { mutableStateOf<PreflightResult?>(null) }
+    var ouvertureTelephone by remember { mutableStateOf(OuvertureTelephone.Aucune) }
+    val portee = rememberCoroutineScope()
 
     // Une seule execution par affichage, jamais periodique : le preflight fait des E/S et une
     // lecture du Data Layer, ce n'est pas quelque chose qu'on repete en boucle sous la couette.
@@ -170,6 +175,19 @@ fun RecordRoute(
         onDemanderNotifications = {
             demandeNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         },
+        onOuvrirLeTelephone = {
+            portee.launch {
+                // Le resultat est affiche, pas suppose : « ouvert » quand le telephone a bien
+                // recu la demande, « telephone injoignable » sinon. Annoncer un succes alors que
+                // rien ne s'est ouvert envoie quelqu'un chercher un ecran qui n'est pas apparu.
+                ouvertureTelephone = if (RemoteCommands.ouvrirLeTelephone(context)) {
+                    OuvertureTelephone.Envoyee
+                } else {
+                    OuvertureTelephone.Injoignable
+                }
+            }
+        },
+        ouverture = ouvertureTelephone,
     )
 }
 
@@ -182,6 +200,8 @@ fun RecordScreen(
     onRecheck: () -> Unit,
     onOpenSettings: () -> Unit,
     onDemanderNotifications: () -> Unit = {},
+    onOuvrirLeTelephone: () -> Unit = {},
+    ouverture: OuvertureTelephone = OuvertureTelephone.Aucune,
 ) {
     // Marges calculees depuis la forme reelle de l'ecran, et non fixees en dur.
     //
@@ -230,6 +250,8 @@ fun RecordScreen(
                 onRecheck = onRecheck,
                 onOpenSettings = onOpenSettings,
                 onDemanderNotifications = onDemanderNotifications,
+                onOuvrirLeTelephone = onOuvrirLeTelephone,
+                ouverture = ouverture,
             )
         }
     }
@@ -243,6 +265,8 @@ private fun IdleContent(
     onRecheck: () -> Unit,
     onOpenSettings: () -> Unit,
     onDemanderNotifications: () -> Unit,
+    onOuvrirLeTelephone: () -> Unit,
+    ouverture: OuvertureTelephone,
 ) {
     Text(
         text = stringResource(R.string.idle_title),
@@ -304,6 +328,34 @@ private fun IdleContent(
         // troisieme, et la seconde vaut mieux qu'un detour par une arborescence de reglages lu a
         // la cheville. Les reglages restent en second recours, pour le cas ou l'invite ne
         // s'affiche plus.
+        // Le contexte non scelle est le bloqueur le plus frequent, et le seul qui se leve sur
+        // l'autre appareil. Sans ce bouton, la montre disait quoi faire et laissait l'utilisateur
+        // reposer la montre, trouver son telephone, deverrouiller et retrouver l'application —
+        // au coucher, ecran a la cheville.
+        if (preflight.blockers.any { it.id == IssueId.CONTEXT_NOT_SEALED }) {
+            FlatButton(
+                label = stringResource(R.string.open_on_phone),
+                enabled = ouverture != OuvertureTelephone.Envoyee,
+                color = MaterialTheme.colors.surface,
+                contentColor = MaterialTheme.colors.onSurface,
+                onClick = onOuvrirLeTelephone,
+            )
+            when (ouverture) {
+                OuvertureTelephone.Envoyee -> Text(
+                    text = stringResource(R.string.open_on_phone_sent),
+                    style = captionStyle(),
+                    textAlign = TextAlign.Center,
+                )
+                OuvertureTelephone.Injoignable -> Text(
+                    text = stringResource(R.string.open_on_phone_unreachable),
+                    color = Amber,
+                    style = captionStyle(),
+                    textAlign = TextAlign.Center,
+                )
+                OuvertureTelephone.Aucune -> Unit
+            }
+        }
+
         if (preflight.blockers.any { it.id == IssueId.NOTIFICATIONS_DENIED }) {
             FlatButton(
                 label = stringResource(R.string.allow_notifications),
@@ -511,3 +563,11 @@ fun PendulumTheme(content: @Composable () -> Unit) {
         content = content,
     )
 }
+
+/**
+ * Ce que la derniere tentative d'ouverture du telephone a donne.
+ *
+ * Trois etats et non un booleen : « pas encore demande » et « demande, telephone injoignable » ne
+ * disent pas la meme chose a quelqu'un qui attend qu'un ecran s'allume a l'autre bout de la piece.
+ */
+enum class OuvertureTelephone { Aucune, Envoyee, Injoignable }

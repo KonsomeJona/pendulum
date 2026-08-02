@@ -51,6 +51,21 @@ class PendulumListenerService : WearableListenerService() {
     private val db by lazy { PendulumDatabase.get(this) }
     private val store by lazy { ChunkStore(this) }
 
+    /**
+     * Repli de l'ouverture a distance : la montre demande que le telephone s'ouvre.
+     *
+     * **Ce service ne lance pas d'activite**, et ce n'est pas un oubli. Il est demarre par les
+     * services Google Play, donc depuis l'arriere-plan, et Android bloque les lancements
+     * d'activite depuis l'arriere-plan depuis la version 10 — sans exception lisible, sans erreur,
+     * avec pour seule trace une ligne dans les journaux du systeme. Le chemin nominal passe par
+     * `RemoteActivityHelper` cote montre ; quand il echoue, on poste une notification, dont le tap
+     * par l'utilisateur est la seule exemption fiable.
+     */
+    override fun onMessageReceived(event: com.google.android.gms.wearable.MessageEvent) {
+        if (event.path != WirePaths.OPEN_PHONE) return
+        com.pendulum.phone.notify.Notifications.demandeDeContexteDuSoir(this)
+    }
+
     override fun onDataChanged(events: DataEventBuffer) {
         // Les sessions touchees pendant cette salve : l'accuse n'est publie qu'une fois par
         // session et par salve, apres avoir tout ecrit. Un accuse par chunk multiplierait par

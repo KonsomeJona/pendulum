@@ -63,6 +63,25 @@ object WirePaths {
      */
     const val CONTEXT_PREFIX = "/pendulum/context/"
 
+    /**
+     * Montre → telephone : « ouvre le formulaire du soir ».
+     *
+     * Repli du chemin `RemoteActivityHelper`. Le telephone n'a **pas** le droit de lancer une
+     * activite en recevant ce message — Android bloque les lancements depuis l'arriere-plan — il
+     * poste une notification dont le tap, lui, est une exemption explicite.
+     */
+    const val OPEN_PHONE = "/pendulum/open-phone"
+
+    /**
+     * Telephone → montre : « demarre l'enregistrement ».
+     *
+     * Ecart assume vis-a-vis de `docs/06-interface.md` §2.2, qui reserve le demarrage a un geste
+     * physique sur la montre. Le garde-fou reste entier : `RecordingService` re-verifie le
+     * preflight avant `startSession`, donc une demande sans contexte scelle est refusee cote
+     * montre quelle qu'en soit l'origine.
+     */
+    const val START_REQUEST = "/pendulum/start-request"
+
     fun context(nightKey: String) = CONTEXT_PREFIX + nightKey
 
     fun session(sessionHex: String) = SESSION_PREFIX + sessionHex
