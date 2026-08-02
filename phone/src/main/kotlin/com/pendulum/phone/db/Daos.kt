@@ -46,6 +46,20 @@ interface NightDao {
     suspend fun allHexOldestFirst(): List<String>
 
     /**
+     * Les nuits fermees depuis moins de 36 h : exactement celles dont l'hypnogramme peut encore
+     * arriver. C'est l'ensemble que le declencheur opportuniste balaie quand le telephone est
+     * branche ou que l'application revient au premier plan.
+     */
+    @Query(
+        """
+        SELECT * FROM night_session
+        WHERE endWallMs IS NOT NULL AND endWallMs >= :depuisMs
+        ORDER BY startWallMs DESC
+        """
+    )
+    suspend fun endedSince(depuisMs: Long): List<NightSessionEntity>
+
+    /**
      * Fermeture annoncee par la montre. `endWallMs` et `stopReason` ne s'ecrivent qu'ici : une
      * fin devinee est un bug, `UNKNOWN` est une reponse acceptable.
      */
@@ -267,8 +281,16 @@ interface HcSnapshotDao {
     @Query("SELECT * FROM hc_snapshot WHERE sessionHex = :hex ORDER BY fetchedAtMs ASC")
     suspend fun ofSession(hex: String): List<HcSnapshotEntity>
 
-    /** Le nombre de tentatives deja faites : c'est lui qui pilote le backoff, pas une preference. */
-    @Query("SELECT COUNT(*) FROM hc_snapshot WHERE sessionHex = :hex")
+    /**
+     * Le nombre de tentatives **planifiees** deja faites : c'est lui qui pilote le repli, pas une
+     * preference.
+     *
+     * `attemptIndex >= 0` exclut les lectures opportunistes (chargeur branche, retour au premier
+     * plan), qui sont journalisees avec `FetchSchedule.INDEX_OPPORTUNISTE`. Les compter ferait
+     * avancer l'echelle a chaque branchement : trois aller-retours de cable epuiseraient les sept
+     * rangs en une minute, et l'application abandonnerait la nuit avant midi.
+     */
+    @Query("SELECT COUNT(*) FROM hc_snapshot WHERE sessionHex = :hex AND attemptIndex >= 0")
     suspend fun attemptCount(hex: String): Int
 
     @Query("SELECT * FROM hc_snapshot WHERE sessionHex = :hex ORDER BY fetchedAtMs DESC LIMIT 1")

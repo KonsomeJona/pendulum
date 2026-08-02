@@ -8,10 +8,13 @@ import com.pendulum.phone.db.PendulumDatabase
 import com.pendulum.phone.ui.home.SessionAccueil
 import com.pendulum.phone.ui.home.SourceAccueil
 import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.CheminDeCalcul
 import com.pendulum.phone.ui.model.EtatNuit
+import com.pendulum.phone.ui.model.MachineReveil
 import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.Controles
 import com.pendulum.phone.ui.model.NuitUi
+import com.pendulum.phone.ui.model.Situations
 import com.pendulum.phone.ui.nights.NuitDetailUi
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.work.AnalysisParams
@@ -111,6 +114,12 @@ class PendulumRepository(context: Context) {
                 val agregeables = nuitsAgregeables(hash)
                 val parHex = sessions.associateBy { it.sessionHex }
 
+                // `observeAll` trie par `startWallMs DESC` : la premiere ligne est la nuit dont la
+                // bande d'etat parle. On ne filtre pas sur une cle de nuit — une nuit d'avant-hier
+                // restee en transfert est exactement celle dont il faut dire ou elle en est.
+                val recente = sessions.firstOrNull()
+                val dernierSnapshot = recente?.let { db.hcSnapshotDao().latest(it.sessionHex) }
+
                 EtatTendance(
                     nuits = toutes
                         .map { n -> versNuitUi(n, parHex[n.sessionHex], sourcePreferee) }
@@ -144,6 +153,37 @@ class PendulumRepository(context: Context) {
                         .mapNotNull { it.paramsHash }
                         .distinct()
                         .size > 1,
+                    // Les faits bruts de la derniere nuit. La **decision** de ce qu'il faut
+                    // afficher appartient a `MachineReveil`, pure et testee sur ses bornes ; ce
+                    // fichier ne fait que lire, et il reste ignorant des cinq etats.
+                    faitsReveil = recente?.let { s ->
+                        MachineReveil.Faits(
+                            sessionHex = s.sessionHex,
+                            dateLisible = Mapping.dateLisible(s.startWallMs, s.zoneId),
+                            zoneId = s.zoneId,
+                            etatSession = s.state,
+                            chunksRecus = db.chunkDao().count(s.sessionHex),
+                            totalChunks = s.totalChunks,
+                            octetsRecus = db.chunkDao().totalBytes(s.sessionHex),
+                            analyseeAtMs = s.analyzedAtMs,
+                            finDeNuitMs = s.endWallMs,
+                            // Le seul fait qui dise que le chiffre repose sur un denominateur
+                            // independant : une fenetre de sommeil Health Connect existe pour le
+                            // hash courant. Un `hc_snapshot` reussi ne suffit pas — le rescore
+                            // peut ne pas encore avoir eu lieu.
+                            masqueSommeilApplique = db.derivedDao()
+                                .windowsOf(s.sessionHex, hash)
+                                .any { it.source == MASQUE_PAR_DEFAUT },
+                            hypnogrammeRecu = dernierSnapshot?.selectedRecordId != null,
+                            tentativesHc = db.hcSnapshotDao().attemptCount(s.sessionHex),
+                            derniereTentativeMs = dernierSnapshot?.fetchedAtMs,
+                            integriteRejetee = s.integrityRejectedFraction,
+                        )
+                    },
+                    // `originCount` compte les applications distinctes ayant publie une session
+                    // recouvrant cette nuit. Deux ou plus, et le denominateur depend de celle
+                    // qu'on lit : c'est exactement E-HC-03.
+                    originesDerniereNuit = dernierSnapshot?.originCount ?: 0,
                 )
             }
             .flowOn(Dispatchers.IO)
@@ -280,7 +320,30 @@ class PendulumRepository(context: Context) {
             imiMedianSec = intervalleMedianSec(evenements.map { it.onsetMsRel }),
             controles = Controles.de(session, nuit, resultat),
             regleAppliquee = "${Textes.Reglages.REGLE_AASM} · ${session.algoVersion.orEmpty()}",
+            // Le taux de manques et l'encadrement respiratoire etaient calcules par `:algo` et
+            // persistes dans `plm_result` depuis le debut, et affiches nulle part. Le bloc ne
+            // calcule rien de neuf : il met en forme le chemin qui mene au chiffre.
+            pourquoi = CheminDeCalcul.de(
+                n = nuit,
+                resultat = resultat,
+                dureeEnregistreeMin = dureeEnregistreeMin(session),
+                mouvementsRetenus = (resultat?.plmsCount ?: 0) + (resultat?.plmwCount ?: 0),
+                regle = Textes.Reglages.REGLE_AASM,
+                sourceSommeil = Mapping.libelleSource(nuit.maskSource, sourcePreferee),
+            ),
+            situation = Situations.nuit(nuit, session),
         )
+    }
+
+    /**
+     * Duree de la session, du demarrage a l'arret, en minutes. Zero tant que la nuit est ouverte.
+     *
+     * Elle sert de **contexte** au sommeil analysable et jamais de denominateur : « 5 h 12 » ne
+     * dit rien, « 5 h 12 sur 7 h 41 enregistrees » dit ou est passe le reste.
+     */
+    private fun dureeEnregistreeMin(session: NightSessionEntity): Double {
+        val fin = session.endWallMs ?: return 0.0
+        return ((fin - session.startWallMs) / 60_000.0).coerceAtLeast(0.0)
     }
 
     /**
@@ -350,6 +413,8 @@ data class EtatTendance(
     val periodiciteMediane: Double,
     val profilPersonnalise: String?,
     val hashsMelanges: Boolean,
+    val faitsReveil: MachineReveil.Faits? = null,
+    val originesDerniereNuit: Int = 0,
 ) {
     val nuitsEligibles: Int get() = nuitsAgregeables.size
     val nuitsEnregistrees: Int get() = nuits.size

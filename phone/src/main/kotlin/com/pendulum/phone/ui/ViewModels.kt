@@ -24,9 +24,10 @@ import com.pendulum.phone.ui.home.AccueilUi
 import com.pendulum.phone.ui.home.MachineAccueil
 import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.model.EtatNuit
-import com.pendulum.phone.ui.model.EtatReveil
+import com.pendulum.phone.ui.model.MachineReveil
 import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.NuitUi
+import com.pendulum.phone.ui.model.Situations
 import com.pendulum.phone.ui.nights.NuitDetailUi
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.settings.ReglagesUi
@@ -66,14 +67,57 @@ import kotlinx.coroutines.launch
 class TrendViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = PendulumRepository(app)
+    private val lecteur = SleepReader(app)
 
-    val etat: StateFlow<TendanceUiState> = repo.observerTendance()
-        .map { it.versUiState() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TendanceUiState.Chargement)
+    /**
+     * Ce que Health Connect repond, relu a la demande.
+     *
+     * Ce n'est pas un flux Room : la disponibilite et la liste des sources sont des appels
+     * suspendus vers un fournisseur systeme, sans notification de changement. On les relit a
+     * l'ouverture de l'ecran et au retour au premier plan — c'est-a-dire aux deux moments ou une
+     * permission vient d'etre accordee ailleurs.
+     */
+    private val _disponibiliteSante = MutableStateFlow<SleepReader.Availability?>(null)
+    private val _sourcesRecentes = MutableStateFlow<Int?>(null)
 
-    private fun EtatTendance.versUiState(): TendanceUiState {
+    init {
+        relireLaSante()
+    }
+
+    fun relireLaSante() {
+        viewModelScope.launch {
+            val disponibilite = lecteur.availability()
+            _disponibiliteSante.value = disponibilite
+            _sourcesRecentes.value = if (disponibilite == SleepReader.Availability.READY) {
+                lecteur.sourcesRecentes(System.currentTimeMillis())?.size
+            } else {
+                null
+            }
+        }
+    }
+
+    val etat: StateFlow<TendanceUiState> = combine(
+        repo.observerTendance(),
+        _disponibiliteSante,
+        _sourcesRecentes,
+    ) { tendance, disponibilite, sources ->
+        tendance.versUiState(disponibilite, sources)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TendanceUiState.Chargement)
+
+    private fun EtatTendance.versUiState(
+        disponibilite: SleepReader.Availability?,
+        sourcesRecentes: Int?,
+    ): TendanceUiState {
         val r = rythme
         val c = compte
+
+        // La bande d'etat du reveil : une fonction pure, alimentee par les faits que le
+        // repository a lus. Elle etait cablee sur `EtatReveil.Rien`, donc la bande n'etait jamais
+        // rendue et les cinq etats de `06-interface.md` §2.3 n'existaient qu'en apercu.
+        val reveil = MachineReveil.de(faitsReveil, System.currentTimeMillis()) { ms ->
+            Mapping.heureLisible(ms, faitsReveil?.zoneId ?: java.time.ZoneId.systemDefault().id)
+        }
+        val situation = Situations.sommeil(disponibilite, sourcesRecentes, originesDerniereNuit)
 
         // Sous trois nuits eligibles : aucun agregat n'existe, donc aucun graphe n'est construit.
         // Pas meme un graphe vide avec ses axes — un axe vide invite l'oeil a imaginer la courbe
@@ -83,7 +127,8 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
                 nuitsEligibles = nuitsEligibles,
                 nuitsRequises = Aggregat.MIN_NUITS_AGREGAT,
                 nuitsEnregistrees = nuits,
-                reveil = EtatReveil.Rien,
+                reveil = reveil,
+                situationSommeil = situation,
             )
         }
 
@@ -102,11 +147,12 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             regle = Textes.Reglages.REGLE_AASM,
             masque = Textes.Reglages.HEALTH_CONNECT,
             plmw = nuitsAgregeables.map { it.plmiSpt }.average().takeIf { !it.isNaN() } ?: 0.0,
-            reveil = EtatReveil.Rien,
+            reveil = reveil,
             profilPersonnalise = profilPersonnalise,
             hashsMelanges = hashsMelanges,
             questionnaireEtat = Textes.Questionnaire.NON_REMPLI,
             exportPossible = nuitsEligibles >= Aggregat.MIN_NUITS_AGREGAT,
+            situationSommeil = situation,
         )
     }
 
@@ -161,10 +207,32 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             premierJourMs = premier,
             dernierJourMs = dernier,
             pivotMs = null,
-            descriptionAccessible = Textes.Graphes.descriptionTendance(
-                points.size,
-                Aggregat.Grandeur.RYTHME_SECONDES.unite,
-            ),
+            // Un resume, pas une etiquette de bloc. Un `contentDescription` du type « graphe de
+            // tendance sur 9 nuits » apprend a un lecteur d'ecran qu'il existe un graphe et rien
+            // de ce qu'il contient. Le tableau de valeurs reste le chemin principal — aucun
+            // resume ne remplace des donnees — mais il ne doit pas etre le seul moyen de savoir
+            // qu'il y a quelque chose a y lire.
+            descriptionAccessible = descriptionDe(points, r),
+        )
+    }
+
+    private fun EtatTendance.descriptionDe(
+        points: List<PointNuit>,
+        r: Aggregat.Resultat,
+    ): String {
+        if (points.isEmpty()) return Textes.Graphes.DESCRIPTION_TENDANCE_VIDE
+        val parHex = nuits.associateBy { it.sessionHex }
+        val unite = Aggregat.Grandeur.RYTHME_SECONDES.unite
+        fun date(p: PointNuit) = parHex[p.sessionHex]?.dateLisible.orEmpty()
+        fun valeur(v: Float) = Math.round(v).toString()
+        return Textes.Graphes.descriptionTendance(
+            points = points.size,
+            debut = date(points.first()),
+            fin = date(points.last()),
+            mediane = Math.round(r.mediane).toString(),
+            minimum = valeur(points.minOf { it.valeur }),
+            maximum = valeur(points.maxOf { it.valeur }),
+            unite = unite,
         )
     }
 }

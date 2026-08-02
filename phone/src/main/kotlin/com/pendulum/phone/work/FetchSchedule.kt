@@ -89,6 +89,61 @@ object FetchSchedule {
         return Plan.Retry(delayMs = (target - nowMs).coerceAtLeast(0L), attemptIndex = attemptsDone)
     }
 
+    // -------------------------------------------------------------------------------------
+    // Le declencheur opportuniste
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Deux instants ou la lecture a beaucoup plus de chances d'aboutir que le rang suivant de
+     * l'echelle.
+     *
+     * ### Pourquoi un repli exponentiel seul est le mauvais modele
+     *
+     * Le repli exponentiel suppose un evenement **aleatoire** dont on ignore la date. La
+     * synchronisation Health Connect n'en est pas un : elle est correlee a l'usage. La montre de
+     * poignet pousse quand elle est sur le chargeur, et l'application source ecrit quand on
+     * l'ouvre — c'est-a-dire souvent quelques secondes avant qu'on ouvre Pendulum pour voir sa
+     * nuit. Attendre le rang T+4 h alors que la donnee est arrivee a T+2 h 05 coute deux heures
+     * de latence percue pour rien.
+     *
+     * Deux signaux gratuits, donc : le branchement sur le chargeur
+     * (`ACTION_POWER_CONNECTED`, exempte des restrictions de diffusion depuis Android 8) et le
+     * retour de l'application au premier plan.
+     *
+     * ### Ce que cette fonction protege
+     *
+     * Une lecture opportuniste **ne consomme pas l'echelle** : elle est journalisee avec
+     * [INDEX_OPPORTUNISTE] et `HcSnapshotDao.attemptCount` ne compte que les rangs planifies.
+     * Sans cela, brancher et debrancher le telephone trois fois epuiserait les sept rangs en une
+     * minute et l'application abandonnerait avant midi.
+     *
+     * Il reste a eviter la rafale : un cable qui fait faux contact peut emettre la diffusion
+     * plusieurs fois par minute, et chaque tentative interroge un fournisseur. D'ou le delai
+     * minimal entre deux lectures opportunistes.
+     */
+    fun opportunisteAdmissible(
+        sessionEndMs: Long,
+        nowMs: Long,
+        derniereTentativeMs: Long?,
+    ): Boolean {
+        val elapsed = nowMs - sessionEndMs
+        if (elapsed < 0 || elapsed >= GIVE_UP_MS) return false
+        val derniere = derniereTentativeMs ?: return true
+        return nowMs - derniere >= MIN_ENTRE_OPPORTUNISTES_MS
+    }
+
+    /** Delai minimal entre deux lectures opportunistes. Anti-rafale, rien de plus. */
+    val MIN_ENTRE_OPPORTUNISTES_MS: Long = TimeUnit.MINUTES.toMillis(10)
+
+    /**
+     * `attemptIndex` des lignes `hc_snapshot` produites hors echelle.
+     *
+     * Negatif pour que le compte des tentatives planifiees reste un simple
+     * `WHERE attemptIndex >= 0` : une colonne booleenne de plus aurait demande une migration, la
+     * convention de signe n'en demande aucune et se lit dans la requete.
+     */
+    const val INDEX_OPPORTUNISTE = -1
+
     /**
      * Faut-il rescorer apres cette lecture ?
      *

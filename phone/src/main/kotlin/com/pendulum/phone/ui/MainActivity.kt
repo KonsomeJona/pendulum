@@ -2,6 +2,7 @@ package com.pendulum.phone.ui
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.Canvas
@@ -19,7 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -27,7 +30,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.pendulum.phone.data.AppairageMontre
+import com.pendulum.phone.health.SleepReader
 import com.pendulum.phone.ui.export.ExportScreen
+import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.export.ExportUi
 import com.pendulum.phone.ui.home.HomeScreen
 import com.pendulum.phone.ui.nights.NightDetailScreen
@@ -42,6 +47,8 @@ import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.trend.ComparePeriodsScreen
 import com.pendulum.phone.ui.trend.TrendScreen
+import com.pendulum.phone.work.DeclencheurOpportuniste
+import kotlinx.coroutines.launch
 
 /**
  * L'unique activite du telephone.
@@ -56,6 +63,25 @@ class MainActivity : ComponentActivity() {
             PendulumTheme {
                 PortailPendulum()
             }
+        }
+    }
+
+    /**
+     * Le second declencheur opportuniste de la lecture Health Connect.
+     *
+     * L'echelle de reprise de `FetchSchedule` fait un repli exponentiel parce qu'elle ignore quand
+     * l'hypnogramme arrivera. Mais la synchronisation **est correlee a l'usage** : l'application
+     * source ecrit dans Health Connect quand on l'ouvre, c'est-a-dire souvent quelques secondes
+     * avant qu'on ouvre Pendulum pour regarder sa nuit. Attendre le rang T+4 h alors que la donnee
+     * est arrivee a T+2 h 05 coute deux heures de latence percue pour rien.
+     *
+     * Le premier declencheur est le branchement du chargeur (`PowerConnectedReceiver`). Ni l'un ni
+     * l'autre ne consomme l'echelle : voir `FetchSchedule.INDEX_OPPORTUNISTE`.
+     */
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            runCatching { DeclencheurOpportuniste.declencher(this@MainActivity) }
         }
     }
 }
@@ -196,6 +222,28 @@ private fun DrawScope.iconeDestination(d: Destination, couleur: Color) {
     }
 }
 
+/** `E-HC-02` : la permission de lecture du sommeil a ete retiree. Voir `Situations.sommeil`. */
+private const val CODE_PERMISSION_REVOQUEE = "E-HC-02"
+
+private fun codeSituationSommeil(etat: TendanceUiState): String? = when (etat) {
+    is TendanceUiState.Pret -> etat.situationSommeil?.code
+    is TendanceUiState.Refus -> etat.situationSommeil?.code
+    TendanceUiState.Chargement -> null
+}
+
+/**
+ * Ouvre l'ecran Health Connect. `runCatching` parce que l'action n'est pas resolue partout : sur
+ * un appareil ou Health Connect a ete desinstalle entre l'affichage de la carte et l'appui, une
+ * `ActivityNotFoundException` non rattrapee ferait planter l'application sur un bouton d'aide.
+ */
+private fun ouvrirHealthConnect(contexte: android.content.Context) {
+    runCatching {
+        contexte.startActivity(
+            android.content.Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS),
+        )
+    }
+}
+
 @Composable
 fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
     val entree by nav.currentBackStackEntryAsState()
@@ -259,6 +307,16 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
             composable(Destination.TENDANCE.route) {
                 val vm: TrendViewModel = viewModel()
                 val etat by vm.etat.collectAsStateWithLifecycle()
+                val contexte = LocalContext.current
+
+                // La reparation de `E-HC-02` est une demande de permission, pas un lien vers un
+                // ecran : envoyer quelqu'un dans les reglages de Health Connect pour retrouver
+                // une case a cocher alors que le systeme sait afficher la boite de dialogue est
+                // exactement le genre de detour qui fait abandonner.
+                val lanceurSante = rememberLauncherForActivityResult(
+                    contract = SleepReader.permissionRequestContract(),
+                ) { vm.relireLaSante() }
+
                 TrendScreen(
                     etat = etat,
                     onNuit = { nav.navigate("night/$it") },
@@ -266,6 +324,15 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                     onQuestionnaire = { nav.navigate("quiz") },
                     onExport = { nav.navigate("export") },
                     onActionReveil = {},
+                    onSituationSommeil = {
+                        if (codeSituationSommeil(etat) == CODE_PERMISSION_REVOQUEE) {
+                            lanceurSante.launch(
+                                SleepReader.REQUIRED_PERMISSIONS + SleepReader.OPTIONAL_PERMISSIONS,
+                            )
+                        } else {
+                            ouvrirHealthConnect(contexte)
+                        }
+                    },
                 )
             }
             // La liste des nuits : empilee, atteinte depuis la carte HISTORIQUE de l'accueil.

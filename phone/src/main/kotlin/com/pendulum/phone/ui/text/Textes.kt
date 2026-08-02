@@ -530,6 +530,26 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
                     "recomputed automatically, with nothing to do on your part."
             fun tentatives(derniere: String, prochaine: String) =
                 "Last attempt: $derniere · next: $prochaine"
+
+            /**
+             * La premiere tentative n'a pas encore eu lieu. Ecrire « last attempt: — » ferait
+             * lire un echec la ou il n'y a qu'une attente qui commence.
+             */
+            fun premiereTentative(prochaine: String) = "First attempt at $prochaine"
+
+            /**
+             * L'abandon, **date**, et affiche des l'entree dans l'etat.
+             *
+             * C'est ce qui remplace l'indicateur d'avancement indetermine. Material 3 calibre
+             * son *loading indicator* pour des attentes de moins de cinq secondes ; un cercle qui
+             * tourne pendant six heures dit « panne », quel que soit le texte a cote. Une echeance
+             * datee dit la meme chose — l'application travaille encore — sans la promesse d'un
+             * resultat imminent qu'elle ne peut pas tenir.
+             */
+            fun abandonPrevu(instant: String) =
+                "If nothing has arrived by $instant, Pendulum stops looking and the night keeps " +
+                    "its “accelerometer mask” flag."
+
             const val ACTION = "Try again now"
             fun recalculee(date: String) = "Night of $date recomputed with the hypnogram."
             const val ABANDON =
@@ -573,6 +593,23 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
 
         /** Ligne canonique : la valeur, son intervalle et son n, dans la meme phrase (P2). */
         fun intervalleEtN(bas: String, haut: String, nuits: Int) = "95% CI: $bas – $haut   ·   $nuits eligible nights"
+
+        /**
+         * La meme ligne quand l'intervalle **n'en est pas un a 95 %**, et qu'on refuse de
+         * l'etiqueter ainsi. Voir [INTERVALLE_NON_CALIBRE] pour la mesure qui l'impose.
+         */
+        fun intervalleNonCalibre(bas: String, haut: String, nuits: Int) =
+            "Interval $bas – $haut   ·   $nuits eligible nights   ·   not a calibrated 95% interval"
+
+        const val INTERVALLE_NON_CALIBRE =
+            "Below six nights this interval is not a 95% interval, and Pendulum does not label it " +
+                "as one. Simulated on 10,000 draws, it holds the true value 75% of the time on " +
+                "three nights and 88% on four, where the label promises 95%.\n\n" +
+                "The cause is arithmetic rather than a fault. The interval is built by resampling " +
+                "the nights you recorded, so it can never reach past your lowest and your highest " +
+                "night; with three nights, those two bounds fall on either side of the true value " +
+                "only three times in four. No variant of the method escapes that, so Pendulum " +
+                "names the interval for what it is instead of widening it by an invented amount."
 
         /**
          * Le compte horaire au second rang. Il reste parce que c'est la langue des somnologues et
@@ -621,9 +658,35 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
                 "Pendulum shows the measured interval and its spread, without placing it against a " +
                 "reference value."
 
-        const val BANDEAU_PROVISOIRE =
-            "Provisional result — %d nights. Five to seven nights are recommended; the interval " +
-                "below will stay wide until you have more of them."
+        /**
+         * Le bandeau « resultat provisoire », et le nombre de nuits qu'il faudrait.
+         *
+         * Ce nombre **depend de la position de l'intervalle**, ce qui est le seul endroit du
+         * produit ou une regle ajoute de la severite plutot qu'en retirer. La raison est dans
+         * [NUITS_REQUISES_REGIME_BAS] : la fiabilite nuit a nuit s'effondre sous le seuil, donc
+         * l'application etait jusqu'ici plus assuree quand elle rassurait que quand elle alertait.
+         */
+        fun bandeauProvisoire(nuits: Int, requises: Int) =
+            "Provisional result — $nuits of $requises nights. The interval below will stay wide " +
+                "until you have more of them."
+
+        const val NUITS_REQUISES_REGIME_HAUT =
+            "Three nights are enough here. Above 15/h, the index agrees with itself from one " +
+                "night to the next at an intraclass correlation of 0.90 from three nights " +
+                "(Aritake-Okada 2014, ankle actigraph against polysomnography, 41 participants)."
+
+        const val NUITS_REQUISES_REGIME_BAS =
+            "Fourteen nights are asked for here, and that figure is a compromise Pendulum does " +
+                "not hide. Below 15/h the same study measures far weaker night-to-night " +
+                "agreement: 26 nights would be needed to reach the intraclass correlation of " +
+                "0.90 that three nights give above the threshold. Twenty-six is what the " +
+                "measurement says. Fourteen is what this application asks for, and nothing " +
+                "published supports that number — asking for 26 would make the screen unusable, " +
+                "asking for 3 would make it confident exactly where it has the least reason to be."
+
+        const val NUITS_REQUISES_A_CHEVAL =
+            "Seven nights are asked for here. The interval spans 15/h, so it has to narrow before " +
+                "it can fall on one side or the other."
 
         fun dispersion(valeur: String, unite: String) = "Your nights vary by ±$valeur $unite around their median."
 
@@ -802,6 +865,58 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
              */
             const val TAUX_MANQUES = "Estimated missed movements"
             const val REGLE_APPLIQUEE = "Rule applied"
+
+            /**
+             * « Pourquoi ce chiffre » — et le seul « pourquoi » qui soit legitime ici.
+             *
+             * ### Generatif, jamais attributif
+             *
+             * Ce bloc montre **le chemin de calcul** : ce qui a ete mesure, ce qui a ete retenu,
+             * par quoi on a divise. Il ne classe pas des facteurs par importance et n'affirme
+             * jamais qu'un trou de signal ou une dose « explique » la valeur.
+             *
+             * Ce n'est pas de la prudence de facade. Les methodes d'attribution par contribution
+             * — Shapley et ses derives — ne distinguent pas correlation et causalite, et
+             * sur-attribuent des que les variables sont correlees entre elles, ce qui est
+             * exactement le cas ici : la duree de sommeil, le nombre de mouvements et le taux de
+             * manques bougent ensemble. Un classement de facteurs affiche sous un chiffre de
+             * sante se lit comme une cause, et c'est le mode de defaillance identifie comme
+             * critique dans ce domaine.
+             *
+             * D'ou la derniere ligne, qui fait tout le travail de ce bloc : *ce tableau montre
+             * comment le chiffre est obtenu, il n'indique pas ce qui a cause ces mouvements*.
+             */
+            object Pourquoi {
+                fun titre(valeur: String) = "Why $valeur"
+
+                const val SOMMEIL_ANALYSABLE = "Analysable sleep"
+                const val MOUVEMENTS_RETENUS = "Movements counted"
+                const val REGLE = "Counting rule"
+                const val MASQUE = "Sleep mask"
+                const val DENOMINATEUR = "Denominator"
+                const val TAUX_MANQUES = "Estimated missed rate"
+                const val ENCADREMENT_RESPI = "Respiratory bracket"
+
+                fun surEnregistre(enregistre: String) = "of $enregistre recorded"
+
+                const val MASQUE_HYPNOGRAMME = "full hypnogram"
+                const val MASQUE_ACCELERO = "accelerometer immobility"
+
+                const val DENOMINATEUR_INDEPENDANT = "independent of the numerator"
+                const val DENOMINATEUR_CIRCULAIRE = "same sensor as the numerator"
+
+                /** `-2.1 /h at worst` : la borne basse si tous les mouvements suspects sortaient. */
+                fun bornePessimiste(delta: String, unite: String) = "$delta$unite at worst"
+
+                const val ENCADREMENT_RESPI_NOTE =
+                    "Pendulum does not measure breathing. This line is the value the index would " +
+                        "take if every movement that could belong to a respiratory event were " +
+                        "removed. The true figure lies between the two."
+
+                const val AVERTISSEMENT =
+                    "This table shows how the figure is obtained. It does not indicate what " +
+                        "caused these movements."
+            }
 
             const val PARAMS_AVANCES = "Advanced parameters"
             const val RECALCULER_TOUTES = "Apply to every night"
@@ -1073,7 +1188,34 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
         const val AXE_Y_NUIT = "amplitude ÷ noise floor (log₂ scale)"
         const val AXE_Y_TENDANCE_RYTHME = "fundamental rhythm (seconds)"
         const val AXE_Y_TENDANCE_COMPTE = "movements per hour of sleep"
-        const val LEGENDE_SEUIL_15 = "Threshold used in clinical practice in adults (ICSD-3)."
+        /**
+         * Le seuil de 15/h, **etiquete**, et pas pose nu.
+         *
+         * ### Pourquoi l'etiquette change quelque chose de mesurable
+         *
+         * Sur 1 618 adultes a qui l'on montrait un resultat de laboratoire a peine hors norme,
+         * ajouter une mention du type « beaucoup de medecins ne s'inquietent pas avant cette
+         * valeur » fait tomber la demande de contact urgent de 55,8 % a 34,7 % sur l'ALT et de
+         * 56,7 % a 35,2 % sur la creatinine, p < .001 (Zikmund-Fisher et al., JMIR 2018). Une
+         * ligne nue a 15 sur un graphe est exactement le meme dispositif qu'une borne de
+         * reference nue sur un compte rendu de biologie.
+         *
+         * ### Et pourquoi le second membre existe
+         *
+         * `Aggregat.SEUIL_CLINIQUE_PAR_HEURE` transpose un seuil de polysomnographie sur un
+         * accelerometre de cheville, ce qui n'est pas la meme mesure. La validation du PAM-RL —
+         * actimetre de cheville, le meme montage que celui de Pendulum — contre la PSG donne un
+         * equivalent actimetrique de 16,0/h pour le 15/h polysomnographique (Aritake-Okada et
+         * al., *Sleep Medicine* 2014, n = 41). Un seul article, une seule cohorte : on
+         * **documente** l'ecart, on ne substitue pas la valeur.
+         */
+        const val LEGENDE_SEUIL_15 =
+            "15/h — above this, periodic limb movements are usually counted as frequent in " +
+                "polysomnography (ICSD-3). Many physicians are not concerned below it. Measured " +
+                "at the ankle by actigraphy, which is what Pendulum does, the matching threshold " +
+                "is closer to 16/h (Aritake-Okada 2014, ankle actigraph against polysomnography, " +
+                "41 participants). Pendulum keeps 15/h and states the gap rather than swapping in " +
+                "a figure that rests on one cohort."
         const val HYPNO_INDISPONIBLE = "Hypnogram unavailable — accelerometer immobility mask used."
         const val VOIE_MASQUE = "Accelerometer mask"
         const val VOIE_HYPNO = "Hypnogram"
@@ -1083,8 +1225,32 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
             "Chart of the night of $date, $evenements movements detected between $debut and $fin. " +
                 "Values button for the table."
 
-        fun descriptionTendance(nuits: Int, unite: String) =
-            "Trend chart over $nuits nights, in $unite. Values button for the table."
+        /**
+         * Le resume lu par TalkBack, et non une etiquette de bloc.
+         *
+         * Un `contentDescription` global du type « graphe de tendance sur 9 nuits » annonce
+         * l'existence d'un objet et rien de son contenu : le lecteur d'ecran atteint le graphe,
+         * apprend qu'il y a un graphe, et repart. Le resume ci-dessous rend les grandeurs qui
+         * font la lecture — combien de points, sur quelle periode, la mediane, l'etendue — plus
+         * le fait que **les points ne sont pas relies**, qui est une decision de conception et
+         * pas un detail de rendu.
+         *
+         * Le tableau de `DataTableSheet` reste le chemin principal : aucun resume ne remplace des
+         * donnees. Il est le premier element focalisable apres le graphe, et c'est le bon ordre.
+         */
+        fun descriptionTendance(
+            points: Int,
+            debut: String,
+            fin: String,
+            mediane: String,
+            minimum: String,
+            maximum: String,
+            unite: String,
+        ) = "Trend, $points points, from $debut to $fin, median $mediane $unite, values from " +
+            "$minimum to $maximum $unite, points not joined. Values button for the table."
+
+        /** Le meme graphe quand aucun point n'est traçable. Un resume vide serait un mensonge. */
+        const val DESCRIPTION_TENDANCE_VIDE = "Trend, no point to plot."
     }
 
     // --- utilitaires de formatage --------------------------------------------------------

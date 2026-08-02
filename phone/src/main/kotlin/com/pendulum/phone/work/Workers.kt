@@ -16,6 +16,13 @@ import com.pendulum.format.ChunkReader
 import java.util.concurrent.TimeUnit
 
 internal const val KEY_SESSION = "sessionHex"
+
+/**
+ * Marque une lecture Health Connect declenchee **hors echelle** — chargeur branche, retour au
+ * premier plan. Elle lit tout de suite, ne replanifie rien, et ne consomme pas l'echelle.
+ */
+internal const val KEY_OPPORTUNISTE = "opportuniste"
+
 private const val TAG = "PendulumWork"
 
 /**
@@ -113,30 +120,45 @@ class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
         val endMs = session.endWallMs ?: session.plannedStopWallMs
         val attempts = db.hcSnapshotDao().attemptCount(hex)
         val now = System.currentTimeMillis()
+        val opportuniste = inputData.getBoolean(KEY_OPPORTUNISTE, false)
 
-        when (val plan = FetchSchedule.plan(attempts, endMs, now)) {
-            is FetchSchedule.Plan.GiveUp -> {
-                Log.i(TAG, "$hex : abandon de la lecture sommeil (${plan.reason})")
+        if (opportuniste) {
+            // Hors echelle : on lit maintenant si la fenetre est ouverte et si la derniere lecture
+            // n'est pas trop proche, et on ne replanifie rien. L'echelle continue de son cote,
+            // pilotee par ses propres rangs — les deux chemins ne se marchent pas dessus parce que
+            // le compte des tentatives ignore les lignes opportunistes.
+            if (!FetchSchedule.opportunisteAdmissible(endMs, now, db.hcSnapshotDao().latest(hex)?.fetchedAtMs)) {
                 return Result.success()
             }
-            is FetchSchedule.Plan.Retry -> {
-                if (plan.delayMs > 0) {
-                    // Pas encore l'heure : on se replanifie et on rend la main. Attendre dans le
-                    // worker tiendrait un `wakelock` pendant des heures pour ne rien faire.
-                    WorkScheduler.scheduleSleepFetch(applicationContext, hex, plan.delayMs)
+        } else {
+            when (val plan = FetchSchedule.plan(attempts, endMs, now)) {
+                is FetchSchedule.Plan.GiveUp -> {
+                    Log.i(TAG, "$hex : abandon de la lecture sommeil (${plan.reason})")
                     return Result.success()
+                }
+                is FetchSchedule.Plan.Retry -> {
+                    if (plan.delayMs > 0) {
+                        // Pas encore l'heure : on se replanifie et on rend la main. Attendre dans
+                        // le worker tiendrait un `wakelock` pendant des heures pour ne rien faire.
+                        WorkScheduler.scheduleSleepFetch(applicationContext, hex, plan.delayMs)
+                        return Result.success()
+                    }
                 }
             }
         }
+
+        val rangJournalise = if (opportuniste) FetchSchedule.INDEX_OPPORTUNISTE else attempts
 
         val reader = SleepReader(applicationContext)
         val availability = reader.availability()
         if (availability != SleepReader.Availability.READY) {
             Log.i(TAG, "$hex : Health Connect indisponible ($availability)")
-            // On journalise quand meme la tentative : sans ligne, l'echelle ne progresse pas et
-            // on reessaierait indefiniment au meme rang.
-            appendSnapshot(db, hex, attempts, null, availability.name)
-            WorkScheduler.scheduleNextSleepFetch(applicationContext, hex, endMs, attempts + 1)
+            // On journalise quand meme la tentative : sans ligne, l'echelle n'avance pas et on
+            // reessaierait indefiniment au meme rang.
+            appendSnapshot(db, hex, rangJournalise, null, availability.name)
+            if (!opportuniste) {
+                WorkScheduler.scheduleNextSleepFetch(applicationContext, hex, endMs, attempts + 1)
+            }
             return Result.success()
         }
 
@@ -151,7 +173,7 @@ class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
             // vaut mieux que de laisser croire qu'il est honore.
             preferredPackage = null,
         )
-        appendSnapshot(db, hex, attempts, reading, reading?.verdict ?: "LECTURE_IMPOSSIBLE")
+        appendSnapshot(db, hex, rangJournalise, reading, reading?.verdict ?: "LECTURE_IMPOSSIBLE")
 
         val chosen = reading?.selection?.chosen
         val rescore = FetchSchedule.shouldRescore(
@@ -164,8 +186,12 @@ class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
         )
 
         // On continue l'echelle **meme apres un succes** : un fournisseur peut reecrire une
-        // session deja publiee, et la nuit lue a T+1 h differer de la meme nuit a T+8 h.
-        WorkScheduler.scheduleNextSleepFetch(applicationContext, hex, endMs, attempts + 1)
+        // session deja publiee, et la nuit lue a T+1 h differer de la meme nuit a T+8 h. Une
+        // lecture opportuniste, elle, ne replanifie rien : elle s'ajoute a l'echelle sans la
+        // deplacer, sinon un branchement de chargeur reculerait le rang suivant.
+        if (!opportuniste) {
+            WorkScheduler.scheduleNextSleepFetch(applicationContext, hex, endMs, attempts + 1)
+        }
 
         if (rescore) WorkScheduler.enqueueRescore(applicationContext, hex)
         return Result.success(workDataOf(KEY_SESSION to hex))

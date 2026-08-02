@@ -26,10 +26,13 @@ import com.pendulum.phone.ui.chart.NuitChartSpec
 import com.pendulum.phone.ui.chart.XTransform
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.DataTableSheet
+import com.pendulum.phone.ui.common.ErrorCard
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.SectionHeader
+import com.pendulum.phone.ui.model.CheminDeCalcul
+import com.pendulum.phone.ui.model.ErreurPendulum
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
@@ -66,6 +69,16 @@ data class NuitDetailUi(
     val imiMedianSec: Double,
     val controles: List<Controle>,
     val regleAppliquee: String,
+    /**
+     * Le chemin de calcul du chiffre — « pourquoi 18,4 /h ». `null` quand la nuit n'a pas encore
+     * de resultat, donc rien a expliquer.
+     */
+    val pourquoi: CheminDeCalcul.Bloc? = null,
+    /**
+     * La situation de la nuit, ou `null` quand elle n'appelle aucune explication. Ambre pour les
+     * situations, rouge pour ce qui est reellement casse : voir [com.pendulum.phone.ui.model.Situations].
+     */
+    val situation: ErreurPendulum? = null,
 )
 
 /** Un controle de qualite : sa valeur mesuree, son seuil, son etat. Les trois, toujours. */
@@ -203,6 +216,31 @@ fun NightDetailScreen(
                     "sees a doubled interval when movements alternate left/right.",
             )
         }
+
+        // --- Section 3 bis : « pourquoi ce chiffre »
+        //
+        // Le seul « pourquoi » legitime ici est **generatif** : il montre le chemin de calcul,
+        // pas des contributions. Aucun classement de facteurs par importance — ces methodes ne
+        // distinguent pas correlation et causalite et sur-attribuent des que les variables sont
+        // correlees, ce qui est le cas de toutes celles de ce tableau.
+        //
+        // La derniere ligne du bloc fait tout le travail, et elle vient du modele et non de
+        // l'ecran : un chemin de calcul sans sa phrase de non-causalite ne peut pas exister.
+        if (devoile) detail.pourquoi?.let { bloc ->
+            PendulumCard {
+                SectionHeader(bloc.titre)
+                bloc.lignes.forEach { InlineValue(it.libelle, it.valeur, note = it.note) }
+                Spacer(Modifier.height(Spacing.sm.dp))
+                Paragraphe(bloc.avertissement, couleur = c.textPrimary)
+            }
+        }
+
+        // --- Section 3 ter : la situation de la nuit, s'il y en a une
+        //
+        // Ambre pour une nuit courte, une nuit sans hypnogramme, une montre dechargee — ce sont
+        // des **situations**. Rouge pour un transfert incomplet, qui est reellement casse. La
+        // teinte suit `ErreurPendulum.technique` et non la gravite ressentie.
+        detail.situation?.let { ErrorCard(it) }
 
         // --- Section 4 : qualite de la nuit
         PendulumCard {

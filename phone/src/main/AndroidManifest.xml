@@ -141,6 +141,29 @@
         </activity-alias>
 
         <!--
+          Declencheur opportuniste de la lecture Health Connect.
+
+          `ACTION_POWER_CONNECTED` est l'une des rares diffusions EXEMPTEES de la restriction
+          d'enregistrement au manifeste d'Android 8 : elle reveille encore une application
+          fermee, ce qui est exactement le cas d'usage — telephone sur son socle a cote de la
+          montre, application non ouverte depuis le matin.
+
+          Le motif est dans `FetchSchedule` : la synchronisation de la montre de poignet vers
+          Health Connect n'est pas un evenement aleatoire, elle est correlee a l'usage — montre
+          sur le chargeur, application source ouverte. Un repli exponentiel seul attend donc le
+          rang T+4 h alors que la donnee est arrivee a T+2 h 05.
+
+          `exported="false"` : personne d'autre que le systeme n'a de raison de l'atteindre.
+        -->
+        <receiver
+            android:name="com.pendulum.phone.work.PowerConnectedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
           Reception Data Layer. `exported="true"` et la permission GMS sont imposes par le
           protocole : c'est le service Google Play qui demarre ce service, y compris quand
           l'application n'a jamais ete ouverte — ce qui est exactement le cas d'usage (le

@@ -72,10 +72,22 @@ sealed interface EtatReveil {
 
     data class Analyse(val date: String, val etape: EtapeAnalyse, val secondesRestantes: Int) : EtatReveil
 
+    /**
+     * L'etat 4, et le seul dont la **forme** est aussi contrainte que le texte.
+     *
+     * @param derniereTentative `null` avant la premiere lecture Health Connect. Ecrire un tiret
+     *   la ferait lire un echec la ou il n'y a qu'une attente qui commence.
+     * @param prochaineTentative `null` quand l'echelle est terminee — plus rien n'est planifie.
+     * @param abandonA l'echeance T+36 h, **datee**. Elle remplace l'indicateur de progression
+     *   indetermine : un cercle qui tourne pendant six heures dit « panne », une echeance dit
+     *   « ca continue, et voici jusqu'a quand ».
+     */
     data class Provisoire(
         val date: String,
-        val derniereTentative: String,
-        val prochaineTentative: String,
+        val derniereTentative: String?,
+        val prochaineTentative: String?,
+        val abandonA: String,
+        val abandonne: Boolean,
     ) : EtatReveil
 
     data class Echec(val date: String, val erreur: ErreurPendulum) : EtatReveil
@@ -187,6 +199,12 @@ sealed interface TendanceUiState {
         val nuitsRequises: Int,
         val nuitsEnregistrees: List<NuitUi>,
         val reveil: EtatReveil,
+        /**
+         * La situation de la source de sommeil s'affiche **aussi** sous trois nuits, et c'est le
+         * moment ou elle sert le plus : une permission Health Connect jamais accordee se repare
+         * avant d'avoir accumule six nuits scorees sur le seul masque accelerometrique.
+         */
+        val situationSommeil: ErreurPendulum? = null,
     ) : TendanceUiState
 
     data class Pret(
@@ -209,11 +227,27 @@ sealed interface TendanceUiState {
         val hashsMelanges: Boolean,
         val questionnaireEtat: String,
         val exportPossible: Boolean,
+        val situationSommeil: ErreurPendulum? = null,
     ) : TendanceUiState {
-        /** Bandeau « resultat provisoire » entre 3 et 4 nuits. */
+
+        /**
+         * Le nombre de nuits au-dela duquel le resultat cesse d'etre annonce comme provisoire.
+         *
+         * Il **depend de la position de l'intervalle** et non d'une constante : voir
+         * [Aggregat.nuitsRequises]. Trois nuits suffisent au-dessus du seuil, ou la fiabilite
+         * nuit a nuit est mesuree a 0,90 ; il en faut bien davantage en dessous, ou elle
+         * s'effondre — et c'est precisement le regime dans lequel l'ecran rassure.
+         */
+        val nuitsRequises: Int get() = Aggregat.nuitsRequises(compte.ciBas, compte.ciHaut)
+
+        /** Le motif du nombre ci-dessus, en toutes lettres. Un chiffre nu ne se discute pas. */
+        val motifNuitsRequises: String
+            get() = Aggregat.motifNuitsRequises(compte.ciBas, compte.ciHaut)
+
+        /** Bandeau « resultat provisoire », tant que [nuitsRequises] n'est pas atteint. */
         val bandeauProvisoire: String?
-            get() = if (rythme.nuits < Aggregat.MIN_NUITS_CATEGORIE) {
-                Textes.Tendance.BANDEAU_PROVISOIRE.format(rythme.nuits)
+            get() = if (rythme.nuits < nuitsRequises) {
+                Textes.Tendance.bandeauProvisoire(rythme.nuits, nuitsRequises)
             } else {
                 null
             }

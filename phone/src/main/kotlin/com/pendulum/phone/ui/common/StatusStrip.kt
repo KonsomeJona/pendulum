@@ -73,16 +73,41 @@ fun StatusStrip(
         // titre et l'explication du delai avant l'action : c'est un resultat en cours de
         // consolidation, pas une panne, et le presenter autrement rendrait l'application
         // suspecte tous les matins.
+        //
+        // **Et surtout : aucun indicateur de progression ici.** Les deux `Progression` de ce
+        // fichier sont determinees et portent une attente de quelques minutes. Celle-ci dure des
+        // heures, et Material 3 calibre son indicateur pour des attentes de moins de cinq
+        // secondes : un cercle qui tourne six heures est un message de panne, quoi que dise le
+        // texte a cote. Ce qui remplace l'animation est ecrit en clair — derniere tentative,
+        // prochaine, et l'echeance datee de l'abandon.
         is EtatReveil.Provisoire -> PendulumCard {
+            val c = LocalPendulumColors.current
             Titre(Textes.Reveil.Provisoire.titre(etat.date))
             Spacer(Modifier.height(Spacing.s.dp))
             Paragraphe(Textes.Reveil.Provisoire.CORPS)
             Spacer(Modifier.height(Spacing.sm.dp))
             Text(
-                Textes.Reveil.Provisoire.tentatives(etat.derniereTentative, etat.prochaineTentative),
+                when {
+                    etat.abandonne -> Textes.Reveil.Provisoire.ABANDON
+                    etat.derniereTentative == null && etat.prochaineTentative != null ->
+                        Textes.Reveil.Provisoire.premiereTentative(etat.prochaineTentative)
+                    etat.prochaineTentative != null ->
+                        Textes.Reveil.Provisoire.tentatives(
+                            etat.derniereTentative.orEmpty(),
+                            etat.prochaineTentative,
+                        )
+                    else -> Textes.Reveil.Provisoire.ABANDON
+                },
                 style = PendulumType.caption,
-                color = LocalPendulumColors.current.textTertiary,
+                color = c.textTertiary,
             )
+            if (!etat.abandonne) {
+                Text(
+                    Textes.Reveil.Provisoire.abandonPrevu(etat.abandonA),
+                    style = PendulumType.caption,
+                    color = c.textTertiary,
+                )
+            }
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedButton(onClick = onAction, shape = PendulumShapes.button) {
                 Text(Textes.Reveil.Provisoire.ACTION)
@@ -126,7 +151,13 @@ private fun ApercuAnalyse() = PendulumTheme {
 @Preview(name = "Wake-up — state 4 provisional (normal case)", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
 private fun ApercuProvisoire() = PendulumTheme {
-    StatusStrip(EtatReveil.Provisoire("12 March", "07:12", "08:12"))
+    StatusStrip(EtatReveil.Provisoire("12 March", "07:12", "08:12", "19:04", abandonne = false))
+}
+
+@Preview(name = "Wake-up — state 4 after giving up at T+36 h", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
+@Composable
+private fun ApercuProvisoireAbandonne() = PendulumTheme {
+    StatusStrip(EtatReveil.Provisoire("12 March", "18:04", null, "19:04", abandonne = true))
 }
 
 @Preview(name = "Wake-up — state 5 failure", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)

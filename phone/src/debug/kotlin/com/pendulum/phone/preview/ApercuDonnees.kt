@@ -97,7 +97,15 @@ object ApercuDonnees {
         premierJourMs = BASE_MS - 6 * JOUR,
         dernierJourMs = BASE_MS,
         pivotMs = null,
-        descriptionAccessible = Textes.Graphes.descriptionTendance(6, "seconds"),
+        descriptionAccessible = Textes.Graphes.descriptionTendance(
+            points = 6,
+            debut = "6 March",
+            fin = "12 March",
+            mediane = "21",
+            minimum = "18",
+            maximum = "26",
+            unite = "seconds",
+        ),
     )
 
     val tendanceCompte = tendanceRythme.copy(
@@ -105,7 +113,15 @@ object ApercuDonnees {
         points = pointsTendance.map { it.copy(valeur = it.valeur * 1.05f) },
         bandes = listOf(BandeMediane(BASE_MS - 6 * JOUR, BASE_MS, 22f, 14f, 31f, "22/h")),
         reference = LigneReference(15f, "15/h", Textes.Graphes.LEGENDE_SEUIL_15),
-        descriptionAccessible = Textes.Graphes.descriptionTendance(6, "movements per hour"),
+        descriptionAccessible = Textes.Graphes.descriptionTendance(
+            points = 6,
+            debut = "6 March",
+            fin = "12 March",
+            mediane = "22",
+            minimum = "11",
+            maximum = "27",
+            unite = "movements per hour",
+        ),
     )
 
     // ---------------------------------------------------------------------------------
@@ -282,7 +298,7 @@ object ApercuDonnees {
         regle = "AASM v3 (5–90 s)",
         masque = "Health Connect (5/6 nights)",
         plmw = 9.0,
-        reveil = EtatReveil.Provisoire("12 March", "07:12", "08:12"),
+        reveil = EtatReveil.Provisoire("12 March", "07:12", "08:12", "19:04", abandonne = false),
         profilPersonnalise = null,
         hashsMelanges = false,
         questionnaireEtat = Textes.Questionnaire.NON_REMPLI,

@@ -76,6 +76,45 @@ class FetchScheduleTest {
         for (i in 1 until o.size) assertThat(o[i]).isGreaterThan(o[i - 1])
     }
 
+    // --- Declencheurs opportunistes ---------------------------------------------------------
+
+    @Test
+    fun `une lecture opportuniste est admise dans la fenetre des 36 heures`() {
+        // Chargeur branche a T+2 h, aucune lecture recente : on lit tout de suite plutot que
+        // d'attendre le rang T+4 h. La synchronisation Health Connect est correlee a l'usage —
+        // montre sur le chargeur, application source ouverte — pas a une horloge.
+        assertThat(FetchSchedule.opportunisteAdmissible(fin, fin + h(2), null)).isTrue()
+    }
+
+    @Test
+    fun `une lecture opportuniste est refusee hors de la fenetre`() {
+        assertThat(FetchSchedule.opportunisteAdmissible(fin, fin - min(1), null)).isFalse()
+        assertThat(FetchSchedule.opportunisteAdmissible(fin, fin + h(36), null)).isFalse()
+    }
+
+    @Test
+    fun `une rafale de branchements ne declenche qu'une lecture`() {
+        // Un cable qui fait faux contact emet la diffusion plusieurs fois par minute. Chaque
+        // lecture interroge un fournisseur ; sans ce delai minimal, on le martelerait.
+        val recente = fin + h(2)
+        assertThat(FetchSchedule.opportunisteAdmissible(fin, recente + min(1), recente)).isFalse()
+        assertThat(
+            FetchSchedule.opportunisteAdmissible(
+                fin,
+                recente + FetchSchedule.MIN_ENTRE_OPPORTUNISTES_MS,
+                recente,
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun `l'index opportuniste est negatif, donc invisible au compte des tentatives`() {
+        // C'est ce qui empeche une lecture opportuniste de consommer l'echelle : le DAO compte
+        // `attemptIndex >= 0`. Trois branchements de cable epuiseraient sinon les sept rangs en
+        // une minute, et l'application abandonnerait la nuit avant midi.
+        assertThat(FetchSchedule.INDEX_OPPORTUNISTE).isLessThan(0)
+    }
+
     // --- Rescore conditionnel ---------------------------------------------------------------
 
     @Test

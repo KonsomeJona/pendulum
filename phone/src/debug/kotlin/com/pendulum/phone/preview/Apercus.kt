@@ -154,13 +154,13 @@ private fun ApercuAccueilMatin() = PendulumTheme {
 @Preview(name = "Trend — 6 nights, full screen", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendance() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendancePrete, {}, {}, {}, {}, {})
+    TrendScreen(ApercuDonnees.tendancePrete, {}, {}, {}, {}, {}, {})
 }
 
 @Preview(name = "Trend — refusal below 3 nights", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendanceRefus() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendanceRefus, {}, {}, {}, {}, {})
+    TrendScreen(ApercuDonnees.tendanceRefus, {}, {}, {}, {}, {}, {})
 }
 
 @Preview(name = "Trend — provisional 4 nights", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
@@ -173,7 +173,7 @@ private fun ApercuTendanceProvisoire() = PendulumTheme {
             position = Aggregat.position(9.0, 38.0, 4),
             periodiciteQualifiee = null,
         ),
-        {}, {}, {}, {}, {},
+        {}, {}, {}, {}, {}, {},
     )
 }
 

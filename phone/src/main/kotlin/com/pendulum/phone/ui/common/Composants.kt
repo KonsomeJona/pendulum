@@ -129,12 +129,18 @@ fun MetricHeadline(
                 )
             }
         }
+        // L'etiquette « 95 % » n'est ecrite que quand elle est meritee. Sous six nuits, la
+        // couverture reelle mesuree par simulation tombe a 75 % — un intervalle plus etroit que
+        // sa promesse, sur un produit dont l'intervalle est l'argument. Le libelle change donc,
+        // et il n'y a pas de branche par laquelle « 95 % CI » pourrait s'afficher a trois nuits.
+        val bas = formaterValeur(resultat.ciBas, resultat.grandeur)
+        val haut = formaterValeur(resultat.ciHaut, resultat.grandeur)
         Text(
-            Textes.Tendance.intervalleEtN(
-                formaterValeur(resultat.ciBas, resultat.grandeur),
-                formaterValeur(resultat.ciHaut, resultat.grandeur),
-                resultat.nuits,
-            ),
+            if (resultat.icCalibre) {
+                Textes.Tendance.intervalleEtN(bas, haut, resultat.nuits)
+            } else {
+                Textes.Tendance.intervalleNonCalibre(bas, haut, resultat.nuits)
+            },
             style = PendulumType.bodyNum,
             color = c.textSecondary,
         )

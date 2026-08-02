@@ -26,6 +26,7 @@ import com.pendulum.phone.ui.common.BlockingState
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.CollectionProgress
 import com.pendulum.phone.ui.common.DataTableSheet
+import com.pendulum.phone.ui.common.ErrorCard
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.MetricHeadline
 import com.pendulum.phone.ui.common.Paragraphe
@@ -77,6 +78,8 @@ fun TrendScreen(
     onQuestionnaire: () -> Unit,
     onExport: () -> Unit,
     onActionReveil: () -> Unit,
+    /** Le bouton de la carte de situation Health Connect : ouvrir Health Connect, ou les reglages. */
+    onSituationSommeil: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
@@ -94,6 +97,10 @@ fun TrendScreen(
 
             is TendanceUiState.Refus -> {
                 StatusStrip(etat.reveil, onActionReveil)
+                // La situation de la source de sommeil passe **avant** le refus : une permission
+                // jamais accordee se repare maintenant, pas apres six nuits scorees sur le seul
+                // masque accelerometrique.
+                etat.situationSommeil?.let { ErrorCard(it, onAction = onSituationSommeil) }
                 RefusCard(etat, onNuit)
                 // L'export est visible mais desactive, avec son motif ecrit sur le bouton :
                 // jamais un bouton actif qui echoue.
@@ -106,6 +113,8 @@ fun TrendScreen(
 
             is TendanceUiState.Pret -> {
                 StatusStrip(etat.reveil, onActionReveil)
+
+                etat.situationSommeil?.let { ErrorCard(it, onAction = onSituationSommeil) }
 
                 etat.profilPersonnalise?.let {
                     // Bandeau permanent : il apparait ici ET dans l'export, des qu'un profil non
@@ -122,6 +131,14 @@ fun TrendScreen(
                 PendulumCard {
                     etat.bandeauProvisoire?.let {
                         Paragraphe(it, couleur = c.attention)
+                        // Le nombre de nuits demande depend de la position de l'intervalle, et un
+                        // nombre nu ne se discute pas : son motif est chiffre et sourcé, y compris
+                        // quand la source manque — le regime bas dit que 14 est un compromis.
+                        Text(
+                            etat.motifNuitsRequises,
+                            style = PendulumType.caption,
+                            color = c.textTertiary,
+                        )
                         Spacer(Modifier.height(Spacing.sm.dp))
                     }
 
@@ -132,6 +149,14 @@ fun TrendScreen(
                         libelle = Textes.Tendance.RYTHME_LABEL,
                         qualificatif = etat.periodiciteQualifiee,
                     )
+
+                    if (!etat.rythme.icCalibre) {
+                        // Ce que l'intervalle est reellement sous six nuits, avec la mesure qui le
+                        // dit. Un intervalle mal calibre affiche sans reserve serait le defaut le
+                        // plus embarrassant de ce produit — c'est l'intervalle qui porte tout.
+                        Spacer(Modifier.height(Spacing.s.dp))
+                        Paragraphe(Textes.Tendance.INTERVALLE_NON_CALIBRE, couleur = c.textTertiary)
+                    }
 
                     Spacer(Modifier.height(Spacing.sm.dp))
                     Paragraphe(Textes.Tendance.RYTHME_SANS_SEUIL)
@@ -157,6 +182,18 @@ fun TrendScreen(
                     Spacer(Modifier.height(Spacing.sm.dp))
                     // La phrase de position, cadre neutre dans les cinq cas.
                     PositionBox(etat.position.texte())
+
+                    // **Le seuil de 15/h, etiquete, juste sous la phrase qui l'invoque.**
+                    //
+                    // C'est le meilleur rapport gain/effort de tout l'ecran, et ce n'est pas une
+                    // opinion : sur 1 618 adultes, ajouter a une borne de reference une mention du
+                    // type « beaucoup de medecins ne s'inquietent pas avant cette valeur » fait
+                    // tomber la demande de contact urgent de 55,8 % a 34,7 % sur des valeurs
+                    // quasi normales (Zikmund-Fisher, JMIR 2018). Une ligne nue a 15 est
+                    // exactement le meme dispositif qu'une borne nue sur un compte rendu de
+                    // biologie. La legende porte en plus l'ecart PSG / actimetrie de cheville.
+                    Spacer(Modifier.height(Spacing.s.dp))
+                    Paragraphe(Textes.Graphes.LEGENDE_SEUIL_15, couleur = c.textTertiary)
 
                     Spacer(Modifier.height(Spacing.s.dp))
                     Text(
