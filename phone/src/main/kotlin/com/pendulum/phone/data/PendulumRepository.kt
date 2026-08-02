@@ -14,8 +14,10 @@ import com.pendulum.phone.ui.model.MachineReveil
 import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.Controles
 import com.pendulum.phone.ui.model.NuitUi
+import com.pendulum.phone.ui.model.PorteP1
 import com.pendulum.phone.ui.model.Situations
 import com.pendulum.phone.ui.nights.NuitDetailUi
+import com.pendulum.phone.ui.settings.RapportP1Ui
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.work.AnalysisParams
 import kotlinx.coroutines.Dispatchers
@@ -366,6 +368,28 @@ class PendulumRepository(context: Context) {
         val ecarts = DoubleArray(tries.size - 1) { (tries[it + 1] - tries[it]) / 1000.0 }
         return Aggregat.mediane(ecarts)
     }
+
+    // -------------------------------------------------------------------------------------
+    // La porte P1
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Le rapport de la porte P1 sur les dernieres nuits.
+     *
+     * Il lit `night_session` **et rien d'autre** : la porte P1 porte sur l'acquisition, pas sur
+     * l'analyse. Une nuit dont aucun mouvement n'a encore ete detecte a pourtant tout ce qu'il
+     * faut pour dire si le capteur a tenu — c'est meme l'ordre du projet, puisque P1 precede la
+     * premiere ligne d'algorithme.
+     *
+     * Le verdict de campagne est calcule sur les **memes** nuits que celles affichees. Le
+     * calculer sur toute la base et n'en montrer que quatorze donnerait une conclusion que les
+     * lignes visibles ne permettraient pas de verifier.
+     */
+    suspend fun rapportP1(limite: Int = PorteP1.NUITS_RAPPORT): RapportP1Ui =
+        withContext(Dispatchers.IO) {
+            val verdicts = db.nightDao().all().take(limite).map { PorteP1.de(it) }
+            RapportP1Ui(nuits = verdicts, campagne = PorteP1.campagne(verdicts))
+        }
 
     // -------------------------------------------------------------------------------------
     // Le garde-fou 2 : le resultat est masque au reveil, et le devoiler laisse une trace

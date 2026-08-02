@@ -30,6 +30,7 @@ import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.model.Situations
 import com.pendulum.phone.ui.nights.NuitDetailUi
 import com.pendulum.phone.ui.model.TendanceUiState
+import com.pendulum.phone.ui.settings.RapportP1Ui
 import com.pendulum.phone.ui.settings.ReglagesUi
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.work.WorkScheduler
@@ -526,6 +527,29 @@ data class EtatSante(
     val disponibilite: SleepReader.Availability,
     val sources: List<SourcesSommeil.Observee>?,
 )
+
+/**
+ * Le rapport de la porte P1.
+ *
+ * Un instantane, charge une fois : le rapport repond a une question qui ne bouge pas pendant
+ * qu'on la lit — combien de nuits d'affilee sont restees dans les trois criteres. Un flux ferait
+ * recomposer la conclusion pendant la lecture des lignes qui la justifient.
+ *
+ * `null` tant que la lecture n'a pas abouti, et l'ecran n'affiche alors rien : la meme regle qu'a
+ * l'accueil et au detail de nuit. Un rapport qui s'ouvre sur « 0 nuit sur 3 » puis se remplit
+ * apprend a lire un verdict avant qu'il ne soit vrai.
+ */
+class RapportP1ViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val repo = PendulumRepository(app)
+
+    private val _rapport = MutableStateFlow<RapportP1Ui?>(null)
+    val rapport: StateFlow<RapportP1Ui?> = _rapport
+
+    init {
+        viewModelScope.launch { _rapport.value = repo.rapportP1() }
+    }
+}
 
 /**
  * Les reglages.

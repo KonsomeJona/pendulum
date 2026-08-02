@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
@@ -14,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -30,6 +32,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.pendulum.phone.data.AppairageMontre
+import com.pendulum.phone.export.PorteP1Exporter
 import com.pendulum.phone.health.SleepReader
 import com.pendulum.phone.ui.export.ExportScreen
 import com.pendulum.phone.ui.model.TendanceUiState
@@ -40,6 +43,7 @@ import com.pendulum.phone.ui.nights.NightListScreen
 import com.pendulum.phone.ui.onboarding.OnboardingPager
 import com.pendulum.phone.ui.onboarding.RepriseAssistant
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
+import com.pendulum.phone.ui.settings.RapportP1Screen
 import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.tonight.EveningContextScreen
@@ -182,6 +186,12 @@ const val ROUTE_NUITS = "nights"
  * echoue si on l'ouvre deux fois, serait une invitation a l'erreur.
  */
 const val ROUTE_SOIR = "evening"
+
+/**
+ * Le rapport de la porte P1, atteint depuis Reglages › Mesure. Empile, sans barre de navigation :
+ * on y va pour verifier un chiffre, et on en revient.
+ */
+const val ROUTE_P1 = "p1"
 
 /**
  * Les trois icones sont dessinees a la main, en contour, plutot que tirees d'un jeu importe.
@@ -344,7 +354,33 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
             composable(Destination.REGLAGES.route) {
                 val vm: SettingsViewModel = viewModel()
                 val reglages by vm.reglages.collectAsStateWithLifecycle()
-                SettingsScreen(reglages, {}, {}, {})
+                SettingsScreen(reglages, {}, {}, {}, onRapportP1 = { nav.navigate(ROUTE_P1) })
+            }
+            // Le rapport de la porte P1. Empile : c'est une verification, pas un lieu.
+            composable(ROUTE_P1) {
+                val vm: RapportP1ViewModel = viewModel()
+                val rapport by vm.rapport.collectAsStateWithLifecycle()
+                val contexte = LocalContext.current
+                val portee = rememberCoroutineScope()
+
+                // Le meme chemin SAF que l'export d'une nuit : l'utilisateur choisit
+                // l'emplacement, geste par geste. L'application n'a aucun repertoire a elle dans
+                // le stockage partage, et aucune permission reseau pour envoyer le fichier
+                // ailleurs.
+                val createur = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.CreateDocument("text/csv"),
+                ) { uri ->
+                    uri?.let { portee.launch { PorteP1Exporter.exportVers(contexte, it) } }
+                }
+
+                // Rien tant que la lecture n'a pas abouti : un verdict qui s'affiche avant d'etre
+                // calcule est un verdict qu'on a lu faux une fois.
+                rapport?.let {
+                    RapportP1Screen(
+                        etat = it,
+                        onExporter = { createur.launch(Textes.P1.NOM_FICHIER) },
+                    )
+                }
             }
             // Destinations empilees : pas de barre de navigation, ce sont des taches.
             //

@@ -1,6 +1,9 @@
 package com.pendulum.phone.preview
 
+import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.PorteP1
+import com.pendulum.phone.ui.settings.RapportP1Ui
 import com.pendulum.phone.ui.home.MachineAccueil
 import com.pendulum.phone.ui.home.SessionAccueil
 import com.pendulum.phone.ui.home.SourceAccueil
@@ -315,4 +318,54 @@ object ApercuDonnees {
         nuitsEnregistrees = nuits.take(2),
         reveil = EtatReveil.Rien,
     )
+
+    // ---------------------------------------------------------------------------------
+    // Porte P1
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Trois nuits de campagne, dont une hors criteres.
+     *
+     * Le jeu passe par de **vraies** lignes de `night_session` et par [PorteP1] plutot que par des
+     * verdicts ecrits a la main : un apercu qui court-circuite le calcul montre l'ecran et ne dit
+     * rien de ce que l'ecran affichera. Deux nuits conformes de suite et une troisieme sous la
+     * couverture — la porte n'est donc pas franchie, et c'est le cas qu'il faut savoir lire.
+     */
+    val rapportP1: RapportP1Ui = run {
+        val verdicts = listOf(
+            nuitP1(jours = 0, heures = 8.2, couverture = 0.994, batterie = 34, fs = 50.31),
+            nuitP1(jours = 1, heures = 8.05, couverture = 0.992, batterie = 27, fs = 50.28),
+            nuitP1(jours = 2, heures = 6.1, couverture = 0.978, batterie = 41, fs = 50.31),
+        ).map { PorteP1.de(it) }
+        RapportP1Ui(nuits = verdicts, campagne = PorteP1.campagne(verdicts))
+    }
+
+    private fun nuitP1(
+        jours: Long,
+        heures: Double,
+        couverture: Double,
+        batterie: Int,
+        fs: Double,
+    ): NightSessionEntity {
+        val debut = BASE_MS - jours * JOUR + 22 * 3_600_000L // 23 h locales, heure d'hiver
+        val dureeMs = (heures * 3_600_000L).toLong()
+        val cadence = 50
+        return NightSessionEntity(
+            sessionHex = "p1$jours",
+            startWallMs = debut,
+            plannedStopWallMs = debut + 8 * 3_600_000L,
+            endWallMs = debut + dureeMs,
+            zoneId = FUSEAU,
+            tzOffsetStartMin = 60,
+            tzOffsetEndMin = 60,
+            nominalRateHz = cadence,
+            modeFlags = 0,
+            state = "CLOSED",
+            batteryPctLast = batterie,
+            fsMeasuredHz = fs,
+            sampleCount = (dureeMs * cadence / 1000.0 * couverture).toLong(),
+            gapCount = 3,
+            gapTotalMs = 4_200L,
+        )
+    }
 }

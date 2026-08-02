@@ -21,6 +21,7 @@ import com.pendulum.phone.ui.nights.Controle
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.nights.NightListScreen
 import com.pendulum.phone.ui.nights.NuitDetailUi
+import com.pendulum.phone.ui.settings.RapportP1Screen
 import com.pendulum.phone.ui.settings.ReglagesUi
 import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.text.Textes
@@ -195,8 +196,19 @@ private fun ApercuReglages() = PendulumTheme {
             versionAlgo = "1.4.0",
             theme = Textes.Reglages.THEME_SOMBRE,
         ),
-        {}, {}, {},
+        {}, {}, {}, {},
     )
+}
+
+// --- issu de ui/settings/RapportP1Screen.kt ---------------------------------
+//
+// La campagne du jeu d'apercu ne franchit pas la porte, et c'est le cas a montrer : deux nuits
+// conformes de suite, une troisieme hors criteres au milieu. Un apercu ou tout passe ne dit rien
+// de la lecture qu'on vient faire ici.
+@Preview(name = "P1 report", widthDp = 411, heightDp = 1500, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuRapportP1() = PendulumTheme {
+    RapportP1Screen(ApercuDonnees.rapportP1, {})
 }
 
 

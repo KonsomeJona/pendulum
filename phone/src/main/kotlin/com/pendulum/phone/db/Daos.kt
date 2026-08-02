@@ -39,6 +39,16 @@ interface NightDao {
     @Query("SELECT * FROM night_session ORDER BY startWallMs DESC")
     fun observeAll(): Flow<List<NightSessionEntity>>
 
+    /**
+     * Les nuits en une lecture ponctuelle, la plus recente d'abord.
+     *
+     * Le rapport de la porte P1 et son export CSV en ont besoin sans flux : ce sont des
+     * instantanes, produits une fois a l'ouverture de l'ecran ou a l'ecriture du fichier, et un
+     * flux ferait recomposer un rapport pendant qu'on le lit.
+     */
+    @Query("SELECT * FROM night_session ORDER BY startWallMs DESC")
+    suspend fun all(): List<NightSessionEntity>
+
     @Query("SELECT * FROM night_session WHERE state = 'OPEN' OR state = 'STALE'")
     suspend fun openOrStale(): List<NightSessionEntity>
 

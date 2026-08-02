@@ -59,6 +59,7 @@ fun SettingsScreen(
     onRelireAvertissement: () -> Unit,
     onEffacer: () -> Unit,
     onJournal: () -> Unit,
+    onRapportP1: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
@@ -76,6 +77,10 @@ fun SettingsScreen(
             InlineValue(Textes.Reglages.PROFIL_PARAMS, etat.profil)
             InlineValue(Textes.Reglages.REPERE_PORT, etat.repereDePort)
             InlineValue(Textes.Reglages.ARRET_AUTO, etat.arretAutomatique)
+            // Le rapport P1 est ici et pas dans « A propos » : il porte sur ce que le capteur a
+            // reellement delivre, ce qui est le sujet de cette carte. C'est aussi le seul ecran
+            // de l'application qui parle du materiel plutot que du dormeur.
+            Ligne(Textes.P1.TITRE, Textes.P1.SOUS_TITRE, onRapportP1)
             Spacer(Modifier.height(Spacing.s.dp))
             Paragraphe(Textes.Reglages.MASQUE_ACCELERO_INTERDIT)
             Spacer(Modifier.height(Spacing.s.dp))

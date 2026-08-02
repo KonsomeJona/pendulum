@@ -1051,6 +1051,82 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
     }
 
     // =====================================================================================
+    // Porte P1 — le rapport de faisabilite materielle
+    // =====================================================================================
+
+    /**
+     * Les textes du rapport de la porte P1.
+     *
+     * Le registre est celui du reste du produit : une valeur mesuree, son seuil, et rien qui
+     * qualifie l'ensemble d'un mot. L'ecran ne felicite pas et ne s'alarme pas — il dit combien
+     * de nuits d'affilee ont tenu les trois criteres, et laisse la decision qui suit reposer sur
+     * ce chiffre.
+     */
+    object P1 {
+        const val TITRE = "P1 — hardware feasibility"
+        const val SOUS_TITRE = "Sensor coverage, battery, sampling rate"
+
+        const val INTRO =
+            "P1 is the blocking gate of the project: no line of algorithm is meant to be written " +
+                "until a watch has held three consecutive nights within the three criteria below. " +
+                "Coverage is counted on the differences between sensor timestamps, never on the " +
+                "time samples reached the phone — with FIFO batching, an arrival-time rule fires " +
+                "on every single night and measures nothing."
+
+        const val NUITS = "Nights"
+        const val CONCLUSION = "Campaign"
+
+        /** `at least 99.0%` — le seuil, ecrit a cote de la valeur et jamais ailleurs. */
+        fun auMoins(seuil: String) = "at least $seuil"
+
+        fun batterieSeuil(pct: Int, heures: Int) = "at least $pct% at $heures h"
+
+        fun frequenceSeuil(nominalHz: Int, tolerance: String) = "$nominalHz Hz ± $tolerance"
+
+        const val CONFORME = "meets P1"
+        const val NON_CONFORME = "outside P1"
+        const val INDETERMINE = "not decidable"
+
+        fun serie(atteinte: Int, requises: Int) =
+            "Longest run of consecutive nights inside the three criteria: $atteinte of $requises"
+
+        fun etendueSerie(debut: String, fin: String) = "$debut → $fin"
+
+        fun comptes(conformes: Int, examinees: Int) = "$conformes of $examinees nights inside P1"
+
+        const val FRANCHIE = "Gate passed."
+        const val NON_FRANCHIE = "Gate not passed."
+
+        const val AUCUNE_NUIT =
+            "No night recorded yet. The gate stays closed: it is answered by measurements, not " +
+                "by the absence of them."
+
+        /**
+         * La phrase qui dit a quoi sert le fichier. Elle est ici et pas seulement dans la
+         * documentation, parce qu'un rapport circule sans son contexte — et celui-ci porte le
+         * choix de materiel.
+         */
+        const val POURQUOI =
+            "This report decides whether the project carries on with a Wear OS watch or moves to " +
+                "a dedicated logger such as an Axivity AX3. That decision should rest on a file, " +
+                "not on a memory."
+
+        /**
+         * Ce que le telephone ne peut pas afficher est dit, pas passe sous silence. Une ligne absente laisse
+         * croire que le controle n'existe pas ; un tiret explique dit qu'il n'est pas transmis.
+         */
+        const val NON_TRANSMIS =
+            "Two figures are missing and are shown as a dash. The largest single gap is measured " +
+                "on the watch, but only the total reaches the phone. Battery use over the night " +
+                "cannot be scaled to eight hours either: only the level at the end of the night " +
+                "is stored, never the level at the start — so a night shorter than eight hours " +
+                "answers the battery criterion only when it is already under the threshold."
+
+        const val EXPORTER = "Export as CSV"
+        const val NOM_FICHIER = "pendulum-p1.csv"
+    }
+
+    // =====================================================================================
     // Erreurs (§7 de UX.md) — titre neutre, une phrase de cause, une phrase d'action
     // =====================================================================================
 
