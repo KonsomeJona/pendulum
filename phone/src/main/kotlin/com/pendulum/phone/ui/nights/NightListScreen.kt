@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.QualityChip
-import com.pendulum.phone.ui.model.ApercuDonnees
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.text.Textes
@@ -172,8 +171,3 @@ private fun PastilleEtat(etat: EtatNuit) {
     Text("$glyphe $libelle", style = PendulumType.label, color = teinte)
 }
 
-@Preview(name = "Nights — list", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuListe() = PendulumTheme {
-    NightListScreen(ApercuDonnees.nuits, {})
-}

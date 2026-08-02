@@ -31,7 +31,6 @@ import com.pendulum.phone.ui.export.ExportScreen
 import com.pendulum.phone.ui.export.ExportUi
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.nights.NightListScreen
-import com.pendulum.phone.ui.nights.apercuNuitDetail
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
 import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.text.Textes
@@ -205,8 +204,18 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                     }
                 }
             }
-            composable("night/{hex}") {
-                NightDetailScreen(apercuNuitDetail, onVoirTendance = { nav.popBackStack() }, {})
+            composable("night/{hex}") { entree ->
+                val hex = entree.arguments?.getString("hex").orEmpty()
+                val vm: NightDetailViewModel = viewModel()
+                val detail by vm.detail.collectAsStateWithLifecycle()
+                LaunchedEffect(hex) { vm.charger(hex) }
+
+                // Rien tant que la lecture n'a pas abouti. Pas de squelette anime, pas de valeurs
+                // par defaut : un ecran de detail qui affiche des zeros pendant deux cents
+                // millisecondes apprend a lire des chiffres avant qu'ils ne soient vrais.
+                detail?.let {
+                    NightDetailScreen(it, onVoirTendance = { nav.popBackStack() }, {})
+                }
             }
             composable("compare") {
                 ComparePeriodsScreen(

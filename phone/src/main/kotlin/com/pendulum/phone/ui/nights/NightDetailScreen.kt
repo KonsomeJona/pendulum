@@ -29,7 +29,6 @@ import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.SectionHeader
-import com.pendulum.phone.ui.model.ApercuDonnees
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
@@ -42,8 +41,20 @@ import com.pendulum.phone.ui.theme.Spacing
 data class NuitDetailUi(
     val nuit: NuitUi,
     val auLit: String,
-    val graphe: NuitChartSpec,
-    val hypnogramme: HypnogrammeSpec,
+    /**
+     * Le graphe du signal, ou `null` quand l'enveloppe n'est pas disponible.
+     *
+     * Elle est calculee pendant l'analyse et **n'est pas persistee** : la reconstruire demande de
+     * relire les chunks bruts de la nuit et de refaire la chaine de traitement, ce qui n'a pas sa
+     * place dans l'ouverture d'un ecran. Tant que cette relecture n'existe pas, la section n'est
+     * pas dessinee — plutot que dessinee vide ou avec une courbe fabriquee.
+     *
+     * C'est la meme regle que sous trois nuits : un axe vide invite l'oeil a imaginer la courbe
+     * qui manque. Le reste du detail — les comptes, les controles qualite, l'hypnogramme — vient
+     * de la base et s'affiche.
+     */
+    val graphe: NuitChartSpec?,
+    val hypnogramme: HypnogrammeSpec?,
     val mouvements: Int,
     val plms: Int,
     val plmw: Int,
@@ -80,7 +91,9 @@ fun NightDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
-    val transform = remember(detail.graphe) { XTransform(detail.graphe.debutMs, detail.graphe.finMs) }
+    val transform = remember(detail.graphe) {
+        detail.graphe?.let { XTransform(it.debutMs, it.finMs) }
+    }
     var curseur by remember { mutableStateOf<Long?>(null) }
     var valeursOuvertes by remember { mutableStateOf(false) }
     var paramsOuverts by remember { mutableStateOf(false) }
@@ -114,18 +127,24 @@ fun NightDetailScreen(
         }
 
         // --- Section 2 : les deux graphes, un seul axe X, un seul curseur
-        PendulumCard {
-            GrapheNuit(
-                spec = detail.graphe,
-                transform = transform,
-                curseurMs = curseur,
-                onCurseur = { curseur = it },
-                onEvenement = {},
-                onValeurs = { valeursOuvertes = true },
-            )
-            Hypnogramme(detail.hypnogramme, transform, curseur)
-            Spacer(Modifier.height(Spacing.xs.dp))
-            Text(detail.hypnogramme.statistiques, style = PendulumType.caption, color = c.textTertiary)
+        //
+        // La carte entiere disparait quand l'enveloppe n'a pas ete reconstruite. Ni cadre vide, ni
+        // message d'erreur : il n'y a rien de casse, il y a seulement une donnee que cette version
+        // ne relit pas encore depuis le brut.
+        if (detail.graphe != null && detail.hypnogramme != null && transform != null) {
+            PendulumCard {
+                GrapheNuit(
+                    spec = detail.graphe,
+                    transform = transform,
+                    curseurMs = curseur,
+                    onCurseur = { curseur = it },
+                    onEvenement = {},
+                    onValeurs = { valeursOuvertes = true },
+                )
+                Hypnogramme(detail.hypnogramme, transform, curseur)
+                Spacer(Modifier.height(Spacing.xs.dp))
+                Text(detail.hypnogramme.statistiques, style = PendulumType.caption, color = c.textTertiary)
+            }
         }
 
         // --- Section 3 : evenements detectes
@@ -172,51 +191,20 @@ fun NightDetailScreen(
         Spacer(Modifier.height(Spacing.l.dp))
     }
 
-    if (valeursOuvertes) {
+    val graphe = detail.graphe
+    if (valeursOuvertes && graphe != null) {
         DataTableSheet(
             colonnes = listOf("#", "Start", "Duration", "Ampl."),
-            lignes = detail.graphe.marqueurs.take(200).mapIndexed { i, m ->
-                listOf("${i + 1}", "${(m.onsetMs - detail.graphe.debutMs) / 1000} s", "2.4 s", "×9.2")
+            lignes = graphe.marqueurs.take(200).mapIndexed { i, m ->
+                listOf(
+                    "${i + 1}",
+                    "${(m.onsetMs - graphe.debutMs) / 1000} s",
+                    m.dureeMs?.let { "%.1f s".format(it / 1000.0) } ?: "—",
+                    m.amplitudeRatio?.let { "×%.1f".format(it) } ?: "—",
+                )
             },
             onFermer = { valeursOuvertes = false },
         )
     }
 }
 
-/** Jeu de demonstration, partage par les apercus et par le squelette de navigation. */
-val apercuNuitDetail = NuitDetailUi(
-    nuit = ApercuDonnees.nuits.first(),
-    auLit = "7 h 46",
-    graphe = ApercuDonnees.nuit,
-    hypnogramme = ApercuDonnees.hypnogramme,
-    mouvements = 412,
-    plms = 278,
-    plmw = 64,
-    ecartesPosture = 57,
-    ecartesDuree = 13,
-    series = 31,
-    couvertureSeries = "3 h 12",
-    imiMedianSec = 23.4,
-    controles = listOf(
-        Controle(Textes.Nuits.Detail.COUVERTURE, "99.2%", "97%", true),
-        Controle(Textes.Nuits.Detail.PLUS_GRAND_TROU, "1.8 s", "5 s", true),
-        Controle(Textes.Nuits.Detail.CUMUL_TROUS, "11 s", "120 s", true),
-        Controle(Textes.Nuits.Detail.FREQUENCE, "50.21 Hz", "50 Hz", true),
-        Controle(Textes.Nuits.Detail.BATTERIE_FIN, "34%", "20%", true),
-        Controle(Textes.Nuits.Detail.PORTE, "96.4%", "90%", true),
-        Controle(Textes.Nuits.Detail.SOMMEIL_TOTAL, "6 h 58", "4 h", true),
-    ),
-    regleAppliquee = "AASM v3 · algo 1.4.0 · profile “default”",
-)
-
-@Preview(name = "Night — detail", widthDp = 411, heightDp = 1600, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuDetail() = PendulumTheme {
-    NightDetailScreen(apercuNuitDetail, {}, {})
-}
-
-@Preview(name = "Night — detail without hypnogram", widthDp = 411, heightDp = 1600, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuDetailSansHypno() = PendulumTheme {
-    NightDetailScreen(apercuNuitDetail.copy(hypnogramme = ApercuDonnees.hypnogrammeAbsent), {}, {})
-}

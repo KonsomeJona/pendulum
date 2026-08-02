@@ -128,23 +128,3 @@ private fun Ligne(titre: String, sousTitre: String?, onClick: () -> Unit) {
     }
 }
 
-@Preview(name = "Settings", widthDp = 411, heightDp = 1200, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuReglages() = PendulumTheme {
-    SettingsScreen(
-        ReglagesUi(
-            regle = Textes.Reglages.REGLE_AASM,
-            sourcePreferee = "Samsung Health",
-            profil = "default",
-            repereDePort = "4th hole, right leg",
-            arretAutomatique = "On charger",
-            montre = "Pixel Watch 3 · 98% · 1.2 GB",
-            healthConnect = "Sleep read access granted",
-            espaceOccupe = "3.4 GB",
-            versionApp = "0.1.0",
-            versionAlgo = "1.4.0",
-            theme = Textes.Reglages.THEME_SOMBRE,
-        ),
-        {}, {}, {},
-    )
-}

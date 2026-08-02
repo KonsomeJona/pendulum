@@ -15,7 +15,6 @@ import androidx.compose.ui.unit.dp
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.SectionHeader
-import com.pendulum.phone.ui.model.ApercuDonnees
 import com.pendulum.phone.ui.model.CeSoirUi
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
@@ -106,14 +105,3 @@ private fun Ligne(libelle: String, valeur: String, teinte: Color? = null) {
     }
 }
 
-@Preview(name = "Tonight — context sealed", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
-@Composable
-private fun ApercuCeSoir() = PendulumTheme {
-    TonightCard(ApercuDonnees.ceSoir, onSceller = {})
-}
-
-@Preview(name = "Tonight — to seal, low battery", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
-@Composable
-private fun ApercuCeSoirASceller() = PendulumTheme {
-    TonightCard(ApercuDonnees.ceSoir.copy(batteriePct = 62, contexteScelle = false), onSceller = {})
-}

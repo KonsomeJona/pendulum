@@ -1,4 +1,12 @@
-package com.pendulum.phone.ui.model
+package com.pendulum.phone.preview
+
+import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.CeSoirUi
+import com.pendulum.phone.ui.model.Drapeau
+import com.pendulum.phone.ui.model.EtatNuit
+import com.pendulum.phone.ui.model.EtatReveil
+import com.pendulum.phone.ui.model.NuitUi
+import com.pendulum.phone.ui.model.TendanceUiState
 
 import com.pendulum.phone.ui.chart.EnvelopePyramid
 import com.pendulum.phone.ui.chart.EtatPoint

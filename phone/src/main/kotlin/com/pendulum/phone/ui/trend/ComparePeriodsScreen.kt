@@ -19,7 +19,6 @@ import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.formaterValeur
 import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.model.ApercuDonnees
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
@@ -133,21 +132,3 @@ private fun ligneEstimation(r: Aggregat.Resultat): String =
 
 private fun signe(v: Double): String = if (v < 0) "−" else "+"
 
-@Preview(name = "Comparison — not conclusive", widthDp = 411, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuComparaison() = PendulumTheme {
-    val a = ApercuDonnees.compte.copy(mediane = 31.0, ciBas = 19.0, ciHaut = 44.0)
-    val b = ApercuDonnees.compte
-    ComparePeriodsScreen(
-        resultat = Aggregat.comparer(a, b, -24.0, 5.0, 11),
-        motifIndisponible = null,
-        libellePeriodeA = "1–15 February",
-        libellePeriodeB = "1–15 March",
-    )
-}
-
-@Preview(name = "Comparison — refused, too few nights", widthDp = 411, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuComparaisonRefus() = PendulumTheme {
-    ComparePeriodsScreen(null, Textes.Comparaison.PERIODE_A to 3, "1–15 February", "1–15 March")
-}

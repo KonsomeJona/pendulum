@@ -18,6 +18,7 @@ import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.EtatReveil
 import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.NuitUi
+import com.pendulum.phone.ui.nights.NuitDetailUi
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.settings.ReglagesUi
 import com.pendulum.phone.ui.text.Textes
@@ -223,6 +224,25 @@ class EveningViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 enum class ResultatScellement { Scelle, PublicationEchouee, DejaScelle }
+
+/**
+ * Le detail d'une nuit.
+ *
+ * Il **lit enfin l'argument de route**. Le `night/{hex}` du graphe de navigation etait ignore :
+ * quelle que soit la nuit sur laquelle on tapait, l'ecran affichait le meme jeu de demonstration —
+ * 412 mouvements, sept controles qualite tous verts, une regle « algo 1.4.0 ».
+ */
+class NightDetailViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val repo = PendulumRepository(app)
+
+    private val _detail = MutableStateFlow<NuitDetailUi?>(null)
+    val detail: StateFlow<NuitDetailUi?> = _detail
+
+    fun charger(sessionHex: String) {
+        viewModelScope.launch { _detail.value = repo.detailDeNuit(sessionHex) }
+    }
+}
 
 /** La liste des nuits. Rien a decider : la vue SQL a deja annote, [Mapping] a deja traduit. */
 class NightsViewModel(app: Application) : AndroidViewModel(app) {

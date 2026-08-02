@@ -537,6 +537,13 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
             const val PORTE = "Worn (off-body)"
             const val SOMMEIL_TOTAL = "Total sleep"
             const val SOURCE_SOMMEIL = "Sleep source"
+
+            /**
+             * Le taux de manques estime par la deconvolution harmonique. Il est **mesure** et non
+             * suppose : un mouvement manque fusionne deux intervalles de 21 s en un de 42 s, et
+             * le modele de melange qui separe ces harmoniques rend le taux au passage.
+             */
+            const val TAUX_MANQUES = "Estimated missed movements"
             const val REGLE_APPLIQUEE = "Rule applied"
 
             const val PARAMS_AVANCES = "Advanced parameters"

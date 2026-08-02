@@ -34,7 +34,6 @@ import com.pendulum.phone.ui.common.PositionBox
 import com.pendulum.phone.ui.common.StatusStrip
 import com.pendulum.phone.ui.common.formaterValeur
 import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.model.ApercuDonnees
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.text.Textes
@@ -314,29 +313,3 @@ private fun formaterJourCourt(ms: Long): String {
 // Apercus
 // -----------------------------------------------------------------------------------------
 
-@Preview(name = "Trend — 6 nights, full screen", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuTendance() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendancePrete, {}, {}, {}, {}, {}, {})
-}
-
-@Preview(name = "Trend — refusal below 3 nights", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuTendanceRefus() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendanceRefus, {}, {}, {}, {}, {}, {})
-}
-
-@Preview(name = "Trend — provisional 4 nights + Tonight", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
-@Composable
-private fun ApercuTendanceProvisoire() = PendulumTheme {
-    TrendScreen(
-        ApercuDonnees.tendancePrete.copy(
-            rythme = ApercuDonnees.rythme.copy(nuits = 4, ciBas = 15.0, ciHaut = 30.0),
-            compte = ApercuDonnees.compte.copy(nuits = 4, ciBas = 9.0, ciHaut = 38.0),
-            position = Aggregat.position(9.0, 38.0, 4),
-            periodiciteQualifiee = null,
-            ceSoir = ApercuDonnees.ceSoir,
-        ),
-        {}, {}, {}, {}, {}, {},
-    )
-}

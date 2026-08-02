@@ -7,7 +7,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.pendulum.phone.ui.model.ApercuDonnees
+import com.pendulum.phone.db.PendulumDatabase
+import com.pendulum.phone.db.eraseEverything
+import com.pendulum.phone.preview.ApercuDonnees
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.onboarding.DisclaimerPage
 import com.pendulum.phone.ui.text.Textes
@@ -109,5 +111,40 @@ class GardeFousTest {
 
         compose.onNodeWithText("Hourly count", substring = true)
             .performScrollTo().assertIsDisplayed()
+    }
+
+    /**
+     * **Base vide → ecran de refus.** Le test qui empeche le defaut de revenir.
+     *
+     * Ce n'est pas une redite du precedent : celui-la monte l'ecran a partir d'un etat construit
+     * a la main, celui-ci monte **le graphe de navigation reel** contre une base reellement vide.
+     * C'est la difference exacte qui manquait — `PendulumNavHost` passait `ApercuDonnees` a
+     * `TrendScreen`, donc l'ecran affichait sept nuits, un hypnogramme et « Samsung Health » sur
+     * une installation neuve, pendant que le test unitaire d'a cote passait au vert.
+     *
+     * Un defaut d'affichage se voit a l'oeil, en principe. Celui-la ne se voyait pas : l'ecran
+     * etait credible.
+     */
+    @Test
+    fun baseVide_lAppOuvreSurLeRefusEtAucunChiffreAgrege() {
+        val contexte = androidx.test.platform.app.InstrumentationRegistry
+            .getInstrumentation().targetContext
+        kotlinx.coroutines.runBlocking {
+            PendulumDatabase.get(contexte).eraseEverything()
+        }
+
+        compose.setContent { PendulumTheme { com.pendulum.phone.ui.PendulumNavHost() } }
+        compose.waitForIdle()
+
+        // Le compteur de nuits, et rien d'autre. Aucun agregat n'existe : il n'y a pas de branche
+        // de code qui en produise un sous trois nuits.
+        compose.onNodeWithText(Textes.Tendance.REFUS_TITRE, substring = true).assertIsDisplayed()
+
+        for (interdit in listOf(
+            Textes.Tendance.RYTHME_LABEL,
+            Textes.Tendance.COMPTE_LABEL,
+        )) {
+            compose.onAllNodesWithText(interdit, substring = true).assertCountEquals(0)
+        }
     }
 }

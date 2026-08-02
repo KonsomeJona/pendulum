@@ -23,6 +23,21 @@ data class Marqueur(
     val onsetMs: Long,
     val genre: GenreMarqueur,
     val numeroSerie: Int?,
+    /**
+     * Duree du mouvement, en millisecondes, et amplitude de son pic en multiples du plancher de
+     * bruit.
+     *
+     * Elles n'alimentent pas le trace — un marqueur est un tick sur une bande dediee, de largeur
+     * fixe — mais le **tableau de valeurs**, qui est a la fois l'alternative accessible du graphe
+     * et le chemin « je veux le chiffre exact ». Il affichait jusqu'ici « 2.4 s » et « x9.2 » en
+     * litteraux pour chaque ligne, quel que soit le mouvement : un tableau qui promet la valeur
+     * exacte et rend une constante est pire qu'un tableau absent.
+     *
+     * Nullables parce qu'un marqueur peut venir d'une source qui ne les porte pas ; le tableau
+     * affiche alors un tiret plutot qu'un chiffre invente.
+     */
+    val dureeMs: Long? = null,
+    val amplitudeRatio: Float? = null,
 )
 
 /**
