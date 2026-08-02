@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Capacite annoncee par le telephone sur le Wearable Data Layer.
+
+  C'est le seul mecanisme qui permet a chacun des deux appareils de savoir que l'application est
+  reellement installee **en face** : `NodeClient.connectedNodes` dit qu'une montre est appairee,
+  pas qu'elle porte Pendulum. Les deux faits sont distincts, ils se reparent a deux endroits
+  differents, et les confondre envoie l'utilisateur installer une application sur un appareil qui
+  n'existe pas.
+
+  ### `tools:keep` n'est pas une precaution, c'est la ligne critique du fichier
+
+  Ce tableau n'est reference par aucun code : c'est le service Google Play qui le lit dans les
+  ressources de l'APK. Le reducteur de ressources, qui ne voit donc aucune reference, le supprime
+  en release. Le symptome n'est pas une erreur : la capacite disparait, la detection ne trouve
+  plus rien, et l'assistant reste bloque a « application absente » sur un appareil ou elle est
+  installee. Un debogage en debug ne reproduit jamais rien.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@array/android_wear_capabilities">
+    <string-array name="android_wear_capabilities">
+        <item>pendulum_phone_app</item>
+    </string-array>
+</resources>

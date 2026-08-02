@@ -2,6 +2,16 @@ package com.pendulum.phone.preview
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import com.pendulum.phone.data.EtatAppairage
+import com.pendulum.phone.data.EtatMontre
+import com.pendulum.phone.health.SleepReader
+import com.pendulum.phone.health.SourcesSommeil
+import com.pendulum.phone.ui.EtatSante
+import com.pendulum.phone.ui.onboarding.DisclaimerPage
+import com.pendulum.phone.ui.onboarding.NotificationsPage
+import com.pendulum.phone.ui.onboarding.PairingPage
+import com.pendulum.phone.ui.onboarding.RequirementsPage
+import com.pendulum.phone.ui.onboarding.SleepSourcePage
 import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.model.CeSoirUi
 import com.pendulum.phone.ui.model.EtatReveil
@@ -189,3 +199,76 @@ private fun ApercuReglages() = PendulumTheme {
     )
 }
 
+
+// --- issu de ui/onboarding/OnboardingPager.kt -------------------------------
+//
+// Les apercus de l'assistant vivent ici et non a cote du composable, pour la raison qui ouvre ce
+// fichier : ils ont besoin d'un nom de montre et d'une liste de sources, donc de valeurs
+// fictives. Les laisser dans `src/main` etait exactement ce qui les avait fait remonter en
+// valeurs par defaut de parametres, puis s'afficher a l'utilisateur.
+
+@Preview(name = "Onboarding 1/5 — notice", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuAvertissement() = PendulumTheme { DisclaimerPage {} }
+
+@Preview(name = "Onboarding 2/5 — needs", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuBesoins() = PendulumTheme { RequirementsPage {} }
+
+@Preview(name = "Onboarding 3/5 — no watch paired", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuAppairageAucuneMontre() = PendulumTheme {
+    PairingPage(EtatMontre(EtatAppairage.AUCUNE_MONTRE), null, { true }, {}, {})
+}
+
+@Preview(name = "Onboarding 3/5 — watch paired, app missing", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuAppairageAppAbsente() = PendulumTheme {
+    PairingPage(EtatMontre(EtatAppairage.APP_ABSENTE_OU_HORS_PORTEE, "Pixel Watch 3"), null, { true }, {}, {})
+}
+
+@Preview(name = "Onboarding 3/5 — watch found", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuAppairagePrete() = PendulumTheme {
+    PairingPage(EtatMontre(EtatAppairage.PRETE, "Pixel Watch 3"), null, { true }, {}, {})
+}
+
+@Preview(name = "Onboarding 4/5 — two sources", widthDp = 411, heightDp = 1200, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuSourceSommeil() = PendulumTheme {
+    SleepSourcePage(
+        sante = EtatSante(
+            SleepReader.Availability.READY,
+            listOf(
+                SourcesSommeil.Observee("com.sec.android.app.shealth", 6, true),
+                SourcesSommeil.Observee("com.urbandroid.sleep", 2, false),
+            ),
+        ),
+        sourcePreferee = "com.sec.android.app.shealth",
+        onRelire = {}, onChoisirSource = {}, onContinuer = {},
+    )
+}
+
+@Preview(name = "Onboarding 4/5 — no source at all", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuSourceSommeilAucune() = PendulumTheme {
+    SleepSourcePage(
+        sante = EtatSante(SleepReader.Availability.READY, emptyList()),
+        sourcePreferee = null,
+        onRelire = {}, onChoisirSource = {}, onContinuer = {},
+    )
+}
+
+@Preview(name = "Onboarding 4/5 — Health Connect absent", widthDp = 411, heightDp = 1200, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuSourceSommeilSansSdk() = PendulumTheme {
+    SleepSourcePage(
+        sante = EtatSante(SleepReader.Availability.SDK_UNAVAILABLE, null),
+        sourcePreferee = null,
+        onRelire = {}, onChoisirSource = {}, onContinuer = {},
+    )
+}
+
+@Preview(name = "Onboarding 5/5 — notifications and conditions", widthDp = 411, heightDp = 1200, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuNotifications() = PendulumTheme { NotificationsPage("4th hole", {}, {}) }

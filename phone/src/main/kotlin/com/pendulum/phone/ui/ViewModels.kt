@@ -3,12 +3,18 @@ package com.pendulum.phone.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.pendulum.phone.data.AppairageMontre
+import com.pendulum.phone.data.EtatAppairage
+import com.pendulum.phone.data.EtatMontre
 import com.pendulum.phone.data.EtatTendance
 import com.pendulum.phone.data.EveningContextSealer
 import com.pendulum.phone.data.SaisieDuSoir
 import com.pendulum.phone.data.PendulumPreferences
 import com.pendulum.phone.data.PendulumRepository
 import com.pendulum.phone.data.WatchCommands
+import com.pendulum.phone.health.SleepReader
+import com.pendulum.phone.health.SourcesSommeil
+import com.pendulum.phone.ui.onboarding.RepriseAssistant
 import com.pendulum.phone.ui.chart.BandeMediane
 import com.pendulum.phone.ui.chart.EtatPoint
 import com.pendulum.phone.ui.chart.LigneReference
@@ -329,6 +335,125 @@ class NightsViewModel(app: Application) : AndroidViewModel(app) {
     val nuits: StateFlow<List<NuitUi>> = repo.observerNuits()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
+
+/**
+ * L'assistant de premier lancement.
+ *
+ * ### Ce qu'il repare
+ *
+ * `OnboardingPager` existait, complet, et **n'avait aucun appelant**. La consequence n'etait pas
+ * cosmetique : le seul `rememberLauncherForActivityResult` de l'application vivait dans cet ecran
+ * inatteignable, donc aucun chemin utilisateur n'accordait jamais les permissions Health Connect.
+ * Chaque nuit etait alors scoree par le seul masque accelerometrique — la circularite
+ * numerateur/denominateur que tout le projet existe pour eviter — sans qu'aucun ecran ne le dise.
+ *
+ * ### L'etat de l'appairage est un flux, pas une lecture
+ *
+ * `AppairageMontre.observer` s'abonne a `CapabilityClient` : l'etape 3 se coche d'elle-meme quand
+ * l'application apparait sur la montre, pendant que l'utilisateur est encore en train de
+ * l'installer. `WhileSubscribed` garantit que l'abonnement au Data Layer s'arrete des que l'ecran
+ * part — un ecouteur Wearable oublie survit au composable, pas au ViewModel.
+ */
+class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val prefs = PendulumPreferences(app)
+    private val lecteur = SleepReader(app)
+
+    /** `null` tant que la premiere lecture du DataStore n'a pas abouti : on ne compose rien. */
+    val etape: StateFlow<Int?> = prefs.etapeAssistant
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val montre: StateFlow<EtatMontre> = AppairageMontre.observer(app)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            EtatMontre(EtatAppairage.AUCUNE_MONTRE),
+        )
+
+    val sourcePreferee: StateFlow<String?> = prefs.sourceSommeilPreferee
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val repereDeSerrage: StateFlow<String> = prefs.repereDeSerrage
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /** `null` tant que Health Connect n'a pas ete interroge : l'ecran n'affiche alors rien. */
+    private val _sante = MutableStateFlow<EtatSante?>(null)
+    val sante: StateFlow<EtatSante?> = _sante
+
+    /** Dernier resultat d'une tentative d'ouverture du magasin sur la montre, consomme une fois. */
+    private val _installation = MutableStateFlow<Boolean?>(null)
+    val installation: StateFlow<Boolean?> = _installation
+
+    /**
+     * L'etape est ecrite a la **sortie** de la page, et jamais a l'entree : une etape commencee
+     * puis abandonnee n'est pas une etape franchie.
+     */
+    fun franchir(page: Int) {
+        viewModelScope.launch {
+            prefs.poserEtapeAssistant(RepriseAssistant.etapeApres(page, etape.value ?: 0))
+        }
+    }
+
+    /**
+     * Relit Health Connect : sa disponibilite, puis les sources des sept derniers jours.
+     *
+     * Appele a l'ouverture de l'etape 4 **et** au retour de la demande de permission. Sans le
+     * second appel, l'ecran resterait sur `PERMISSIONS_MISSING` juste apres que l'utilisateur les
+     * a accordees, ce qui se lit comme un refus.
+     */
+    fun relireLaSante() {
+        viewModelScope.launch {
+            val disponibilite = lecteur.availability()
+            _sante.value = EtatSante(
+                disponibilite = disponibilite,
+                sources = if (disponibilite == SleepReader.Availability.READY) {
+                    lecteur.sourcesRecentes(System.currentTimeMillis())
+                } else {
+                    null
+                },
+            )
+        }
+    }
+
+    /**
+     * Le choix de la source, ecrit dans les preferences.
+     *
+     * C'est le reglage que `SleepFetchWorker` lit et que personne n'ecrivait. Il ne s'agit pas
+     * d'un confort : quand deux applications publient des sessions qui se chevauchent, le
+     * denominateur depend de celle qu'on lit, et un denominateur qui change d'une nuit a l'autre
+     * fabrique une tendance qui n'existe pas.
+     */
+    fun choisirSource(paquet: String) {
+        viewModelScope.launch { prefs.poserSourceSommeilPreferee(paquet) }
+    }
+
+    /** Le repere de serrage, saisi a l'etape 5 et jusqu'ici jete. */
+    fun poserLeRepere(repere: String) {
+        viewModelScope.launch { prefs.poserRepereDeSerrage(repere) }
+    }
+
+    fun installerSurLaMontre() {
+        viewModelScope.launch {
+            _installation.value = AppairageMontre.ouvrirLeMagasinSurLaMontre(getApplication())
+        }
+    }
+
+    fun installationConsommee() {
+        _installation.value = null
+    }
+}
+
+/**
+ * Ce que l'etape 4 sait de Health Connect.
+ *
+ * @param sources `null` quand la question n'a pas de sens — Health Connect absent, trop ancien,
+ *   ou permissions non accordees. Une liste vide, elle, est une reponse : rien n'ecrit de
+ *   sommeil sur ce telephone, et l'ecran doit alors aider plutot que rester muet.
+ */
+data class EtatSante(
+    val disponibilite: SleepReader.Availability,
+    val sources: List<SourcesSommeil.Observee>?,
+)
 
 /**
  * Les reglages.

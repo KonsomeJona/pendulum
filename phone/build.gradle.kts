@@ -119,6 +119,22 @@ dependencies {
 
     implementation(libs.health.connect.client)
     implementation(libs.play.services.wearable)
+    // `RemoteActivityHelper` : ouvrir la fiche Play Store **sur la montre** depuis l'assistant.
+    // C'est le seul chemin qui ne se fasse pas bloquer, parce que le lancement est execute
+    // la-bas par les services Google Play et non par notre processus. La bibliotheque etait
+    // deja au catalogue, utilisee par `:wear` dans l'autre sens.
+    implementation(libs.androidx.wear.remote.interactions)
+    // `startRemoteActivity` rend un `ListenableFuture`, et cette classe **n'est pas** sur le
+    // chemin de compilation de `:phone` : `androidx.health.connect` tire Guava complet, ce qui
+    // fait remplacer `com.google.guava:listenablefuture` par l'artefact
+    // `9999.0-empty-to-avoid-conflict-with-guava`, un jar litteralement vide. Le symptome est
+    // « Cannot access class ListenableFuture » alors que la meme ligne compile dans `:wear`, ou
+    // Guava complet est absent et ou l'artefact reel est donc conserve.
+    //
+    // `compileOnly` et pas `implementation` : Guava est **deja** dans l'APK par la voie de
+    // Health Connect, donc le declarer ici ne coute pas un octet de plus — il ne fait que rendre
+    // le type visible au compilateur. La version suit celle que resout deja le chemin d'execution.
+    compileOnly("com.google.guava:guava:31.1-android")
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)

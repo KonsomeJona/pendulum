@@ -51,9 +51,19 @@
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Visibilite du paquet Health Connect (Android 11+ filtre les requetes de paquet). -->
+    <!--
+      Visibilite de paquets (Android 11+ filtre les requetes de paquet).
+
+      Health Connect, et les deux applications compagnons Wear OS. Ces dernieres sont la
+      reparation du premier etat de l'ecran d'appairage — « aucune montre appairee » se corrige
+      dans l'application du constructeur, jamais dans un magasin — et sans ces declarations
+      `getLaunchIntentForPackage` rend `null` meme lorsqu'elles sont installees. L'echec est
+      silencieux : le bouton ne fait rien et rien ne dit pourquoi.
+    -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <package android:name="com.google.android.wearable.app" />
+        <package android:name="com.samsung.android.app.watchmanager" />
     </queries>
 
     <application

@@ -10,6 +10,8 @@ import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * Lecture du sommeil dans Health Connect.
@@ -142,43 +144,7 @@ class SleepReader(private val context: Context) {
         val from = Instant.ofEpochMilli(windowStartMs).minusSeconds(marginMinutes * 60)
         val to = Instant.ofEpochMilli(windowEndMs).plusSeconds(marginMinutes * 60)
 
-        // Pagination obligatoire : `ReadRecordsRequest` a une taille de page **par defaut de
-        // 1000** et la reponse ne dit qu'une chose quand elle est pleine — elle rend un
-        // `pageToken` non nul. Lire la premiere page seulement tronque en silence, et le mode de
-        // defaillance est exactement celui qu'on cherche a eviter : une source de sommeil
-        // manquante fait perdre le denominateur sans qu'aucune erreur ne remonte. Le cas est
-        // rare avec 3 h de marge, mais « rare et silencieux » est pire que « frequent et bruyant ».
-        val records = buildList {
-            var pageToken: String? = null
-            do {
-                val response = c.readRecords(
-                    ReadRecordsRequest(
-                        recordType = SleepSessionRecord::class,
-                        timeRangeFilter = TimeRangeFilter.between(from, to),
-                        pageToken = pageToken,
-                    )
-                )
-                addAll(response.records)
-                pageToken = response.pageToken
-            } while (pageToken != null)
-        }
-
-        val candidates = records.map { r ->
-            SleepSourceSelector.Candidate(
-                recordId = r.metadata.id,
-                packageName = r.metadata.dataOrigin.packageName,
-                startMs = r.startTime.toEpochMilli(),
-                endMs = r.endTime.toEpochMilli(),
-                lastModifiedMs = r.metadata.lastModifiedTime.toEpochMilli(),
-                stages = r.stages.map {
-                    SleepSourceSelector.StageSpan(
-                        startMs = it.startTime.toEpochMilli(),
-                        endMs = it.endTime.toEpochMilli(),
-                        stageType = it.stage,
-                    )
-                },
-            )
-        }
+        val candidates = readCandidates(from, to)
 
         // Controle croise. `aggregate` dedoublonne (Activity et Sleep uniquement) selon la
         // priorite reglee par l'utilisateur, mais ne rend jamais les stades : il ne peut donc
@@ -206,6 +172,74 @@ class SleepReader(private val context: Context) {
             verdict = verdict,
             readAtMs = System.currentTimeMillis(),
         )
+    }
+
+    /**
+     * Les sources qui ont ecrit une session de sommeil sur les [jours] derniers jours, avec le
+     * nombre de nuits que chacune couvre.
+     *
+     * C'est ce que l'etape 4 de l'assistant affiche, a la place des deux noms qui y etaient
+     * ecrits en dur. `null` — et non une liste vide — quand Health Connect n'est pas exploitable :
+     * les deux cas s'affichent differemment, puisque « aucune application n'ecrit de sommeil » et
+     * « Health Connect n'est pas installe » se reparent a deux endroits.
+     */
+    suspend fun sourcesRecentes(
+        maintenantMs: Long,
+        jours: Int = SourcesSommeil.JOURS_OBSERVES,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): List<SourcesSommeil.Observee>? {
+        client ?: return null
+        val to = Instant.ofEpochMilli(maintenantMs)
+        val from = to.minus(jours.toLong(), ChronoUnit.DAYS)
+        return runCatching { SourcesSommeil.resumer(readCandidates(from, to), zone) }.getOrNull()
+    }
+
+    /**
+     * Lecture paginee des sessions d'une fenetre, traduites en candidats.
+     *
+     * Pagination obligatoire : `ReadRecordsRequest` a une taille de page **par defaut de 1000** et
+     * la reponse ne dit qu'une chose quand elle est pleine — elle rend un `pageToken` non nul.
+     * Lire la premiere page seulement tronque en silence, et le mode de defaillance est exactement
+     * celui qu'on cherche a eviter : une source de sommeil manquante fait perdre le denominateur
+     * sans qu'aucune erreur ne remonte. Le cas est rare sur une nuit, moins sur sept jours, et
+     * « rare et silencieux » est pire que « frequent et bruyant ».
+     */
+    private suspend fun readCandidates(
+        from: Instant,
+        to: Instant,
+    ): List<SleepSourceSelector.Candidate> {
+        val c = client ?: return emptyList()
+        val records = buildList {
+            var pageToken: String? = null
+            do {
+                val response = c.readRecords(
+                    ReadRecordsRequest(
+                        recordType = SleepSessionRecord::class,
+                        timeRangeFilter = TimeRangeFilter.between(from, to),
+                        pageToken = pageToken,
+                    )
+                )
+                addAll(response.records)
+                pageToken = response.pageToken
+            } while (pageToken != null)
+        }
+
+        return records.map { r ->
+            SleepSourceSelector.Candidate(
+                recordId = r.metadata.id,
+                packageName = r.metadata.dataOrigin.packageName,
+                startMs = r.startTime.toEpochMilli(),
+                endMs = r.endTime.toEpochMilli(),
+                lastModifiedMs = r.metadata.lastModifiedTime.toEpochMilli(),
+                stages = r.stages.map {
+                    SleepSourceSelector.StageSpan(
+                        startMs = it.startTime.toEpochMilli(),
+                        endMs = it.endTime.toEpochMilli(),
+                        stageType = it.stage,
+                    )
+                },
+            )
+        }
     }
 
     companion object {

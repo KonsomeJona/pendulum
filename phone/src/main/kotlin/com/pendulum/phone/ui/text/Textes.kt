@@ -68,7 +68,50 @@ What Pendulum does usefully: follow a rhythm across several nights, under stable
 
         const val BOUTON = "I have read and understood"
         const val BOUTON_BLOQUE = "Scroll to the bottom"
+        const val BOUTON_A_CONFIRMER = "Confirm the four limits above"
         const val RAPPEL = "This notice stays available in Settings › About."
+
+        /**
+         * Quatre confirmations actives, une par limite, **en plus** du defilement bloquant.
+         *
+         * ### Pourquoi le defilement seul ne suffit pas
+         *
+         * L'etude de reference sur la lecture des politiques de confidentialite (Obar &
+         * Oeldorf-Hirsch, 543 participants) mesure une duree de lecture mediane de 73 secondes
+         * la ou 29 a 32 minutes seraient necessaires pour lire le texte. Le geste observe n'est
+         * pas la lecture, c'est le defilement au pouce. Un bouton qui s'active au bas du scroll
+         * atteste donc d'un mouvement de doigt, pas d'une comprehension.
+         *
+         * ### Le pattern qui a des preuves
+         *
+         * Le *teach-back* de l'eConsent en recherche clinique — le module de consentement de
+         * Sage Bionetworks, base de celui de ResearchKit — fait re-enoncer chaque point plutot
+         * que de le faire signer en bloc. Un essai randomise de 2026 lui donne une comprehension
+         * non inferieure au consentement recueilli en face a face. Quatre tapes deliberees, une
+         * par limite, valent donc mieux qu'un defilement, et constituent en prime une trace de
+         * consentement d'une autre nature — on sait ce qui a ete acquitte, pas seulement que
+         * l'ecran a ete parcouru.
+         *
+         * Les quatre phrases reprennent mot pour mot les quatre limites de [CORPS]. Ce n'est pas
+         * de la redite : ce sont ces phrases-la que l'utilisateur acquitte, et elles doivent donc
+         * dire exactement la meme chose que celles qu'il vient de lire.
+         */
+        object Confirmations {
+            const val TITRE = "Confirm each limit"
+            const val DIAGNOSTIC =
+                "I understand that Pendulum cannot diagnose restless legs syndrome."
+            const val RESPIRATION =
+                "I understand that Pendulum does not measure breathing, and that with sleep " +
+                    "apnoea the figure is overstated."
+            const val UNE_JAMBE =
+                "I understand that Pendulum observes one leg only, which pulls the figure down, " +
+                    "and that the two biases do not cancel out."
+            const val ACTIGRAPHIE =
+                "I understand that the American Academy of Sleep Medicine recommends against " +
+                    "actigraphy in place of electromyography."
+
+            fun compte(faites: Int, sur: Int) = "$faites of $sur confirmed"
+        }
 
         /** Version condensee, en tete de chaque export. Meme fond, un seul paragraphe. */
         const val BANDEAU_EXPORT =
@@ -104,30 +147,149 @@ What Pendulum does usefully: follow a rhythm across several nights, under stable
             const val BOUTON = "Continue"
         }
 
+        /**
+         * L'appairage, et les **trois** etats qu'il faut distinguer.
+         *
+         * Les confondre est l'erreur classique de cet ecran : « aucune montre appairee » et
+         * « montre appairee, application absente » se reparent a deux endroits differents, et
+         * envoyer quelqu'un au Play Store alors qu'aucune montre n'est appairee au telephone ne
+         * peut rien produire d'autre qu'une installation qui ne se voit nulle part.
+         */
         object Appairage {
             const val TITRE = "Watch pairing"
             const val RECHERCHE = "Looking for the watch…"
             const val RECHERCHE_SOUS_TITRE =
                 "Open Pendulum on your watch. Both devices must be paired in the Watch app."
 
-            /** Ligne de verification lue a l'execution. C'est un controle, pas de la decoration. */
+            // --- etat 1 : aucun noeud connecte -------------------------------------------
+            const val AUCUNE_MONTRE_TITRE = "No watch is paired with this phone"
+            const val AUCUNE_MONTRE_CORPS =
+                "Pendulum sees no watch at all, so there is nothing to install onto yet. Pair " +
+                    "the watch first, in the companion application that came with it — Pixel " +
+                    "Watch, Galaxy Wearable, or your manufacturer's equivalent."
+            const val OUVRIR_COMPAGNON = "Open the watch companion app"
+            const val COMPAGNON_INTROUVABLE =
+                "No companion application was found on this phone. Open the one supplied with " +
+                    "your watch, pair it, then come back to this screen."
+
+            // --- etat 2 : montre appairee, capacite absente -------------------------------
+            const val APP_ABSENTE_TITRE = "Watch paired, Pendulum not answering on it"
+            const val APP_ABSENTE_CORPS =
+                "The watch is known to this phone, but the Pendulum watch application is not " +
+                    "answering. Either it is not installed, or the watch is out of Bluetooth " +
+                    "range right now."
+            const val INSTALLER_SUR_MONTRE = "Install on the watch"
+            const val INSTALLATION_OUVERTE =
+                "The store page was opened on the watch. Finish the installation there."
+            const val INSTALLATION_ECHOUEE =
+                "The store page could not be opened on the watch. Open the Play Store on the " +
+                    "watch and search for Pendulum."
+            const val ATTENTE_AUTOMATIQUE =
+                "This screen ticks itself as soon as the watch application answers. Nothing to " +
+                    "press, and no need to stay on it."
+
+            // --- etat 3 : capacite trouvee -----------------------------------------------
+            const val TROUVEE_TITRE = "Watch found"
+            const val INCONNU = "—"
+
+            /**
+             * Ligne de verification du capteur. C'est un **controle**, pas de la decoration : si
+             * la montre annonce autre chose que 50 Hz, ou un FIFO plus court que prevu, tout le
+             * budget d'erreur de la campagne change.
+             *
+             * Elle n'est pas encore alimentee : la montre ne publie aucun `DataItem` decrivant
+             * son capteur, donc l'ecran affiche [VERIFICATION_ABSENTE] plutot qu'un tiret muet.
+             * Cette fonction est la forme que la ligne prendra le jour ou la montre l'enverra —
+             * la garder evite de la reinventer, et de la reinventer autrement.
+             */
             fun verification(hz: Int, fifo: Int, wakeUp: Boolean) =
                 "Accelerometer: $hz Hz requested · FIFO ${espaceMilliers(fifo)} events · " +
                     "wake-up sensor: ${if (wakeUp) "yes" else "no"}"
+
+            const val VERIFICATION_ABSENTE =
+                "Accelerometer: — · FIFO: — · wake-up sensor: —"
+            const val VERIFICATION_ABSENTE_NOTE =
+                "The watch does not report its sensor configuration yet. Rather than print " +
+                    "figures nobody measured, this line stays empty."
 
             const val SANS_MONTRE = "Continue without a watch for now"
             const val BOUTON = "Continue"
         }
 
+        /**
+         * La source de sommeil, et la question la plus deroutante du produit : « pourquoi mon
+         * application de sommeil ne suffit-elle pas ? ».
+         *
+         * La reponse qui passe est une reponse de **role**, pas de plomberie : la montre a la
+         * cheville mesure les jambes, elle ne sait pas quand on dort ; un deuxieme appareil sert
+         * de juge independant du sommeil. La justification complete — la circularite entre ce
+         * qu'on compte et ce par quoi on divise — tient derriere un « en savoir plus », parce
+         * qu'elle est vraie mais qu'elle ne se lit pas debout, un telephone a la main.
+         */
         object SourceSommeil {
             const val TITRE = "Where do your sleep stages come from?"
             const val AUTORISER = "Allow Health Connect"
             const val SOURCES_DETECTEES = "Sources detected"
             const val PREFEREE = "preferred source"
+            const val CHOISIR = "Use this source"
             const val SANS_STADES =
                 "This source does not provide detailed stages. Pendulum will be able to compute " +
                     "total sleep time, but not to break movements down by stage."
             const val SANS_HYPNOGRAMME = "Continue without a hypnogram"
+            const val BOUTON_BLOQUE = "Allow Health Connect first"
+
+            // --- le role du deuxieme appareil --------------------------------------------
+            const val ROLE_TITRE = "Why a second device"
+            const val ROLE_CORPS =
+                "The watch at your ankle measures your legs. It does not know when you are " +
+                    "asleep. A second device — a wrist wearable, a ring, a mattress sensor — " +
+                    "acts as an independent judge of sleep, and writes that judgement into " +
+                    "Health Connect."
+            const val ROLE_PLUS = "Why can it not be the same device?"
+            const val ROLE_PLUS_CORPS =
+                "The clinical index is movements per hour of sleep: the movements are the " +
+                    "numerator, sleep time is the denominator. Both read from the same " +
+                    "accelerometer would make the figure circular — the signal processing that " +
+                    "drops a movement lowers the numerator and, in the same gesture, raises the " +
+                    "denominator, because fewer movements look like more sleep. A treatment " +
+                    "doing nothing at all could then display as a large drop. Two devices, two " +
+                    "chains, and only one of them depends on both."
+
+            // --- Health Connect indisponible ---------------------------------------------
+            const val SDK_ABSENT_TITRE = "Health Connect is not on this phone"
+            const val SDK_ABSENT_CORPS =
+                "On Android 13 and earlier, Health Connect is an application from the Play " +
+                    "Store, not a part of the system. Install it, open your sleep application " +
+                    "once so that it writes into it, then come back here."
+            const val INSTALLER_HEALTH_CONNECT = "Install Health Connect"
+            const val MISE_A_JOUR_TITRE = "Health Connect needs updating"
+            const val MISE_A_JOUR_CORPS =
+                "The version installed on this phone is older than what Pendulum reads. Update " +
+                    "it from the Play Store, then come back here."
+            const val METTRE_A_JOUR = "Update Health Connect"
+            const val FOND_INDISPONIBLE_TITRE = "Background reading unavailable"
+            const val FOND_INDISPONIBLE_CORPS =
+                "This phone's Health Connect cannot serve reads while Pendulum is closed. The " +
+                    "sleep session will only be read when you open the application, so end your " +
+                    "night from the home screen."
+
+            // --- aucune source detectee ---------------------------------------------------
+            const val AUCUNE_TITRE = "No sleep session found over the last 7 days"
+            const val AUCUNE_CORPS =
+                "Nothing wrote a sleep session into Health Connect. That is not a Pendulum " +
+                    "failure, and it is not permanent: it means no application has published " +
+                    "one yet. Two things to check — that a sleep application is installed and " +
+                    "worn at night, and that it is allowed to write sleep into Health Connect."
+            const val APPLICATIONS_CONNUES_TITRE = "Applications known to write sleep sessions"
+            const val APPLICATIONS_CONNUES_CORPS =
+                """  • Samsung Health, with a Galaxy Watch;
+  • Google Fit / Fitbit, with a Pixel Watch or a Fitbit band;
+  • Sleep as Android, with a phone or a watch;
+  • Withings Health Mate, with a Sleep Analyzer under the mattress;
+  • Garmin Connect and Oura, through their Health Connect option.
+
+Any application publishing a sleep session works. Pendulum reads the session, never the vendor score."""
+            const val OUVRIR_HEALTH_CONNECT = "Open Health Connect"
 
             fun couverture(nuits: Int, sur: Int, stades: Boolean) =
                 "$nuits nights out of $sur · " + if (stades) "detailed stages (REM, light, deep)" else "total duration only"

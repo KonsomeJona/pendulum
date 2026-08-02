@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -25,11 +26,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.pendulum.phone.data.AppairageMontre
 import com.pendulum.phone.ui.export.ExportScreen
 import com.pendulum.phone.ui.export.ExportUi
 import com.pendulum.phone.ui.home.HomeScreen
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.nights.NightListScreen
+import com.pendulum.phone.ui.onboarding.OnboardingPager
+import com.pendulum.phone.ui.onboarding.RepriseAssistant
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
 import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.text.Textes
@@ -50,10 +54,61 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             PendulumTheme {
-                PendulumNavHost()
+                PortailPendulum()
             }
         }
     }
+}
+
+/**
+ * Le portail : l'assistant, ou l'application.
+ *
+ * ### Ce qu'il repare
+ *
+ * `OnboardingPager` etait ecrit, complet, en cinq etapes, et **n'avait aucun appelant**. La
+ * consequence n'etait pas cosmetique : le seul `rememberLauncherForActivityResult` de
+ * l'application vivait dans cet ecran inatteignable, donc aucun chemin utilisateur n'accordait
+ * jamais les permissions Health Connect. Chaque nuit etait alors scoree par le seul masque
+ * accelerometrique, sans que rien ne le dise — la circularite numerateur/denominateur que tout le
+ * projet existe pour eviter.
+ *
+ * ### Rien tant que le compteur n'est pas lu
+ *
+ * Le compteur d'etapes vient du DataStore, donc d'une lecture asynchrone. Composer la navigation
+ * en attendant la ferait apparaitre une fraction de seconde avant que l'assistant ne la remplace,
+ * ce qui apprend a l'utilisateur que l'application clignote au demarrage. Meme regle qu'a
+ * l'accueil : on n'affiche rien plutot qu'un etat provisoire.
+ */
+@Composable
+fun PortailPendulum() {
+    val vm: OnboardingViewModel = viewModel()
+    val etape by vm.etape.collectAsStateWithLifecycle()
+
+    val e = etape ?: return
+    if (!RepriseAssistant.assistantAFaire(e)) {
+        PendulumNavHost()
+        return
+    }
+
+    val montre by vm.montre.collectAsStateWithLifecycle()
+    val sante by vm.sante.collectAsStateWithLifecycle()
+    val sourcePreferee by vm.sourcePreferee.collectAsStateWithLifecycle()
+    val installation by vm.installation.collectAsStateWithLifecycle()
+    val contexte = LocalContext.current
+
+    OnboardingPager(
+        startPage = RepriseAssistant.pageDeDepart(e),
+        montre = montre,
+        sante = sante,
+        sourcePreferee = sourcePreferee,
+        installation = installation,
+        onEtapeFranchie = vm::franchir,
+        onOuvrirCompagnon = { AppairageMontre.ouvrirLApplicationCompagnon(contexte) },
+        onInstallerSurLaMontre = vm::installerSurLaMontre,
+        onRelireLaSante = vm::relireLaSante,
+        onChoisirSource = vm::choisirSource,
+        onRepere = vm::poserLeRepere,
+    )
 }
 
 /**
