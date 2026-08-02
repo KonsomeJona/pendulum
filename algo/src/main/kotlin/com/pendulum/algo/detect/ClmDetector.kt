@@ -22,8 +22,31 @@ import kotlin.math.max
  * les courbes, `detect` decide. Le detecteur convertit sa configuration en [ThresholdParams] plutot
  * que l'inverse, pour que `dsp` ne depende jamais de `detect`.
  *
- * @param kOn multiplicateur du plancher a l'attaque (plage 5-12). **Parametre dominant** : c'est un
- *   budget anti-artefact, pas anti-bruit — 4,8 suffirait deja contre le thermique.
+ * **Sur `kOn = 8,0`.** Ce KDoc a longtemps decrit 8,0 comme un budget anti-artefact herite de la
+ * premiere specification « faute de mieux ». Le balayage de `ThresholdPolicySweepTest` — `k_on` de 4
+ * a 12, pas de 1,0, 20 graines — contredit les deux moities de cette phrase, et il faut les deux :
+ *
+ *  - **`k_on` n'est pas libre.** Les trois criteres de T5 ne tiennent qu'a 8,0 : la sensibilite au
+ *    point « 8x » vaut 1,000 pour `k_on <= 7` et 0,000 pour `k_on >= 9`. La raison doit etre lue en
+ *    entier, parce qu'elle n'est pas a l'honneur de T5 : l'abscisse de T5 est le plancher **effectif**
+ *    `Theta_on / k_on`, et sur sa nuit calme et non calibree c'est `Theta_abs` qui commande le seuil.
+ *    « 8x le plancher effectif » vaut donc `8 x Theta_abs / k_on`, qui n'egale le seuil que si
+ *    `k_on = 8`. **T5 ne valide pas 8,0, il l'inscrit dans son propre enonce.** C'est une raison de ne
+ *    pas deplacer `k_on` sans reecrire T5 ; ce n'est pas une preuve que 8,0 soit la bonne valeur.
+ *  - **`k_on` n'est pas le parametre dominant sur une nuit calibree.** `Theta_on` y reste fige a
+ *    53,7 mg de `k_on = 4` a `k_on = 12`, parce que le troisieme terme — `f_cal x gainCal` — l'emporte
+ *    sur toute la plage. Le rappel de T6 (0,265 a 0,276) et le sous-comptage de T22 (0,697) ne bougent
+ *    pas du balayage. Ce qui gouverne le sous-comptage est `calFraction`, pas `k_on`.
+ *
+ * Ce que `k_on` change reellement sur une nuit calibree passe par [ClmConfig.grossBodyFactor], dont
+ * l'amplitude de reference est `Theta_on / k_on` : la precision au-dessus du seuil monte de 0,768 a
+ * 0,956 sur le balayage tandis que la sensibilite reste plate a ~0,90. `k_on` y agit donc comme un
+ * reglage de rejet des mouvements corporels grossiers, ce qui est l'inverse de la lecture habituelle.
+ *
+ * Reste vrai de la phrase d'origine : 8,0 n'est pas dicte par le bruit thermique, 4,8 y suffirait.
+ * Le tableau complet est dans `docs/07-validation.md` §4.1.
+ *
+ * @param kOn multiplicateur du plancher a l'attaque (plage 5-12). Fixe a 8,0 : voir ci-dessus.
  * @param kOff multiplicateur du plancher au relachement (plage 2,0-4,0). Hysteresis = kOn/kOff.
  * @param absFloorG plancher absolu, en g (plage 0,010-0,050).
  * @param calFraction fraction du gain de calibration (plage 0,08-0,20).

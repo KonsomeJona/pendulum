@@ -34,6 +34,7 @@ import com.pendulum.algo.synth.NoiseSpec
 import com.pendulum.algo.synth.SeriesSpec
 import com.pendulum.algo.synth.SleepSpec
 import com.pendulum.algo.synth.SynthNight
+import com.pendulum.algo.synth.TruthEvent
 import com.pendulum.algo.synth.truthAsClms
 import kotlin.math.abs
 
@@ -102,26 +103,45 @@ internal class Analysis(
         else timeline.analysableSec / (timeline.signal.n / timeline.signal.fsHz)
 
     /**
-     * Plancher **effectif** du detecteur, `Theta_on / k_on`, median sur la nuit. C'est la reference
-     * d'amplitude reellement utilisee par la decision, et donc l'abscisse de la courbe T5.
+     * Seuil de declenchement `Theta_on`, median sur la nuit. C'est l'amplitude au-dessus de laquelle
+     * un evenement fait partie de ceux que le detecteur est **configure** pour trouver — ce qui n'est
+     * pas la meme chose que ceux qui sont mecaniquement presents dans le signal. Le denominateur de
+     * T6 et la fraction sous seuil de T22 se rapportent tous les deux a cette valeur.
      */
-    val effectiveFloorG: Double by lazy {
+    val thresholdOnG: Double by lazy {
         val v = pre.thresholds.on.v
         val acc = ArrayList<Double>(v.size / 50 + 1)
         var i = 0
         while (i < v.size) {
             val x = v[i]
-            if (x.isFinite()) acc.add(x / kOn)
+            if (x.isFinite()) acc.add(x.toDouble())
             i += 50
         }
         medianOf(acc)
     }
 
+    /**
+     * Plancher **effectif** du detecteur, `Theta_on / k_on`, median sur la nuit. C'est la reference
+     * d'amplitude reellement utilisee par la decision, et donc l'abscisse de la courbe T5.
+     *
+     * Derive de [thresholdOnG] plutot que recalcule : la mediane commute avec la division par une
+     * constante positive, et les deux grandeurs doivent rester exactement coherentes — c'est leur
+     * rapport, `k_on`, qui fait tout le sujet du balayage de `ThresholdPolicySweepTest`.
+     */
+    val effectiveFloorG: Double get() = thresholdOnG / kOn
+
     fun result(rule: SeriesRule): PlmiResult = indexOf(clms, rule)
 
-    /** Le meme calcul, applique a la verite terrain accelerometrique et au **meme** masque. */
-    fun truthResult(rule: SeriesRule): PlmiResult =
-        indexOf(truthAsClms(truth.accelLegMovements, truth.floorG.toFloat()), rule)
+    /**
+     * Le meme calcul, applique a une verite terrain et au **meme** masque.
+     *
+     * @param events par defaut `accelTruth` entier, c'est-a-dire l'indice vrai a l'echelle
+     *   accelerometrique. Le passer restreint aux evenements au-dessus de `Theta_on` donne l'indice
+     *   qu'un detecteur **parfait applique cette politique de seuil** produirait : c'est l'attendu de
+     *   T6, tandis que le rapport entre les deux est ce que T22 publie.
+     */
+    fun truthResult(rule: SeriesRule, events: List<TruthEvent> = truth.accelLegMovements): PlmiResult =
+        indexOf(truthAsClms(events, truth.floorG.toFloat()), rule)
 
     /** Rythme fondamental estime (`SPEC-v2.md` §5), sur les CLM de sommeil consecutifs. */
     fun rhythm() = Rhythm.fromClms(retained, mask)
@@ -360,8 +380,25 @@ internal fun fixedAmplitudeNight(
 /**
  * Plancher effectif du detecteur sur une nuit de bruit seul, meme specification de bruit.
  * Sert a normaliser l'abscisse du balayage T5 sans faire tourner le detecteur sur la nuit de test.
+ *
+ * @param clmCfg la configuration dont on sonde le plancher. Elle est un parametre et non une
+ *   constante parce que le plancher effectif vaut `Theta_on / k_on` : sur une nuit calme c'est
+ *   `Theta_abs` qui l'emporte, donc l'abscisse de T5 **depend** de `k_on`. Sonder avec la
+ *   configuration par defaut tout en detectant avec une autre placerait les evenements ailleurs que
+ *   la ou l'enonce de T5 les veut.
  */
-internal fun probeEffectiveFloorG(seed: Long): Double {
+internal fun probeEffectiveFloorG(seed: Long, clmCfg: ClmConfig = ClmConfig()): Double {
     val probe = distractorOnlyNight(seed, minutes = 12.0, distractors = DistractorSpec.NONE)
-    return analyse(probe, calibrated = false).effectiveFloorG
+    return analyse(probe, clmCfg = clmCfg, calibrated = false).effectiveFloorG
 }
+
+/**
+ * Sous-ensemble d'une verite terrain au-dessus d'une amplitude donnee, sur l'echelle de l'enveloppe
+ * grossiere — celle que le detecteur compare a `Theta_on`.
+ *
+ * C'est l'operation qui distingue les trois denominateurs de §4.1 du document de validation :
+ * « mecaniquement present dans le signal » (`accelTruth` entier), « au-dessus du garde-fou absolu »
+ * et « au-dessus du seuil que le detecteur applique reellement cette nuit-la ».
+ */
+internal fun aboveEnvelope(events: List<TruthEvent>, amplitudeG: Double): List<TruthEvent> =
+    events.filter { it.envPeakG >= amplitudeG }

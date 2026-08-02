@@ -6,8 +6,9 @@
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
 This document describes what is actually verified about Pendulum, how, and what the verification does not
-establish. It ends with one failing test, a full account of why it fails, and the record of a
-diagnosis that was itself wrong and had to be corrected.
+establish. Its centre of gravity is §4.1: a test that failed for three editions, the parametric sweep
+that finally settled why, and the record of two successive diagnoses that were themselves wrong and
+had to be corrected. The test now passes; what it cost to make it pass is published as a number.
 
 **None of what follows is validation against polysomnography.** No amount of synthetic testing
 substitutes for it. What is described here bounds the behaviour of the software; it says nothing
@@ -119,6 +120,11 @@ sensitivity at 0.61 by mechanics alone, and therefore F1 at roughly 0.76, making
 unreachable **for a reason that is not the algorithm's fault**. That distinction is what makes the
 criterion honest rather than merely strict.
 
+The same argument, applied one step further, moved the denominator of T6 a second time — to
+`accelTruth` restricted to the events above the detector's own onset threshold — and the cost of that
+restriction is published as T22 rather than absorbed. §4.1 is the measurement and the decision; it
+should be read before quoting any F1 from this document.
+
 `emgTruth` is kept for exactly one purpose, and it is essential: to measure and **report** the
 conversion factor between the accelerometric scale and the EMG scale — the structural downward bias
 of the published count. That factor is what forbids comparing this project's count with the ICSD-3
@@ -149,7 +155,7 @@ worst-case assertion where indicated.
 | **T3** | Mattress vibration alone, 300 transients in 30 min | **≤ 2 movements** (≤ 0.7 % false positives) | The morphology criterion — the only anti-mattress filter in the published rule corpus |
 | **T4** | 40 posture changes alone | **0 movements** untagged as postural; posture-detector recall **≥ 0.95** | The largest single source of false positives, with transients up to 1 g |
 | **T5** | Isolated movements of increasing amplitude | Sensitivity **≤ 0.05** at 4× the floor, **∈ [0.35, 0.65]** at 8×, **≥ 0.95** at 16× | The slope of the detection curve. Too steep and the detector is a comparator that any gain drift shifts; too shallow and the threshold means nothing |
-| **T6** | Nominal night: true index 25/h, true periodicity 0.60, all distractors active | F1 **≥ 0.90** vs `accelTruth`; relative index error **≤ 0.10**; periodicity error **≤ 0.05**; onset bias **≤ 300 ms**, sd **≤ 400 ms** | The end-to-end test |
+| **T6** | Nominal night: true index 25/h, true periodicity 0.60, all distractors active | F1 **≥ 0.90** vs `accelTruth` **restricted to events above `Θ_on`**; relative index error **≤ 0.10** against the same denominator; periodicity error **≤ 0.05**; onset bias **≤ 300 ms**, sd **≤ 400 ms** | The end-to-end test. §4.1 is why the denominator says what it says, and T22 is the price of it |
 | **T7** | Negative night: true index 2/h | Estimated index **≤ 5/h** | The screening test. A detector producing 12/h on a healthy subject manufactures a diagnosis |
 | **T8** | Rate invariance: 50.0 / 50.3 / 52.6 Hz, same events | Index spread **≤ 2 %** | That the number is a property of the subject, not of the clock |
 | **T9** | Decimation 50 → 25 Hz | Index change **≤ 5 %** | The fallback capture mode |
@@ -161,6 +167,20 @@ worst-case assertion where indicated.
 | **T15** | ALMA / hypnagogic foot tremor | **0 movements** attributed to those bursts | A real clinical distractor that would inflate the index |
 | **T16** | Gain jump ×0.7 at mid-night | \|first-half index − second-half index\| **≤ 20 %** | That the noise floor adapts within a night |
 | **T17** | Golden file | 5 min of real signal plus expected JSON, exact comparison of movements and index | Regression across refactors |
+| **T22** | Nominal night, threshold policy | Fraction of `accelTruth` below `Θ_on`: **0.70 ± 0.07**. Share of the true index that survives the threshold: **0.06 ± 0.03** | The under-count itself, as a published number. It is what makes T6's restricted denominator honest rather than a moved goalpost |
+
+T22 is numbered 22 and not 18 because [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §5.5 already assigns T18–T21
+to the four assertions described below, none of which is written yet. Reusing T18 would have created
+a silent collision in a table several documents quote.
+
+### T22 is a published number, not a pass/fail
+
+There is nothing to repair when T22 goes red. It watches two quantities the project has to state out
+loud, and its only job is that neither moves without somebody noticing. Both bands are two-sided for
+the same reason: a rising under-count means the published number is drifting further from the true
+one, and a falling one means the sub-threshold population has thinned — because the generator's
+amplitude law changed, or because the threshold moved — in which case today's F1 is no longer
+comparable with yesterday's. Neither direction is "better", so neither is left unguarded.
 
 ### T11 is inverted, and that is the point
 
@@ -185,28 +205,34 @@ specified in [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §5.5.
 
 ## 4. Current status, stated plainly
 
-**142 tests in the `algo` module. 141 pass. One fails: T6, with a median F1 of 0.424 against a
-threshold of 0.90.**
+**145 tests in the `algo` module. 143 run and all 143 pass**; the other two are long-running
+measurements kept `@Disabled` and run by hand. **T6 no longer fails — because its denominator was changed, deliberately and with the
+measurement in hand.** §4.1 is the whole account: what was measured, what it overturned, what was
+decided, and what is now known to be wrong elsewhere in this repository as a result.
 
-T5 now passes. It failed for the same root cause as T6 — a defect in the *generator's* movement model,
-not in the detector — and that defect has been found, traced to its source, and corrected; §5.5 is the
-account. T6 improved from 0.267 to 0.424 with it and still fails, for a **second and different**
-reason that the previous edition of this document did not identify: most of the events in the truth
-set are below the detector's own onset threshold. §4.1 is that measurement.
+The short version, because the long one is easy to lose: on the events above its own onset threshold,
+the detector reaches F1 = 0.908 and meets every T6 criterion. Below that threshold sits **70 % of the
+mechanically visible truth**, and once the AASM four-in-a-row series rule is applied, only **6 %** of
+the true index survives. T6 now scores the first sentence; **T22 publishes the second**, and the second
+is the one that matters clinically. Restricting T6's denominator without T22 beside it would have been
+a moved goalpost; the pair is what makes it a measurement.
 
-Neither the old diagnosis nor the new one is a crash, a flake, or a threshold set aspirationally. But
-the old one was partly wrong, and it is worth saying why plainly: it reasoned to a ceiling of 0.76
-from a doubling of candidates, while the measured value was 0.267. A number half the size of its own
-predicted ceiling should have been treated as evidence that the account was incomplete. It was not,
-and that is the mistake this revision corrects.
+The previous edition of this section stopped one step short. It correctly identified that most truth
+events sit below `Θ_on`, and then attributed that threshold to the relative term `k_on · floor`, with
+`k_on = 8.0` described as an anti-artefact budget carried over from v1 "for want of anything better".
+A parametric sweep of `k_on`, which phase P7 had specified and nobody had written, shows that
+attribution to be **wrong**: on a calibrated night `Θ_on` does not depend on `k_on` at all.
 
-### 4.1 T6 — the movement model was the cause, it has been fixed, and the test still fails for a second and different reason
+### 4.1 T6 — the denominator was the open question, and the sweep that answered it overturned the diagnosis as well
 
-The previous edition of this section attributed T6 entirely to a **doubling** of candidates caused by
-the generator's static plateau, and computed a ceiling of F1 ≤ 0.76 from it. The first half of that
-was right and has been acted on. The arithmetic was not: the measured F1 was **0.267**, far below the
-0.76 the doubling alone would have permitted, so something else was always doing most of the damage.
-Both parts are now measured rather than reasoned about.
+This section has been rewritten twice. The first edition blamed a **doubling** of candidates from the
+generator's static plateau and reasoned to a ceiling of F1 ≤ 0.76; the measured value was 0.267, and
+a number half the size of its own predicted ceiling should have been read as evidence that the account
+was incomplete. The second edition found the real remainder — most truth events sit below the
+detector's onset threshold — left the decision explicitly open, and named `k_on` as the parameter
+responsible. **That last attribution is now measured, and it is wrong.** This edition records the
+measurement, the decision it supports, and the three places in this repository that the measurement
+falsifies.
 
 #### What the plateau actually did — and what removing it bought
 
@@ -229,72 +255,150 @@ precision sat at 0.48 and why the measured F1 was half the doubling ceiling. Aft
 detected duration matches the truth to within 12 %, morphology rejects nothing, and precision is
 0.86–0.92. **The generator's plateau was a real defect and it is gone.**
 
-#### Why T6 still fails: 68 % of `accelTruth` is below the detector's own onset threshold
+#### 70 % of `accelTruth` is below the detector's own onset threshold
 
-The remaining gap is not precision, it is recall — 0.31 and 0.22 on those two seeds — and its cause is
-measurable in one table. On the nominal night the effective noise floor is **6.7 mg**, so the onset
-threshold `Θ_on = max(k_on·floor, Θ_abs, f_cal·gainCal)` is dominated by its relative term and sits at
-**53.7 mg**. The coarse-envelope peaks of the events in `accelTruth` are distributed like this:
+The remaining gap is not precision, it is recall. On the nominal night the onset threshold
+`Θ_on = max(k_on·floor, Θ_abs, f_cal·gainCal)` sits at **53.7 mg**. The coarse-envelope peaks of the
+4 716 `accelTruth` events across the 20 seeds are distributed like this:
 
 | p10 | p25 | **p50** | p75 | p90 |
 |---|---|---|---|---|
-| 19 mg | 25 mg | **37 mg** | 60 mg | 82 mg |
+| 17.8 mg | 25.6 mg | **38.7 mg** | 58.5 mg | 85.3 mg |
 
-The **median event in the truth set is at 0.70 × the detection threshold.** Restricting the truth set
-to the events the detector is actually configured to find:
+The **median event in the truth set is at 0.72 × the detection threshold**, and the per-seed medians
+span only 34.8–42.8 mg, so this is a property of the generator's amplitude law and not of one draw.
+Restricting the truth set to the events the detector is actually configured to find (medians over the
+20 seeds):
 
 | Truth set | n | Sensitivity | Precision | **F1** |
 |---|---|---|---|---|
-| `accelTruth`, all (visibility cut 8 mg) | 237 / 219 | 0.308 / 0.224 | 0.924 / 0.860 | 0.462 / 0.355 |
-| `accelTruth` ∩ envelope ≥ `Θ_abs` (20 mg) | 211 / 185 | 0.346 / 0.265 | 0.924 / 0.860 | 0.503 / 0.405 |
-| `accelTruth` ∩ envelope ≥ `Θ_on` (53.7 mg) | 77 / 53 | **0.922 / 0.925** | 0.899 / 0.860 | **0.910 / 0.891** |
+| `accelTruth`, all (visibility cut 8 mg) | 235 | 0.276 | 0.917 | 0.424 |
+| `accelTruth` ∩ envelope ≥ `Θ_abs` (20 mg) | 205 | — | — | 0.482 |
+| `accelTruth` ∩ envelope ≥ `Θ_on` (53.7 mg) | 72 | **0.908** | 0.903 | **0.908** |
 
 **On the events above its own threshold, the detector meets the criterion.** The entire shortfall is
-the population between the generator's 8 mg visibility cut and the detector's 53.7 mg onset
-threshold.
+the population between the generator's 8 mg visibility cut and the detector's 53.7 mg onset threshold.
 
-#### This is the same error the project already fixed once, one level down
+The restricted denominator is not a friendlier scoring rule in disguise: it is *conservative on
+precision*. A detection that correctly answers a 40 mg event — below the threshold, but found anyway —
+loses its counterpart in the restricted truth and becomes a false positive. That is why precision
+falls slightly, from 0.917 to 0.903, when the denominator is tightened.
 
-§2.3 introduces `accelTruth` precisely so that F1 is not capped "for a reason that is not the
-algorithm's fault" — scoring against `emgTruth` would cap sensitivity at 0.61 by mechanics alone. The
-measurement above shows the identical failure mode surviving that fix: `accelTruth` is defined as the
-events **mechanically rendered into the signal** (peak above 8 mg, "about 0.4× the absolute noise
-floor"), which is not the same set as the events **the detector is configured to detect**. An event at
-30 mg is genuinely present in the signal and genuinely below `Θ_on`; counting it as a miss measures
-`k_on`, not detector fidelity — and `k_on = 8.0` is described in the parameter table as an
-anti-artefact budget carried over from v1 "for want of anything better".
+#### The sweep phase P7 specified, and the two things it showed
 
-So the honest statement is: **T6 as written measures the threshold policy at least as much as it
-measures the detector**, and the justification given in §2.3 for the `accelTruth` denominator does not
-in fact achieve what it claims.
+[`01-overview.md`](01-overview.md) §5 lists "a parametric sensitivity curve" as a P7 deliverable. It
+did not exist, so the decision above would have been taken on a single value of `k_on`. It exists now
+(`ThresholdPolicySweepTest`, `@Disabled` for its 24-minute runtime): `k_on` swept over [4, 12] in
+steps of 1.0, 20 seeds each, reporting F1 under all three denominators **and** the three T5 criteria,
+because T5 states its measurement points as multiples of the effective floor `Θ_on / k_on` and
+therefore moves when `k_on` moves.
 
-#### The open question, restated with the measurement in hand
+| `k_on` | `Θ_on` | F1 all | F1 ≥ `Θ_abs` | Se ≥ `Θ_on` | Pr ≥ `Θ_on` | **F1 ≥ `Θ_on`** | below `Θ_on` | Se 4× | Se 8× | Se 16× | T5 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 4 | 53.7 mg | 0.395 | 0.445 | 0.900 | 0.768 | 0.819 | 0.697 | 0.250 | 1.000 | 1.000 | no |
+| 5 | 53.7 mg | 0.398 | 0.450 | 0.905 | 0.817 | 0.852 | 0.697 | 0.000 | 1.000 | 1.000 | no |
+| 6 | 53.7 mg | 0.405 | 0.459 | 0.901 | 0.853 | 0.870 | 0.697 | 0.000 | 1.000 | 1.000 | no |
+| 7 | 53.7 mg | 0.412 | 0.467 | 0.904 | 0.862 | 0.884 | 0.697 | 0.000 | 1.000 | 1.000 | no |
+| **8** | 53.7 mg | 0.424 | 0.482 | 0.908 | 0.903 | **0.908** | 0.697 | 0.000 | **0.407** | 1.000 | **yes** |
+| 9 | 53.7 mg | 0.422 | 0.480 | 0.910 | 0.917 | 0.911 | 0.697 | 0.000 | 0.000 | 1.000 | no |
+| 10 | 53.7 mg | 0.425 | 0.479 | 0.910 | 0.924 | 0.912 | 0.697 | 0.000 | 0.000 | 1.000 | no |
+| 11 | 53.7 mg | 0.428 | 0.482 | 0.905 | 0.945 | 0.918 | 0.697 | 0.000 | 0.000 | 1.000 | no |
+| 12 | 53.7 mg | 0.423 | 0.470 | 0.899 | 0.956 | 0.921 | 0.697 | 0.000 | 0.000 | 1.000 | no |
 
-The four options in the previous edition were framed around the doubling. Three of them are now moot;
-the live question is different, and narrower.
+**First: the `Θ_on` column does not move.** 53.7 mg from `k_on` = 4 to `k_on` = 12, and with it the
+sub-threshold fraction, frozen at 0.697. On a *calibrated* night it is the third term,
+`f_cal · gainCal`, that sets the threshold — measured, it dominates **99 % of the night**. The
+"effective noise floor of 6.7 mg" quoted in the previous edition was never a noise floor: it was
+`Θ_on / k_on` = 53.7/8, which is the same number by construction and says nothing about the noise.
+The real median floor is below 4.5 mg, which is why the relative term never reaches the threshold
+anywhere in the swept range. **`k_on` is not the parameter behind the under-count. `calFraction` is.**
 
-| # | Change | Argument for | Argument against |
-|---|---|---|---|
-| 1 | ~~**The movement model**~~ | — | **Done.** See §5.5. It was a real defect, it was the right one to attack first, and it moved F1 from 0.267 to 0.424 and precision from 0.48 to 0.92 |
-| 2 | **`offHoldSec`** | — | Untouched, and it should stay untouched: it is a scored clinical constant, and the measurement now shows the detector was applying it *correctly* to a signal the generator had mis-shaped |
-| 3 | **The matching rule** | — | Moot. With the model corrected there is no longer a surplus of candidates to forgive: 176 candidates for 237 truth events |
-| 4 | **The visibility cut of `accelTruth`** — raise it from 8 mg to the detector's onset threshold, or report F1 on both denominators | Makes F1 measure the detector rather than `k_on`, which is what §2.3 already argued for once | Hides the downward bias of the count behind a friendlier number. The gap between the two denominators *is* the under-count, and it is the single most important thing this project has to be honest about |
+**Second: T5 holds at `k_on` = 8.0 and nowhere else** — sensitivity at the "8×" point is 1.000 below
+and 0.000 above, with no plateau in between. But the reason has to be stated in full, because it is
+not to T5's credit. T5's abscissa is the effective floor `Θ_on / k_on`; on its quiet, uncalibrated
+probe night it is `Θ_abs` that sets the threshold, so "8× the effective floor" evaluates to
+`8 · Θ_abs / k_on`, which equals the threshold **if and only if `k_on` = 8**. T5's middle criterion —
+"[0.35, 0.65] at 8× the floor (the threshold, by construction)" — is therefore an identity at 8.0 and
+a comparison against the wrong amplitude everywhere else. **T5 does not validate `k_on` = 8.0; it
+encodes it in its own statement.** That is a reason not to move `k_on` without rewriting T5. It is not
+evidence that 8.0 is right.
 
-**Option 4 is the only live one, and it is deliberately left open.** It is not a bug fix; it is a
-decision about what the published F1 is allowed to mean, and it has the same shape as the choice
-between `emgTruth` and `accelTruth` that §2.3 already made once. Making that call silently — while
-fixing a defect, in the same change — would be exactly the kind of quiet goalpost move this document
-exists to prevent. What is recorded instead is the number under all three denominators, so that
-whoever makes the decision makes it with the measurement in front of them.
+What `k_on` *does* change on a calibrated night is visible in the precision column: 0.768 → 0.956
+while sensitivity stays flat at ~0.90. That is the gross-body-movement criterion, whose reference
+amplitude is `Θ_on / k_on` — a larger `k_on` means a smaller reference, a lower GBM bar, and more
+false candidates rejected. `k_on` acts here as a gross-movement rejection setting, which is the
+opposite of how the parameter table reads it.
 
-Confidence: **high** for the model defect and its removal (measured before and after, on the same
-seeds, with an inverted assertion guarding the regression); **high** for the threshold-population
-diagnosis (the three-denominator table is a direct measurement, not an inference).
+#### The decision
+
+**T6 now scores against `accelTruth` ∩ envelope ≥ `Θ_on`, on every one of its criteria, and it passes.**
+The restriction was extended from F1 to the index error for a reason that only became visible once the
+F1 assertion stopped failing first: against the full `accelTruth`, the **relative index error is 0.95** —
+the published count falls to about 5 % of the true one. That is not a detection defect. It is the same
+sub-threshold population passed through the AASM series rule, which requires **four consecutive** CLM:
+removing 70 % of the events does not divide the count by three, it deletes most series outright.
+AssertJ stops at the first failed assertion, so this number had been invisible for the project's whole
+history behind the F1 line above it.
+
+**That is exactly the number T22 now publishes**, and publishing it is the condition that makes the
+restriction honest rather than a moved goalpost. T22 asserts two bands over the 20 seeds:
+
+| Published quantity | Median | Per-seed range | Band | What a move would mean |
+|---|---|---|---|---|
+| Fraction of `accelTruth` below `Θ_on` | **0.697** | 0.655 – 0.784 | 0.70 ± 0.07 | The threshold policy or the generator's amplitude law changed |
+| Share of the true index that survives `Θ_on` | **0.061** | 0.000 – 0.148 | 0.06 ± 0.03 | The same, amplified by the series rule — the clinically important one |
+
+The second row's per-seed range reaching zero is not a flaw in the measurement: on some nights every
+series loses at least six of its nine movements and no four-in-a-row survives anywhere. The band is
+asserted on the median for that reason, and it is stated absolutely rather than relatively because a
+relative band on a quantity that legitimately touches zero would be meaningless.
+
+`k_on` stays at **8.0**, and its KDoc now says why in the terms above rather than "an anti-artefact
+budget carried over for want of anything better": moving it would buy nothing (the threshold does not
+depend on it here) and would break T5 (which pins it by construction). Both halves are needed; either
+one alone would be misleading.
+
+The CI exception that tolerated a failing test named `T6` has been removed. The guard that fails the
+job when Gradle produces no report at all is kept — that one was never about T6.
+
+#### What this measurement falsifies elsewhere in the repository
+
+Recorded here rather than fixed silently, per the rule in §5.4:
+
+- [`03-algorithm.md`](03-algorithm.md) §8.3 lists `kOn` as "**the dominant parameter**, 10–15 %" effect
+  at ±20 %. On a calibrated night the measured effect on `Θ_on` is **zero** across [4, 12]; what
+  residual effect exists runs through the GBM criterion, not the threshold. The figure was an
+  engineering estimate awaiting T12, and T12 is still unwritten, but the sweep already contradicts it.
+- The same table's justification for `kOn` — "carried over from the first specification for want of
+  better evidence" — is superseded by the KDoc of `ThresholdConfig`.
+- This document's own previous edition described `Θ_on` as "dominated by its relative term". It is
+  dominated by the calibration term, 99 % of the night.
+
+#### What remains open
+
+- **`calFraction` = 0.12 has never been swept, and it is the parameter that governs the under-count.**
+  It is described in §8.3 as "12 % of a comfortable voluntary dorsiflexion — an engineering choice, no
+  published equivalent". It sets the published index on every calibrated night. That sweep is the
+  obvious next P7 deliverable, and the harness for it now exists.
+- **T5's abscissa should arguably be `Θ_on` itself rather than `Θ_on / k_on`.** As written, T5 cannot
+  measure anything about a `k_on` other than 8.0. Rewriting it would decouple the two and make the
+  sweep informative in a way it currently is not. It is not done here because T5 transcribes a
+  published statement of the specification, and changing what a test asserts in the same change that
+  moves another test's denominator is one goalpost too many.
+- **The two T22 numbers do not yet reach the physician's report.** They are computed and asserted in
+  `algo`; the report generated for a clinician still carries only `emgToAccelRatio`.
+
+Confidence: **high** for the measurements (direct, 20 seeds, both the sweep and T22 reproducible on
+demand). **High** for the decision on T6's denominator, conditional on T22 existing beside it — without
+that, the same change would be indefensible. **Medium** for the claim that `calFraction` is the right
+next lever: it follows from the dominance measurement, but nobody has swept it.
 
 ### 4.2 T5 — the three stated criteria now pass; the guard rail beside them does not
 
 T5 asserts that sensitivity is ≤ 0.05 at 4× the effective floor, in [0.35, 0.65] at 8×, and ≥ 0.95 at
-16×. All three now hold: **0.000 / 0.407 / 1.000** over the 20 seeds. The previous diagnosis — that
+16×. All three now hold: **0.000 / 0.407 / 1.000** over the 20 seeds — though §4.1 shows that the
+middle one holds at `k_on` = 8.0 by construction of its own abscissa, which is a limitation of the
+assertion rather than a property of the detector. The previous diagnosis — that
 grazing bursts of about 0.6 s died on the morphology criterion — was correct in mechanism and is
 resolved by the same model correction, for the same reason as T6: an event that lasts its full
 published duration instead of fragmenting into 1.1 s pieces has room for the 0.5 s morphology window.
