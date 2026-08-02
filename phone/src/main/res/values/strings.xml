@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Le seul texte de l'application qui vive dans une ressource Android.
+
+      Tout le reste est dans `ui/text/Textes.kt`, et ce n'est pas un oubli : un objet Kotlin se
+      teste. `ui/TextesTest.kt` s'execute sur le fichier de textes lui-meme et fait echouer la
+      compilation si un verbe d'evolution — « ameliore », « aggrave » — y apparait, ce qu'aucun
+      `strings.xml` ne permettrait de verifier.
+
+      `android:label` fait exception parce que le lanceur le lit avant que le moindre code de
+      l'application ne tourne.
+    -->
+    <string name="app_name">Pendulum</string>
+</resources>

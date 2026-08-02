@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icone de lanceur, entierement vectorielle et sans le moindre PNG.
+
+  Les PNG de densite (`mipmap-mdpi` a `mipmap-xxxhdpi`) ne servent que de repli sous Android 8,
+  ou l'icone adaptative n'existe pas. `minSdk` vaut 33 ici : ce repli est mort, et le declarer
+  ferait entrer dans l'APK cinq bitmaps que rien ne lit jamais.
+
+  Fichier identique a celui du module `:phone`, volontairement duplique : il n'existe pas de
+  module de ressources partage entre les deux applications, et en creer un pour cinq fichiers
+  couterait plus que la duplication. Si le trace change d'un cote, le changer de l'autre.
+
+  Sur Wear OS le masque est **toujours circulaire** — il n'y a pas de squircle ni de goutte a
+  prevoir, mais rien ne depasse non plus du cercle. La zone de securite de 66 dp respectee par
+  `ic_launcher_foreground` est donc ici une contrainte stricte et pas une precaution.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

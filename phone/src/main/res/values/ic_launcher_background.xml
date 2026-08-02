@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Fond de l'icone adaptative. C'est `background` de la palette sombre
+      (`ui/theme/PendulumColors.kt`, `Color(0xFF0E1116)`), pas une couleur choisie separement :
+      l'icone posee a cote de l'ecran de l'application doit etre du meme noir, sinon les deux se
+      dementent. Le trace, lui, est `accent` (`Color(0xFF6FB2FF)`).
+
+      Un aplat et non un degrade : les couches de l'icone adaptative sont mises a l'echelle et
+      decalees par le lanceur pour l'effet de parallaxe, et un degrade se met a glisser sous le
+      masque quand l'icone bouge.
+    -->
+    <color name="ic_launcher_background">#0E1116</color>
+</resources>

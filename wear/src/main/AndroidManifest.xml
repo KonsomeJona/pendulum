@@ -22,10 +22,21 @@
          Repli uniquement si le demarrage du FGS health etait refuse sur un appareil :
          <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" /> -->
 
+    <!--
+      `icon` pointe sur l'icone adaptative et **non plus** sur `@drawable/ic_pendulum`. Ce vecteur
+      24 dp est concu pour la petite icone de notification — blanc sur transparent, sans fond, sans
+      zone de securite — et le lanceur de Wear OS applique un masque circulaire : un trait blanc
+      sans fond y devenait un point. `ic_pendulum` reste, et sert exactement a ce pour quoi il est
+      fait : `setSmallIcon` dans `RecordingService`.
+
+      Effet de bord voulu : l'exigence de qualite WO-V15 demande que l'icone de l'ecran de
+      demarrage soit identique a celle du lanceur, ce que l'icone adaptative satisfait toute seule.
+    -->
     <application
         android:allowBackup="false"
-        android:icon="@drawable/ic_pendulum"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="false"
         android:theme="@style/Theme.Pendulum">
 
