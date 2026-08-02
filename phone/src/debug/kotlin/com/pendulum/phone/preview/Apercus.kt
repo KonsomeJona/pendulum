@@ -16,6 +16,7 @@ import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.trend.ComparePeriodsScreen
+import com.pendulum.phone.ui.home.HomeScreen
 import com.pendulum.phone.ui.trend.TonightCard
 import com.pendulum.phone.ui.trend.TrendScreen
 
@@ -69,13 +70,13 @@ val apercuNuitDetail = NuitDetailUi(
 @Preview(name = "Night — detail", widthDp = 411, heightDp = 1600, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuDetail() = PendulumTheme {
-    NightDetailScreen(apercuNuitDetail, {}, {})
+    NightDetailScreen(apercuNuitDetail, {}, {}, {})
 }
 
 @Preview(name = "Night — detail without hypnogram", widthDp = 411, heightDp = 1600, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuDetailSansHypno() = PendulumTheme {
-    NightDetailScreen(apercuNuitDetail.copy(hypnogramme = ApercuDonnees.hypnogrammeAbsent), {}, {})
+    NightDetailScreen(apercuNuitDetail.copy(hypnogramme = ApercuDonnees.hypnogrammeAbsent), {}, {}, {})
 }
 
 // --- issu de ui/nights/NightListScreen.kt -----------------------------------
@@ -109,29 +110,50 @@ private fun ApercuComparaisonRefus() = PendulumTheme {
 @Preview(name = "Tonight — context sealed", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
 private fun ApercuCeSoir() = PendulumTheme {
-    TonightCard(ApercuDonnees.ceSoir, onSceller = {})
+    TonightCard(ApercuDonnees.ceSoir, motifIndisponible = Textes.CeSoir.SCELLEMENT_FAIT, onSceller = {})
 }
 
 @Preview(name = "Tonight — to seal, low battery", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
 private fun ApercuCeSoirASceller() = PendulumTheme {
-    TonightCard(ApercuDonnees.ceSoir.copy(batteriePct = 62, contexteScelle = false), onSceller = {})
+    TonightCard(
+        ApercuDonnees.ceSoir.copy(batteriePct = 62, contexteScelle = false),
+        motifIndisponible = null,
+        onSceller = {},
+    )
+}
+
+// --- issu de ui/home/HomeScreen.kt ------------------------------------------
+//
+// Les trois cartes, dans les deux etats qui comptent : le soir, quand il reste a sceller, et le
+// matin, quand une nuit attend d'etre devoilee.
+
+@Preview(name = "Home - evening, context to seal", widthDp = 411, heightDp = 1000, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuAccueilSoir() = PendulumTheme {
+    HomeScreen(ApercuDonnees.accueilSoir, {}, {}, {}, {})
+}
+
+@Preview(name = "Home - morning, result not shown", widthDp = 411, heightDp = 1000, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuAccueilMatin() = PendulumTheme {
+    HomeScreen(ApercuDonnees.accueilMatin, {}, {}, {}, {})
 }
 
 // --- issu de ui/trend/TrendScreen.kt ----------------------------------------
 @Preview(name = "Trend — 6 nights, full screen", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendance() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendancePrete, {}, {}, {}, {}, {}, {})
+    TrendScreen(ApercuDonnees.tendancePrete, {}, {}, {}, {}, {})
 }
 
 @Preview(name = "Trend — refusal below 3 nights", widthDp = 411, heightDp = 891, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendanceRefus() = PendulumTheme {
-    TrendScreen(ApercuDonnees.tendanceRefus, {}, {}, {}, {}, {}, {})
+    TrendScreen(ApercuDonnees.tendanceRefus, {}, {}, {}, {}, {})
 }
 
-@Preview(name = "Trend — provisional 4 nights + Tonight", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
+@Preview(name = "Trend — provisional 4 nights", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuTendanceProvisoire() = PendulumTheme {
     TrendScreen(
@@ -140,9 +162,8 @@ private fun ApercuTendanceProvisoire() = PendulumTheme {
             compte = ApercuDonnees.compte.copy(nuits = 4, ciBas = 9.0, ciHaut = 38.0),
             position = Aggregat.position(9.0, 38.0, 4),
             periodiciteQualifiee = null,
-            ceSoir = ApercuDonnees.ceSoir,
         ),
-        {}, {}, {}, {}, {}, {},
+        {}, {}, {}, {}, {},
     )
 }
 

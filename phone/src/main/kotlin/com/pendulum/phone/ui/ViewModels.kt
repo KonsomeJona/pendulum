@@ -8,11 +8,14 @@ import com.pendulum.phone.data.EveningContextSealer
 import com.pendulum.phone.data.SaisieDuSoir
 import com.pendulum.phone.data.PendulumPreferences
 import com.pendulum.phone.data.PendulumRepository
+import com.pendulum.phone.data.WatchCommands
 import com.pendulum.phone.ui.chart.BandeMediane
 import com.pendulum.phone.ui.chart.EtatPoint
 import com.pendulum.phone.ui.chart.LigneReference
 import com.pendulum.phone.ui.chart.PointNuit
 import com.pendulum.phone.ui.chart.TendanceChartSpec
+import com.pendulum.phone.ui.home.AccueilUi
+import com.pendulum.phone.ui.home.MachineAccueil
 import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.EtatReveil
@@ -22,6 +25,7 @@ import com.pendulum.phone.ui.nights.NuitDetailUi
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.settings.ReglagesUi
 import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.work.WorkScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -73,7 +77,6 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
                 nuitsEligibles = nuitsEligibles,
                 nuitsRequises = Aggregat.MIN_NUITS_AGREGAT,
                 nuitsEnregistrees = nuits,
-                ceSoir = null,
                 reveil = EtatReveil.Rien,
             )
         }
@@ -93,7 +96,6 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             regle = Textes.Reglages.REGLE_AASM,
             masque = Textes.Reglages.HEALTH_CONNECT,
             plmw = nuitsAgregeables.map { it.plmiSpt }.average().takeIf { !it.isNaN() } ?: 0.0,
-            ceSoir = null,
             reveil = EtatReveil.Rien,
             profilPersonnalise = profilPersonnalise,
             hashsMelanges = hashsMelanges,
@@ -159,6 +161,65 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             ),
         )
     }
+}
+
+/**
+ * L'accueil.
+ *
+ * ### L'horloge est un champ, pas un appel enfoui
+ *
+ * Elle sert a deux choses et a rien d'autre : la cle de nuit qui dit quel contexte est « celui de
+ * ce soir », et l'heure locale qui **departage** la machine a etats quand la base laisse deux
+ * lectures egalement plausibles. Les deux usages sont explicites, et la decision elle-meme vit
+ * dans [MachineAccueil], pur et teste sur ses bornes.
+ *
+ * L'heure locale est relue a chaque emission plutot que figee : une session qui se ferme a 6 h du
+ * matin doit changer l'ecran, et une application restee ouverte toute la nuit ne doit pas
+ * continuer a proposer de preparer une nuit qui a eu lieu.
+ */
+class HomeViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val repo = PendulumRepository(app)
+
+    val etat: StateFlow<AccueilUi?> = repo.observerAccueil(horloge())
+        .map { MachineAccueil.de(it, heureLocale()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Le bouton « fin de nuit », dans l'ordre, et l'ordre compte.
+     *
+     * Le balayage d'abord : il demande a la montre de pousser ce qu'elle detient encore, et c'est
+     * un message — donc il echoue franchement quand la montre est hors de portee, au lieu de
+     * s'inscrire dans un etat replique dont rien ne dirait s'il a ete lu. Les workers ensuite,
+     * qui reconcilient ce qui est arrive, lisent l'hypnogramme puis scorent.
+     *
+     * On **n'attend pas** le succes du balayage pour enfiler la chaine : la montre a peut-etre
+     * deja tout pousse pendant la nuit, auquel cas il n'y a rien a ramener et tout a analyser.
+     * Subordonner l'analyse a la joignabilite de la montre rendrait une nuit complete
+     * inexploitable parce que le bracelet est reste dans la salle de bain.
+     */
+    fun finDeNuit(sessionHex: String) {
+        viewModelScope.launch {
+            WatchCommands.demanderLeBalayage(getApplication())
+            WorkScheduler.enqueueFinDeNuit(getApplication(), sessionHex)
+        }
+    }
+
+    /**
+     * Garde-fou 2 : le devoilement, journalise et horodate.
+     *
+     * Un seul appel, aucune confirmation a demander avant. `NightDao.markRevealed` porte
+     * `WHERE revealedAtMs IS NULL`, donc rejouer le geste ne reecrit pas la date — la trace dit
+     * quand le chiffre a ete vu pour la premiere fois, pas quand l'ecran a ete rouvert.
+     */
+    fun devoiler(sessionHex: String) {
+        viewModelScope.launch { repo.devoiler(sessionHex, horloge()) }
+    }
+
+    private fun horloge(): Long = System.currentTimeMillis()
+
+    private fun heureLocale(): Int =
+        java.time.Instant.ofEpochMilli(horloge()).atZone(java.time.ZoneId.systemDefault()).hour
 }
 
 /**
@@ -241,6 +302,22 @@ class NightDetailViewModel(app: Application) : AndroidViewModel(app) {
 
     fun charger(sessionHex: String) {
         viewModelScope.launch { _detail.value = repo.detailDeNuit(sessionHex) }
+    }
+
+    /**
+     * Garde-fou 2 : le devoilement, puis la relecture.
+     *
+     * La relecture n'est pas une precaution mais la seule facon de montrer le chiffre : le detail
+     * est un instantane charge une fois, pas un flux, et `revealedAtMs` fait partie de ce qu'il
+     * porte. `markRevealed` ne reecrit jamais une date deja posee, donc rejouer le geste est un
+     * no-op — la trace dit quand le chiffre a ete vu la premiere fois, pas combien de fois
+     * l'ecran a ete rouvert.
+     */
+    fun devoiler(sessionHex: String) {
+        viewModelScope.launch {
+            repo.devoiler(sessionHex, System.currentTimeMillis())
+            _detail.value = repo.detailDeNuit(sessionHex)
+        }
     }
 }
 

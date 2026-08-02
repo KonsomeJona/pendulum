@@ -111,11 +111,19 @@ enum class FiltreNuits(val libelle: String) {
  * mention « valeur d'une seule nuit ». La contrainte est sur la mise en avant, pas sur la
  * disponibilite (P7). Ce chiffre n'apparait jamais en titre, ni dans une notification, ni dans le
  * resume de l'export.
+ *
+ * ### Sauf tant qu'il n'a pas ete demande
+ *
+ * Une nuit dont le resultat n'a jamais ete devoile affiche « result not shown » a la place de sa
+ * valeur (garde-fou 2). Sans cela le masque du detail ne masquerait rien : il suffirait d'ouvrir
+ * la liste pour lire, sans trace, le chiffre qu'on est cense demander. Le devoilement se fait sur
+ * l'ecran de detail, en un geste, et il est horodate.
  */
 @Composable
 fun NightRow(n: NuitUi, onNuit: (String) -> Unit) {
     val c = LocalPendulumColors.current
     val ecartee = n.etat == EtatNuit.ECARTEE
+    val devoile = n.devoileeAtMs != null
     PendulumCard(
         Modifier
             .heightIn(min = 72.dp)
@@ -133,16 +141,18 @@ fun NightRow(n: NuitUi, onNuit: (String) -> Unit) {
         Spacer(Modifier.height(Spacing.xs.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "${Math.round(n.rythmeSec)} s",
+                if (devoile) "${Math.round(n.rythmeSec)} s" else Textes.EcranAccueil.Resultat.MASQUE_LIGNE,
                 style = PendulumType.bodyNum,
-                color = c.textSecondary,
-                textDecoration = if (ecartee) TextDecoration.LineThrough else null,
+                color = if (devoile) c.textSecondary else c.textTertiary,
+                textDecoration = if (ecartee && devoile) TextDecoration.LineThrough else null,
             )
-            Text(
-                "   ${Textes.Nuits.VALEUR_UNE_NUIT}",
-                style = PendulumType.caption,
-                color = c.textTertiary,
-            )
+            if (devoile) {
+                Text(
+                    "   ${Textes.Nuits.VALEUR_UNE_NUIT}",
+                    style = PendulumType.caption,
+                    color = c.textTertiary,
+                )
+            }
         }
         n.motif?.let {
             Text("${Textes.Nuits.ETAT_ECARTEE}: $it", style = PendulumType.caption, color = c.attention)

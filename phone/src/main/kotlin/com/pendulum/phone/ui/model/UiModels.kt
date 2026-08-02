@@ -41,6 +41,15 @@ data class NuitUi(
     val comptePlmi: Double,
     val drapeaux: List<Drapeau>,
     val startWallMs: Long,
+    /**
+     * Instant du devoilement du resultat, ou `null` s'il n'a jamais ete demande — garde-fou 2.
+     *
+     * Tant qu'il est nul, [rythmeSec] et [comptePlmi] ne sont **pas affiches**, ni dans la liste
+     * ni dans le detail. Ils restent dans le modele parce que le masquage est une regle
+     * d'affichage et non un chiffrement : le but n'est pas de rendre la valeur inaccessible, il
+     * est qu'on la demande explicitement et que la demande laisse une trace.
+     */
+    val devoileeAtMs: Long? = null,
 )
 
 /**
@@ -100,30 +109,54 @@ data class ErreurPendulum(
 )
 
 /**
- * La carte « Ce soir », visible **entre 20 h et 4 h uniquement**.
+ * Ce que la carte « Preparer la nuit » affiche.
  *
- * En dehors de cette plage elle disparait completement, elle ne se grise pas : au reveil, elle
- * n'a plus rien a dire, et P4 limite a trois informations au-dessus de la ligne de flottaison.
+ * ### Elle ne disparait plus entre 4 h et 20 h
+ *
+ * La v1 la faisait apparaitre entre 20 h et 4 h et disparaitre le reste du temps. Le cout de ce
+ * choix n'etait pas visible depuis la maquette : la carte etant en tete d'ecran, son apparition
+ * et sa disparition **deplacaient verticalement tout le contenu situe en dessous, deux fois par
+ * jour**. Et l'horloge n'est pas une source d'etat : quelqu'un qui travaille de nuit, ou qui vient
+ * de changer de fuseau, se voyait refuser l'ecran dont il avait besoin.
+ *
+ * La carte est donc permanente et c'est l'etat persiste qui la remplit. [visibleA] survit comme
+ * **regle de departage** — quand la base ne permet pas de trancher entre « on prepare la nuit » et
+ * « la journee est en cours », l'heure locale departage, et elle ne fait que cela.
+ *
+ * ### Les tirets sont voulus
+ *
+ * [batteriePct] et [espaceLibre] sont nuls tant que la montre ne les remonte pas : rien, cote
+ * telephone, ne lit encore ces deux valeurs. Un tiret dit « pas encore branche ». Un « 98 % »
+ * ecrit en dur dirait « branche », ce qui serait faux, et serait cru — c'est exactement le genre
+ * de chiffre qu'on cite ensuite dans un rapport de defaut.
  */
 @Immutable
 data class CeSoirUi(
-    val batteriePct: Int,
-    val espaceLibre: String,
+    val batteriePct: Int?,
+    val espaceLibre: String?,
     val bracelet: String,
-    val jambe: String,
+    /** Cote portant, connu seulement une fois le contexte scelle. */
+    val jambe: String?,
     val sourceSommeil: String,
-    val sourceActive: Boolean,
+    /** `null` tant que l'activite de la source n'est pas verifiable. */
+    val sourceActive: Boolean?,
     val contexteScelle: Boolean,
     val enregistrement: EnregistrementUi? = null,
 ) {
     /** Avis, pas porte : sous 85 %, la ligne passe en ambre et rien n'est bloque. */
-    val batterieInsuffisante: Boolean get() = batteriePct < 85
+    val batterieInsuffisante: Boolean get() = batteriePct != null && batteriePct < 85
 
     companion object {
         const val HEURE_DEBUT = 20
         const val HEURE_FIN = 4
 
-        /** `heureLocale` en 0..23. Vrai entre 20 h et 4 h. */
+        /**
+         * `heureLocale` en 0..23. Vrai entre 20 h et 4 h.
+         *
+         * Ce n'est plus une condition d'affichage : c'est le departage de la machine a etats de
+         * l'accueil quand la base laisse deux lectures egalement plausibles. Voir
+         * `ui/home/AccueilModel.kt`.
+         */
         fun visibleA(heureLocale: Int): Boolean = heureLocale >= HEURE_DEBUT || heureLocale < HEURE_FIN
     }
 }
@@ -153,7 +186,6 @@ sealed interface TendanceUiState {
         val nuitsEligibles: Int,
         val nuitsRequises: Int,
         val nuitsEnregistrees: List<NuitUi>,
-        val ceSoir: CeSoirUi?,
         val reveil: EtatReveil,
     ) : TendanceUiState
 
@@ -172,7 +204,6 @@ sealed interface TendanceUiState {
         val regle: String,
         val masque: String,
         val plmw: Double,
-        val ceSoir: CeSoirUi?,
         val reveil: EtatReveil,
         val profilPersonnalise: String?,
         val hashsMelanges: Boolean,

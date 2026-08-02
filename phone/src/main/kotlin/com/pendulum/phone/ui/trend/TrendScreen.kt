@@ -45,6 +45,13 @@ import com.pendulum.phone.ui.theme.Spacing
 /**
  * L'ecran Tendance : destination de depart, et le premier ecran concu du produit.
  *
+ * ### Ce qu'il n'est plus
+ *
+ * La destination de depart. Elle l'etait, et l'accueil melangeait alors le geste quotidien et la
+ * lecture d'un resultat statistique — deux regimes cognitifs incompatibles sur le meme ecran. La
+ * carte « ce soir » est partie avec, vers `ui/home/HomeScreen.kt` : cet ecran-ci ne porte plus
+ * que la lecture.
+ *
  * ### Ce qu'il affiche, dans cet ordre, et pourquoi cet ordre
  *
  * 1. La bande d'etat du reveil — ou en est la nuit d'hier.
@@ -69,7 +76,6 @@ fun TrendScreen(
     onComparer: () -> Unit,
     onQuestionnaire: () -> Unit,
     onExport: () -> Unit,
-    onSceller: () -> Unit,
     onActionReveil: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -87,7 +93,6 @@ fun TrendScreen(
             TendanceUiState.Chargement -> Unit
 
             is TendanceUiState.Refus -> {
-                etat.ceSoir?.let { TonightCard(it, onSceller) }
                 StatusStrip(etat.reveil, onActionReveil)
                 RefusCard(etat, onNuit)
                 // L'export est visible mais desactive, avec son motif ecrit sur le bouton :
@@ -100,7 +105,6 @@ fun TrendScreen(
             }
 
             is TendanceUiState.Pret -> {
-                etat.ceSoir?.let { TonightCard(it, onSceller) }
                 StatusStrip(etat.reveil, onActionReveil)
 
                 etat.profilPersonnalise?.let {

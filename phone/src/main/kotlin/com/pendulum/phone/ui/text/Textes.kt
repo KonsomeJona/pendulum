@@ -154,6 +154,101 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
     }
 
     // =====================================================================================
+    // L'accueil : trois cartes fixes
+    // =====================================================================================
+
+    /**
+     * L'accueil, et les trois cartes qui ne bougent jamais.
+     *
+     * ### Pourquoi trois cartes et pas un ecran adaptatif
+     *
+     * L'accueil melangeait deux regimes cognitifs incompatibles : le geste quotidien, rapide et
+     * memorise, et la lecture d'un resultat, lente et chargee. La carte « Ce soir » devait de
+     * surcroit apparaitre entre 20 h et 4 h, donc **deplacer verticalement tout le contenu deux
+     * fois par jour**. Une cible qui se deplace se cherche a nouveau a chaque fois, et la lecture
+     * du chiffre en dessous devient un accident de parcours.
+     *
+     * Les trois cartes sont donc d'ordre et de position invariants. Une carte sans objet n'est
+     * jamais retiree : elle est desactivee, et **elle porte son motif** (`BoutonMotive`), parce
+     * qu'un bouton grise sans explication apprend a se mefier de tous les boutons.
+     *
+     * ### D'ou vient l'etat
+     *
+     * De la machine a etats persistee — `night_session.state`, le contexte scelle, l'analyse
+     * faite ou non — et **pas de l'horloge**. L'heure ne sert que de departage quand deux
+     * lectures sont egalement plausibles. C'est ce qui supprime la fenetre 20 h – 4 h en dur, et
+     * avec elle le cas du travail poste et celui du decalage horaire.
+     */
+    object EcranAccueil {
+        const val TITRE = "Home"
+
+        object Preparer {
+            const val TITRE = "Prepare the night"
+            const val OCCUPE = "The watch is recording — nothing to prepare"
+        }
+
+        object Fin {
+            const val TITRE = "End of night"
+
+            /**
+             * Ce que le bouton fait, en une phrase. Il ne se contente pas de « rafraichir » : il
+             * demande a la montre de pousser ce qu'elle detient encore, puis lit la session de
+             * sommeil, puis score la nuit. Dire « synchroniser » cacherait qu'un geste de dix
+             * secondes en declenche trois.
+             */
+            const val CORPS =
+                "Asks the watch to push everything it still holds, reads the sleep session, then " +
+                    "scores the night. Nothing is deleted on the watch before receipt is confirmed."
+
+            const val BOUTON = "End the night and collect the data"
+            const val AUCUNE_SESSION = "No recording open"
+
+            fun ouverteDepuis(heure: String) = "Recording open since $heure"
+            fun enCoursDepuis(heure: String) = "The watch has been recording since $heure"
+            fun analysee(date: String) = "Night of $date analysed"
+        }
+
+        object Historique {
+            const val TITRE = "History"
+            const val BOUTON = "Open the list"
+            const val VIDE = "No night recorded yet"
+
+            fun compte(nuits: Int, eligibles: Int) = "$nuits nights · $eligibles eligible"
+        }
+
+        /**
+         * Garde-fou 2 : le resultat est masque par defaut au reveil, et le devoiler laisse une
+         * trace horodatee qui part dans l'export.
+         *
+         * ### Un seul geste, et pas de peage
+         *
+         * Un bouton, pas de modale de confirmation, pas d'avertissement a accepter. La
+         * justification est mesuree : sur environ 8 000 reponses de patients recevant leurs
+         * resultats de laboratoire avant relecture medicale, 95,7 % veulent les recevoir
+         * immediatement et 7,5 % seulement rapportent une inquietude accrue. Vouloir son chiffre
+         * au reveil est donc la norme, pas l'exception ; la friction doit ralentir le geste, pas
+         * le taxer.
+         *
+         * Ce qui reste non negociable est la **trace**, et elle est silencieuse : lire son chiffre
+         * dans l'etat ou l'on est le moins capable de le juger est un choix legitime ; le faire
+         * sans que cela figure dans le document remis au medecin ne l'est pas.
+         */
+        object Resultat {
+            const val MASQUE_LIGNE = "result not shown"
+            const val BOUTON = "Show the result"
+
+            const val MASQUE_CORPS =
+                "Pendulum does not put the figure of a single night in front of you at waking. " +
+                    "The night was recorded and its quality was checked; that is what this screen " +
+                    "says. When you show the figure, the time at which you did is written down and " +
+                    "appears in the report for the physician."
+
+            fun enregistree(date: String) = "Night of $date recorded · quality acceptable"
+            fun devoileeLe(instant: String) = "Result shown on $instant"
+        }
+    }
+
+    // =====================================================================================
     // Ce soir / scellement du contexte
     // =====================================================================================
 

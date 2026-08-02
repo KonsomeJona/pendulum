@@ -1,6 +1,9 @@
 package com.pendulum.phone.preview
 
 import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.home.MachineAccueil
+import com.pendulum.phone.ui.home.SessionAccueil
+import com.pendulum.phone.ui.home.SourceAccueil
 import com.pendulum.phone.ui.model.CeSoirUi
 import com.pendulum.phone.ui.model.Drapeau
 import com.pendulum.phone.ui.model.EtatNuit
@@ -198,6 +201,8 @@ object ApercuDonnees {
             "a7", "12 March", "Fri", "23:12", "06:58", "6 h 58 of sleep", "Health Connect",
             EtatNuit.ELIGIBLE, null, 18.7, 24.0,
             listOf(Drapeau("gap 47 s")), BASE_MS,
+            // Devoilee : c'est l'etat d'une nuit dont on a demande le resultat.
+            devoileeAtMs = BASE_MS + 7 * 3_600_000L,
         ),
         NuitUi(
             "a6", "11 March", "Thu", "23:41", "07:04", "7 h 02 of sleep", "Health Connect",
@@ -212,13 +217,56 @@ object ApercuDonnees {
     )
 
     val ceSoir = CeSoirUi(
-        batteriePct = 98,
-        espaceLibre = "1.2 GB",
+        // Volontairement nuls : rien, cote telephone, ne lit encore la batterie ni l'espace
+        // libre de la montre. L'apercu doit montrer les tirets que l'application affiche, pas
+        // le chiffre qu'on aimerait y voir un jour.
+        batteriePct = null,
+        espaceLibre = null,
         bracelet = "4th hole",
-        jambe = "right leg",
+        jambe = Textes.CeSoir.JAMBE_DROITE,
         sourceSommeil = "Samsung Health",
-        sourceActive = true,
+        sourceActive = null,
         contexteScelle = true,
+    )
+
+    // ---------------------------------------------------------------------------------
+    // Accueil
+    // ---------------------------------------------------------------------------------
+
+    /** Le soir : rien n'est en vol, le contexte reste a sceller. */
+    val accueilSoir = MachineAccueil.de(
+        SourceAccueil(
+            sessionRecente = null,
+            contexteScelle = false,
+            jambeScellee = null,
+            repereDeSerrage = "4th hole",
+            sourceSommeil = "Samsung Health",
+            nuitsEnregistrees = 7,
+            nuitsEligibles = 6,
+            derniereNuitAnalysee = nuits.first(),
+        ),
+        heureLocale = 22,
+    )
+
+    /** Le matin : la nuit est close et scoree, et son resultat n'a pas ete demande. */
+    val accueilMatin = MachineAccueil.de(
+        SourceAccueil(
+            sessionRecente = SessionAccueil(
+                sessionHex = "a7",
+                etat = "CLOSED",
+                analysee = true,
+                debutLisible = "23:12",
+                dateLisible = "12 March",
+            ),
+            contexteScelle = true,
+            jambeScellee = Textes.CeSoir.JAMBE_DROITE,
+            repereDeSerrage = "4th hole",
+            sourceSommeil = "Samsung Health",
+            nuitsEnregistrees = 7,
+            nuitsEligibles = 6,
+            derniereNuitAnalysee = nuits.first().copy(devoileeAtMs = null),
+        ),
+        heureLocale = 7,
     )
 
     val tendancePrete = TendanceUiState.Pret(
@@ -234,7 +282,6 @@ object ApercuDonnees {
         regle = "AASM v3 (5–90 s)",
         masque = "Health Connect (5/6 nights)",
         plmw = 9.0,
-        ceSoir = null,
         reveil = EtatReveil.Provisoire("12 March", "07:12", "08:12"),
         profilPersonnalise = null,
         hashsMelanges = false,
@@ -246,7 +293,6 @@ object ApercuDonnees {
         nuitsEligibles = 2,
         nuitsRequises = Aggregat.MIN_NUITS_AGREGAT,
         nuitsEnregistrees = nuits.take(2),
-        ceSoir = null,
         reveil = EtatReveil.Rien,
     )
 }

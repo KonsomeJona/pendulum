@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit
 object WorkScheduler {
 
     private const val CHAIN = "pendulum-night-chain"
+    private const val FIN_DE_NUIT = "pendulum-end-of-night"
     private const val FETCH = "pendulum-sleep-fetch"
     private const val RESCORE = "pendulum-rescore"
     private const val RESCORE_ALL = "pendulum-rescore-all"
@@ -73,6 +74,45 @@ object WorkScheduler {
             .then(analyze)
             .then(fetch)
             .then(rescore)
+            .enqueue()
+    }
+
+    /**
+     * La chaine du bouton « fin de nuit », et son ordre differe de [enqueueNightChain].
+     *
+     * ```
+     * IngestWorker  ->  SleepFetchWorker  ->  AnalyzeWorker
+     * (reconcilier)     (lire l'hypnogramme)  (scorer avec)
+     * ```
+     *
+     * La chaine automatique analyse **avant** de lire Health Connect, et c'est juste : au reveil,
+     * l'hypnogramme n'est pas encore arrive — la synchronisation de la montre de poignet obeit a
+     * la politique batterie du fabricant — donc attendre produirait une application qui n'a rien
+     * a dire pendant des heures. Elle score avec le masque accelerometrique, puis rescore.
+     *
+     * Ici, l'utilisateur vient d'appuyer et attend. Tenter la lecture d'abord donne a l'analyse
+     * une chance d'utiliser le vrai denominateur du premier coup : `AnalysisRunner` lit le
+     * dernier `hc_snapshot`, donc l'ordre suffit a changer le resultat. Si la lecture ne rend
+     * rien, `SleepFetchWorker` rend `success` quand meme et l'analyse repart sur le masque
+     * accelerometrique — le pire cas est donc exactement le comportement nominal, jamais un
+     * blocage.
+     *
+     * `REPLACE` et non `KEEP` : le geste est explicite et repete quand le premier n'a rien
+     * ramene. `KEEP` ferait un bouton qui, appuye deux fois, ne fait rien la seconde fois.
+     */
+    fun enqueueFinDeNuit(context: Context, sessionHex: String) {
+        val data = workDataOf(KEY_SESSION to sessionHex)
+        val ingest = OneTimeWorkRequestBuilder<IngestWorker>()
+            .setInputData(data).setConstraints(constraints).build()
+        val fetch = OneTimeWorkRequestBuilder<SleepFetchWorker>()
+            .setInputData(data).setConstraints(constraints).build()
+        val analyze = OneTimeWorkRequestBuilder<AnalyzeWorker>()
+            .setInputData(data).setConstraints(constraints).build()
+
+        WorkManager.getInstance(context)
+            .beginUniqueWork("$FIN_DE_NUIT-$sessionHex", ExistingWorkPolicy.REPLACE, ingest)
+            .then(fetch)
+            .then(analyze)
             .enqueue()
     }
 

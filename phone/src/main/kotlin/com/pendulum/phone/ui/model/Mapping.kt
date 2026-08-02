@@ -68,8 +68,37 @@ object Mapping {
             comptePlmi = n.plmi,
             drapeaux = drapeaux,
             startWallMs = n.startWallMs,
+            devoileeAtMs = n.revealedAtMs,
         )
     }
+
+    /** `23:12`, dans le fuseau ou la nuit a ete vecue. */
+    fun heureLisible(ms: Long, zoneId: String): String =
+        Instant.ofEpochMilli(ms).atZone(zoneDe(zoneId)).format(FORMAT_HEURE)
+
+    /** `12 March`, dans le fuseau ou la nuit a ete vecue. */
+    fun dateLisible(ms: Long, zoneId: String): String =
+        Instant.ofEpochMilli(ms).atZone(zoneDe(zoneId)).format(FORMAT_DATE)
+
+    /** `12 March, 07:04` — l'instant d'un devoilement, tel qu'il partira dans l'export. */
+    fun instantLisible(ms: Long, zoneId: String): String =
+        "${dateLisible(ms, zoneId)}, ${heureLisible(ms, zoneId)}"
+
+    /**
+     * Le cote portant, traduit depuis `night_context.leg`.
+     *
+     * Il n'y a pas de valeur par defaut : un capteur unilateral voit un intervalle double quand
+     * les mouvements alternent, donc une jambe devinee fausserait le critere de comparabilite
+     * sans que rien ne le signale. Une valeur inconnue reste inconnue.
+     */
+    fun libelleJambe(leg: String?): String? = when (leg) {
+        "LEFT" -> Textes.CeSoir.JAMBE_GAUCHE
+        "RIGHT" -> Textes.CeSoir.JAMBE_DROITE
+        else -> null
+    }
+
+    private fun zoneDe(zoneId: String): ZoneId =
+        runCatching { ZoneId.of(zoneId) }.getOrDefault(ZoneId.systemDefault())
 
     /**
      * Les drapeaux de qualite d'une nuit. Ce ne sont **pas** des erreurs : ce sont des proprietes

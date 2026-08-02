@@ -15,10 +15,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -29,6 +27,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.pendulum.phone.ui.export.ExportScreen
 import com.pendulum.phone.ui.export.ExportUi
+import com.pendulum.phone.ui.home.HomeScreen
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.nights.NightListScreen
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
@@ -58,20 +57,39 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Trois destinations racines, et **Tendance en destination de depart**.
+ * Trois destinations racines, et **Accueil en destination de depart**.
  *
- * Trois et pas quatre : au-dela, la hierarchie se dilue et l'utilisateur cherche. Le
- * questionnaire, le detail d'une nuit, la comparaison et l'export sont des destinations
- * empilees, sans barre de navigation — ce sont des taches, pas des lieux.
+ * Trois et pas quatre : au-dela, la hierarchie se dilue et l'utilisateur cherche
+ * (`06-interface.md` §6). Le questionnaire, la liste des nuits, le detail d'une nuit, la
+ * comparaison et l'export sont des destinations empilees, sans barre de navigation — ce sont des
+ * taches, pas des lieux.
+ *
+ * ### Pourquoi Tendance n'est plus l'accueil
+ *
+ * Elle l'etait, et l'ecran de depart melangeait alors deux regimes cognitifs incompatibles : le
+ * geste quotidien — rapide, memorise, fait d'une main — et la lecture d'un resultat statistique,
+ * lente et chargee. Le premier se payait du second : on venait appuyer sur un bouton et on lisait
+ * un chiffre en chemin, a l'heure ou l'on est le moins capable de le juger. La Tendance reste une
+ * destination racine ; elle n'est plus la porte d'entree.
+ *
+ * ### Pourquoi Nuits sort de la barre
+ *
+ * La liste des nuits est une consultation, pas un lieu de sejour : on y va depuis la carte
+ * HISTORIQUE de l'accueil, avec une question en tete, et on en revient. Lui garder une entree
+ * permanente aurait fait quatre destinations racines, ce que `06-interface.md` §6 exclut
+ * explicitement — « trois destinations suffisent ; au-dela la hierarchie se dilue ».
  *
  * Pas de bouton d'action flottant : il n'existe aucune action de creation sur le telephone.
  * L'enregistrement demarre sur la montre, et la seule porte est le scellement du contexte.
  */
 enum class Destination(val route: String, val libelle: String) {
+    ACCUEIL("home", Textes.EcranAccueil.TITRE),
     TENDANCE("trend", Textes.Tendance.TITRE),
-    NUITS("nights", Textes.Nuits.TITRE),
     REGLAGES("settings", Textes.Reglages.TITRE),
 }
+
+/** La liste des nuits, atteinte depuis la carte HISTORIQUE. Empilee : c'est une consultation. */
+const val ROUTE_NUITS = "nights"
 
 /**
  * Le formulaire du soir. Empile, sans barre de navigation : c'est une tache, pas un lieu.
@@ -96,16 +114,22 @@ private fun DrawScope.iconeDestination(d: Destination, couleur: Color) {
     val e = size.minDimension * 0.09f
     val s = size.minDimension
     when (d) {
+        // Accueil : un toit et son mur. Le glyphe le plus lu de toute l'informatique grand
+        // public, et c'est exactement la raison de le prendre — cette entree-la ne doit demander
+        // aucune interpretation, puisqu'elle est celle qu'on vise a 23 h et a 7 h.
+        Destination.ACCUEIL -> {
+            drawLine(couleur, Offset(s * 0.14f, s * 0.46f), Offset(s * 0.5f, s * 0.18f), e)
+            drawLine(couleur, Offset(s * 0.5f, s * 0.18f), Offset(s * 0.86f, s * 0.46f), e)
+            drawLine(couleur, Offset(s * 0.24f, s * 0.42f), Offset(s * 0.24f, s * 0.82f), e)
+            drawLine(couleur, Offset(s * 0.76f, s * 0.42f), Offset(s * 0.76f, s * 0.82f), e)
+            drawLine(couleur, Offset(s * 0.2f, s * 0.82f), Offset(s * 0.8f, s * 0.82f), e)
+        }
         // Tendance : trois points a des hauteurs differentes, sans ligne qui les relie —
         // exactement ce que le graphe de tendance fait, et pour la meme raison.
         Destination.TENDANCE -> {
             drawCircle(couleur, e, Offset(s * 0.2f, s * 0.72f))
             drawCircle(couleur, e, Offset(s * 0.5f, s * 0.38f))
             drawCircle(couleur, e, Offset(s * 0.8f, s * 0.55f))
-        }
-        // Nuits : un croissant, obtenu par soustraction visuelle de deux arcs.
-        Destination.NUITS -> {
-            drawArc(couleur, 120f, 300f, false, Offset(s * 0.18f, s * 0.18f), Size(s * 0.64f, s * 0.64f), style = Stroke(e))
         }
         // Reglages : deux curseurs, la metaphore la plus directe pour des parametres.
         Destination.REGLAGES -> {
@@ -133,7 +157,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                             selected = routeCourante == d.route,
                             onClick = {
                                 nav.navigate(d.route) {
-                                    popUpTo(Destination.TENDANCE.route) { saveState = true }
+                                    popUpTo(Destination.ACCUEIL.route) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
@@ -151,9 +175,32 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
     ) { padding ->
         NavHost(
             navController = nav,
-            startDestination = Destination.TENDANCE.route,
+            startDestination = Destination.ACCUEIL.route,
             modifier = Modifier.padding(padding),
         ) {
+            composable(Destination.ACCUEIL.route) {
+                val vm: HomeViewModel = viewModel()
+                val etat by vm.etat.collectAsStateWithLifecycle()
+
+                // Rien tant que la premiere lecture n'a pas abouti. Pas de squelette anime, pas
+                // de cartes vides : trois cartes qui se remplissent apres coup deplaceraient
+                // exactement ce que cet ecran existe pour ne plus deplacer.
+                etat?.let { a ->
+                    HomeScreen(
+                        etat = a,
+                        onSceller = { nav.navigate(ROUTE_SOIR) },
+                        onFinDeNuit = { a.sessionAFermer?.let(vm::finDeNuit) },
+                        // Un seul geste : la trace est ecrite et l'ecran de detail s'ouvre dans
+                        // la foulee. Deux appuis pour un chiffre qu'on a le droit de voir
+                        // seraient un peage, pas un ralentisseur.
+                        onDevoiler = { hex ->
+                            vm.devoiler(hex)
+                            nav.navigate("night/$hex")
+                        },
+                        onHistorique = { nav.navigate(ROUTE_NUITS) },
+                    )
+                }
+            }
             composable(Destination.TENDANCE.route) {
                 val vm: TrendViewModel = viewModel()
                 val etat by vm.etat.collectAsStateWithLifecycle()
@@ -163,11 +210,11 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                     onComparer = { nav.navigate("compare") },
                     onQuestionnaire = { nav.navigate("quiz") },
                     onExport = { nav.navigate("export") },
-                    onSceller = { nav.navigate(ROUTE_SOIR) },
                     onActionReveil = {},
                 )
             }
-            composable(Destination.NUITS.route) {
+            // La liste des nuits : empilee, atteinte depuis la carte HISTORIQUE de l'accueil.
+            composable(ROUTE_NUITS) {
                 val vm: NightsViewModel = viewModel()
                 val nuits by vm.nuits.collectAsStateWithLifecycle()
                 NightListScreen(nuits, onNuit = { nav.navigate("night/$it") })
@@ -214,7 +261,12 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 // par defaut : un ecran de detail qui affiche des zeros pendant deux cents
                 // millisecondes apprend a lire des chiffres avant qu'ils ne soient vrais.
                 detail?.let {
-                    NightDetailScreen(it, onVoirTendance = { nav.popBackStack() }, {})
+                    NightDetailScreen(
+                        detail = it,
+                        onVoirTendance = { nav.popBackStack() },
+                        onAppliquerATout = {},
+                        onDevoiler = { vm.devoiler(hex) },
+                    )
                 }
             }
             composable("compare") {

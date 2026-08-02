@@ -24,6 +24,7 @@ import com.pendulum.phone.ui.chart.HypnogrammeSpec
 import com.pendulum.phone.ui.chart.Hypnogramme
 import com.pendulum.phone.ui.chart.NuitChartSpec
 import com.pendulum.phone.ui.chart.XTransform
+import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.DataTableSheet
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraphe
@@ -82,14 +83,32 @@ data class Controle(val libelle: String, val valeur: String, val seuil: String, 
  * Le panneau de parametres, replie par defaut, est l'endroit ou mord la regle anti-auto-tromperie :
  * il n'y a **pas** de « recalculer cette nuit ». Un changement de parametre est global, bump le
  * `paramsHash`, et declenche un rescore de toutes les nuits depuis le brut.
+ *
+ * ### Le garde-fou 2 : le resultat est masque tant qu'il n'a pas ete demande
+ *
+ * Tant que `night_session.revealedAtMs` est nul, le bloc de valeur, les graphes et le detail des
+ * evenements ne sont pas rendus. Ce qui reste visible est ce que `01-overview.md` §4 decrit comme
+ * l'ecran du matin : la nuit a ete enregistree, sa qualite a ete verifiee — et la liste de
+ * controles, plus bas, le montre en chiffres.
+ *
+ * **Un seul geste pour lever le masque.** Pas de modale de confirmation, pas d'avertissement a
+ * accepter. La justification est mesuree plutot que supposee : sur environ 8 000 reponses de
+ * patients recevant leurs resultats de laboratoire avant relecture medicale, 95,7 % veulent les
+ * recevoir immediatement et 7,5 % seulement rapportent une inquietude accrue. Vouloir son chiffre
+ * est donc la norme ; la friction doit ralentir le geste, pas le taxer.
+ *
+ * Ce qui n'est pas negociable est la **trace** : le devoilement est horodate en base et sort dans
+ * l'export. Elle est silencieuse — on ne demande pas la permission, on note la date.
  */
 @Composable
 fun NightDetailScreen(
     detail: NuitDetailUi,
     onVoirTendance: () -> Unit,
     onAppliquerATout: () -> Unit,
+    onDevoiler: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val devoile = detail.nuit.devoileeAtMs != null
     val c = LocalPendulumColors.current
     val transform = remember(detail.graphe) {
         detail.graphe?.let { XTransform(it.debutMs, it.finMs) }
@@ -114,16 +133,32 @@ fun NightDetailScreen(
                 color = c.textSecondary,
             )
             Spacer(Modifier.height(Spacing.sm.dp))
-            Text(
-                "${Math.round(detail.nuit.rythmeSec)} s  ·  ${Math.round(detail.nuit.comptePlmi)}/h",
-                style = PendulumType.metricL,
-                color = c.textSecondary,
-            )
-            Text(Textes.Nuits.VALEUR_UNE_NUIT, style = PendulumType.caption, color = c.textTertiary)
-            Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(Textes.Nuits.VALEUR_UNE_NUIT_LONG)
-            Spacer(Modifier.height(Spacing.s.dp))
-            TextButton(onClick = onVoirTendance) { Text(Textes.Nuits.VOIR_TENDANCE) }
+            if (devoile) {
+                Text(
+                    "${Math.round(detail.nuit.rythmeSec)} s  ·  ${Math.round(detail.nuit.comptePlmi)}/h",
+                    style = PendulumType.metricL,
+                    color = c.textSecondary,
+                )
+                Text(Textes.Nuits.VALEUR_UNE_NUIT, style = PendulumType.caption, color = c.textTertiary)
+                Spacer(Modifier.height(Spacing.s.dp))
+                Paragraphe(Textes.Nuits.VALEUR_UNE_NUIT_LONG)
+                Spacer(Modifier.height(Spacing.s.dp))
+                TextButton(onClick = onVoirTendance) { Text(Textes.Nuits.VOIR_TENDANCE) }
+            } else {
+                Text(
+                    Textes.EcranAccueil.Resultat.enregistree(detail.nuit.dateLisible),
+                    style = PendulumType.bodyEmph,
+                    color = c.textPrimary,
+                )
+                Spacer(Modifier.height(Spacing.s.dp))
+                Paragraphe(Textes.EcranAccueil.Resultat.MASQUE_CORPS)
+                Spacer(Modifier.height(Spacing.sm.dp))
+                BoutonMotive(
+                    libelle = Textes.EcranAccueil.Resultat.BOUTON,
+                    motifIndisponible = null,
+                    onClick = onDevoiler,
+                )
+            }
         }
 
         // --- Section 2 : les deux graphes, un seul axe X, un seul curseur
@@ -131,7 +166,7 @@ fun NightDetailScreen(
         // La carte entiere disparait quand l'enveloppe n'a pas ete reconstruite. Ni cadre vide, ni
         // message d'erreur : il n'y a rien de casse, il y a seulement une donnee que cette version
         // ne relit pas encore depuis le brut.
-        if (detail.graphe != null && detail.hypnogramme != null && transform != null) {
+        if (devoile && detail.graphe != null && detail.hypnogramme != null && transform != null) {
             PendulumCard {
                 GrapheNuit(
                     spec = detail.graphe,
@@ -148,7 +183,11 @@ fun NightDetailScreen(
         }
 
         // --- Section 3 : evenements detectes
-        PendulumCard {
+        //
+        // Masquee avec le reste tant que le resultat n'a pas ete demande. Le compte des
+        // mouvements n'est pas l'index, mais le laisser visible reviendrait a ne masquer que la
+        // division : un garde-fou qu'on contourne en lisant la ligne du dessus n'en est pas un.
+        if (devoile) PendulumCard {
             SectionHeader(Textes.Nuits.Detail.EVENEMENTS)
             InlineValue(Textes.Nuits.Detail.MOUVEMENTS, detail.mouvements.toString())
             InlineValue(Textes.Nuits.Detail.DONT_SOMMEIL, detail.plms.toString())
@@ -192,7 +231,7 @@ fun NightDetailScreen(
     }
 
     val graphe = detail.graphe
-    if (valeursOuvertes && graphe != null) {
+    if (devoile && valeursOuvertes && graphe != null) {
         DataTableSheet(
             colonnes = listOf("#", "Start", "Duration", "Ampl."),
             lignes = graphe.marqueurs.take(200).mapIndexed { i, m ->
