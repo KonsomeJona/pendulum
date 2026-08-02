@@ -52,6 +52,7 @@ import com.pendulum.phone.ui.settings.AvertissementScreen
 import com.pendulum.phone.ui.settings.EffacementScreen
 import com.pendulum.phone.ui.settings.RapportP1Screen
 import com.pendulum.phone.ui.settings.SettingsScreen
+import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.tonight.EveningContextScreen
 import com.pendulum.phone.ui.theme.PendulumTheme
@@ -340,6 +341,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                         etat = a,
                         onSceller = { nav.navigate(ROUTE_SOIR) },
                         onFinDeNuit = { a.sessionAFermer?.let(vm::finDeNuit) },
+                        onDemarrer = vm::demarrerSurLaMontre,
                         // Un seul geste : la trace est ecrite et l'ecran de detail s'ouvre dans
                         // la foulee. Deux appuis pour un chiffre qu'on a le droit de voir
                         // seraient un peage, pas un ralentisseur.
@@ -516,12 +518,21 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                     )
                 }
             }
+            // La comparaison de deux periodes n'a pas de selecteur de dates, donc pas de
+            // periodes a comparer. L'ecran affichait jusqu'ici un refus assorti de deux
+            // etiquettes fabriquees — « 1-15 February », « 1-15 March » — c'est-a-dire le meme
+            // defaut que la navigation cablee sur le jeu d'apercu : pas un chiffre invente, mais
+            // un contexte invente, ce qui se lit tout aussi bien comme une donnee reelle.
+            //
+            // Les etiquettes sont donc vides tant que le selecteur n'existe pas. `Aggregat.comparer`
+            // est ecrit et teste et n'attend que lui ; c'est une fonctionnalite a faire, pas un
+            // cablage a poser, et l'ecran doit dire qu'elle n'est pas la plutot que la mimer.
             composable("compare") {
                 ComparePeriodsScreen(
                     resultat = null,
-                    motifIndisponible = Textes.Comparaison.PERIODE_A to 3,
-                    libellePeriodeA = "1–15 February",
-                    libellePeriodeB = "1–15 March",
+                    motifIndisponible = Textes.Comparaison.PERIODE_A to Aggregat.MIN_NUITS_COMPARAISON,
+                    libellePeriodeA = "",
+                    libellePeriodeB = "",
                 )
             }
             composable("quiz") {

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -17,6 +18,7 @@ import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.model.CeSoirUi
 import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
+import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
@@ -52,6 +54,7 @@ fun TonightCard(
     etat: CeSoirUi,
     motifIndisponible: String?,
     onSceller: () -> Unit,
+    onDemarrer: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
@@ -90,6 +93,26 @@ fun TonightCard(
                 color = if (etat.contexteScelle) c.textPrimary else c.attention,
             )
             Spacer(Modifier.height(Spacing.s.dp))
+            // Une fois le contexte scelle, la montre accepte de demarrer — et on peut le lui
+            // demander d'ici. C'est l'ecart assume vis-a-vis de `docs/06-interface.md` §2.2, qui
+            // reserve le demarrage a un geste physique sur la montre.
+            //
+            // Ce que l'ecart ne coute pas : `RecordingService` re-verifie le preflight avant de
+            // demarrer, donc ce bouton ne contourne rien. Ce qu'il rapporte : au coucher, la
+            // montre est deja a la cheville, sous la couette, et se pencher pour la reveiller
+            // produit exactement l'artefact de mouvement que la mesure de la nuit va enregistrer.
+            //
+            // La consigne « appuyez sur START sur la montre » reste affichee au-dessus : le geste
+            // physique demeure le chemin nominal, et celui-ci le double sans le remplacer.
+            if (etat.contexteScelle && onDemarrer != null) {
+                Spacer(Modifier.height(Spacing.s.dp))
+                Button(
+                    onClick = onDemarrer,
+                    shape = PendulumShapes.button,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(Textes.CeSoir.DEMARRER_SUR_LA_MONTRE) }
+            }
+
             BoutonMotive(
                 libelle = Textes.CeSoir.SCELLEMENT_BOUTON,
                 motifIndisponible = motifIndisponible,

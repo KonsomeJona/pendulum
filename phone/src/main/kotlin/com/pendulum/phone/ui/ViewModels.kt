@@ -326,6 +326,37 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Demande le demarrage a la montre.
+     *
+     * Le resultat est **publie**, pas suppose. « La montre enregistre » et « la montre n'a rien
+     * recu » sont deux etats qu'un bouton silencieux rend identiques, et celui qui se couche en
+     * croyant le premier perd sa nuit — il ne s'en apercevra qu'au reveil, quand il n'y aura plus
+     * rien a rattraper.
+     *
+     * L'ordre n'est envoye que si le contexte est scelle cote telephone. C'est une courtoisie
+     * d'interface et non le garde-fou : celui-ci est dans `RecordingService`, qui re-verifie le
+     * preflight avant de demarrer et refuse quelle que soit l'origine de la demande.
+     */
+    fun demarrerSurLaMontre() {
+        viewModelScope.launch {
+            _demarrage.value = if (WatchCommands.demanderLeDemarrage(getApplication())) {
+                Textes.CeSoir.DEMARRAGE_DEMANDE
+            } else {
+                Textes.CeSoir.DEMARRAGE_INJOIGNABLE
+            }
+        }
+    }
+
+    private val _demarrage = MutableStateFlow<String?>(null)
+
+    /** Message a afficher une fois, puis consomme. `null` quand il n'y a rien a dire. */
+    val demarrage: StateFlow<String?> = _demarrage
+
+    fun demarrageConsomme() {
+        _demarrage.value = null
+    }
+
+    /**
      * Garde-fou 2 : le devoilement, journalise et horodate.
      *
      * Un seul appel, aucune confirmation a demander avant. `NightDao.markRevealed` porte

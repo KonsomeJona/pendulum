@@ -42,6 +42,29 @@ object WatchCommands {
         envoyerATousLesNoeuds(context, WirePaths.SWEEP_REQUEST)
 
     /**
+     * Demande a la montre de demarrer l'enregistrement.
+     *
+     * Meme forme de defaut que le balayage, et trouve de la meme facon — en relisant la
+     * documentation plutot que le code : `WirePaths.START_REQUEST` etait declare, `AckObserver`
+     * le traitait, y compris son repli par notification quand Android refuse un demarrage depuis
+     * l'arriere-plan, et **rien ne l'emettait**. Un protocole cable du cote qui recoit et inerte
+     * du cote qui declenche ne produit aucune erreur : il produit un bouton qui n'existe pas.
+     *
+     * ### Ce que cet ordre ne contourne pas
+     *
+     * `RecordingService` re-verifie `Preflight.check` avant `startSession(resume = false)`. Une
+     * demande arrivant sans contexte du soir scelle est donc refusee **cote montre**, quelle
+     * qu'en soit l'origine — le garde-fou n'est pas dans le bouton, il est dans le service, et
+     * c'est ce qui permet d'ouvrir un second chemin de demarrage sans l'affaiblir.
+     *
+     * @return `false` si aucun noeud n'a pu etre atteint. Il faut le dire : c'est la difference
+     *   entre « la montre enregistre » et « la montre n'a rien recu », et l'utilisateur qui se
+     *   couche en croyant la premiere perd sa nuit.
+     */
+    suspend fun demanderLeDemarrage(context: Context): Boolean =
+        envoyerATousLesNoeuds(context, WirePaths.START_REQUEST)
+
+    /**
      * Envoie un message a **tous** les noeuds connectes, et non au premier.
      *
      * Plusieurs montres peuvent etre appairees, et deviner laquelle porte l'enregistrement a

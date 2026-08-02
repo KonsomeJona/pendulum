@@ -51,6 +51,7 @@ import com.pendulum.phone.ui.trend.TonightCard
 fun HomeScreen(
     etat: AccueilUi,
     onSceller: () -> Unit,
+    onDemarrer: () -> Unit,
     onFinDeNuit: () -> Unit,
     onDevoiler: (String) -> Unit,
     onHistorique: () -> Unit,
@@ -62,6 +63,7 @@ fun HomeScreen(
             etat = etat.ceSoir,
             motifIndisponible = etat.motifPreparer,
             onSceller = onSceller,
+            onDemarrer = onDemarrer,
         )
 
         // 2 — Fin de nuit. Une carte, une action : soit on ferme la nuit, soit on demande le

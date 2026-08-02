@@ -419,6 +419,20 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
         const val EN_COURS = "RECORDING"
 
         const val CONSIGNE_DEMARRAGE = "Press START on the watch."
+
+        /**
+         * Le second chemin de demarrage. Il double le geste physique, il ne le remplace pas :
+         * `CONSIGNE_DEMARRAGE` reste affichee au-dessus.
+         *
+         * La raison est dans la mesure elle-meme. Au coucher, la montre est deja a la cheville et
+         * sous la couette ; se pencher pour la reveiller produit exactement le mouvement de jambe
+         * que la nuit va enregistrer, dans les premieres minutes ou l'on cherche justement a
+         * savoir si le dormeur est immobile.
+         */
+        const val DEMARRER_SUR_LA_MONTRE = "Start recording on the watch"
+        const val DEMARRAGE_DEMANDE = "Request sent. The watch starts, or asks you to tap."
+        const val DEMARRAGE_INJOIGNABLE =
+            "Watch not reachable. Press START on it directly \u2014 nothing was started."
         const val CONSIGNE_ARRET =
             "Stopping is done on the watch, or automatically as soon as it is on its charger."
 

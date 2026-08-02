@@ -141,13 +141,13 @@ private fun ApercuCeSoirASceller() = PendulumTheme {
 @Preview(name = "Home - evening, context to seal", widthDp = 411, heightDp = 1000, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuAccueilSoir() = PendulumTheme {
-    HomeScreen(ApercuDonnees.accueilSoir, {}, {}, {}, {})
+    HomeScreen(ApercuDonnees.accueilSoir, {}, {}, {}, {}, {})
 }
 
 @Preview(name = "Home - morning, result not shown", widthDp = 411, heightDp = 1000, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuAccueilMatin() = PendulumTheme {
-    HomeScreen(ApercuDonnees.accueilMatin, {}, {}, {}, {})
+    HomeScreen(ApercuDonnees.accueilMatin, {}, {}, {}, {}, {})
 }
 
 // --- issu de ui/trend/TrendScreen.kt ----------------------------------------
