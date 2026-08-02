@@ -9,6 +9,7 @@ import java.io.OutputStream
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * Le rapport, destine a etre lu par un medecin du sommeil.
@@ -24,9 +25,12 @@ import java.time.format.DateTimeFormatter
  * ### Ce que le rapport montre, dans cet ordre
  *
  * 1. le **rythme fondamental** en secondes et la periodicite — la metrique de suivi, sans
- *    denominateur, donc sans circularite, et douze fois plus stable d'une nuit a l'autre ;
+ *    denominateur, donc sans circularite, et douze fois plus stable d'une nuit a l'autre. Il est
+ *    souvent **absent**, et le rapport dit alors pourquoi : le modele refuse d'ajuster une periode
+ *    que les intervalles n'identifient pas, et il refuse bien plus souvent qu'il n'accepte ;
  * 2. le **compte horaire** avec son denominateur explicite, ses deux jeux de regles et ses deux
- *    masques — c'est la langue des somnologues, et les seuils publies reposent dessus ;
+ *    masques — c'est la langue des somnologues, et les seuils publies reposent dessus — precede
+ *    des trois chiffres qui disent **a quelle echelle** il se lit ;
  * 3. le **taux de manques estime**, sans lequel les deux precedents ne se lisent pas ;
  * 4. la qualite et les limites, nommees separement et jamais compensees entre elles.
  *
@@ -41,7 +45,7 @@ import java.time.format.DateTimeFormatter
 object ReportExporter {
 
     private val stamp: DateTimeFormatter =
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.UK).withZone(ZoneId.systemDefault())
 
     suspend fun exportNight(context: Context, sessionHex: String, out: OutputStream) {
         val db = PendulumDatabase.get(context)
@@ -66,7 +70,14 @@ object ReportExporter {
             if (primary == null) {
                 appendLine("Aucun resultat calcule pour cette nuit.")
             } else {
-                appendLine("- Rythme fondamental : ${fmt(primary.fundamentalSec)} s")
+                if (primary.rhythmValid) {
+                    appendLine("- Rythme fondamental : ${fmt(primary.fundamentalSec)} s")
+                } else {
+                    appendLine("- Rythme fondamental : **non rapporte pour cette nuit**")
+                    appendLine()
+                    appendLine(RYTHME_REFUSE)
+                    appendLine()
+                }
                 appendLine("- Index de periodicite : ${fmt(primary.periodicityIndex)}" +
                     if (primary.periodicityValid) "" else " (non valide : trop peu d'intervalles)")
                 appendLine("- Taux de manques estime : ${fmt(primary.missRate)}")
@@ -82,6 +93,8 @@ object ReportExporter {
             appendLine("## Compte horaire — aPLM-i")
             appendLine()
             appendLine(APLMI_NOTE)
+            appendLine()
+            appendLine(SOUS_COMPTAGE)
             appendLine()
             appendLine("| Regles | Masque | Mouvements | Sommeil analysable | aPLM-i | Borne haute respiratoire | Publication |")
             appendLine("|---|---|---|---|---|---|---|")
@@ -161,7 +174,14 @@ object ReportExporter {
         "| ${r.rule} | ${r.maskSource} | ${r.plmsCount} | ${fmt(r.analysableTstMin)} min | " +
             "${fmt(r.plmi)} /h | ${fmt(r.plmiRespWorstCase)} /h | ${r.gate} |"
 
-    private fun fmt(v: Double): String = if (v.isFinite()) "%.2f".format(v) else "—"
+    /**
+     * `21,34` en francais et `21.34` en anglais **ne sont pas le meme document**, et un rapport
+     * qu'un medecin recopie ou qu'un tableur relit doit avoir une seule ponctuation decimale.
+     * Le reste du module epingle deja `Locale.UK` partout — `Mapping`, `Controles`, `PorteP1`,
+     * `PorteP1Exporter`, dont la KDoc documente precisement ce piege ; ce fichier etait le seul a
+     * l'avoir manque, et il est celui qui sort de l'application.
+     */
+    private fun fmt(v: Double): String = if (v.isFinite()) "%.2f".format(Locale.UK, v) else "—"
 
     private fun format(ms: Long, zone: ZoneId): String = stamp.withZone(zone).format(Instant.ofEpochMilli(ms))
 
@@ -183,6 +203,66 @@ object ReportExporter {
         polysomnographique, et le seuil publie de 15/h ne s'y transpose pas.
     """.trimIndent()
 
+    /**
+     * Les trois chiffres du sous-comptage, et pourquoi ils sont dans le rapport.
+     *
+     * Ils sont mesures par `NominalNightRegressionTest` (T22) dans `:algo`, medianes sur 20
+     * graines de la nuit nominale : `SUB_THRESHOLD_FRACTION = 0,70`, `RAW_COUNT_RATIO = 0,30`,
+     * `INDEX_RATIO = 0,06`. Ils sont recopies ici et non importes parce qu'ils vivent dans une
+     * source de **test** que le module applicatif ne compile pas ; le test qui les surveille est
+     * la protection contre leur derive, et sa KDoc dit qu'ils doivent remonter jusqu'ici.
+     *
+     * **Le troisieme est le seul qui decide de la lecture du document.** Les deux premiers
+     * decrivent le detecteur ; celui-la decrit ce qui reste de l'indice publie, et il n'est pas
+     * deductible des deux autres : la regle AASM exige quatre mouvements consecutifs, donc
+     * ecarter 70 % des evenements ne divise pas le compte, il fait disparaitre la plupart des
+     * series. Sans lui, un medecin lit le tableau du dessous comme un compte, et un compte bas
+     * comme peu de mouvements.
+     */
+    private val SOUS_COMPTAGE = """
+        ### Ce que la politique de seuil retire, en trois chiffres
+
+        Ils sont **mesures sur signal synthetique** — nuit nominale, mediane de 20 tirages, verite
+        connue par construction — et **jamais valides contre polysomnographie**. Ils ne mesurent
+        donc pas l'erreur de cet appareil chez cette personne : ils mesurent ce que cette chaine
+        de traitement retire d'un signal dont on connait la reponse.
+
+        | Grandeur | Valeur |
+        |---|---|
+        | Mouvements de jambe presents dans le signal mais **sous le seuil de detection** | 0,70 |
+        | Compte brut retenu, rapporte a la verite accelerometrique, avant toute regle de serie | 0,30 |
+        | **Part de l'indice vrai qui survit au seuil** | **0,06** |
+
+        Le troisieme n'est pas la moyenne des deux premiers et il ne s'en deduit pas. Une serie
+        demande **quatre mouvements consecutifs** : ecarter 70 % des evenements ne dilue pas les
+        series, il les detruit, parce qu'il faut trois intervalles consecutifs survivants pour
+        qu'une serie subsiste. Sur ces donnees, l'indice publie vaut de l'ordre de **6 % du compte
+        vrai**.
+
+        **Un chiffre bas dans ce rapport ne peut donc pas se lire « peu de mouvements ».** Un
+        index bas est le comportement attendu de cette chaine, y compris lorsque les mouvements
+        sont nombreux. L'ecart entre 0,06 et 1 n'est pas une marge d'erreur, c'est un changement
+        d'echelle : la comparaison au seuil de 15/h reste sans objet, et la seule lecture que ce
+        nombre autorise est sa variation d'une nuit a l'autre, chez la meme personne, avec le
+        meme montage.
+    """.trimIndent()
+
+    /**
+     * Le rythme non rapporte, presente comme ce qu'il est.
+     *
+     * `RhythmMeasurementTest` mesure 2 ajustements acceptes sur 20 nuits nominales : le refus est
+     * le cas ordinaire, et un rapport qui le presenterait comme un incident ferait chercher une
+     * panne de capteur. Le chiffre est cite parce qu'un refus sans ordre de grandeur se lit comme
+     * une exception.
+     */
+    private val RYTHME_REFUSE = """
+      La deconvolution des harmoniques a **refuse** l'ajustement pour cette nuit : les intervalles
+      recueillis n'identifient pas de periode. Ce refus est le comportement ordinaire du modele et
+      non un incident — sur des nuits simulees, 2 ajustements sur 20 sont acceptes. Une periode
+      ajustee sur trop peu d'intervalles porterait un chiffre et aucune information, et rien ne la
+      distinguerait, sur cette feuille, d'une periode reellement mesuree.
+    """.trimIndent()
+
     private val NO_HC_NOTE = """
         Aucun hypnogramme externe pour cette nuit. Le denominateur provient alors du masque
         d'immobilite calcule sur le meme accelerometre que les mouvements comptes : il est
@@ -201,6 +281,11 @@ object ReportExporter {
     private val LIMITS = """
         ## Limites, nommees separement
 
+        - **Le numerateur est massivement sous-compte, et c'est mesure.** Trois chiffres, dans la
+          section « Compte horaire » : 70 % des mouvements presents dans le signal tombent sous le
+          seuil de detection, le compte brut retenu vaut 0,30 de la verite accelerometrique, et il
+          n'en reste que **0,06 sur l'indice publie**. C'est la limite qui commande toutes les
+          autres, et la raison pour laquelle un index bas ne se lit pas « peu de mouvements ».
         - **Le denominateur est surestime.** Les montres grand public declarent « endormi » pres
           d'une epoque d'eveil sur deux (specificite ~0,52). Le temps de sommeil etant au
           denominateur, l'index en ressort **sous-estime**.
