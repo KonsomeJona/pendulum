@@ -63,7 +63,7 @@ fun DrawScope.dessinerHypnogramme(
         val x0 = xDe(iv.debutMs).coerceIn(zone.left, zone.right)
         val x1 = xDe(iv.finMs).coerceIn(zone.left, zone.right)
         if (x1 <= x0) continue
-        drawRect(t.structural, Offset(x0, yMasque), Size(x1 - x0, hMasque), alpha = 0.65f)
+        drawRect(t.structural, Offset(x0, yMasque), Size(x1 - x0, hMasque), alpha = t.maskLaneAlpha)
     }
     texteAxe(mesureur, scratch, t, "immobile", dpPx(2f), yMasque - dpPx(1f))
 

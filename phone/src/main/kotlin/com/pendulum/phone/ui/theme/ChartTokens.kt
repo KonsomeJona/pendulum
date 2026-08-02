@@ -75,11 +75,40 @@ data class ChartTokens(
     val dashReference: FloatArray,
 
     // --- remplissages translucides
+    //
+    // Trois de ces quatre valeurs sont sous contrainte d'accessibilite et non de gout : WCAG 1.4.11
+    // impose 3:1 aux objets graphiques, et un aplat translucide compose sur le fond du graphe perd
+    // tres vite ce contraste sans que l'oeil le signale. Les valeurs ci-dessous sont mesurees par
+    // `ContrasteGraphesTest`, sur les deux cibles — l'export clair est le cas contraignant, parce
+    // qu'un bleu fonce a 55 % sur un fond presque blanc tombe a 2,3:1.
+    /** Remplissage de la bande d'intervalle. **Exempte** : ce sont ses bornes qui informent. */
     val ciBandAlpha: Float,
     val seriesBarAlpha: Float,
     val thresholdAlpha: Float,
+    /** Voie « masque accelerometrique » de l'hypnogramme : elle porte l'etat mobile/immobile. */
+    val maskLaneAlpha: Float,
 ) {
     companion object {
+
+        /**
+         * Opacite des deux bornes tiretees de la bande d'intervalle.
+         *
+         * Elles sont **le porteur reel** de l'information « voici l'intervalle » : c'est donc
+         * elles, et non le remplissage, qui doivent tenir le 3:1 de WCAG 1.4.11. Mesure dans
+         * `ContrasteGraphesTest` — 3,7:1 sur le fond sombre a cette valeur, contre 1,3:1 pour le
+         * remplissage. Constante nommee plutot que litterale au point d'appel, parce que c'est
+         * une valeur sous contrainte d'accessibilite et non un reglage esthetique.
+         */
+        const val BORNES_IC_ALPHA = 0.75f
+
+        /**
+         * Opacite des graduations horizontales. Volontairement basse et **volontairement
+         * exemptee** du 3:1 : la valeur est portee par le texte d'axe, la ligne n'est qu'un guide
+         * pour l'oeil. Une graduation au meme contraste que la donnee ferait un quadrillage qui
+         * concurrence la courbe.
+         */
+        const val GRADUATION_ALPHA = 0.22f
+
         /**
          * `density` convertit des dp en pixels a l'ecran ; a l'export, l'appelant passe le
          * facteur points/dp de la page. Une seule echelle, un seul chemin.
@@ -109,8 +138,14 @@ data class ChartTokens(
                 dashNoiseFloor = floatArrayOf(2f * density, 3f * density),
                 dashReference = floatArrayOf(6f * density, 4f * density),
                 ciBandAlpha = 0.14f,
-                seriesBarAlpha = 0.35f,
-                thresholdAlpha = 0.55f,
+                // 0,35 et 0,55 mesuraient 2,05:1 et 3,37:1 sur l'ecran sombre, 1,67:1 et 2,34:1
+                // a l'export clair — soit trois valeurs sous le seuil de 3:1 sur quatre. 0,75 est
+                // le plancher mesure qui tient sur les deux cibles (5,3:1 en sombre, 3,4:1 en
+                // clair). La distinction entre le seuil d'onset et l'enveloppe reste portee par
+                // le tirete, pas par l'opacite — ce qui est de toute facon la regle P6.
+                seriesBarAlpha = 0.75f,
+                thresholdAlpha = 0.75f,
+                maskLaneAlpha = 0.85f,
             )
         }
     }

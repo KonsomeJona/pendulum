@@ -40,7 +40,10 @@ fun DrawScope.dessinerGrapheTendance(
     var v = spec.yMin
     while (v <= spec.yMax) {
         val y = axeY.y(v)
-        drawLine(t.structural, Offset(zone.left, y), Offset(zone.right, y), t.strokeThin, alpha = 0.22f)
+        drawLine(
+            t.structural, Offset(zone.left, y), Offset(zone.right, y), t.strokeThin,
+            alpha = ChartTokens.GRADUATION_ALPHA,
+        )
         texteAxe(mesureur, scratch, t, v.roundToInt().toString(), dpPx(4f), y - dpPx(6f))
         v += spec.pasGraduation
     }
@@ -60,9 +63,20 @@ fun DrawScope.dessinerGrapheTendance(
         val x1 = xDe(b.finMs)
         val yHaut = axeY.y(b.ciHaut)
         val yBas = axeY.y(b.ciBas)
+        // Le remplissage est une emphase, **les bornes sont l'information**. C'est donc sur les
+        // deux tiretes que porte l'exigence de 3:1 de WCAG 1.4.11, et elles sont tracees en trait
+        // normal et non fin : mesures dans `ContrasteGraphesTest`. Monter le remplissage au meme
+        // contraste demanderait une opacite d'environ 0,50, qui noierait les points de nuit
+        // dessines par-dessus — un element conforme echange contre un element illisible.
         drawRect(t.primaryData, Offset(x0, yHaut), Size(x1 - x0, yBas - yHaut), alpha = t.ciBandAlpha)
-        ligneTiretee(yHaut, x0, x1, t.primaryData, t.strokeThin, t.dashThreshold, alpha = 0.6f)
-        ligneTiretee(yBas, x0, x1, t.primaryData, t.strokeThin, t.dashThreshold, alpha = 0.6f)
+        ligneTiretee(
+            yHaut, x0, x1, t.primaryData, t.strokeNormal, t.dashThreshold,
+            alpha = ChartTokens.BORNES_IC_ALPHA,
+        )
+        ligneTiretee(
+            yBas, x0, x1, t.primaryData, t.strokeNormal, t.dashThreshold,
+            alpha = ChartTokens.BORNES_IC_ALPHA,
+        )
 
         val yMed = axeY.y(b.mediane)
         drawLine(t.primaryData, Offset(x0, yMed), Offset(x1, yMed), t.strokeBold)
