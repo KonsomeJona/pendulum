@@ -72,16 +72,35 @@ data class Marges(val gauche: Float, val haut: Float, val droite: Float, val bas
 /** Conversion dp → unites de dessin. A l'export, `density` porte le facteur points/dp. */
 fun DrawScope.dpPx(v: Float): Float = v * density
 
-val DrawScope.margesDefaut: Marges
-    get() = Marges(gauche = dpPx(40f), haut = dpPx(12f), droite = dpPx(16f), bas = dpPx(22f))
+/**
+ * Les marges par defaut pour une densite donnee, **hors de tout `DrawScope`**.
+ *
+ * Cette forme existe pour une raison precise : la detection du point tape doit lire exactement la
+ * meme zone de trace que le dessin, et le gestionnaire de geste n'est pas un `DrawScope`. Tant que
+ * les 40 dp de marge gauche n'existaient que dans la version ci-dessous, la recherche du point le
+ * plus proche calculait ses abscisses sur la largeur totale du canevas : jusqu'a 40 dp d'ecart
+ * entre le point vu et le point touche, contre un rayon d'acceptation de 24 dp. Sur un graphe ou
+ * chaque point ouvre le detail d'une nuit, cela veut dire ouvrir la mauvaise nuit.
+ */
+fun margesDefaut(densite: Float): Marges = Marges(
+    gauche = 40f * densite,
+    haut = 12f * densite,
+    droite = 16f * densite,
+    bas = 22f * densite,
+)
 
-/** Zone de trace effective. */
-fun DrawScope.zoneTrace(m: Marges): Rect = Rect(
+val DrawScope.margesDefaut: Marges get() = margesDefaut(density)
+
+/** Zone de trace effective, pour une taille de canevas donnee. */
+fun zoneTrace(m: Marges, largeur: Float, hauteur: Float): Rect = Rect(
     left = m.gauche,
     top = m.haut,
-    right = size.width - m.droite,
-    bottom = size.height - m.bas,
+    right = largeur - m.droite,
+    bottom = hauteur - m.bas,
 )
+
+/** Zone de trace effective. */
+fun DrawScope.zoneTrace(m: Marges): Rect = zoneTrace(m, size.width, size.height)
 
 /**
  * Axe Y logarithmique en base 2, pour le graphe de nuit.

@@ -184,6 +184,13 @@ class PendulumRepository(context: Context) {
                     // recouvrant cette nuit. Deux ou plus, et le denominateur depend de celle
                     // qu'on lit : c'est exactement E-HC-03.
                     originesDerniereNuit = dernierSnapshot?.originCount ?: 0,
+                    // Le fuseau de la nuit la plus recente. L'axe des X de la tendance est
+                    // calendaire : il lui faut un calendrier, et le seul defendable est celui ou
+                    // les nuits ont ete vecues. Une campagne a cheval sur deux fuseaux — un
+                    // voyage — se lira dans le dernier des deux ; c'est une approximation
+                    // assumee, la seule alternative etant un axe dont l'echelle change au milieu.
+                    zoneId = toutes.lastOrNull()?.zoneId
+                        ?: java.time.ZoneId.systemDefault().id,
                 )
             }
             .flowOn(Dispatchers.IO)
@@ -415,6 +422,8 @@ data class EtatTendance(
     val hashsMelanges: Boolean,
     val faitsReveil: MachineReveil.Faits? = null,
     val originesDerniereNuit: Int = 0,
+    /** Fuseau dans lequel les nuits tracees ont ete vecues. Voir `TendanceChartSpec.zoneId`. */
+    val zoneId: String = java.time.ZoneId.systemDefault().id,
 ) {
     val nuitsEligibles: Int get() = nuitsAgregeables.size
     val nuitsEnregistrees: Int get() = nuits.size

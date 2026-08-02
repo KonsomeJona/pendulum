@@ -6,6 +6,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.TextMeasurer
 import com.pendulum.phone.ui.theme.ChartTokens
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -116,44 +121,83 @@ private fun DrawScope.dessinerAxeXCalendaire(
     scratch: ChartScratch,
     xDe: (Long) -> Float,
 ) {
-    val jourMs = 86_400_000L
-    val jours = ((spec.dernierJourMs - spec.premierJourMs) / jourMs).toInt() + 1
-    val pas = if (jours <= 14) 1 else 7
-    var ms = spec.premierJourMs
-    var i = 0
-    while (ms <= spec.dernierJourMs) {
-        if (i % pas == 0) {
-            val px = xDe(ms)
-            drawLine(t.structural, Offset(px, zone.bottom), Offset(px, zone.bottom + dpPx(3f)), t.strokeThin)
-            texteAxe(mesureur, scratch, t, formatJour(ms), px, size.height - m.bas + dpPx(4f), centre = true)
-        }
-        ms += jourMs
-        i++
+    for (g in graduationsCalendaires(spec.premierJourMs, spec.dernierJourMs, spec.zoneId)) {
+        val px = xDe(g.ms)
+        drawLine(t.structural, Offset(px, zone.bottom), Offset(px, zone.bottom + dpPx(3f)), t.strokeThin)
+        texteAxe(mesureur, scratch, t, g.etiquette, px, size.height - m.bas + dpPx(4f), centre = true)
     }
 }
 
+/** Une graduation de l'axe calendaire : ou elle se pose, et ce qu'elle dit. */
+internal data class GraduationJour(val ms: Long, val etiquette: String)
+
 /**
- * `JJ/MM`, sans dependance a un fuseau. Comme pour le graphe de nuit, l'horodatage arrive deja
- * ramene a l'heure murale locale par le ViewModel : la fonction de dessin doit rester identique
- * a l'ecran et a l'export, donc ignorante du calendrier.
+ * Les graduations de l'axe des X, calculees dans le fuseau ou les nuits ont ete vecues.
+ *
+ * ### Le defaut que cette fonction corrige
+ *
+ * La version precedente avancait par pas de 86 400 000 ms exactement depuis `premierJourMs` —
+ * l'instant de **debut** de la premiere nuit, donc 23 h 14 et pas minuit — et convertissait
+ * l'epoch en date par division entiere, c'est-a-dire en UTC. Deux erreurs, chacune suffisante :
+ *
+ *  - une nuit commencee a 23 h 14 a New York tombe le lendemain en UTC, et sa graduation
+ *    s'etiquetait au jour suivant ;
+ *  - un jour civil ne fait pas 86 400 000 ms deux fois par an. A partir du changement d'heure,
+ *    l'heure locale des graduations derive d'une heure, finit par traverser minuit, et l'axe
+ *    saute un jour ou en repete un.
+ *
+ * Le pas est donc un pas **civil** (`plusDays` sur un `ZonedDateTime`, qui reste a la meme heure
+ * locale a travers un changement d'heure), et l'etiquette est la date locale de cet instant.
+ *
+ * Les graduations restent ancrees sur l'instant de la premiere nuit et non sur minuit : sur trois
+ * nuits couchees a 23 h, des graduations a minuit tomberaient toutes entre les points, et la
+ * premiere nuit n'aurait aucune etiquette.
  */
-private fun formatJour(ms: Long): String {
-    val jours = ms / 86_400_000L
-    // Conversion civile minimale depuis l'epoch (algorithme de Howard Hinnant, jours -> y/m/d).
-    val z = jours + 719468
-    val era = (if (z >= 0) z else z - 146096) / 146097
-    val doe = z - era * 146097
-    val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
-    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
-    val mp = (5 * doy + 2) / 153
-    val d = doy - (153 * mp + 2) / 5 + 1
-    val mois = if (mp < 10) mp + 3 else mp - 9
-    return "%02d/%02d".format(d, mois)
+internal fun graduationsCalendaires(
+    premierJourMs: Long,
+    dernierJourMs: Long,
+    zoneId: String,
+): List<GraduationJour> {
+    val fuseau = runCatching { ZoneId.of(zoneId) }.getOrDefault(ZoneId.systemDefault())
+    val depart = Instant.ofEpochMilli(premierJourMs).atZone(fuseau)
+    val arrivee = Instant.ofEpochMilli(dernierJourMs).atZone(fuseau)
+    val jours = ChronoUnit.DAYS.between(depart.toLocalDate(), arrivee.toLocalDate()).toInt() + 1
+    // Au-dela de deux semaines, une graduation par jour devient une bouillie de traits : on passe
+    // a la semaine. C'est le seul reglage de densite de cet axe.
+    val pas = if (jours <= 14) 1 else 7
+
+    val sortie = ArrayList<GraduationJour>()
+    var i = 0
+    while (true) {
+        val instant = depart.plusDays(i.toLong())
+        val ms = instant.toInstant().toEpochMilli()
+        if (ms > dernierJourMs) break
+        if (i % pas == 0) sortie += GraduationJour(ms, instant.format(FORMAT_JOUR))
+        i++
+    }
+    return sortie
 }
+
+/** `JJ/MM`. Le jour d'abord : c'est lui qui change entre deux graduations. */
+private val FORMAT_JOUR: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM", Locale.UK)
 
 /**
  * Recherche du point le plus proche, rayon d'acceptation 24 dp.
  * Renvoie l'identifiant de session, ou `null` si le doigt est tombe dans le vide.
+ *
+ * ### Pourquoi la densite est un parametre
+ *
+ * Parce que la zone de trace n'est pas le canevas. Le trace occupe `zoneTrace(margesDefaut)` —
+ * 40 dp de marge a gauche pour les etiquettes de l'axe Y, 16 dp a droite, 12 et 22 en haut et en
+ * bas — et cette fonction calculait ses coordonnees sur la largeur et la hauteur **totales**.
+ * L'ecart atteignait 40 dp en X pour un rayon d'acceptation de 24 : taper un point pouvait le
+ * manquer, ou selectionner son voisin. Sur un graphe dont chaque point ouvre le detail d'une
+ * nuit, c'est ouvrir la mauvaise nuit — et rien a l'ecran ne dit que ce n'est pas celle qu'on a
+ * visee.
+ *
+ * Le calcul est donc le meme que celui du dessin, marges comprises, y compris l'ecretage de la
+ * valeur aux bornes de l'axe : un point hors echelle est dessine sur la borne, donc c'est la
+ * qu'on le touche.
  */
 fun trouverPointProche(
     spec: TendanceChartSpec,
@@ -161,14 +205,18 @@ fun trouverPointProche(
     y: Float,
     largeur: Float,
     hauteur: Float,
+    densite: Float,
     rayonAcceptation: Float,
 ): String? {
+    val zone = zoneTrace(margesDefaut(densite), largeur, hauteur)
+    if (zone.width <= 0f || zone.height <= 0f) return null
+    val axeY = AxeLineaire(spec.yMin, spec.yMax, zone.top, zone.height)
     val spanMs = (spec.dernierJourMs - spec.premierJourMs).coerceAtLeast(1L)
     var meilleur: String? = null
     var meilleureDistance = Float.MAX_VALUE
     for (p in spec.points) {
-        val px = (p.dateMs - spec.premierJourMs).toFloat() / spanMs * largeur
-        val py = hauteur * (1f - (p.valeur - spec.yMin) / (spec.yMax - spec.yMin))
+        val px = zone.left + (p.dateMs - spec.premierJourMs).toFloat() / spanMs * zone.width
+        val py = axeY.y(p.valeur.coerceIn(spec.yMin, spec.yMax))
         val d = abs(px - x) + abs(py - y)
         if (d < meilleureDistance) {
             meilleureDistance = d

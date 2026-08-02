@@ -144,6 +144,17 @@ data class TendanceChartSpec(
     val reference: LigneReference?,
     val premierJourMs: Long,
     val dernierJourMs: Long,
+    /**
+     * Le fuseau dans lequel les nuits ont ete vecues.
+     *
+     * Il n'est pas decoratif : l'axe des X est **calendaire**, donc ses graduations sont des
+     * dates, et une date n'existe pas sans calendrier. Sans lui, la seule maniere d'etiqueter une
+     * graduation est de diviser un epoch par 86 400 000 — c'est-a-dire de l'etiqueter en UTC — et
+     * une nuit commencee a 23 h 14 a Paris s'affiche alors au lendemain. Le pas d'un jour a la
+     * meme faiblesse : un jour civil fait 23 ou 25 heures deux fois par an, et un pas fixe finit
+     * par traverser minuit et repeter une date.
+     */
+    val zoneId: String,
     /** Date pivot en mode comparaison ; `null` sinon. */
     val pivotMs: Long?,
     val descriptionAccessible: String,

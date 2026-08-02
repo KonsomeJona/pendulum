@@ -206,6 +206,10 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             reference = null as LigneReference?,
             premierJourMs = premier,
             dernierJourMs = dernier,
+            // L'axe des X est calendaire, donc il lui faut un calendrier : les graduations sont
+            // des dates locales, pas des multiples de 86 400 000 ms. Sans fuseau, une nuit
+            // commencee a 23 h 14 s'etiquette au lendemain.
+            zoneId = zoneId,
             pivotMs = null,
             // Un resume, pas une etiquette de bloc. Un `contentDescription` du type « graphe de
             // tendance sur 9 nuits » apprend a un lecteur d'ecran qu'il existe un graphe et rien

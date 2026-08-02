@@ -137,6 +137,10 @@ fun GrapheTendance(
                             y = p.y,
                             largeur = size.width.toFloat(),
                             hauteur = size.height.toFloat(),
+                            // La densite, parce que les marges du trace sont en dp : sans elle,
+                            // la recherche viserait la largeur totale du canevas et non la zone
+                            // ou les points sont reellement dessines.
+                            densite = densite.density,
                             rayonAcceptation = with(densite) { 24.dp.toPx() },
                         )?.let(onNuit)
                     }

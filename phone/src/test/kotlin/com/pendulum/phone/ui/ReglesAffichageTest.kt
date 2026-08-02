@@ -61,6 +61,7 @@ class ReglesAffichageTest {
         reference = null,
         premierJourMs = 0L,
         dernierJourMs = valeurs.size * 86_400_000L,
+        zoneId = "UTC",
         pivotMs = null,
         descriptionAccessible = "",
     )

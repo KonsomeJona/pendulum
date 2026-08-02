@@ -48,6 +48,9 @@ object ApercuDonnees {
     private const val JOUR = 86_400_000L
     private const val BASE_MS = 1_741_737_600_000L // 12 mars, minuit UTC — repere stable
 
+    /** Le fuseau des nuits d'apercu. L'axe calendaire de la tendance en a besoin pour dater. */
+    private const val FUSEAU = "Europe/Paris"
+
     // ---------------------------------------------------------------------------------
     // Tendance
     // ---------------------------------------------------------------------------------
@@ -96,6 +99,7 @@ object ApercuDonnees {
         reference = null,
         premierJourMs = BASE_MS - 6 * JOUR,
         dernierJourMs = BASE_MS,
+        zoneId = FUSEAU,
         pivotMs = null,
         descriptionAccessible = Textes.Graphes.descriptionTendance(
             points = 6,
