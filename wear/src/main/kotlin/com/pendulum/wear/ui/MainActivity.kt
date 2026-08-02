@@ -1,13 +1,11 @@
 package com.pendulum.wear.ui
 
-import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.pendulum.wear.record.RecordingService
 
@@ -23,20 +21,13 @@ import com.pendulum.wear.record.RecordingService
  */
 class MainActivity : ComponentActivity() {
 
-    private val requestNotifications =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Demandee ici et pas au moment du START : une invite systeme au coucher, ecran a la
-        // cheville, est exactement ce qu'on ne veut pas faire lire a quelqu'un d'allonge.
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
+        // La demande de `POST_NOTIFICATIONS` vivait ici, avec un rappel vide. Elle est descendue
+        // dans `RecordRoute`, ou son resultat peut relancer le preflight : accorder la permission
+        // laissait le bloqueur affiche, et il fallait tuer l'application pour qu'il disparaisse.
+        // Le moment de la demande n'a pas change — a l'ouverture, et non au START.
         setContent {
             PendulumTheme {
                 RecordRoute(

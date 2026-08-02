@@ -16,6 +16,7 @@
     <string name="free_space_line">Free space %1$s</string>
     <string name="pending_sync_line">%1$d chunks awaiting sync</string>
     <string name="preflight_recheck">Check again</string>
+    <string name="allow_notifications">Allow notifications</string>
     <string name="open_settings">Open settings</string>
 
     <!-- Écran unique : état enregistrement. -->

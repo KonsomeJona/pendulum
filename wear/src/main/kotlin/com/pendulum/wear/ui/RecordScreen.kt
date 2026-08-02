@@ -1,5 +1,10 @@
 package com.pendulum.wear.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -30,7 +35,13 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.android.gms.wearable.DataClient
+import com.google.android.gms.wearable.PutDataRequest
+import com.google.android.gms.wearable.Wearable
+import com.pendulum.wear.transfer.DataLayerTransfer
 import androidx.wear.compose.material.Colors
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
@@ -87,6 +98,68 @@ fun RecordRoute(
         }
     }
 
+    // ------------------------------------------------------------------------------------
+    // Trois declencheurs de revalidation. Aucun ne s'arme quand l'ecran est eteint.
+    // ------------------------------------------------------------------------------------
+
+    // 1. L'octroi d'une permission depuis l'application. Le rappel **revalide tout le preflight**
+    //    et pas seulement la permission accordee : accorder les notifications pendant que la
+    //    montre se remplissait ne dit rien de l'espace disque.
+    val demandeNotifications = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { refreshKey++ }
+
+    // Demandee a l'ouverture de l'ecran et pas au moment du START : une invite systeme au
+    // coucher, ecran a la cheville, est exactement ce qu'on ne veut pas faire lire a quelqu'un
+    // d'allonge. Elle vivait dans `MainActivity.onCreate` avec un rappel vide — c'est-a-dire que
+    // l'accorder ne mettait rien a jour et que le bloqueur restait affiche.
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            demandeNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // 2 et 3, dans un seul effet parce qu'ils partagent la meme fenetre de vie : **l'ecran
+    //    allume**.
+    //
+    // 2. Le retour de n'importe ou — et surtout des reglages systeme, ou l'utilisateur peut
+    //    accorder la permission hors de tout `ActivityResultLauncher`. Sans cela, le bouton
+    //    « Open settings » renvoie sur un ecran qui continue d'afficher le bloqueur qu'on vient
+    //    de lever, et la seule issue est de tuer l'application.
+    //
+    // 3. Le telephone scelle le contexte du soir. C'est le bloqueur le plus frequent, et le seul
+    //    que l'utilisateur leve depuis un autre appareil : sans ce guetteur, il faut revenir sur
+    //    la montre et appuyer sur « Check again » pour voir disparaitre un bloqueur deja leve.
+    //    Un guetteur du Data Layer, pas une interrogation periodique.
+    //
+    // `LifecycleResumeEffect` plutot qu'un `LifecycleEventObserver` monte a la main : c'est le
+    // meme observateur sur ON_RESUME, en une ligne, avec sa liberation. Et pas
+    // `repeatOnLifecycle`, qui sert a collecter un flux depuis une portee non-Compose.
+    //
+    // **Le guetteur est enregistre a la reprise et retire a la pause, pas au sort de la
+    // composition.** Un `DisposableEffect` le laisserait arme tant que l'activite existe, donc
+    // ecran eteint, donc pendant la nuit : le telephone qui republie un item a 2 h du matin
+    // reveillerait alors le processus pour recalculer un preflight que personne ne regarde. Le
+    // critere « aucune recomposition entre le coucher et le reveil » se perd exactement par ce
+    // genre de detail. Et un preflight inchange produit un `PreflightResult` structurellement
+    // egal au precedent, que l'egalite structurelle de `mutableStateOf` absorbe sans recomposer.
+    LifecycleResumeEffect(context) {
+        refreshKey++
+
+        val client = Wearable.getDataClient(context)
+        val guetteur = DataClient.OnDataChangedListener { refreshKey++ }
+        client.addListener(
+            guetteur,
+            Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME)
+                .path(DataLayerTransfer.CONTEXT_PREFIX).build(),
+            DataClient.FILTER_PREFIX,
+        )
+
+        onPauseOrDispose { client.removeListener(guetteur) }
+    }
+
     RecordScreen(
         state = state,
         preflight = preflight,
@@ -94,6 +167,9 @@ fun RecordRoute(
         onStop = onStop,
         onRecheck = { refreshKey++ },
         onOpenSettings = onOpenSettings,
+        onDemanderNotifications = {
+            demandeNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        },
     )
 }
 
@@ -105,6 +181,7 @@ fun RecordScreen(
     onStop: () -> Unit,
     onRecheck: () -> Unit,
     onOpenSettings: () -> Unit,
+    onDemanderNotifications: () -> Unit = {},
 ) {
     // Marges calculees depuis la forme reelle de l'ecran, et non fixees en dur.
     //
@@ -146,7 +223,14 @@ fun RecordScreen(
                 textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.body2,
             )
-            RecordPhase.IDLE -> IdleContent(state, preflight, onStart, onRecheck, onOpenSettings)
+            RecordPhase.IDLE -> IdleContent(
+                state = state,
+                preflight = preflight,
+                onStart = onStart,
+                onRecheck = onRecheck,
+                onOpenSettings = onOpenSettings,
+                onDemanderNotifications = onDemanderNotifications,
+            )
         }
     }
 }
@@ -158,6 +242,7 @@ private fun IdleContent(
     onStart: () -> Unit,
     onRecheck: () -> Unit,
     onOpenSettings: () -> Unit,
+    onDemanderNotifications: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.idle_title),
@@ -213,20 +298,37 @@ private fun IdleContent(
     )
 
     if (!preflight.canStart) {
-        FlatButton(
-            label = stringResource(R.string.preflight_recheck),
-            enabled = true,
-            color = MaterialTheme.colors.surface,
-            contentColor = MaterialTheme.colors.onSurface,
-            onClick = onRecheck,
-        )
+        // La permission de notification est le seul bloqueur que l'utilisateur peut lever depuis
+        // la montre elle-meme. On la lui redemande directement plutot que de le renvoyer d'abord
+        // dans les reglages : Android accorde deux invites avant de refuser d'en afficher une
+        // troisieme, et la seconde vaut mieux qu'un detour par une arborescence de reglages lu a
+        // la cheville. Les reglages restent en second recours, pour le cas ou l'invite ne
+        // s'affiche plus.
         if (preflight.blockers.any { it.id == IssueId.NOTIFICATIONS_DENIED }) {
+            FlatButton(
+                label = stringResource(R.string.allow_notifications),
+                enabled = true,
+                color = MaterialTheme.colors.surface,
+                contentColor = MaterialTheme.colors.onSurface,
+                onClick = onDemanderNotifications,
+            )
             FlatButton(
                 label = stringResource(R.string.open_settings),
                 enabled = true,
                 color = MaterialTheme.colors.surface,
                 contentColor = MaterialTheme.colors.onSurface,
                 onClick = onOpenSettings,
+            )
+        } else {
+            // « Verifier a nouveau » ne subsiste que pour les bloqueurs qu'aucun des trois
+            // declencheurs de `RecordRoute` ne couvre : l'espace disque libere par une
+            // synchronisation en cours, ou le drapeau de refus du service de premier plan.
+            FlatButton(
+                label = stringResource(R.string.preflight_recheck),
+                enabled = true,
+                color = MaterialTheme.colors.surface,
+                contentColor = MaterialTheme.colors.onSurface,
+                onClick = onRecheck,
             )
         }
     }
