@@ -84,6 +84,23 @@ kotlin {
 dependencies {
     implementation(project(":format"))
 
+    // **`debugImplementation`, et pas `implementation`.** `:wear` ne depend que de `:format` — ce
+    // n'est pas une habitude, c'est un choix d'architecture, et il continue de tenir la ou il a ete
+    // enonce : dans l'artefact publie. Une dependance `debugImplementation` n'est ni sur le chemin
+    // de compilation ni sur le chemin d'execution de la variante release.
+    //
+    // Pourquoi generer plutot que rejouer un fichier depose sur l'appareil : `NightSynth` est
+    // deterministe a la graine pres — meme `seed`, sortie **bit-identique** (test T13 de `:algo`).
+    // C'est ce qui rend possible l'assertion centrale du banc, « le resultat de bout en bout doit
+    // egaler le resultat JVM sur le meme signal » : les deux cotes s'entendent sur un entier, pas
+    // sur un fichier de onze megaoctets qu'il faudrait transporter, versionner et croire. La verite
+    // terrain reste par ailleurs disponible cote montre.
+    //
+    // Le cout, a mesurer et non a supposer : le generateur tient la nuit entiere en memoire — trois
+    // `DoubleArray(n)`, soit ~35 Mo pour 8 h a 50 Hz, plus ~17 Mo de blocs emis. Si un appareil ne
+    // les tient pas, c'est la duree de la nuit qu'on raccourcit ; la couture, elle, ne change pas.
+    debugImplementation(project(":algo"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.play.services.wearable)

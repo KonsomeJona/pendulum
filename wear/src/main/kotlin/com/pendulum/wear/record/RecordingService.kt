@@ -88,7 +88,7 @@ class RecordingService : Service() {
     private var wakeDetector = WakeDetector()
     private var stopConditions: StopConditions? = null
     private var mode: AcquisitionMode? = null
-    private var sensor: Sensor? = null
+    private var source: SourceCapteur? = null
     private var offBodySensor: Sensor? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -129,8 +129,8 @@ class RecordingService : Service() {
         val action = intent?.action ?: ACTION_RESUME
         handler.post {
             when (action) {
-                ACTION_START -> startSession(resume = false)
-                ACTION_RESUME -> startSession(resume = true)
+                ACTION_START -> startSession(resume = false, intent = intent)
+                ACTION_RESUME -> startSession(resume = true, intent = intent)
                 ACTION_STOP -> finalizeSession(StopReason.USER)
             }
         }
@@ -175,7 +175,11 @@ class RecordingService : Service() {
 
     // --- demarrage ---
 
-    private fun startSession(resume: Boolean) {
+    /**
+     * @param intent celui de `onStartCommand`, nul apres un redemarrage par `START_STICKY`. Il
+     *   n'est lu que par [FabriqueSource], qui n'en fait quelque chose qu'en variante debug.
+     */
+    private fun startSession(resume: Boolean, intent: Intent?) {
         if (isRunning) return
 
         val existing = sessionStore.readMarker()
@@ -206,28 +210,28 @@ class RecordingService : Service() {
         }
 
         val sm = getSystemService(SensorManager::class.java)
-        val wakeUp = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true)
-        val acc = wakeUp ?: sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val src = FabriqueSource.creer(this, intent)
+        val acc = src.decrire()
         if (acc == null) {
             Log.e(TAG, "aucun accelerometre")
             stopSelfClean()
             return
         }
-        sensor = acc
+        source = src
 
         // La strategie est decidee ici, a l'execution, sur `fifoReservedEventCount` : la part
         // *garantie* a cette application. `fifoMaxEventCount` est partage entre tous les clients
         // du capteur, et budgeter dessus revient a parier que personne d'autre n'ecoute.
         val m = if (resume && existing != null) {
-            SensorStrategy.decide(acc.isWakeUpSensor, acc.fifoReservedEventCount, existing.nominalRateHz)
+            SensorStrategy.decide(acc.wakeUp, acc.fifoReserved, existing.nominalRateHz)
         } else {
-            SensorStrategy.decide(acc.isWakeUpSensor, acc.fifoReservedEventCount, RATE_HZ)
+            SensorStrategy.decide(acc.wakeUp, acc.fifoReserved, RATE_HZ)
         }
         mode = m
         Log.i(
             TAG,
-            "capteur=${acc.name} wakeUp=${acc.isWakeUpSensor} " +
-                "reserved=${acc.fifoReservedEventCount} max=${acc.fifoMaxEventCount} mode=${m.label}",
+            "capteur=${acc.nom} wakeUp=${acc.wakeUp} " +
+                "reserved=${acc.fifoReserved} max=${acc.fifoMax} mode=${m.label}",
         )
 
         val now = System.currentTimeMillis()
@@ -253,8 +257,8 @@ class RecordingService : Service() {
             sessionDir = sessionStore.sessionDir(current.sessionHex),
             sessionUuid = SessionStore.uuidBytes(current.sessionHex),
             sensorResolution = acc.resolution,
-            sensorMaxRange = acc.maximumRange,
-            fifoReserved = acc.fifoReservedEventCount,
+            sensorMaxRange = acc.maxRange,
+            fifoReserved = acc.fifoReserved,
             startIndex = current.lastChunkIndex + 1,
             rateHz = m.rateHz,
             modeFlags = m.modeFlags,
@@ -290,11 +294,11 @@ class RecordingService : Service() {
 
         publishSessionOpen(current, m)
 
-        sm.registerListener(sensorListener, acc, m.samplingPeriodUs, m.maxReportLatencyUs, handler)
+        src.demarrer(m, handler, puits)
         offBodySensor = sm.getDefaultSensor(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT)?.also {
             // Journalise, jamais actionne : a la cheville, l'off-body lit tres probablement
             // « non porte » en permanence, et s'y fier couperait chaque nuit a sa premiere minute.
-            sm.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_NORMAL, handler)
+            sm.registerListener(offBodyListener, it, SensorManager.SENSOR_DELAY_NORMAL, handler)
         }
         if (m.needsWakeLock) acquireWakeLock()
 
@@ -312,19 +316,18 @@ class RecordingService : Service() {
 
     // --- boucle ---
 
-    private val sensorListener = object : SensorEventListener {
+    /** Les echantillons, d'ou qu'ils viennent, vont la et nulle part ailleurs. */
+    private val puits = PuitsEchantillons { x, y, z, tsNs, arrivalNs, nowMs ->
+        pipeline?.onEvent(x, y, z, tsNs, arrivalNs, nowMs)
+    }
+
+    /** L'off-body reste cable en direct sur `SensorManager` : il ne traverse pas [SensorPipeline],
+     *  il est journalise et jamais actionne, et il n'y a donc rien a en simuler. */
+    private val offBodyListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
-            when (event.sensor.type) {
-                Sensor.TYPE_ACCELEROMETER -> pipeline?.onEvent(
-                    event.values[0],
-                    event.values[1],
-                    event.values[2],
-                    event.timestamp,
-                    SystemClock.elapsedRealtimeNanos(),
-                    SystemClock.elapsedRealtime(),
-                )
-                // 0.0 = non porte. On se contente de le retenir.
-                Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT -> offBody = event.values[0] == 0f
+            // 0.0 = non porte. On se contente de le retenir.
+            if (event.sensor.type == Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT) {
+                offBody = event.values[0] == 0f
             }
         }
 
@@ -387,18 +390,17 @@ class RecordingService : Service() {
      */
     private fun applyDegradation(step: Int) {
         val old = mode ?: return
-        val acc = sensor ?: return
+        val src = source ?: return
         val next = old.degradedTo(step)
         Log.w(TAG, "degradation palier $step : ${old.label} -> ${next.label}")
         mode = next
 
-        val sm = getSystemService(SensorManager::class.java)
-        sm.unregisterListener(sensorListener, acc)
+        src.arreter()
         pipeline?.flushBlock(SystemClock.elapsedRealtime())
         store?.rotate(next.rateHz, next.modeFlags)?.let(::onChunkClosed)
         if (next.rateHz != old.rateHz) pipeline?.onRateChanged(next.rateHz, SystemClock.elapsedRealtime())
         if (next.needsWakeLock) acquireWakeLock()
-        sm.registerListener(sensorListener, acc, next.samplingPeriodUs, next.maxReportLatencyUs, handler)
+        src.demarrer(next, handler, puits)
 
         marker = marker?.copy(modeFlags = next.modeFlags, nominalRateHz = next.rateHz)
         sessionStore.updateMode(next.modeFlags, next.rateHz)
@@ -469,7 +471,8 @@ class RecordingService : Service() {
         RecordingState.update { it.copy(phase = RecordPhase.FINALIZING) }
         updateNotification(finalizing = true)
 
-        sensor?.let { getSystemService(SensorManager::class.java).unregisterListener(sensorListener) }
+        source?.arreter()
+        offBodySensor?.let { getSystemService(SensorManager::class.java).unregisterListener(offBodyListener) }
         handler.removeCallbacksAndMessages(null)
 
         pipeline?.flushBlock(SystemClock.elapsedRealtime())
