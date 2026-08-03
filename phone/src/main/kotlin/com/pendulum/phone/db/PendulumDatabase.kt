@@ -257,11 +257,25 @@ object Migrations {
      * laquelle le `CREATE VIEW` reutilise [ComparableNightSql.SQL] au lieu d'en recopier le texte —
      * deux redactions de la meme vue divergeraient a la migration suivante, et la divergence ne se
      * verrait que sur un appareil deja installe.
+     *
+     * ### Le `trim()`, qui n'est pas une coquetterie
+     *
+     * Room ne compare pas les vues champ par champ comme les tables : il compare **le texte** de
+     * `sqlite_master` a celui que son processeur d'annotations a genere, et ce dernier est
+     * normalise. [ComparableNightSql.SQL] est un litteral triple-guillemets qui commence par un
+     * saut de ligne et douze espaces d'indentation ; sans `trim()`, la vue ecrite ici differe de
+     * treize caracteres de celle qu'on attend, la validation echoue, et — `fallbackToDestructive`
+     * etant volontairement absent — **aucun appareil deja installe ne peut plus ouvrir sa base**.
+     * Une installation neuve, elle, marche : la vue y est creee par Room lui-meme.
+     *
+     * Le defaut a ete trouve le 3 aout 2026 par le banc sur materiel reel, sur un telephone
+     * portant une base en v1, et non par la suite de tests, qui ne comportait alors aucun test de
+     * migration. `MigrationTest` couvre desormais les chemins v1 → v3 et v2 → v3.
      */
     val MIGRATION_2_3 = object : Migration(2, 3) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("DROP VIEW IF EXISTS comparable_night")
-            db.execSQL("CREATE VIEW `comparable_night` AS ${ComparableNightSql.SQL}")
+            db.execSQL("CREATE VIEW `comparable_night` AS ${ComparableNightSql.SQL.trim()}")
         }
     }
 
