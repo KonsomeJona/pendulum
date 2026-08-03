@@ -12,6 +12,14 @@ commande qui la trancherait. Rien ici ne vient de la documentation d'Android.
 
 ## 1. Le verdict
 
+> **Révisé le 3 août 2026 par la mesure du §7.1, qui invalide une partie de ce qui suit.**
+> L'appairage est **entièrement headless**, sans compte Google et sans geste humain : il s'obtient
+> par `am start …/.EmulatorActivity`, et il survit au snapshot. Mais **il ne transporte rien** —
+> aucun DataItem ne traverse, aucune capacité n'est joignable. Et la vérification prescrite
+> ci-dessous, l'absence de « Phone unreachable » sur l'écran de préflight, est un **faux vert** :
+> elle reste verte avec l'émulateur téléphone éteint. Lire le §7.1 avant d'agir sur ce qui suit :
+> le §1, le §2 et le §9 portent trois erreurs qu'il corrige, dont le **sens du pont 5601**.
+
 **L'appairage entièrement headless n'a pas été obtenu, et il ne le sera pas : il manque un geste
 humain, exactement un, et il est reconductible par snapshot.**
 
@@ -141,14 +149,22 @@ si et seulement si la liste est vide. C'est donc la lecture exacte dont dépend 
 se lit en ligne de commande :
 
 ```bash
-# le seul test d'appairage qui prouve quelque chose
+# ATTENTION — voir §7.1 : ce test ne prouve PAS ce que ce paragraphe croit.
 adb -s <montre> shell input keyevent KEYCODE_WAKEUP
 adb -s <montre> shell am start -n com.pendulum/.wear.ui.MainActivity
 sleep 15
 python3 tools/banc/uictl.py <montre> find "Phone unreachable"
-# UICTL_FAIL  => le telephone est joignable, l'appairage tient
-# UICTL_OK    => il ne tient pas
 ```
+
+**Correction du §7.1.** Cette lecture ne mesure pas la joignabilité. `connectedNodes` rend une
+liste non vide dès que la montre porte `device_paired=1`, y compris **émulateur téléphone tué**.
+Elle sépare « jamais appairé » (ce qui est le cas mesuré ci-dessus, et à ce titre le constat reste
+juste) de « appairé au moins une fois », et rien d'autre. Le test qui mesure vraiment une liaison
+est `CapabilityClient.getCapability(…, FILTER_REACHABLE)`, ou mieux, un DataItem qui traverse.
+
+**Correction du §7.1, deuxième :** `adb -s <montre> forward tcp:5601 tcp:5601` est **dans le
+mauvais sens**. C'est le téléphone qui écoute sur 5601 et la montre qui compose `10.0.2.2:5601`.
+Le transfert se pose sur le téléphone.
 
 ---
 
@@ -432,42 +448,336 @@ plus tard, pas tout de suite.
 
 ## 7. Ce qui reste inconnu, et comment le trancher
 
-### 7.1 L'appairage survit-il au snapshot — la question qui décide de tout
+### 7.1 L'appairage survit-il au snapshot — mesuré, et la réponse n'est pas celle qu'on attendait
 
-L'AVD `banc_phone34ps` est prêt sur le Mac (`android-34;google_apis_playstore;arm64-v8a`,
-`PlayStore.enabled=yes`, accéléré, `boot_completed` en 75 s). La séquence à mener :
+**Mesures du 3 août 2026, mêmes machine et méthode. Question tranchée.**
+
+**Le verdict.** L'appairage **s'obtient sans compte Google et survit au snapshot** — mais il ne
+sert à rien : la configuration d'appairage s'installe des deux côtés, la chaîne TCP s'établit de
+bout en bout, et **aucun octet applicatif ne traverse**. Ni DataItem, ni message. Et l'indicateur
+que le §2 désignait comme « le seul test qui prouve quelque chose » — l'absence de « Phone
+unreachable » sur l'écran de préflight — s'avère être un **faux vert** : il reste vert avec
+l'émulateur téléphone éteint.
+
+Ce qui suit décrit les cinq murs franchis, celui qui ne l'est pas, et les trois erreurs du présent
+document que cette session corrige.
+
+#### Le contournement du Play Store : l'APK extrait d'un vrai téléphone
+
+Le §1 concluait qu'il fallait un compte Google pour installer le compagnon. Faux, si on ne passe
+pas par le magasin. L'APK a été extrait du Pixel 10 Pro Fold de l'utilisateur et déposé sur le
+Mac. Ce n'est **pas** le paquet que ce document visait :
+
+| | |
+|---|---|
+| Paquet | `com.google.android.apps.wear.companion` (moderne) — et non `com.google.android.wearable.app` |
+| Version | `4.5.0.927073594`, `minSdk=29`, `targetSdk=35`, 62 Mo |
+| Splits | aucun, donc `install` simple et pas `install-multiple` |
 
 ```bash
-SDK=~/Library/Android/sdk; ADB=$SDK/platform-tools/adb
-$SDK/emulator/emulator -avd banc_phone34ps -no-window -no-audio -port 5578 &
-$SDK/emulator/emulator -avd banc_wear      -no-window -no-audio -port 5576 &
-
-# 1. LE GESTE MANUEL, une seule fois. Le Play Store rend « Sign in » et `dumpsys account`
-#    rend « Accounts: 0 ». Passer par scrcpy et laisser l'utilisateur se connecter.
-#    Puis installer « Wear OS » (com.google.android.wearable.app) depuis le magasin.
-
-# 2. le pont, puis l'appairage par le compagnon
-$ADB -s emulator-5576 forward tcp:5601 tcp:5601
-
-# 3. la verification — sur l'ecran de preflight, pas sur un dumpsys qui n'existe pas
-$ADB -s emulator-5576 shell input keyevent KEYCODE_WAKEUP
-$ADB -s emulator-5576 shell am start -n com.pendulum/.wear.ui.MainActivity
-sleep 15
-python3 tools/banc/uictl.py emulator-5576 find "Phone unreachable"   # UICTL_FAIL = appaire
-
-# 4. LA MESURE QUI DECIDE : sauvegarder, tuer, recharger, re-verifier
-$ADB -s emulator-5578 emu avd snapshot save banc_pret
-$ADB -s emulator-5576 emu avd snapshot save banc_pret
-$ADB -s emulator-5578 emu kill; $ADB -s emulator-5576 emu kill
-# ... recharger avec -snapshot banc_pret, refaire l'etape 2 (le forward ne survit pas), puis 3
+$ADB -s emulator-5578 install -r -g ~/builds/pendulum-banc/wear-companion.apk
+Performing Streamed Install
+Success
 ```
 
-Deux issues :
+Il s'installe et il se lance. Aucun `INSTALL_FAILED_*`, aucun plantage.
 
-- l'appairage **survit** → le banc complet est viable, et le geste manuel n'est à refaire que si
-  le snapshot est perdu ;
-- l'appairage **ne survit pas** → il faudrait le refaire à chaque exécution, ce que la consigne
-  exclut. **Voie de repli du §8.**
+#### Mur 1 — les Play Services, qui se lèvent tout seuls
+
+Au premier lancement, une boîte modale bloque tout, `com.google.android.apps.wear.companion` étant
+au-dessus d'un écran d'accueil qu'on ne peut pas atteindre :
+
+```
+text="Update Google Play services"
+text="Update Google Play services to use Google Pixel Watch."
+text="Update"     id=android:id/button1
+```
+
+![Le compagnon exige des Play Services plus récents](img/banc-companion-gms.png)
+
+C'est la boîte standard de `GoogleApiAvailability` (`SERVICE_VERSION_UPDATE_REQUIRED`). Elle n'est
+pas contournable : `KEYCODE_BACK` ne la ferme pas, il **termine l'activité** — le gestionnaire
+d'annulation appelle `finish()`, et on se retrouve sur le lanceur.
+
+L'image `android-34;google_apis_playstore` livre GMS **23.18.18** (2023), trop ancien. Mais :
+
+```
+# a l'installation                     puis, cinq minutes plus tard, sans rien demander
+versionName=23.18.18 (190400-535401451)   versionName=26.28.33 (190400-955982596)
+```
+
+**Le Play Store de l'image met GMS à jour tout seul, sans compte connecté.** Il suffit de laisser
+l'émulateur en ligne quelques minutes après le premier démarrage. Au relancement, la boîte a
+disparu. C'est un mur qui se lève de lui-même, à condition de savoir l'attendre — et il ne se
+lèvera pas sur une machine sans réseau.
+
+#### Mur 2 — l'appairage Bluetooth ne trouve rien
+
+L'écran d'accueil obtenu (« Your watch, your way ») mène à `Set up watch`, qui ouvre l'association
+`CompanionDeviceManager` (« Choose a watch to be managed by Google Pixel Watch »), puis échoue :
+
+![Le chemin nominal ne voit pas la montre](img/banc-cdm.png)
+
+Les deux émulateurs ont pourtant bien du Bluetooth émulé, et **partagé** : un unique `netsimd` sert
+les deux processus (`Activated packet streamer for bluetooth emulation` dans les deux journaux),
+et chacun porte une adresse distincte (`BB:BB:BB:00:00:0C` côté téléphone, `…:00:0B` côté montre).
+La découverte ne rend rien quand même. Le lien « I don't see my watch » ouvre un article d'aide
+dans Chrome : impasse.
+
+Ce chemin-là est bien celui qui, comme le pressentait la consigne, ne demande pas de compte — mais
+il ne fonctionne pas.
+
+#### Le passage : `EmulatorActivity`, exportée
+
+Le compagnon porte une activité dédiée aux émulateurs. Elle se trouve en fouillant l'APK, pas en
+lisant l'interface :
+
+```bash
+strings -a classes*.dex | grep -i emulator
+# → com.google.android.apps.wear.companion.EmulatorActivity
+# → [EmulatorConnectionStep] Found connected emulator configuration:
+# → CDM association not supported for watch emulator
+```
+
+Le manifeste dit lequel des deux noms est utilisable : la classe réelle est `exported=false`,
+mais un **alias d'activité** l'expose.
+
+```
+E: activity     …core.application.EmulatorActivity   exported=false
+E: activity-alias  com.google.android.apps.wear.companion.EmulatorActivity   exported=true
+   targetActivity=…core.application.EmulatorActivity
+```
+
+```bash
+# la commande qui ouvre le chemin emulateur — c'est l'alias, sans le chemin de paquet interne
+$ADB -s <telephone> shell am start -n com.google.android.apps.wear.companion/.EmulatorActivity
+```
+
+Elle enchaîne directement sur les conditions d'utilisation Wear de GMS, et le journal tranche la
+question du compte :
+
+```
+wearable.TOS: [TOS] shouldShowBackupConsent(watchPeerId=null, accountName=<NULL>, …): false
+```
+
+`accountName=<NULL>` : **aucun compte Google n'est demandé ni utilisé.** L'acceptation se pilote
+par identifiant, en deux taps — le bouton s'appelle d'abord « More » (il faut faire défiler) puis
+« I agree », mais il porte le même identifiant tout du long :
+
+```bash
+for i in 1 2 3; do python3 tools/banc/uictl.py <telephone> tap terms_of_service_accept_button; sleep 3; done
+```
+
+#### L'erreur qui coûtait tout : le pont 5601 était dans le mauvais sens
+
+Le §2 et le §9 de ce document prescrivent `adb -s <montre> forward tcp:5601 tcp:5601`. **C'est
+l'inverse de ce qu'il faut**, et c'est la cause du premier échec :
+
+```
+WearSetup: [EmulatorConnectionStep] Connected emulator configuration not found, retrying in 3000
+… dix-huit fois …
+WearSetup: [EmulatorConnectionStep] Failed to find connected emulator configuration
+WearCompanion: [EmulatorActivity] [EMULATOR_PAIRING:FAILURE] NOT FOUND
+```
+
+La mesure qui redresse le sens, faite en lisant les tables de sockets des deux invités
+(`15E1` = 5601, `0A` = LISTEN, `01` = ESTABLISHED) :
+
+```
+# cote telephone
+0000000000000000FFFF00000100007F:15E1 …:0000 0A     <- le TELEPHONE ECOUTE
+# cote montre
+…0F02000A:C912 …0202000A:15E1 01                     <- la MONTRE COMPOSE 10.0.2.2:5601
+```
+
+C'est donc le téléphone qui écoute, et la montre qui appelle `10.0.2.2:5601`, c'est-à-dire la
+boucle locale de l'hôte vue depuis son bac à sable réseau. Le transfert doit pointer **vers le
+téléphone** :
+
+```bash
+$ADB -s <telephone> forward tcp:5601 tcp:5601    # correct
+$ADB -s <montre>   forward tcp:5601 tcp:5601    # ce que disait le §2 — inopérant
+```
+
+Avec le bon sens, la chaîne complète s'observe sur l'hôte :
+
+```
+adb        127.0.0.1:5601 (LISTEN)
+adb        127.0.0.1:5601->127.0.0.1:61096 (ESTABLISHED)
+qemu-syst  127.0.0.1:61096->127.0.0.1:5601 (ESTABLISHED)     <- le processus de banc_wear
+```
+
+et l'appairage aboutit du côté de GMS :
+
+```
+WearSetup: [EmulatorConnectionStep] ConnectionConfiguration created
+WearSetup: [EmulatorConnectionStep] Found connected emulator configuration: ConnectionConfiguration[
+  Name=banc_wear, Address={invalid address}, Type=2, Role=2, Enabled=true, IsConnected=true,
+  PeerNodeId=74dec63b, NodeId=74dec63b, DataItemSyncEnabled=true, maxSupportedRemoteAndroidSdkVersion=35 ]
+```
+
+Il reste un défaut, et il ne se répare pas : le compagnon ne parvient jamais à enregistrer la
+montre dans **son propre** registre.
+
+```
+WearSetup: [EmulatorConnectionStep] No paired watch with emulator id null. Found only []
+WearCompanion: [AloNotification][ActiveWatchFaceStartupListener] Paired watches size=0
+```
+
+`emulator id null` : le compagnon cherche une clé que la configuration ne porte pas — cohérent avec
+`Address={invalid address}`, un émulateur n'ayant pas d'adresse Bluetooth. Relancer
+`EmulatorActivity` sur un banc entièrement en marche reproduit la séquence à l'identique.
+
+#### Ce que la montre en retient, et qui survit à tout
+
+Malgré ce dernier défaut, la montre s'enregistre comme appairée, et **cet état est persistant** :
+
+```bash
+$ADB -s <montre> shell settings get secure device_paired          # → 1
+$ADB -s <montre> shell settings list global | grep -i wear_companion
+# wear_companion_app_name=Google Pixel Watch
+# paired_device_os_type=1
+```
+
+Et l'écran de préflight de Pendulum cesse d'afficher l'avertissement :
+
+```
+text="Ready"        text="Battery 100%"      text="Free space 5.2 GB"
+text="Fill in the evening form on the phone: the watch will not start until it is sealed."
+```
+
+![Préflight sans « Phone unreachable »](img/banc-wear-ready.png)
+
+C'est la lecture que le §2 désignait comme décisive. **Elle survit au snapshot** — sauvegarde des
+deux côtés, arrêt des deux, rechargement en 4 s, et l'avertissement reste absent, sans avoir eu à
+retoucher l'interface :
+
+```
+Successfully loaded snapshot 'banc_pret' using 1605 ms      (telephone)
+Successfully loaded snapshot 'banc_pret' using 1269 ms      (montre)
+RELOAD_SECONDS=4
+python3 tools/banc/uictl.py emulator-5576 find "Phone unreachable"   → UICTL_FAIL aucun element
+```
+
+À la lettre, la question posée par ce paragraphe est donc répondue par l'affirmative. Sauf que
+la lecture ne vaut rien.
+
+#### Le faux vert : `connectedNodes` ne mesure pas la liaison
+
+Trois falsifications, de plus en plus brutales, toutes menées après le rechargement :
+
+| Ce qu'on casse | Ce que `Preflight` rend |
+|---|---|
+| `adb forward --remove-all` sur le téléphone | toujours joignable |
+| `am force-stop com.google.android.gms` sur le téléphone | toujours joignable |
+| **`emu kill` sur l'émulateur téléphone**, puis 2 min 30 d'attente | **toujours joignable** |
+| montre redémarrée à froid, téléphone toujours mort | **toujours joignable** |
+
+`Preflight.phoneReachable()` appelle `NodeClient.connectedNodes` avec un délai de 10 s et teste
+`isNotEmpty()`. Sur Wear OS, cette liste est **non vide dès que la montre porte `device_paired=1`**,
+indépendamment de toute liaison vivante. Elle distingue « une montre a déjà été appairée » de
+« aucun appairage n'a jamais eu lieu » — ce que le §2 a effectivement mesuré, l'émulateur n'ayant
+alors jamais été appairé — mais elle **ne distingue pas** un téléphone joignable d'un téléphone
+éteint.
+
+Conséquence directe pour le produit, et elle dépasse le banc : `PHONE_UNREACHABLE` n'apparaîtra
+jamais tant qu'une montre a été appairée une fois, quel que soit l'état réel du téléphone.
+L'avertissement n'est pas bloquant (`Preflight` le dit explicitement), donc rien ne casse — mais il
+ne prévient de rien non plus. **Ce n'est pas un défaut d'émulateur, c'est un défaut de mesure**,
+et il vaut sur matériel réel.
+
+#### La mesure qui ne triche pas : un DataItem qui traverse
+
+Il fallait donc un test qui exige un octet réel. Pendulum en fournit un, et c'est même le meilleur
+possible : le téléphone pose `/pendulum/context/<clé de nuit>` quand le formulaire du soir est
+scellé, la montre lit sa présence par `DataClient.getDataItems`, et refuse de démarrer sans lui.
+Aucune configuration ne peut simuler ça.
+
+L'assistant du téléphone a été mené jusqu'au bout — voir plus bas, §7.4 est résolu — le contexte
+a été scellé, et le téléphone le confirme :
+
+```
+text="Context sealed — the watch can start recording."
+```
+
+Aucun avertissement `PendulumContext: contexte scelle en base mais non publie vers la montre`
+dans le journal : `putDataItem` a rendu la main sans exception dans son délai de 20 s.
+
+**La montre ne l'a jamais vu.** Testé quatre fois, dont une sur un cycle complet et propre —
+sauvegarde des deux snapshots, arrêt des deux émulateurs, redémarrage, transfert posé avant la fin
+du démarrage, 90 s d'attente, chaîne TCP vérifiée établie des deux côtés :
+
+```
+montre : socket vers 10.0.2.2:5601 = 1     hote : sockets ESTABLISHED = 2
+text="Fill in the evening form on the phone: the watch will not start until it is sealed."
+```
+
+Le téléphone, symétriquement, ne reçoit rien de la montre. Son écran d'accueil affiche
+`Watch — · — free` : les capacités de la montre, demandées par
+`CapabilityClient.getCapability(…, FILTER_REACHABLE)`, ne rendent rien. Le journal GMS du
+téléphone le dit dans son propre vocabulaire :
+
+```
+WearableService: Event[…: onConnectedCapabilityChanged, event=ConnectedCapabilityNotification<pendulum_watch_app, []>]
+```
+
+![Le téléphone a scellé, et ne sait rien de la montre](img/banc-phone-home.png)
+
+Noter l'écart de diagnostic entre les deux API, qui est tout le sujet : `connectedNodes` rend la
+montre `banc_wear` par son nom, `getCapability(FILTER_REACHABLE)` rend une liste vide. La première
+lit une configuration, la seconde teste une portée. **Seule la seconde dit la vérité.**
+
+#### Verdict, et ce qu'il change
+
+| Question | Réponse mesurée |
+|---|---|
+| Le compagnon s'installe-t-il sur l'image API 34 | **oui**, `Success`, sans split |
+| Exige-t-il un compte Google | **non**, par `EmulatorActivity` (`accountName=<NULL>`) |
+| Exige-t-il des Play Services plus récents | **oui**, et l'image les met à jour seule en ~5 min |
+| L'appairage s'enregistre-t-il | **oui**, `ConnectionConfiguration` + `device_paired=1` |
+| Survit-il au snapshot | **oui**, rechargement en 4 s, rien à refaire |
+| Le Data Layer transporte-t-il quoi que ce soit | **non** — aucun DataItem, aucune capacité joignable |
+
+L'appairage est donc **acquis et reconductible, et inutile**. La phase 3 « dégradés du transfert »
+n'a pas d'objet : on ne peut pas éprouver la machine à états d'un transfert qui ne transfère rien.
+**La voie de repli du §8 s'applique**, et pour la raison qu'elle prévoyait, à un détail près — ce
+n'est pas l'appairage qui manque, c'est la charge utile.
+
+Ce qui est gagné au passage, et qui n'est pas rien : le téléphone du banc est désormais entièrement
+pilotable par script jusqu'au scellement du contexte, ce qui débloque tous les scénarios de §8 qui
+partent d'un contexte scellé.
+
+#### La séquence exacte, si quelqu'un veut la refaire
+
+```bash
+SDK=~/Library/Android/sdk; export ADB=$SDK/platform-tools/adb; cd ~/builds/pendulum-banc
+
+# 1. les deux emulateurs, JAMAIS sans -no-snapshot-save
+$SDK/emulator/emulator -avd banc_phone34ps -no-window -no-audio -no-boot-anim -no-snapshot-save -port 5578 &
+$SDK/emulator/emulator -avd banc_wear -no-window -no-audio -no-boot-anim -no-snapshot-save -snapshot banc_pret -port 5576 &
+
+# 2. le compagnon, puis CINQ MINUTES de reseau pour que GMS passe de 23.18.18 a 26.28.33
+$ADB -s emulator-5578 install -r -g ~/builds/pendulum-banc/wear-companion.apk
+$ADB -s emulator-5578 shell dumpsys package com.google.android.gms | grep versionName | head -1
+
+# 3. le pont — VERS LE TELEPHONE
+$ADB -s emulator-5578 forward tcp:5601 tcp:5601
+
+# 4. l'ecran doit rester allume, sinon `input tap` s'execute sans rien faire (§7.4)
+$ADB -s emulator-5578 shell input keyevent KEYCODE_WAKEUP
+$ADB -s emulator-5578 shell svc power stayon true
+$ADB -s emulator-5578 shell settings put system screen_off_timeout 2147483647
+
+# 5. le chemin emulateur, et l'acceptation des conditions
+$ADB -s emulator-5578 shell am start -n com.google.android.apps.wear.companion/.EmulatorActivity
+for i in 1 2 3; do python3 tools/banc/uictl.py emulator-5578 tap terms_of_service_accept_button; sleep 3; done
+
+# 6. constater — et lire les marqueurs, pas $?
+bash tools/banc/appairage.sh emulator-5578 emulator-5576
+# APPAIRAGE_CHAINE montre=1 telephone=2 hote_etabli=2
+# APPAIRAGE_CONFIG 1
+# APPAIRAGE_DATALAYER_MUET  <- l'etat mesure ci-dessus
+```
 
 **Un piège à ne pas retraverser :** un AVD créé par ce `avdmanager` porte `PlayStore.enabled=no`
 malgré l'image, parce que les `cmdline-tools` installés ne savent pas lire le format de métadonnées
@@ -486,6 +796,23 @@ Le même défaut laisse `target=android-0` dans le `config.ini` — et c'est ce 
 sed -i '' 's/^PlayStore.enabled=no/PlayStore.enabled=yes/' ~/.android/avd/banc_phone34ps.avd/config.ini
 ```
 
+#### Le coût, mesuré
+
+| Moment | Libre |
+|---|---|
+| Avant de commencer, aucun émulateur en marche | **13,8 Go** |
+| Les deux émulateurs démarrés, compagnon installé | 11,9 Go |
+| Après ménage (`default_boot` de `farkle_atv`, 1,6 Go) | 13,5 Go |
+| Après les deux snapshots `banc_pret` | 12,4 Go |
+| **À la fin, tout arrêté, `default_boot` effacés** | **11,1 Go** |
+
+Le plancher de 10 Go n'a pas été approché. `-no-snapshot-save` tient sa promesse : les quatre
+arrêts d'émulateur de la session n'ont écrit aucun `default_boot` et n'ont rien coûté. Les deux
+snapshots pèsent 1085 Mo (téléphone) et 1047 Mo (montre).
+
+Rechargement mesuré **quatre fois : 4 s** à chaque fois, contre 5 s au §5 — l'ordre de grandeur du
+§5 est confirmé sur un état bien plus chargé.
+
 ### 7.2 Peut-on récupérer les deux permissions perdues
 
 `android-35` ou `android-36` en `google_apis` (aucune n'est installée) apporterait
@@ -500,7 +827,33 @@ Le service Health Connect répond et la permission est accordée, mais aucune le
 il n'y a rien à lire tant que l'écrivain de sommeil de la phase 1 n'existe pas. On **attend**
 `BACKGROUND_READ_UNAVAILABLE` en API 34 ; ce n'est pas mesuré.
 
-### 7.4 Le pilotage de l'assistant du téléphone
+**Partiellement tranché au §7.1.** L'étape 4 de l'assistant du téléphone, atteinte pour la première
+fois, affiche `Background reading unavailable` et `Allow Health Connect first`. C'est bien la
+branche dégradée annoncée au §3, et elle est confirmée par l'application elle-même, pas déduite.
+Reste non mesuré ce que rend `SleepReader` sur une vraie lecture.
+
+### 7.4 Le pilotage de l'assistant du téléphone — **résolu au §7.1**
+
+**La cause était bien celle que ce paragraphe soupçonnait : l'écran endormi.** Les quatre cases se
+cochent, une par une, dès que le téléphone est maintenu réveillé exactement comme la montre :
+
+```bash
+$ADB -s <telephone> shell input keyevent KEYCODE_WAKEUP
+$ADB -s <telephone> shell svc power stayon true
+$ADB -s <telephone> shell settings put system screen_off_timeout 2147483647
+# puis, apres avoir fait defiler jusqu'en bas — les cases ne sont pas dans l'arbre avant
+python3 tools/banc/uictl.py <telephone> cocher 4      # → UICTL_OK, puis « 4 of 4 confirmed »
+```
+
+Deux détails qui coûtent une heure si on ne les a pas :
+
+- `input tap` fonctionne, `input motionevent DOWN/UP` **ne fonctionne pas** sur ces cases Compose ;
+- les bornes se décalent à chaque case cochée, donc un lot de taps calculé sur un seul dump tape à
+  côté dès la deuxième. D'où la commande `cocher` de `uictl.py`, qui redumpe entre chaque.
+
+L'assistant complet — cinq étapes, formulaire du soir, scellement — est désormais scriptable de
+bout en bout, et le blocage `CONTEXT_NOT_SEALED` de la montre se lève côté téléphone. Il ne se lève
+pas côté montre, mais pour une autre raison, et c'est tout le §7.1.
 
 `uictl.py` lit l'arbre d'interface et tape correctement — l'écran de réglages de Health Connect a
 été ouvert et lu, la boîte de dialogue de notification de la montre a été traitée. Mais **les
@@ -613,6 +966,17 @@ $ADB -s emulator-5576 shell pm grant com.pendulum android.permission.POST_NOTIFI
 $ADB -s emulator-5578 shell dumpsys package com.pendulum | grep "health.READ_SLEEP: granted"
 ```
 
+### Poser le pont 5601 — vers le téléphone, jamais vers la montre
+
+```bash
+$ADB -s emulator-5576 forward --remove-all          # au cas ou le mauvais sens traine
+$ADB -s emulator-5578 forward tcp:5601 tcp:5601     # le TELEPHONE ecoute, la montre compose
+$ADB forward --list
+```
+
+Le transfert ne survit pas à l'arrêt de l'émulateur : il est à reposer à chaque démarrage. Voir
+§7.1 pour la mesure qui établit le sens.
+
 ### Réveiller la montre — sans quoi tout dump est illisible
 
 L'émulateur de montre bascule en mode ambiant et l'interface se retrouve derrière un cadran ; les
@@ -624,6 +988,9 @@ $ADB -s emulator-5576 shell input keyevent KEYCODE_WAKEUP
 $ADB -s emulator-5576 shell svc power stayon true
 $ADB -s emulator-5576 shell settings put system screen_off_timeout 2147483647
 ```
+
+**Le téléphone a besoin des trois mêmes lignes**, et c'était toute la cause du §7.4 : écran
+endormi, `input tap` s'exécute sans erreur et ne coche rien.
 
 ### Lire un écran
 
@@ -640,6 +1007,7 @@ $U clic                       # ce qui est reellement actionnable — a utiliser
 $U tap  "Allow"               # tape au centre
 $U wait "Ready" 60            # attend l'apparition
 $U shot /tmp/ecran.png        # capture
+$U cocher 4                   # coche les 4 premieres cases non cochees, en redumpant entre chaque
 ```
 
 Deux leçons apprises en tapant à côté, et encodées dans le script :
@@ -679,9 +1047,14 @@ rm -rf ~/.android/avd/banc_wear.avd/snapshots/default_boot
    sous 8 Go ; cette session ajoute qu'un émulateur, lui, démarre sans jamais finir — et qu'un
    émulateur qui s'arrête coûte 1 Go de disque de plus.
 4. **La vérification d'appairage se fait sur l'écran de préflight de la montre**, pas sur le
-   `dumpsys` du plan, qui n'existe pas.
+   `dumpsys` du plan, qui n'existe pas. — **Corrigé au §7.1** : cet écran est un faux vert. La
+   seule vérification honnête est un DataItem qui traverse, et il ne traverse pas.
 5. **Aucune ligne de la phase 3 « dégradés du transfert » ne doit être écrite** avant que le §7.1
-   soit tranché. Si l'appairage ne survit pas au snapshot, cet agent n'a pas d'objet.
+   soit tranché. Si l'appairage ne survit pas au snapshot, cet agent n'a pas d'objet. —
+   **Tranché au §7.1, et la phase 3 n'a pas d'objet** : l'appairage survit, mais le Data Layer ne
+   transporte rien. Voie de repli du §8.
+6. **Le pont se pose sur le téléphone**, `adb -s <telephone> forward tcp:5601 tcp:5601`. Le §2 et
+   le §9 disent l'inverse ; ils ont tort (§7.1).
 
 Les phases 1 et 2 du plan, elles, ne dépendent d'aucune de ces inconnues : la source de capteur, la
 compression du temps et l'écrivain de sommeil peuvent être écrits tout de suite.
@@ -689,6 +1062,30 @@ compression du temps et l'écrivain de sommeil peuvent être écrits tout de sui
 ---
 
 ## 11. L'état laissé sur le Mac
+
+> **Mis à jour le 3 août 2026 après le §7.1.** Les deux snapshots `banc_pret` ont été réécrits sur
+> l'état appairé, et c'est l'état recommandé — il évite d'avoir à refaire l'installation du
+> compagnon, l'attente de la mise à jour de GMS et l'acceptation des conditions.
+>
+> | | |
+> |---|---|
+> | `banc_phone34ps` / `banc_pret` | **1085 Mo.** GMS 26.28.33, compagnon installé et appairé (`ConnectionConfiguration Name=banc_wear`), Pendulum installé, `READ_SLEEP` et `POST_NOTIFICATIONS` accordées, **assistant des cinq étapes terminé**, contexte du soir scellé pour la nuit du 3 août, Chrome désactivé (son premier lancement volait le premier plan). |
+> | `banc_wear` / `banc_pret` | **1047 Mo.** `device_paired=1`, Pendulum installé, `POST_NOTIFICATIONS` accordée. |
+> | Émulateurs en marche | **aucun.** |
+> | Disque libre | **11,1 Go.** |
+> | Ménage fait sur d'autres projets | `default_boot` de `farkle_atv` (1,6 Go) supprimé pour tenir sous le plancher. Les AVD sont intacts, ils repartiront à froid. |
+>
+> Repartir d'un banc appairé, en 5 secondes :
+>
+> ```bash
+> SDK=~/Library/Android/sdk; export ADB=$SDK/platform-tools/adb
+> $SDK/emulator/emulator -avd banc_phone34ps -no-window -no-audio -no-boot-anim \
+>   -no-snapshot-save -snapshot banc_pret -port 5578 &
+> $SDK/emulator/emulator -avd banc_wear -no-window -no-audio -no-boot-anim \
+>   -no-snapshot-save -snapshot banc_pret -port 5576 &
+> until [ "$($ADB -s emulator-5578 shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 1; done
+> $ADB -s emulator-5578 forward tcp:5601 tcp:5601      # VERS LE TELEPHONE (§7.1)
+> ```
 
 | | |
 |---|---|

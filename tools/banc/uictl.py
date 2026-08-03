@@ -13,6 +13,7 @@ Usage :
     uictl.py <serie> tap   <motif>            # tape au centre du premier element trouve
     uictl.py <serie> wait  <motif> [timeout]  # attend l'apparition d'un element (defaut 30 s)
     uictl.py <serie> shot  <fichier.png>      # capture d'ecran
+    uictl.py <serie> cocher [n]               # coche les n premieres cases non cochees
 
 Le motif est cherche, sans distinction de casse, dans les attributs `text`,
 `content-desc` et `resource-id`.
@@ -132,6 +133,31 @@ def main():
                 print(f"{n['cls']} coche={n['checked']} {describe(n)}")
         print("UICTL_OK")
         return 0
+
+    if cmd == "cocher":
+        # Coche les cases une par une, en redumpant entre chaque : les bornes se decalent des
+        # qu'une case cochee change la hauteur d'un bloc, et un lot de taps calcules sur un seul
+        # dump tape a cote a partir de la deuxieme. Prealable non negociable, appris en §7.4 :
+        # l'ecran doit etre reveille (`svc power stayon true`), sinon `input tap` s'execute sans
+        # erreur et ne coche rien.
+        want = int(arg) if arg else 1
+        done = 0
+        for _ in range(want * 3):
+            if done >= want:
+                break
+            boxes = [
+                n
+                for n in nodes(dump(serial), "")
+                if n["checkable"] == "true" and n["checked"] == "false"
+            ]
+            if not boxes:
+                break
+            n = boxes[0]
+            adb(serial, "shell", "input", "tap", str(n["cx"]), str(n["cy"]))
+            time.sleep(1.5)
+            done += 1
+        print(f"UICTL_OK {done} case(s) cochee(s)" if done else "UICTL_FAIL aucune case a cocher")
+        return 0 if done else 1
 
     if cmd == "find":
         found = nodes(dump(serial), arg)
