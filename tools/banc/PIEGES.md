@@ -4,8 +4,8 @@ Tous ceux qui sont listés ici ont coûté au moins un quart d'heure, et **aucun
 C'est le critère d'entrée : un échec bruyant se corrige tout seul, un échec silencieux se paie deux
 fois, la première en cherchant au mauvais endroit.
 
-Les mesures qui les ont produits sont dans `docs/fr/BANC-ESSAI.md`, §7 pour les émulateurs, §11
-pour le matériel réel.
+Les mesures qui les ont produits sont dans `docs/fr/BANC-ESSAI.md`, §7 pour les émulateurs, §11 et
+§12 pour le matériel réel.
 
 ## `adb shell` mange l'entrée standard
 
@@ -77,6 +77,41 @@ n'est pas dans le dump, et le tri classe ce qu'il a.
 
 `uictl.py` accepte donc un motif préfixé de `=` pour exiger l'égalité : `presse "=STOP"`. La cible
 reste alors introuvable tant qu'on n'a pas fait défiler, ce qui est la vérité.
+
+## Un script distant entier doit avoir `</dev/null`, pas seulement ses `adb`
+
+Le piège ci-dessus se rejoue un cran plus haut. `ssh … 'bash -ls' <<'FIN'` fait lire le script sur
+l'entrée standard, et **tout ce que le script appelle hérite de cette entrée** — y compris
+`tools/banc/datalayer.sh`, dont les `adb shell` internes n'ont pas tous leur `</dev/null`. Le script
+distant s'arrête alors au milieu, sans message, et l'appelant reçoit une sortie vide. Le symptôme
+change d'une exécution à l'autre selon la taille du tampon de `bash`, ce qui donne l'impression
+d'une machine capricieuse.
+
+```bash
+# juste : deposer le script et l'executer avec une entree fermee
+scp script.sh jona@192.168.86.161:~/script.sh
+ssh jona@192.168.86.161 "bash ~/script.sh </dev/null"
+```
+
+## `svc wifi disable` n'a aucun effet sur la montre
+
+`adb shell svc wifi disable` rend la main sans erreur et `settings get global wifi_on` reste à `1`.
+La montre garde son adresse et son lien. Toute mesure qui repose sur « j'ai coupé le WiFi » doit
+**relire l'état** avant de conclure : le §12.2 a bien failli conclure à une isolation qui n'a jamais
+eu lieu.
+
+## `am instrument` empêche WorkManager de tourner
+
+`am instrument` force l'arrêt du paquet au début **et à la fin**. Une chaîne WorkManager enfilée par
+le produit — `IngestWorker` → `AnalyzeWorker` → … — est annulée à chaque sonde, et une sonde qui
+interroge la base pour savoir si l'analyse a tourné empêche du même geste qu'elle tourne. S'y ajoute
+le gel des processus en cache (`ActivityManager: freezing <pid> com.pendulum`) et le seau de veille
+`RESTRICTED` d'une application que personne n'ouvre jamais.
+
+Conséquence pratique : **on ne mesure pas une chaîne WorkManager par instrumentation.** Le §12.5 a
+essayé trois fois, dont une avec le seau porté à `ACTIVE`, et n'y est pas parvenu. `cmd jobscheduler
+run -f com.pendulum <id>` ne sert à rien non plus : les identifiants lus dans `dumpsys jobscheduler`
+sont ceux de WorkManager, pas ceux du `JobScheduler`, et il répond `Could not find job`.
 
 ## `am instrument` tue le processus, donc `apply()` se perd
 
