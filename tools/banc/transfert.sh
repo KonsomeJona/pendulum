@@ -47,6 +47,13 @@ reveiller() {
 geste() {
   local s="$1" verbe="$2" motif="$3" extra="$4" i r
   for i in 1 2 3 4 5 6; do
+    # Reveiller **avant chaque tentative**, et pas une fois pour toutes. Une Wear OS retombe en
+    # mode ambiant en une dizaine de secondes, et un `uiautomator dump` en coute deja trois :
+    # l'ecran lu au debut de la boucle n'est plus celui qu'on touche a la fin. Sous le cadran,
+    # `input tap` s'execute sans erreur et ne tape sur rien, et le dump ne rend que l'heure.
+    # `svc power stayon true` ne remplace pas ce reveil ici : la batterie est declaree
+    # debranchee (voir `preparer`), donc le maintien ecran-allume-sur-secteur ne s'applique pas.
+    reveiller "$s"
     r=$(python3 tools/banc/uictl.py "$s" "$verbe" "$motif" $extra </dev/null 2>&1 | tail -1)
     case "$r" in
       *UICTL_OK*) echo "$r"; return 0 ;;
@@ -74,6 +81,11 @@ etat() {
 preparer() {
   local m="$1"
   "$ADB" -s "$m" shell dumpsys battery unplug </dev/null >/dev/null 2>&1
+  # `unplug` seul ne suffit pas : il retire les sources d'alimentation mais **laisse `status` a 5**
+  # (FULL), et `BatteryManager.isCharging()` rend vrai pour FULL comme pour CHARGING. Sur une
+  # montre a 100 % posee sur son socle, c'est exactement le cas. Il faut donc aussi declarer la
+  # decharge. `dumpsys battery reset` defait les deux.
+  "$ADB" -s "$m" shell dumpsys battery set status 3 </dev/null >/dev/null 2>&1
   sleep 1
   local etat_batt
   etat_batt="$("$ADB" -s "$m" shell dumpsys battery </dev/null | grep -E 'AC powered|status:' | tr -d '\r' | tr '\n' ' ')"
@@ -109,7 +121,7 @@ mesurer() {
   # une hypothese.
   local total
   total=$(python3 -c "print(int($duree) + 75)")
-  python3 tools/banc/sonde_transfert.py "$m" "$t" "$total" 350 >"$dir/sonde.txt" 2>&1 </dev/null &
+  python3 tools/banc/sonde_transfert.py "$m" "$t" "$total" 250 >"$dir/sonde.txt" 2>&1 </dev/null &
   local pid_sonde=$!
   sleep 2
 
@@ -129,12 +141,28 @@ mesurer() {
   sleep "$duree"
 
   reveiller "$m"
-  local t1
+  echo "TRANSFERT_ECRAN_ENREGISTREMENT"
+  $U "$m" dump </dev/null 2>&1 | grep -o 'text="[^"]*"' | sort -u | tr '\n' ' '
+  echo
+
+  # L'arret, et son repli. Un enregistrement qui survit au banc est le seul risque reel pour
+  # l'appareil de quelqu'un : on ne sort pas d'ici sans l'avoir ferme. Le chemin nominal est le
+  # geste du produit — appui long puis confirmation. S'il echoue, on redeclare la montre en
+  # charge : `StopConditions` ferme alors la nuit **proprement**, avec `StopReason.CHARGING`,
+  # fichier courant clos et salve finale urgente. C'est un chemin du produit, pas un `kill`.
+  local t1 moyen
   t1=$(horodate)
-  geste "$m" presse "STOP" 900
-  sleep 1
-  geste "$m" tap "Confirm stopping the night"
-  echo "TRANSFERT_STOP_MS $t1"
+  moyen=ECRAN
+  if geste "$m" presse "=STOP" 900; then
+    sleep 1
+    geste "$m" tap "Confirm stopping the night" || moyen=CHARGEUR
+  else
+    moyen=CHARGEUR
+  fi
+  if [ "$moyen" = CHARGEUR ]; then
+    "$ADB" -s "$m" shell dumpsys battery reset </dev/null >/dev/null 2>&1
+  fi
+  echo "TRANSFERT_STOP_MS $t1 moyen=$moyen"
 
   # Le reste de la fenetre appartient a la sonde : la salve finale, l'ingestion, l'accuse et les
   # suppressions arrivent apres l'arret du capteur.

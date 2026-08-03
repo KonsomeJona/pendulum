@@ -58,19 +58,33 @@ def dump(serial):
     return xml[start:] if start >= 0 else ""
 
 
+def motif_exact(pattern):
+    """Un motif prefixe de `=` demande une egalite, pas une inclusion.
+
+    Appris sur l'ecran d'enregistrement de la montre : `presse STOP` a attrape
+    « Long press to stop », qui contient le mot, qui est au-dessus du bouton et qui n'est pas
+    cliquable. L'appui long s'est execute sans erreur et n'a rien fait — le mode de defaillance
+    habituel de cet ecran. La priorite « texte exactement egal » du tri ne suffit pas quand le
+    vrai bouton est **sous le pli** et donc absent du dump : le tri classe ce qu'il a, et ce
+    qu'il a est le mauvais element. Avec `=STOP`, l'element est introuvable tant qu'on n'a pas
+    fait defiler, ce qui est la verite.
+    """
+    return (pattern[1:], True) if pattern.startswith("=") else (pattern, False)
+
+
 def nodes(xml, pattern):
     """Elements dont le texte, la description ou l'identifiant contient le motif."""
     found = []
-    pat = pattern.lower()
+    brut, exact = motif_exact(pattern)
+    pat = brut.lower()
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:
         return found
     for node in root.iter("node"):
-        hay = " ".join(
-            node.get(a, "") for a in ("text", "content-desc", "resource-id")
-        ).lower()
-        if pat in hay:
+        attrs = [node.get(a, "") for a in ("text", "content-desc", "resource-id")]
+        hay = " ".join(attrs).lower()
+        if (any(a.strip().lower() == pat for a in attrs) if exact else pat in hay):
             m = BOUNDS.match(node.get("bounds", ""))
             if not m:
                 continue
@@ -173,7 +187,7 @@ def main():
         # sans quoi « Allow » attrape le titre « Allow Pendulum to send you notifications? »,
         # qui contient le mot et occupe la moitie de l'ecran ; (2) element cliquable ; (3) le
         # plus petit, car un bouton est plus petit que le conteneur qui le porte.
-        pat = arg.lower()
+        pat = motif_exact(arg)[0].lower()
         found.sort(
             key=lambda n: (
                 n["text"].strip().lower() != pat,
@@ -196,7 +210,7 @@ def main():
         # des deux involontaire — donc le banc doit savoir en produire un.
         duree = int(sys.argv[4]) if len(sys.argv) > 4 else 900
         found = nodes(dump(serial), arg)
-        pat = arg.lower()
+        pat = motif_exact(arg)[0].lower()
         found.sort(
             key=lambda n: (
                 n["text"].strip().lower() != pat,

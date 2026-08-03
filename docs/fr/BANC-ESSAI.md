@@ -12,13 +12,18 @@ commande qui la trancherait. Rien ici ne vient de la documentation d'Android.
 
 ## 1. Le verdict
 
-> **Complété le 3 août 2026 par le §11.5, seconde tentative.** Le banc du transfert est monté et
-> outillé, et il n'a rien pu mesurer : **le téléphone ne peut pas ouvrir sa base.** La migration
-> v1 → v3 recrée la vue `comparable_night` dans un texte qui diffère de treize caractères de celui
-> que Room attend, l'exception remonte, et `fallbackToDestructiveMigration` est volontairement
-> absent. **L'application ne se met pas à jour ; elle ne s'installe que neuve** — et aucun test du
-> dépôt ne couvre ce chemin. L'invariant « rien d'effacé avant l'accusé » reste donc raisonné et
-> non vérifié. Lire le §11.5.
+> **Complété le 3 août 2026 par le §11.5, sur les deux appareils réels.** **L'invariant central du
+> protocole est vérifié dans la direction qui protège les données** : les deux chunks d'une nuit
+> d'essai étaient dans le magasin du téléphone, et la montre ne les a pas effacés — la suppression
+> est commandée par l'accusé, pas par la réception. La suppression *après* accusé, elle, n'a pas pu
+> être mesurée, et pour une raison qui dépasse le banc : **l'ingestion est morte sur matériel
+> réel.** Les deux services d'écoute exigent
+> `com.google.android.gms.permission.BIND_WEARABLE_LISTENER`, **une permission qu'aucun paquet ne
+> définit** — Android refuse à Play Services de se lier, dans les deux sens, et le seul témoin est
+> une ligne du journal système. Ce qui interroge le magasin marche ; tout ce qui dépend d'une
+> livraison est mort. La session a par ailleurs corrigé, avec le test qui manquait, une migration
+> qui empêchait **toute mise à jour** de l'application déjà installée (commit `6fe2a34`). Lire le
+> §11.5.
 
 > **Révisé une seconde fois le 3 août 2026 par le §11, mesuré sur les deux appareils réels de
 > l'utilisateur.** Le Data Layer **transporte** : un `DataItem` publié par le téléphone traverse,
@@ -1359,44 +1364,64 @@ cet état et `READY`. On l'attend, on ne l'affirme pas.
 
 `:sleepwriter` n'a pas été installé.
 
-### 11.5 Le transfert réel — toujours pas mesuré, et cette fois le mur est dans le produit
+### 11.5 Le transfert réel — l'invariant tient, et l'ingestion est morte
 
-> **Réécrit le 3 août 2026, seconde tentative.** La première butait sur le réseau : le Mac avait
-> quitté Tailscale et la montre n'était joignable par personne. Cette fois le Mac répond sur son
-> adresse locale (`ssh jona@192.168.86.161`), les deux appareils sont là, le banc a été monté
-> jusqu'au dernier geste — et il s'est arrêté sur autre chose.
+> **Mesuré le 3 août 2026, après la correction de migration du commit `6fe2a34`.** Sans elle, le
+> téléphone n'ouvrait pas sa base et rien de ce qui suit n'était atteignable ; le §11.5.1 le
+> raconte. La mesure porte donc sur un produit corrigé d'un défaut, et c'est une information, pas
+> une gêne.
 
-**Le verdict.** Le transfert n'a **pas** été mesuré, et la cause n'a rien à voir avec le transfert :
-**le téléphone ne peut plus ouvrir sa base de données.** La migration de schéma v1 → v3 échoue à la
-validation, la base reste fermée, et `PendulumListenerService` ne peut donc ni écrire une ligne
-`chunk` ni publier un accusé. L'invariant reste raisonné.
+**Le verdict, en deux moitiés.**
 
-Le défaut est dans le produit, il est reproductible, et il est plus grave que ce que le banc
-cherchait : **une application déjà installée ne peut pas être mise à jour.** Seule une installation
-neuve fonctionne. Le §11.5.2 le chiffre au caractère près.
+**L'invariant tient**, et il a été éprouvé sur le cas le plus fort qu'on puisse construire : les
+deux chunks de la nuit d'essai étaient **physiquement dans le magasin du téléphone**, lisibles par
+le téléphone lui-même, et la montre **ne les a pas effacés**. Elle les a gardés 39 s sous
+échantillonnage à 250 ms, puis un quart d'heure de plus, puis à travers deux réémissions. Ce n'est
+pas la réception qui autorise la suppression, c'est l'accusé — et il n'y en a pas eu.
 
-#### 11.5.1 Ce qui a été monté, et qui marche
+**L'autre moitié — la suppression *après* l'accusé — ne peut pas être mesurée sur ce matériel**, et
+la raison est un défaut du produit : le téléphone n'ingère rien. Les deux services d'écoute du Data
+Layer, `PendulumListenerService` côté téléphone et `AckObserver` côté montre, se protègent par
+`android:permission="com.google.android.gms.permission.BIND_WEARABLE_LISTENER"` — **une permission
+qu'aucun paquet ne définit** sur ces deux appareils. Android refuse donc à Play Services le droit
+de se lier, à chaque livraison, et le seul témoin est une ligne `W` dans le journal système que
+l'application ne voit jamais. **Aucun chunk ne sera jamais ingéré, et aucun accusé jamais
+appliqué**, tant que cette ligne de manifeste est là. Le §11.5.6 le chiffre, le §11.5.7 propose la
+correction, qui n'est pas appliquée.
 
-Tout l'appareillage du §11.5 tient debout. Il est décrit ici parce que la prochaine session n'aura
-pas à le refaire, et parce que chacun de ces points était une inconnue avant d'être une commande.
+#### 11.5.1 Le préalable : la base du téléphone ne s'ouvrait plus
 
-**Une seule invocation pour les deux moitiés**, comme la compression du temps l'exige :
+La première tentative n'a pas atteint le transfert. `MIGRATION_2_3` recréait la vue
+`comparable_night` avec `CREATE VIEW … AS ${ComparableNightSql.SQL}`, et cette constante commence
+par un saut de ligne et douze espaces là où Room normalise le texte qu'il attend. Les deux chaînes
+font 3 041 et 3 054 caractères et divergent au caractère 34, de ces treize-là exactement.
+`fallbackToDestructiveMigration` étant volontairement absent, l'exception remontait et la base
+restait fermée : **aucun appareil venant de v1 ou v2 ne pouvait être mis à jour**, seule une
+installation neuve fonctionnait, et rien dans le dépôt ne pouvait le voir — il n'y avait aucun test
+de migration, et `phone/schemas/` ne porte pas `1.json`.
+
+`MigrationTest` couvre désormais v1 → v3 et v2 → v3, en posant les deux bases en SQL brut plutôt
+que par `MigrationTestHelper`, qui aurait eu besoin du schéma jamais exporté. Les deux tests
+échouent sans le `trim()` — vérifié, avec l'exception exacte de production — et rendent `OK (2
+tests)` avec. La base réelle du téléphone est passée en v3 à la première ouverture qui a suivi :
+`user_version 3`, identité `083f84b1b64d678022c610c10ec623da`, celle de `3.json`.
+
+#### 11.5.2 L'échelle, vérifiée dans les deux APK installés
+
+Une seule invocation pour les deux modules, comme la compression du temps l'exige :
 
 ```bash
 ./gradlew --no-daemon -Ppendulum.temps.diviseur=250 \
   :wear:assembleDebug :wear:assembleDebugAndroidTest \
   :phone:assembleDebug :phone:assembleDebugAndroidTest
-# BUILD SUCCESSFUL in 14s — 138 tâches
+# BUILD SUCCESSFUL in 18s — 138 tâches
 ```
 
-23,7 Mo et 1,08 Mo côté montre, 37,2 Mo et 2,74 Mo côté téléphone. Même empreinte de signature que
-le §11.1, `fa969b08ab4cbe182f57114f4edb6abc8d3c79a870f9dc7312a1c823f9e4fc74` des deux côtés.
-
-**Le diviseur est vérifié dans les APK installés, et de l'extérieur.** C'est nouveau et c'est
-nécessaire : `EchelleTemps` est un objet **par module**, alimenté par une propriété Gradle, et rien
-dans le code ne peut vérifier que les deux moitiés ont reçu la même valeur — deux invocations
-distinctes produiraient sans un mot deux applications à des échelles différentes. Les sondes
-`BancDataLayer#echelle`, une de chaque côté, lisent la valeur compilée dans l'application elle-même :
+Même empreinte de signature des deux côtés qu'au §11.1,
+`fa969b08ab4cbe182f57114f4edb6abc8d3c79a870f9dc7312a1c823f9e4fc74`. Et la vérification qui manquait :
+`EchelleTemps` est un objet **par module**, alimenté par une propriété Gradle, et rien dans le code
+ne peut constater que les deux moitiés ont reçu la même valeur. Les sondes `BancDataLayer#echelle`,
+une de chaque côté, lisent la valeur compilée dans l'application installée :
 
 ```
 # montre
@@ -1406,164 +1431,226 @@ BANC_ECHELLE diviseur=250 rotationChunkMs=1200 tickServiceMs=40 antiRebondCharge
 BANC_ECHELLE diviseur=250 abandonLectureMs=518400 ageMaxNuitMs=201600 silenceAvantStaleMs=10800
 ```
 
-La rotation de chunk tombe bien de 5 min à **1 200 ms**. Trois autres durées en découlent et
-commandent la conduite du banc, ce que personne n'avait chiffré : le tick du service passe à
-**40 ms**, la durée maximale de session à **144 s**, et le délai avant que l'heure butoir locale ne
-puisse arrêter la nuit à **14,4 s**. Un enregistrement lancé après 10 h du matin s'arrête donc
-**tout seul au bout de 14,4 s** avec `TIME_LIMIT`. Ce n'est pas un défaut, c'est l'échelle qui
-s'applique aussi aux conditions d'arrêt — mais un banc qui l'ignore croira à un plantage.
+#### 11.5.3 Ce que la compression du temps fait à un capteur réel : rien ne sort
 
-**Le mur du socle, qui n'était pas prévu et qui ferme le chemin naïf.** La montre n'est joignable
-qu'en USB, et son seul connecteur est son socle de charge. Elle se déclare donc en charge :
+C'est le résultat que personne n'avait anticipé, et il condamne la conduite naïve du banc.
+
+Premier essai, montre déclarée débranchée, enregistrement lancé depuis l'écran :
 
 ```
-$ adb -s <montre> shell dumpsys battery
-  AC powered: true    status: 5    level: 100
+1785748943.421 PendulumRecord: capteur=Accelerometer (wake-up) wakeUp=true reserved=3000 max=3000 mode=WAKEUP 30 s
+1785748958.057 PendulumRecord: arret automatique : TIME_LIMIT
 ```
 
-`StopConditions` arrête la nuit après `antiRebondChargeMs` de charge soutenue — **240 ms** à
-l'échelle du banc, avec un `minuteTick` qui tombe toutes les 240 ms lui aussi. **Aucun
-enregistrement ne survit une seconde sur une montre en USB.** Le levier est
-`adb shell dumpsys battery unplug`, qui ment au service de batterie sans rien débrancher, et
-`dumpsys battery reset` le défait ; `tools/banc/transfert.sh preparer|restaurer` le pose et le
-vérifie. Il n'a pas eu à être utilisé cette fois — aucun enregistrement n'a été démarré.
+14,636 s, puis fermeture propre — et **zéro chunk**. 431 échantillons de la sonde, tous à `n=0`,
+sur les deux disques. Deux durées entrent en collision, et aucune des deux n'est un défaut :
 
-**La liaison est vivante**, mesurée avant toute chose, et identique au §11.2 :
+| | valeur réelle | à l'échelle 250 |
+|---|---|---|
+| Latence de salve du FIFO (`maxReportLatencyUs`, mode `WAKEUP 30 s`) | 30 s | **30 s — non comprimée** |
+| Délai avant que l'heure butoir locale puisse arrêter | 1 h | **14,4 s** |
 
-```
-BANC_CONNECTED_NODES n=1 Pixel Watch 3/70c85ec6/nearby=true
-BANC_CAP_REACHABLE   n=1 Pixel Watch 3/nearby=true
-```
+La latence de salve est du **temps capteur** et du matériel : `Durees` ne la comprime pas, et sa
+KDoc dit pourquoi. L'heure butoir, elle, est une **heure locale** — 10 h du matin reste 10 h — mais
+le délai minimal qui la garde, lui, se comprime. Passé 10 h, tout enregistrement de banc s'arrête
+donc **avant que le capteur n'ait livré son premier octet**.
 
-**Le contexte du soir traverse toujours** : publié par la sonde du téléphone sous
-`wear://65b7e3d/pendulum/context/2026-08-03`, puis retiré en fin de session
-(`BANC_CONTEXTE_RETIRE supprimes=1`, puis `BANC_ITEMS n=0`).
+La cohérence que `CoherenceEchelleTest` protège — comprimer le temps mural exactement autant que le
+rejeu comprime le temps capteur — **ne vaut que pour `SourceSynthetique`**. Avec le vrai
+accéléromètre il n'y a aucun rejeu : le temps capteur avance à 1×, le temps mural à 250×, et le
+facteur 250 n'a plus rien à égaliser. **Sur matériel réel, le diviseur ne comprime pas le banc, il
+le désaccorde.**
 
-Restaient trois gestes, tous outillés et aucun exercé : `dumpsys battery unplug`, START sur l'écran
-de la montre, et STOP par appui long puis confirmation. `tools/banc/transfert.sh mesurer` les
-enchaîne sans retour à l'appelant — la fenêtre à observer est plus courte qu'un aller-retour ssh —
-et `tools/banc/sonde_transfert.py` échantillonne les deux disques en parallèle, un fil par
-appareil, en encadrant chaque lecture de deux horodatages pris sur l'hôte.
+Le contournement, pour cette session : repousser l'heure butoir par le réglage utilisateur qui
+existe déjà, `stop_at_minutes`, porté à 1439 puis rendu à son absence. Un piège au passage —
+`SharedPreferences.apply()` est asynchrone et `am instrument` tue le processus dès la fin du test :
+le réglage semblait posé et ne l'était pas, et l'enregistrement suivant s'arrêtait encore à
+14,4 s. La sonde écrit en `commit()`.
 
-#### 11.5.2 Le mur : la vue `comparable_night` est recréée dans un texte que Room refuse
+#### 11.5.4 La nuit mesurée
 
-La sonde qui devait lire la table `chunk` ne lit rien du tout : le processus meurt à l'ouverture de
-la base.
-
-```
-java.lang.IllegalStateException: Migration didn't properly handle: comparable_night(...)
-  at androidx.room.RoomOpenHelper.onUpgrade(RoomOpenHelper.kt:93)
-  ...
-  at com.pendulum.phone.db.ParamDao_Impl$7.call(ParamDao_Impl.java:167)
-```
-
-La dernière ligne compte : ce n'est pas la sonde qui provoque l'ouverture, c'est **le code du
-produit**, sur son chemin de démarrage ordinaire.
-
-**L'écart, mesuré.** Room compare le `CREATE VIEW` qu'il attend à celui qu'il lit dans
-`sqlite_master`. Les deux textes font 3 041 et 3 054 caractères, et **divergent au caractère 34** :
+Écran de préflight : `Ready`, `Battery 100%`, `Free space 12.2 GB`, `START` — aucun bloqueur,
+aucun avertissement, contexte du soir scellé (`BANC_PREFLIGHT demarrable=true`).
 
 ```
-attendu : CREATE VIEW `comparable_night` AS SELECT\n                s.sessionHex …
-trouvé  : CREATE VIEW `comparable_night` AS \n            SELECT\n                s.sessionHex …
+1785749489030  tap START
+1785749492.586 capteur=Accelerometer (wake-up) reserved=3000 mode=WAKEUP 30 s
+1785749551.722 fermeture de session, raison USER
 ```
 
-Treize caractères, `"\n" + douze espaces`, et rien d'autre sur trois mille — la différence des deux
-longueurs vaut exactement treize.
+**59,1 s d'enregistrement, arrêté par le geste du produit** — appui long sur STOP puis
+« Confirm stopping the night ». L'écran d'enregistrement, lu juste avant l'arrêt :
+`1,025 samples`, `Gaps: 0`, `Mode WAKEUP 30 s`, `0,0 MB written`. Mille vingt-cinq échantillons
+d'accéléromètre réel, une montre posée sur son socle.
 
-**D'où ils viennent.** `ComparableNightSql.SQL` est un littéral triple-guillemets qui commence par
-un saut de ligne et douze espaces d'indentation. Room, lui, normalise la valeur de l'annotation
-`@DatabaseView` pour construire le texte attendu. Les deux coïncident tant que la vue est créée par
-Room — ce que fait `onCreate` — et divergent dès qu'elle est créée à la main :
+**Deux chunks, et pas davantage** — ce n'est pas un réglage, c'est la conséquence du §11.5.3 : la
+salve du FIFO arrive d'un bloc à 30 s, tous ses blocs s'écrivent dans la même milliseconde murale,
+donc la borne de rotation de 1 200 ms ne se déclenche qu'une fois. La sonde les voit naître :
+
+```
+1785749523063  MONTRE n=1 00000:80        <- l'entete seule, le fichier existe des la 1re ms
+1785749523323  MONTRE n=1 00000:6326      <- la salve ecrite
+1785749552159  MONTRE n=2 00000:6358 00001:2974   <- 00000 clos (+32 o de marqueur de fin)
+1785749552416  MONTRE n=2 00000:6358 00001:3006   <- 00001 clos par la finalisation
+```
+
+Et la salve finale les publie tous les deux, enveloppe comprise (métadonnées + fichier) :
+
+```
+BANC_ITEM wear://70c85ec6/pendulum/chunk/090aea3009d44cbda4583bef015ca9b0/00000 6435o
+BANC_ITEM wear://70c85ec6/pendulum/chunk/090aea3009d44cbda4583bef015ca9b0/00001 3083o
+BANC_ITEM wear://70c85ec6/pendulum/session/090aea3009d44cbda4583bef015ca9b0    89o
+```
+
+#### 11.5.5 L'invariant, mesuré
+
+**Les items ont traversé.** La liste ci-dessus est lue **par le téléphone**, dans son propre
+magasin. L'autorité est `wear://70c85ec6`, l'identifiant de nœud de la **montre** — le téléphone
+est `65b7e3d`. Ce ne sont pas des items que le téléphone se serait posés : ce sont les octets de la
+montre, répliqués, 9 518 o en tout.
+
+**Et le téléphone n'en a rien fait :**
+
+```
+BANC_DB_SESSIONS n=0
+BANC_DB_CHUNKS   n=0
+$ adb -s <telephone> shell run-as com.pendulum ls -lR files/chunks
+ls: files/chunks: No such file or directory
+```
+
+**Donc la montre a tout gardé.** C'est l'invariant, et il est vérifié là où il compte :
+
+| Moment | Sur le disque de la montre |
+|---|---|
+| Fin de l'enregistrement, salve finale publiée | `00000:6358 00001:3006` |
+| Pendant 39 s, 155 échantillons à 250 ms | inchangé, octet pour octet |
+| 15 min plus tard | inchangé |
+| Après deux réémissions complètes | inchangé |
+
+Le chunk était **chez le téléphone** et la montre l'a gardé quand même. C'est exactement ce que la
+KDoc de `DataLayerTransfer` affirme — « le disque de la montre reste la source de vérité jusqu'à ce
+que la base du téléphone le devienne » — et ce n'est plus raisonné. Un accusé trop optimiste
+ferait perdre ces octets ; aucun accusé ne les perd. La panne côté téléphone coûte le téléphone,
+elle ne coûte pas la nuit.
+
+Ce qui n'est **pas** mesuré, et il faut le dire aussi net : la suppression *après* l'accusé. Aucun
+accusé n'a pu être publié.
+
+#### 11.5.6 Le mur : une permission que personne ne définit
+
+Play Services a bien essayé, deux fois, et le journal du téléphone le dit mot pour mot :
+
+```
+W ActivityManager: Permission Denial: Accessing service com.pendulum/.phone.ingest.PendulumListenerService
+    from pid=23433, uid=10155 requires com.google.android.gms.permission.BIND_WEARABLE_LISTENER
+W WearableService: java.lang.SecurityException: Not allowed to bind to service
+    Intent { act=com.google.android.gms.wearable.DATA_CHANGED dat=wear://70c85ec6/... }
+    [Event[dataChanged, DataWearableServiceEvent(/pendulum/chunk/090aea30…/00000)],
+     Event[dataChanged, DataWearableServiceEvent(/pendulum/chunk/090aea30…/00001)]]
+```
+
+L'uid 10155 est Play Services, version 26.28.33. Les deux événements portent les bons chemins : la
+livraison était prête, la liaison a été refusée.
+
+**Et la permission n'existe pas** — vérifié sur les deux appareils :
+
+```
+$ adb shell dumpsys package permission com.google.android.gms.permission.BIND_WEARABLE_LISTENER
+(rien)
+```
+
+Aucun paquet ne la déclare. Une permission non définie ne peut être détenue par personne, donc
+`android:permission` sur ce service interdit **toute** liaison, y compris celle qu'il était censé
+autoriser. C'est une ligne écrite d'après une documentation que les versions récentes de Play
+Services ont cessé d'honorer, et son mode de défaillance est le silence.
+
+**Ce que ça explique, et qui semblait incohérent jusque-là.** Tout ce qui **interroge** le magasin
+marche : le contexte du soir du §11.2 traverse et se lit, parce que `Preflight` appelle
+`DataClient.getDataItems`. Tout ce qui dépend d'une **livraison** est mort : l'ingestion des
+chunks, la publication de l'accusé, l'application de l'accusé, `/pendulum/start-request`,
+`/pendulum/sweep-request`. La ligne est sur les deux services, donc le défaut est **symétrique** :
+même si le téléphone publiait un accusé, `AckObserver` ne le recevrait pas.
+
+**Ce qui a été éliminé comme cause**, et il fallait le faire plutôt que de le supposer : le seau de
+veille. `com.pendulum` était en `RESTRICTED` (45) sur le téléphone — l'application n'y a jamais été
+ouverte par personne — ce qui bride les démarrages de service en arrière-plan. Il a été porté à
+`ACTIVE` (10), la réémission relancée, et **le refus est identique**. Le seau a été rendu à 45.
+
+#### 11.5.7 La correction proposée — non appliquée
+
+Retirer l'attribut, sur les deux manifestes :
+
+```xml
+<!-- phone/src/main/AndroidManifest.xml, wear/src/main/AndroidManifest.xml -->
+<service android:name=".…ListenerService" android:exported="true">
+    <intent-filter> … </intent-filter>
+</service>
+```
+
+**Ce que ça coûte, et il ne faut pas l'escamoter :** le service devient liable par n'importe quelle
+application locale. La protection qui reste est celle du Data Layer lui-même — il ne transporte
+qu'entre applications de même `applicationId` **et de même signature** —, et le fait que
+`onDataChanged` ne lit que des chemins `/pendulum/`, vérifie un CRC-32 avant d'insérer et n'insère
+qu'en `INSERT OR IGNORE`. Une application hostile pourrait néanmoins appeler `onDataChanged` avec
+un `DataEventBuffer` fabriqué. Confiance haute sur le diagnostic, **moyenne sur cette correction** :
+elle est celle des exemples officiels actuels, mais l'arbitrage sécurité mérite d'être fait
+explicitement plutôt que par retrait d'une ligne.
+
+**Le test qui l'aurait attrapé**, et qui manque tout autant que manquait celui des migrations : un
+test instrumenté qui lit son propre manifeste et vérifie que toute permission déclarée sur un
+composant **existe sur l'appareil**.
 
 ```kotlin
-// phone/src/main/kotlin/com/pendulum/phone/db/PendulumDatabase.kt, MIGRATION_2_3
-db.execSQL("CREATE VIEW `comparable_night` AS ${ComparableNightSql.SQL}")
+// androidTest : une permission qu'on exige et que personne ne definit interdit tout, en silence.
+val info = pm.getServiceInfo(ComponentName(ctx, PendulumListenerService::class.java), 0)
+info.permission?.let { runCatching { pm.getPermissionInfo(it, 0) }.getOrNull() ?: fail(it) }
 ```
 
-C'est la ligne que sa propre KDoc défend, et elle a raison sur le fond — recopier le texte de la
-vue dans la migration serait pire. Elle a tort d'un `trim()`.
+Six lignes, et il vaut pour tous les composants exportés du produit, aujourd'hui et plus tard.
+C'est la même leçon que `MigrationTest` : ce qui casse ici ne casse pas dans la JVM, il casse à
+l'exécution sur un appareil, dans une vérification faite par la plateforme.
 
-**La portée, et elle est large.** `MIGRATION_2_3` est traversée par tout appareil venant de v1 ou de
-v2. `fallbackToDestructiveMigration` est absent **volontairement** — la KDoc de `PendulumDatabase`
-explique pourquoi, et elle a raison — donc rien ne rattrape l'échec : l'exception remonte, la base
-reste fermée, et elle le restera à chaque tentative. **L'application ne se met pas à jour. Elle ne
-s'installe que neuve.**
-
-**Ce que ça fait au transfert**, et c'est la seule chose que cette session mesure de l'invariant :
-`PendulumListenerService.onDataChanged` attrape le `Throwable` par chunk (« item ignoré »), donc
-rien ne remonte à l'utilisateur, aucune ligne n'est écrite, et `publishAck` n'est jamais appelé.
-La montre garderait ses fichiers **indéfiniment**. C'est le bon sens de l'invariant — rien n'est
-effacé sans accusé — mais obtenu par accident, sur un téléphone en panne, et pas mesuré : aucun
-enregistrement n'a été lancé.
-
-**Pourquoi rien ne l'attrape.** Il n'existe **aucun test de migration** dans le dépôt : ni
-`MigrationTestHelper`, ni JVM, ni instrumenté. Et `phone/schemas/` ne porte que `2.json` et
-`3.json` — le schéma v1, celui d'où part la base de l'appareil, n'a jamais été exporté. Le chemin
-v1 → v3 n'est donc pas seulement cassé, il est **inobservable** par la suite de tests.
-
-#### 11.5.3 La correction proposée — non appliquée
-
-```kotlin
-// phone/src/main/kotlin/com/pendulum/phone/db/PendulumDatabase.kt
-db.execSQL("CREATE VIEW `comparable_night` AS ${ComparableNightSql.SQL.trim()}")
-```
-
-Un `trim()`, et le texte écrit redevient celui que Room attend. Confiance haute : les deux chaînes
-ne diffèrent que par ces treize caractères, et la mesure les affiche.
-
-**Ce qu'elle ne corrige pas.** Le piège se reposera à la prochaine vue recréée dans une migration,
-et il ne se verra toujours pas. Deux garde-fous valent d'être pesés, et aucun n'est gratuit :
-exporter `1.json` puis écrire un test de migration v1 → v3 sur `MigrationTestHelper` (le seul qui
-mesure vraiment le chemin cassé) ; ou faire de la construction du `CREATE VIEW` une fonction unique,
-partagée par les migrations, qui `trim()` une fois pour toutes. Le second est trois lignes et ne
-prouve rien ; le premier coûte un `androidTest` et prouve tout. Ils ne s'excluent pas.
-
-**Ce que la mesure ne dit pas** : si un appareil déjà en v3 — c'est-à-dire installé neuf depuis que
-`VERSION` vaut 3 — se comporte bien. Aucun n'était disponible ici. La déduction est directe (la vue
-y est créée par `onCreate`, donc dans le texte attendu) mais elle reste une déduction.
-
-#### 11.5.4 Ce qu'il faut pour finir la mesure
-
-Une seule chose, et elle demande une décision qui n'appartient pas au banc : **la base v1 du
-téléphone doit céder la place.** Elle est vide — `user_version=1`, identité Room
-`0be59c8b3c17593df65ff797802f5eb4`, 122 880 octets, et **zéro ligne** dans les onze tables de
-données ; seule `room_master_table` porte sa ligne d'identité. La déplacer
-(`run-as com.pendulum mv databases/pendulum.db databases/pendulum-v1.db`) suffit : Room recrée la
-base en v3 par `onCreate`, dans le texte qu'il attend, et l'ingestion repart. Rien n'est perdu, et
-le renommage se défait.
-
-L'alternative est d'appliquer le `trim()` du §11.5.3 et de reconstruire — ce qui répare aussi
-l'appareil au lieu de le contourner, mais fait mesurer le banc sur un produit corrigé pour lui.
-Le dépôt tient partout ailleurs la discipline inverse ; c'est pourquoi rien n'a été appliqué ici.
-
-Une fois l'un ou l'autre fait, la séquence est prête et tient en quatre commandes :
+#### 11.5.8 Refaire la mesure
 
 ```bash
-bash tools/banc/transfert.sh preparer  <montre>
-bash tools/banc/transfert.sh mesurer   <montre> <telephone> 8 /tmp/banc/t1
+bash tools/banc/datalayer.sh run wear <montre> heureButoir -e minutes 1439
+bash tools/banc/transfert.sh preparer  <montre>              # dumpsys battery unplug + status 3
+bash tools/banc/transfert.sh mesurer   <montre> <telephone> 40 /tmp/banc/t1
 bash tools/banc/transfert.sh restaurer <montre>
-bash tools/banc/datalayer.sh run wear <montre> accuse   # l'accuse decode, index par index
+bash tools/banc/datalayer.sh run wear <montre> heureButoir -e minutes defaut
+bash tools/banc/datalayer.sh run wear <montre> purgerBanc -e session <hex>
 ```
 
-Trois sondes ont été ajoutées pour elle, et sont installées : `BancDataLayer#accuse` décode l'accusé
-publié (`ackedUpTo`, base, bitmap, `phoneMs`, la liste des index réellement acquittés) ;
-`BancDataLayer#base` côté téléphone lit les lignes `night_session` et `chunk` par l'`openHelper` du
-produit — `sqlite3` n'existe pas sur cet appareil ; `BancDataLayer#purgerBanc -e session <hex>`
-efface après coup la nuit fabriquée, lignes et fichiers.
+`mesurer` enchaîne toute la séquence chronométrée sans revenir à l'appelant — la fenêtre est plus
+courte qu'un aller-retour ssh — et `sonde_transfert.py` échantillonne les deux disques en
+parallèle, un fil par appareil, en encadrant chaque lecture de deux horodatages pris sur l'hôte.
+L'arrêt passe par le geste du produit et retombe, s'il échoue, sur une redéclaration en charge :
+`StopConditions` ferme alors la nuit proprement avec `StopReason.CHARGING`. **On ne sort jamais de
+`mesurer` avec un enregistrement en cours** — c'est le seul risque réel pour l'appareil de
+quelqu'un.
+
+Trois pièges y sont encodés, tous découverts en s'y cognant : la montre sur son socle se déclare en
+charge et `StopConditions` la coupe en 240 ms ; l'écran retombe en mode ambiant en une dizaine de
+secondes et `input tap` s'y exécute sans erreur et sans effet, donc on réveille avant **chaque**
+geste ; et `presse STOP` attrape « Long press to stop », qui contient le mot et n'est pas le
+bouton, d'où l'égalité stricte `=STOP` de `uictl.py`.
 
 ### 11.6 Les limites des deux sessions, à ne pas confondre avec des résultats
 
-**L'invariant du transfert n'est toujours pas mesuré**, et c'est le seul point de ce chapitre qui
-le soit resté. Ce que la seconde session ajoute n'est pas la mesure mais **la raison** : le §11.5.2.
-Elle enlève en revanche trois inconnues qui la précédaient — la compression du temps est vérifiée
-dans les APK installés des deux côtés, le mur du socle est identifié et outillé, et le pilotage de
-l'écran de la montre jusqu'à START et STOP est écrit. Ne pas lire ces trois-là comme la mesure.
+**L'invariant n'est mesuré que dans un sens.** « Rien n'est effacé avant l'accusé » est vérifié, et
+solidement (§11.5.5). « Tout ce qui est acquitté est effacé » ne l'est pas, et ne le sera pas avant
+que le §11.5.7 soit tranché. Ne pas lire le premier comme valant pour le second : le second est
+justement celui où un `count++` de trop ferait perdre des octets, et il reste raisonné.
 
-**Aucun enregistrement n'a jamais été lancé sur la montre**, ni dans l'une ni dans l'autre session.
-Tout ce que ce document dit de `RecordingService`, de la rotation de chunk à 1 200 ms et des
-conditions d'arrêt à l'échelle du banc est **dérivé du code et des durées lues dans l'APK**, jamais
-observé en marche. La distinction compte : le §11.5.1 chiffre ce que l'échelle *devrait* produire.
+**Le chemin de l'accusé n'a jamais été exercé**, dans aucune des deux sessions. `AckBuilder.build`,
+`DataLayerTransfer.applyAck`, la réémission sur CRC-32 faux, le plafond de 24 items en vol : rien
+de tout cela n'a tourné sur matériel réel. Ce que le §11.5.4 montre s'arrête à la publication.
+
+**Le diviseur de temps n'a pas fait ce qu'on attendait de lui.** Le §11.5.3 mesure qu'avec le vrai
+capteur il désaccorde le banc au lieu de le comprimer, et qu'il a fallu écarter l'heure butoir pour
+obtenir le moindre échantillon. Les chiffres de rotation de chunk annoncés à l'échelle 250 — un
+chunk toutes les 1 200 ms — **n'ont pas été observés** : la salve du FIFO arrive d'un bloc et n'en
+ferme qu'un. Ce que le banc a exercé est la rotation par la finalisation, pas par la durée.
 
 **Le contrôle du §11.3 est incomplet.** Il manque la mesure symétrique : le Bluetooth rétabli,
 au bout de combien de temps la suppression rejoint-elle la montre ? Le Bluetooth **a** été
@@ -1586,9 +1673,9 @@ lecture faite après coup, pas de la mémoire de ce qui a été tapé.
 
 | | |
 |---|---|
-| **Pixel Watch 3** | `com.pendulum` réinstallé, même keystore de debug, **et laissé sur une compilation ordinaire** : l'APK à `-Ppendulum.temps.diviseur=250` a été posé pour le banc puis remplacé, et la vérification est la sonde elle-même, `BANC_ECHELLE diviseur=1 rotationChunkMs=300000`. **`com.pendulum.test` installé** — déjà présent avant, laissé en place. `screen_off_timeout` **non modifié**, relu à **600000** ; `svc power stayon` **jamais touché**, `mStayOn=false`. `dumpsys battery` **jamais modifié** : `AC powered: true, status: 5, level: 100`, soit l'état réel du socle. **Aucun enregistrement n'a été démarré**, aucun n'est en cours (`dumpsys activity services com.pendulum` ne rend aucun `RecordingService`). **Aucun fichier de chunk** : `files/chunks` n'existe pas. |
-| **Pixel 10 Pro Fold** | `com.pendulum` réinstallé, même keystore, **compilation ordinaire** elle aussi. **`com.pendulum.test` installé**, déjà présent avant. Permissions Health Connect **non touchées** cette fois (elles étaient révoquées depuis la première session). Bluetooth **non touché**, `bluetooth_on=1`. **`databases/pendulum.db` n'a pas été modifiée** : sa suppression et son déplacement ont tous deux été refusés par le garde-fou de l'agent, et le refus a été respecté. Elle reste donc en **v1, vide, et illisible par l'application installée** (§11.5.2) — c'est l'état à débloquer avant la prochaine session, et le §11.5.4 dit comment. Aucun fichier de chunk : `files/chunks` n'existe pas. |
-| **Data Layer** | L'item `/pendulum/context/2026-08-03` a été republié par la sonde puis **retiré** (`BANC_CONTEXTE_RETIRE supprimes=1`). Le magasin est vide, vérifié depuis le téléphone : `BANC_ITEMS n=0`. La montre ne peut donc pas démarrer une nuit du 3 août. |
+| **Pixel Watch 3** | `com.pendulum` réinstallé, même keystore de debug, **et laissé sur une compilation ordinaire** : l'APK à `-Ppendulum.temps.diviseur=250` a servi au banc puis a été remplacé, vérifié par la sonde elle-même — `BANC_ECHELLE diviseur=1 rotationChunkMs=300000`. **`com.pendulum.test` installé**, déjà présent avant. `screen_off_timeout` **non modifié**, relu à **600000** ; `svc power stayon` jamais touché. `dumpsys battery` truqué pendant la mesure (`unplug` + `set status 3`) puis **rendu par `reset`**, relu `AC powered: true, status: 5, level: 100`, soit l'état réel du socle. Le réglage `stop_at_minutes`, porté à 1439 pour écarter l'heure butoir, a été **rendu à son absence** : relu `existe=false`, la clé n'existait pas avant et n'existe plus. **Un enregistrement de 59,1 s a été fait, arrêté par le geste du produit** (`raison USER`) et vérifié arrêté : aucun `RecordingService` dans `dumpsys activity services`. **Aucun chunk ne reste** : les deux fichiers de la nuit d'essai et leur sidecar ont été purgés par `purgerBanc` (`fichiers=3 dossier_efface=true`), `files/chunks` est vide. |
+| **Pixel 10 Pro Fold** | `com.pendulum` réinstallé, même keystore, **compilation ordinaire** (`diviseur=1`). **`com.pendulum.test` installé**, déjà présent avant. **La base a changé de version, et c'est voulu** : elle était en v1 et illisible par l'application installée ; la correction de migration du commit `6fe2a34` l'a fait passer en **v3** à la première ouverture, `user_version 3`, identité `083f84b1b64d678022c610c10ec623da`. Elle reste **vide** — `night_session` et `chunk` à zéro — et aucun fichier n'a été supprimé ni déplacé. Le seau de veille, porté à `ACTIVE` pour éliminer une hypothèse, est **rendu à `RESTRICTED` (45)**. Permissions Health Connect et Bluetooth non touchés. `files/chunks` n'existe pas : le téléphone n'a jamais rien ingéré (§11.5.6). |
+| **Data Layer** | **Vide, vérifié des deux côtés : `BANC_ITEMS n=0`.** Le contexte du soir du 3 août a été publié pour la mesure puis retiré (`supprimes=1`) ; les deux items de chunk et les trois items de session de la nuit d'essai ont été supprimés par `purgerBanc`. La montre ne peut donc pas démarrer une nuit du 3 août. |
 | **TV** (`192.168.86.129:5555`) | jamais touchée, dans aucune des deux sessions. Elle apparaît `unauthorized` dans `adb devices` et a été ignorée. |
 | **Mac** (`192.168.86.161`) | `~/builds/pendulum-banc` remis à jour par `rsync`, avec `local.properties`, les quatre APK et le patch `BANC-DATALAYER` posé par `datalayer.sh deploy` dans `wear/build.gradle.kts` et `phone/build.gradle.kts` — **à ne pas commiter**, il ne vit que dans cette copie. Une copie de la base v1 du téléphone est dans `/tmp/banc/pendulum.db`. Aucun émulateur démarré. |
 
