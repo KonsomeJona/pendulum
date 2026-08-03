@@ -12,6 +12,14 @@ commande qui la trancherait. Rien ici ne vient de la documentation d'Android.
 
 ## 1. Le verdict
 
+> **Révisé une seconde fois le 3 août 2026 par le §11, mesuré sur les deux appareils réels de
+> l'utilisateur.** Le Data Layer **transporte** : un `DataItem` publié par le téléphone traverse,
+> la montre le lit, et le bloqueur « contexte non scellé » disparaît. Ce que le §7.1 mesure est un
+> défaut de l'émulateur — l'absence d'adresse Bluetooth, qu'il nomme lui-même — et non un défaut
+> du produit. **La voie de repli du §8 ne s'impose plus et la phase 3 retrouve son objet.**
+> En revanche le faux vert de `PHONE_UNREACHABLE` est confirmé sur matériel réel, et la correction
+> que le §7.1 propose ne le corrige pas non plus. Lire le §11.
+
 > **Révisé le 3 août 2026 par la mesure du §7.1, qui invalide une partie de ce qui suit.**
 > L'appairage est **entièrement headless**, sans compte Google et sans geste humain : il s'obtient
 > par `am start …/.EmulatorActivity`, et il survit au snapshot. Mais **il ne transporte rien** —
@@ -743,6 +751,11 @@ n'a pas d'objet : on ne peut pas éprouver la machine à états d'un transfert q
 **La voie de repli du §8 s'applique**, et pour la raison qu'elle prévoyait, à un détail près — ce
 n'est pas l'appairage qui manque, c'est la charge utile.
 
+> **Portée de ce verdict, fixée par le §11 :** il vaut pour l'émulateur et pour lui seul. Sur deux
+> appareils réellement appairés, le même item traverse (§11.2). La cause est bien celle que ce
+> paragraphe nomme — `Address={invalid address}` — et elle disparaît avec l'émulateur. La phase 3
+> doit s'écrire sur matériel réel.
+
 Ce qui est gagné au passage, et qui n'est pas rien : le téléphone du banc est désormais entièrement
 pilotable par script jusqu'au scellement du contexte, ce qui débloque tous les scénarios de §8 qui
 partent d'un contexte scellé.
@@ -1048,11 +1061,15 @@ rm -rf ~/.android/avd/banc_wear.avd/snapshots/default_boot
    émulateur qui s'arrête coûte 1 Go de disque de plus.
 4. **La vérification d'appairage se fait sur l'écran de préflight de la montre**, pas sur le
    `dumpsys` du plan, qui n'existe pas. — **Corrigé au §7.1** : cet écran est un faux vert. La
-   seule vérification honnête est un DataItem qui traverse, et il ne traverse pas.
+   seule vérification honnête est un DataItem qui traverse, et il ne traverse pas. — **Confirmé et
+   précisé au §11.3** : le faux vert vaut aussi sur matériel réel, et `FILTER_REACHABLE` ne le
+   corrige pas. Le seul discriminant mesuré est `Node.isNearby`.
 5. **Aucune ligne de la phase 3 « dégradés du transfert » ne doit être écrite** avant que le §7.1
    soit tranché. Si l'appairage ne survit pas au snapshot, cet agent n'a pas d'objet. —
    **Tranché au §7.1, et la phase 3 n'a pas d'objet** : l'appairage survit, mais le Data Layer ne
-   transporte rien. Voie de repli du §8.
+   transporte rien. Voie de repli du §8. — **Renversé au §11.2** : sur matériel réel le Data Layer
+   transporte, la phase 3 retrouve son objet, et c'est sur les deux appareils qu'elle doit
+   s'écrire, pas sur l'émulateur.
 6. **Le pont se pose sur le téléphone**, `adb -s <telephone> forward tcp:5601 tcp:5601`. Le §2 et
    le §9 disent l'inverse ; ils ont tort (§7.1).
 
@@ -1061,7 +1078,324 @@ compression du temps et l'écrivain de sommeil peuvent être écrits tout de sui
 
 ---
 
-## 11. L'état laissé sur le Mac
+## 11. Sur matériel réel
+
+**Mesures du 3 août 2026.** Deux appareils du quotidien de l'utilisateur, réellement appairés en
+Bluetooth : Pixel Watch 3 (`sol`, `47201JEAYW08AF`, API 37, USB) et Pixel 10 Pro Fold (`rango`,
+`5C171FDCG00089`, API 37, WiFi). ADB par le Mac, `ssh jona@100.74.103.69`.
+
+### Le verdict
+
+**Le Data Layer transporte.** L'item publié par le téléphone arrive sur la montre, la montre le
+lit, le bloqueur disparaît et START s'allume. Le §7.1 mesurait un défaut de l'émulateur — l'absence
+d'adresse Bluetooth, qu'il nommait lui-même — et non un défaut du produit. **La voie de repli du
+§8 ne s'impose plus, et la phase 3 « dégradés du transfert » retrouve son objet.**
+
+Deux corrections en sens inverse, et elles comptent autant que le verdict :
+
+1. **Le faux vert de `PHONE_UNREACHABLE` est confirmé sur matériel réel, et il est pire que ce que
+   le §7.1 annonçait :** la correction que ce dernier propose — `CapabilityClient` avec
+   `FILTER_REACHABLE` — **ne le corrige pas non plus**. Les deux lectures restent non vides
+   Bluetooth du téléphone coupé, alors que plus rien ne traverse. Le seul champ qui dit la vérité
+   est `Node.isNearby`.
+2. **Tout le pilotage par taps du §7.4 est inapplicable ici.** Le téléphone de l'utilisateur est
+   verrouillé par un code, ce qu'un émulateur n'est jamais. Ce banc passe par `am instrument`.
+
+### 11.1 Installer — et le mur qui n'était pas prévu
+
+Les deux APK sortent d'une seule invocation, donc du même keystore de debug. La vérification est
+faite et non supposée : les empreintes sont identiques, ce qui est la condition du Data Layer.
+
+```
+$ apksigner verify --print-certs phone-debug.apk | grep "SHA-256 digest"
+Signer #1 certificate SHA-256 digest: fa969b08ab4cbe182f57114f4edb6abc8d3c79a870f9dc7312a1c823f9e4fc74
+$ apksigner verify --print-certs wear-debug.apk  | grep "SHA-256 digest"
+Signer #1 certificate SHA-256 digest: fa969b08ab4cbe182f57114f4edb6abc8d3c79a870f9dc7312a1c823f9e4fc74
+```
+
+`BUILD SUCCESSFUL in 18s`, 79 tâches ; 35 Mo pour le téléphone, 23 Mo pour la montre. **Une version
+de `com.pendulum` était déjà installée sur les deux appareils** — `versionCode=1`, `versionName
+0.1.0`, `DEBUGGABLE`, posée le 1er août. `install -r -t` rend `Success` des deux côtés : **aucun
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`**, donc même signature, donc rien à désinstaller.
+
+**Le mur : le téléphone est verrouillé par un code.** C'est un appareil du quotidien, et c'est la
+différence structurelle avec un émulateur, plus profonde que le Bluetooth.
+
+```
+$ adb -s <telephone> shell dumpsys trust
+ User "Jona" (id=0, …) (current): trustState=UNTRUSTED, trustManaged=1, deviceLocked=1,
+   isActiveUnlockRunning=0, strongAuthRequired=0x0
+ User "BizGo! MDM" (id=10, …) (profile with unified challenge): deviceLocked=1
+
+$ adb -s <telephone> shell locksettings get-disabled     -> false
+$ adb -s <telephone> shell wm dismiss-keyguard           -> isKeyguardShowing=true, inchangé
+$ adb -s <telephone> shell am start -n com.pendulum/.phone.ui.MainActivity
+Starting: Intent { cmp=com.pendulum/.phone.ui.MainActivity }
+$ adb -s <telephone> shell pidof com.pendulum            -> (vide : le processus n'est pas né)
+```
+
+`uiautomator dump` ne rend alors **aucun nœud portant du texte** : l'arbre est celui du verrou.
+Toute la méthode du §7.4 — réveiller l'écran, `svc power stayon true`, taper au centre des bornes —
+suppose un appareil sans code. Elle ne s'applique pas.
+
+Deux pièges annexes, tous deux propres au matériel :
+
+- **Le Fold corrompt `screencap`.** Il porte deux affichages matériels, et `exec-out screencap -p`
+  préfixe le flux de `[Warning] Multiple displays…`. Le PNG rapatrié est illisible, sans qu'aucune
+  commande n'ait échoué.
+- **Le profil de travail fait échouer `pm list packages`** à moitié :
+  `SecurityException: Shell does not have permission to access user 10`, suivi malgré tout de la
+  liste de l'utilisateur 0. Lire la sortie, pas le code de retour.
+
+Et côté montre, le contournement évident est fermé — `RecordingService` est `exported="false"`, et
+le shell n'a pas le droit de l'atteindre :
+
+```
+$ adb -s <montre> shell am start-foreground-service -n com.pendulum/.wear.record.RecordingService \
+    -a com.pendulum.wear.action.START
+Error: Requires permission not exported from uid 10027
+```
+
+**Le passage : `am instrument`.** Le runner démarre **dans** le processus `com.pendulum`, avec son
+UID, donc avec l'identité que GMS contrôle — et le verrou ne le concerne pas. Les sondes appellent
+le code du produit (`Preflight.check`, le même `PutDataRequest` que `EveningContextSealer.publier`)
+plutôt que de le simuler. Elles sont dans `tools/banc/BancDataLayer-{phone,wear}.kt` et se
+déploient par `tools/banc/datalayer.sh`.
+
+Un détail volontaire, à ne pas prendre pour un oubli : la sonde publie l'item **sans** écrire la
+ligne `night_context`. Cette ligne est scellée par déclencheur SQLite, donc irréversible, et le
+banc n'a pas à laisser une soirée fabriquée dans la base d'un appareil du quotidien. Ce qui est
+mesuré ici est le transport, pas le formulaire.
+
+### 11.2 Le test décisif — celui que l'émulateur a échoué quatre fois
+
+**État de départ**, montre réveillée, application relancée :
+
+```
+text="Ready"   text="Battery 100%"   text="Free space 12.2 GB"
+text="Fill in the evening form on the phone: the watch will not start until it is sealed."
+```
+
+![Le bloqueur, avant publication](img/reel-montre-bloquee.png)
+
+En faisant défiler : `text="Open on phone"`, `text="START"`. **Nulle part `Phone unreachable`** —
+la montre a été appairée, donc `connectedNodes` est non vide, exactement comme le §7.1 le décrit.
+
+**Ce que le téléphone voit de la montre**, et c'est déjà la première rupture avec l'émulateur :
+
+```
+BANC_CONNECTED_NODES n=1 Pixel Watch 3/70c85ec6/nearby=true
+BANC_CAP_REACHABLE   n=1 Pixel Watch 3/nearby=true
+BANC_CAP_ALL         n=1 Pixel Watch 3/nearby=true
+```
+
+Sur l'émulateur, `getCapability(FILTER_REACHABLE)` rendait une liste **vide**
+(`ConnectedCapabilityNotification<pendulum_watch_app, []>`, §7.1). Ici la capacité déclarée par
+l'APK montre est joignable depuis le téléphone : quelque chose a donc déjà traversé.
+
+**La publication**, par la sonde, dans le processus du téléphone :
+
+```
+BANC_CONTEXTE_PUBLIE cle=2026-08-03 uri=wear://65b7e3d/pendulum/context/2026-08-03
+BANC_ITEMS n=1
+BANC_ITEM  wear://65b7e3d/pendulum/context/2026-08-03 13o
+```
+
+**Et ce que la montre en fait**, après `force-stop` et relance pour interdire tout cache :
+
+```
+text="Ready"   text="Battery 100%"   text="Free space 12.2 GB"   text="START"
+```
+
+![Le bloqueur a disparu, START est actif](img/reel-montre-debloquee.png)
+
+La sonde côté montre le dit sans passer par l'écran :
+
+```
+BANC_PREFLIGHT cle=2026-08-03 demarrable=true
+BANC_PREFLIGHT_BLOQUEURS
+BANC_PREFLIGHT_AVERTISSEMENTS
+BANC_PREFLIGHT_CONTEXTE true
+BANC_ITEMS n=1
+BANC_ITEM  wear://65b7e3d/pendulum/context/2026-08-03 13o
+BANC_CONNECTED_NODES n=1 Pixel 10 Pro Fold/65b7e3d/nearby=true
+BANC_CAP_REACHABLE   n=1 Pixel 10 Pro Fold/nearby=true
+```
+
+**La preuve tient dans l'autorité de l'URI.** L'item que la montre lit dans son propre magasin est
+`wear://65b7e3d/…`, et `65b7e3d` est l'identifiant de nœud du **téléphone** — la montre est
+`70c85ec6`. Ce n'est pas un item local qu'elle se serait posé à elle-même : c'est un item répliqué
+depuis l'autre appareil. Treize octets, un horodatage, et toute la question du §7.1 tranchée dans
+l'autre sens.
+
+**Ce qu'on en conclut.** Le Data Layer transporte sur matériel réel, dans les deux sens de lecture
+qu'on a pu observer : la capacité annoncée par la montre est vue du téléphone, l'item publié par le
+téléphone est lu par la montre. Le §7.1 avait correctement diagnostiqué sa propre cause —
+`Address={invalid address}`, un émulateur n'ayant pas d'adresse Bluetooth — et sa conclusion ne
+sort pas de l'émulateur.
+
+### 11.3 Le faux vert de `PHONE_UNREACHABLE` — confirmé, et sa correction annoncée ne suffit pas
+
+Le moyen le moins intrusif de couper la liaison est le Bluetooth du téléphone, laissé sur son
+écran et pris par `adb` :
+
+```bash
+adb -s <telephone> shell settings get global bluetooth_on     # 1
+adb -s <telephone> shell cmd bluetooth_manager disable         # enable/disable: Success
+adb -s <telephone> shell settings get global bluetooth_on     # 0,  dumpsys: State: OFF
+```
+
+**Cinquante secondes plus tard, vu de la montre :**
+
+```
+BANC_CONNECTED_NODES n=1 Pixel 10 Pro Fold/65b7e3d/nearby=false
+BANC_CAP_REACHABLE   n=1 Pixel 10 Pro Fold/nearby=false
+BANC_PREFLIGHT demarrable=true
+BANC_PREFLIGHT_AVERTISSEMENTS            <- toujours vide : pas de PHONE_UNREACHABLE
+```
+
+**Et la liaison est bien morte**, ce qu'il fallait établir séparément plutôt que de le supposer :
+le téléphone supprime l'item du contexte, et la montre ne le voit pas partir.
+
+```
+# cote telephone, Bluetooth coupe
+BANC_CONTEXTE_RETIRE cle=2026-08-03 supprimes=1
+# cote montre, 45 s plus tard
+BANC_ITEMS n=1
+BANC_ITEM  wear://65b7e3d/pendulum/context/2026-08-03 13o     <- l'item efface est toujours la
+BANC_PREFLIGHT_CONTEXTE true
+```
+
+Les deux appareils étaient pourtant sur le même réseau WiFi — téléphone `192.168.86.207` sur
+`wlan0`, montre `192.168.86.138` — et cela n'a rien rattrapé dans cette fenêtre. Le Bluetooth
+coupé, le Data Layer ne transporte plus, et il est le seul chemin observé.
+
+**Le tableau qui résume, et qui déplace la conclusion du §7.1 :**
+
+| Lecture | Bluetooth actif | Bluetooth coupé | Dit la vérité |
+|---|---|---|---|
+| `NodeClient.connectedNodes` non vide | oui | **oui** | non |
+| `getCapability(…, FILTER_REACHABLE)` non vide | oui | **oui** | **non** |
+| `Node.isNearby` | `true` | `false` | **oui** |
+| Un `DataItem` traverse | oui | non | — |
+
+Le §7.1 écrit : « Le test qui mesure vraiment une liaison est
+`CapabilityClient.getCapability(…, FILTER_REACHABLE)` ». **Sur matériel réel, c'est faux.** Cette
+API filtre les nœuds qui annoncent la capacité, pas ceux qu'on peut atteindre à cet instant ; elle
+rend le téléphone avec `isNearby=false` au lieu de ne rien rendre. Appliquer la correction proposée
+aurait déplacé le défaut sans le réparer, et l'aurait rendu plus difficile à retrouver puisque le
+nom de la constante affirme le contraire.
+
+#### La correction proposée — non appliquée
+
+`Preflight.phoneReachable()` teste `nodes.isNotEmpty()`. La mesure ci-dessus désigne le champ qui
+discrimine, et il est déjà dans l'objet qu'on a en main :
+
+```kotlin
+// wear/src/main/kotlin/com/pendulum/wear/record/Preflight.kt
+private fun phoneReachable(ctx: Context): Boolean = try {
+    val nodes = Tasks.await(Wearable.getNodeClient(ctx).connectedNodes, 10, TimeUnit.SECONDS)
+    nodes.any { it.isNearby }        // au lieu de nodes.isNotEmpty()
+} catch (e: Exception) { false }
+```
+
+**Ce que ça coûte : rien de mesurable.** Pas d'API supplémentaire, pas d'appel réseau de plus, même
+délai de 10 s, même branche d'échec. `Node.isNearby` est déjà rempli par la réponse qu'on attend
+déjà.
+
+**Ce que ça coûte quand même, et il faut le dire :** `isNearby` signifie « joignable par un
+transport de proximité », et non « joignable ». Une montre LTE dont le téléphone n'est atteignable
+que par le relais Google verrait l'avertissement s'afficher alors que la synchronisation finirait
+par se faire. Ce n'est pas grave — l'avertissement n'est pas bloquant, il dit exactement
+« recording carries on, sync will happen later », ce qui reste vrai — mais c'est un faux rouge
+échangé contre un faux vert, et **il n'est pas mesuré** : aucune configuration purement relais n'a
+pu être produite ici. Confiance moyenne sur ce point, haute sur le reste.
+
+L'alternative honnête serait un aller-retour réel — `MessageClient.sendMessage` vers un chemin de
+ping, avec un répondeur côté téléphone. Elle mesurerait la liaison au lieu de la déduire, mais elle
+coûte un réveil du téléphone, un délai à régler, et du code des deux côtés, pour un avertissement
+non bloquant. Le rapport n'est pas favorable ; à retenir seulement si `isNearby` se révélait faux.
+
+### 11.4 Health Connect en API 37
+
+Le mur du §3 — deux permissions inconnues du gestionnaire de paquets — n'existe plus.
+
+```
+$ adb -s <telephone> shell pm grant com.pendulum android.permission.health.READ_SLEEP
+$ adb -s <telephone> shell pm grant com.pendulum android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND
+$ adb -s <telephone> shell pm grant com.pendulum android.permission.health.READ_HEALTH_DATA_HISTORY
+# les trois silencieuses, donc les trois acceptees ; verification :
+        android.permission.health.READ_SLEEP: granted=true
+        android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND: granted=true
+        android.permission.health.READ_HEALTH_DATA_HISTORY: granted=true
+```
+
+En API 34 les deux dernières rendaient `IllegalArgumentException: Unknown permission`. **Le chemin
+nominal de `SleepFetchWorker` est donc exerçable sur ces appareils**, et la branche dégradée
+`BACKGROUND_READ_UNAVAILABLE` que le banc émulateur était condamné à parcourir n'est plus la seule
+disponible.
+
+Le fournisseur est présent et vivant :
+
+```
+package:com.google.android.apps.healthdata
+package:com.google.android.healthconnect.controller     versionName=17 versionCode=37
+216  healthconnect: [android.health.connect.aidl.IHealthConnectService]
+```
+
+**Ce qui n'est pas mesuré :** ce que rend `SleepReader.availability()`. La sonde qui l'interroge
+(`BancDataLayer#sante`) a été écrite après la dernière compilation que la machine de compilation
+ait pu produire — voir §11.6. Les trois permissions sont accordées et
+`HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND` est la seule inconnue restante entre
+cet état et `READY`. On l'attend, on ne l'affirme pas.
+
+`:sleepwriter` n'a pas été installé.
+
+### 11.5 Le transfert réel — non atteint
+
+**Ce point n'a pas été mesuré, et il reste entier.** Il exigeait de recompiler `:wear` avec
+`-Ppendulum.temps.diviseur=250` pour ramener `CHUNK_ROTATION_MS` de 5 min à 1,2 s, de réinstaller,
+puis de lancer un enregistrement court depuis l'écran de la montre. La montre n'est atteignable
+qu'en USB depuis le Mac, et **le Mac a quitté le réseau Tailscale en cours de session** et n'y est
+pas revenu ; elle n'annonce pas de débogage sans fil (`mdns services` ne la liste pas,
+`connect 192.168.86.138:5555` est refusé), et aucun autre hôte ne la porte.
+
+Ce qui reste donc à vérifier, et qui est l'invariant central du protocole : **qu'un chunk traverse,
+qu'il soit acquitté, et qu'il ne soit supprimé de la montre qu'après l'accusé**. Il est aujourd'hui
+raisonné et non mesuré, comme le §8 le disait — à ceci près que le §11.2 vient de rendre la mesure
+possible, ce qu'elle n'était pas.
+
+La sonde qui la lira est déjà écrite et déjà installée sur la montre :
+`BancDataLayer#chunksSurDisque` liste les fichiers restants, index par index, avec leur taille.
+
+### 11.6 Deux limites de la session, à ne pas confondre avec des résultats
+
+**Le contrôle du §11.3 est incomplet.** Il manque la mesure symétrique : le Bluetooth rétabli,
+au bout de combien de temps la suppression rejoint-elle la montre ? Le Bluetooth **a** été
+rétabli — `bluetooth_on=1`, `State: ON` — et le téléphone ne porte plus l'item (`BANC_ITEMS n=0`),
+mais la lecture correspondante côté montre a été perdue avec la machine de compilation. Ce que le
+§11.3 établit reste vrai dans son sens utile — les deux API rendent un nœud alors que rien ne
+traverse — et il ne faut pas lui faire dire que la reprise a été chronométrée.
+
+**La machine de compilation est un point de défaillance unique.** Le Mac porte le SDK, la
+compilation et le seul lien vers la montre. Sa disparition a coûté les §11.4 (partiellement) et
+§11.5 (entièrement). Le téléphone, lui, est resté joignable par l'ADB de Windows
+(`192.168.86.207:37675`, découvert par `adb mdns services`), ce qui a permis de rétablir le
+Bluetooth et de terminer §11.4 : **une seconde voie vers les appareils vaut d'être maintenue**, et
+la montre devrait porter le débogage sans fil avant la prochaine session.
+
+### 11.7 L'état laissé sur les appareils
+
+| | |
+|---|---|
+| **Pixel Watch 3** | `com.pendulum` réinstallé depuis le même keystore de debug (aucune désinstallation). **`com.pendulum.test` installé** — l'APK d'instrumentation, à désinstaller par `adb uninstall com.pendulum.test`. `screen_off_timeout` porté de **600000 à 2147483647** et `svc power stayon true` posé : **à remettre**, `settings put system screen_off_timeout 600000` et `svc power stayon false`. Aucun enregistrement en cours — aucun n'a jamais été démarré. Aucun fichier de chunk sur le disque. |
+| **Pixel 10 Pro Fold** | `com.pendulum` réinstallé depuis le même keystore. **`com.pendulum.test` installé**, à désinstaller de même. Les trois permissions Health Connect accordées par `pm grant` pour la mesure du §11.4, puis **révoquées** : vérifié `granted=false` pour les trois, soit l'état d'origine. Bluetooth **coupé puis rétabli**, vérifié `bluetooth_on=1`. `screen_off_timeout` et `stay_on_while_plugged_in` **non modifiés** : ils valaient déjà 2147483647 et 15. Base `pendulum.db` **inchangée**, toutes tables vides — aucun contexte scellé, la sonde ne l'écrit pas. |
+| **Data Layer** | L'item `/pendulum/context/2026-08-03` a été publié puis **supprimé** depuis le téléphone. Vérifié après rétablissement du Bluetooth : `BANC_ITEMS n=0`. La montre en portait encore une copie périmée au moment où la machine de compilation a disparu, et la suppression n'a pas pu y être constatée ; la resynchronisation Bluetooth, rétablie depuis, l'emporte normalement. **Si elle subsistait**, la montre accepterait de démarrer une nuit du 3 août sans contexte en base — nuit qui ressortirait écartée pour `NO_CONTEXT`. La clé de nuit expire d'elle-même à midi le 4 août. |
+| **TV** (`192.168.86.129:5555`) | jamais touchée. Elle apparaît dans `adb mdns services` et a été ignorée. |
+
+---
+
+## 12. L'état laissé sur le Mac
 
 > **Mis à jour le 3 août 2026 après le §7.1.** Les deux snapshots `banc_pret` ont été réécrits sur
 > l'état appairé, et c'est l'état recommandé — il évite d'avoir à refaire l'installation du
