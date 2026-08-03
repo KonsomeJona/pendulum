@@ -9,8 +9,11 @@ import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
+import com.pendulum.format.wire.Ack
 import com.pendulum.format.wire.WirePaths
 import com.pendulum.wear.record.Preflight
+import com.pendulum.wear.temps.Durees
+import com.pendulum.wear.temps.EchelleTemps
 import com.pendulum.wear.transfer.DataLayerTransfer
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,6 +88,53 @@ class BancDataLayer {
         log("BANC_ITEMS n=${buf.count}")
         buf.forEach { log("BANC_ITEM ${it.uri} ${it.data?.size ?: -1}o") }
         buf.release()
+    }
+
+    /**
+     * L'accuse tel que le telephone l'a publie, decode. C'est la seule facon de chiffrer ce que
+     * la montre a **le droit** d'effacer : `applyAck` n'efface un fichier que si `isAcked(idx)`,
+     * et ce booleen se lit ici, index par index, au lieu d'etre deduit de ce qui a disparu.
+     */
+    @Test
+    fun accuse() {
+        val buf = Tasks.await(
+            Wearable.getDataClient(ctx)
+                .getDataItems(uri(WirePaths.ACK_PREFIX), DataClient.FILTER_PREFIX),
+            30, TimeUnit.SECONDS,
+        )
+        log("BANC_ACK n=${buf.count}")
+        buf.forEach { item ->
+            val octets = item.data
+            if (octets == null) {
+                log("BANC_ACK_ITEM ${item.uri} SANS_DONNEES")
+                return@forEach
+            }
+            val a = Ack.decode(octets)
+            val acquittes = (0..maxOf(a.ackedUpTo, a.bitmapBase + a.ackedBitmap.size * 8))
+                .filter { a.isAcked(it) }
+            log(
+                "BANC_ACK_ITEM ${item.uri} ackedUpTo=${a.ackedUpTo} base=${a.bitmapBase} " +
+                    "bitmap=${a.ackedBitmap.size}o resend=${a.needResend.toList()} " +
+                    "phoneMs=${a.phoneMs} acquittes=$acquittes",
+            )
+        }
+        buf.release()
+    }
+
+    /**
+     * Le diviseur de temps reellement compile dans cet APK. Il se lit ici et non dans le journal
+     * de compilation : c'est l'APK installe qui compte, et rien d'autre ne prouve que les deux
+     * moities du banc ont recu la meme valeur.
+     */
+    @Test
+    fun echelle() {
+        val d = Durees.ACTIVES
+        log(
+            "BANC_ECHELLE diviseur=${EchelleTemps.DIVISEUR} rotationChunkMs=${d.rotationChunkMs} " +
+                "tickServiceMs=${d.tickServiceMs} antiRebondChargeMs=${d.antiRebondChargeMs} " +
+                "dureeMaxSessionMs=${d.dureeMaxSessionMs} " +
+                "delaiMinAvantHeureButoirMs=${d.delaiMinAvantHeureButoirMs}",
+        )
     }
 
     /** Les fichiers de chunks encore sur le disque : l'invariant « rien d'efface avant l'accuse ». */

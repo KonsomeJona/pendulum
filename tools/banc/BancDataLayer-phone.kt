@@ -122,6 +122,92 @@ class BancDataLayer {
         }
     }
 
+    /**
+     * Le diviseur de temps reellement compile dans **cet** APK.
+     *
+     * Rien dans le code ne peut verifier que les deux moities du banc ont recu la meme valeur :
+     * `EchelleTemps` est un objet par module, alimente par une propriete Gradle, et deux
+     * invocations distinctes de `gradlew` produiraient sans un mot deux applications a des
+     * echelles differentes. La verification est donc **externe** : on lit la valeur des deux
+     * cotes et on les compare. Son jumeau est `BancDataLayer#echelle` cote montre.
+     */
+    @Test
+    fun echelle() {
+        val d = com.pendulum.phone.temps.Durees.ACTIVES
+        log(
+            "BANC_ECHELLE diviseur=${com.pendulum.phone.temps.EchelleTemps.DIVISEUR} " +
+                "abandonLectureMs=${d.abandonLectureMs} ageMaxNuitMs=${d.ageMaxNuitMs} " +
+                "silenceAvantStaleMs=${d.silenceAvantStaleMs}",
+        )
+    }
+
+    /**
+     * Les lignes que l'ingestion a ecrites, lues **dans la base** et non deduites des fichiers.
+     *
+     * C'est la moitie telephone de l'invariant : `AckBuilder.build` ne recoit que les index
+     * `complete=1` de cette table, donc ce qui n'est pas ici ne peut pas etre acquitte, donc ne
+     * peut pas etre efface de la montre. Le `sqlite3` de la ligne de commande n'existe pas sur
+     * cet appareil ; la lecture passe donc par le meme `openHelper` que le produit.
+     */
+    @Test
+    fun base() {
+        val db = com.pendulum.phone.db.PendulumDatabase.get(ctx).openHelper.readableDatabase
+        db.query(
+            "SELECT sessionHex, nightKey, state, totalChunks, startWallMs, endWallMs, stopReason " +
+                "FROM night_session ORDER BY startWallMs",
+        ).use { c ->
+            log("BANC_DB_SESSIONS n=${c.count}")
+            while (c.moveToNext()) {
+                log(
+                    "BANC_DB_SESSION hex=${c.getString(0)} cle=${c.getString(1)} " +
+                        "etat=${c.getString(2)} totalChunks=${c.getInt(3)} " +
+                        "debut=${c.getLong(4)} fin=${if (c.isNull(5)) "-" else c.getLong(5)} " +
+                        "raison=${c.getString(6) ?: "-"}",
+                )
+            }
+        }
+        db.query(
+            "SELECT sessionHex, idx, size, crc32, sampleCount, complete, receivedAtMs " +
+                "FROM chunk ORDER BY sessionHex, idx",
+        ).use { c ->
+            log("BANC_DB_CHUNKS n=${c.count}")
+            while (c.moveToNext()) {
+                log(
+                    "BANC_DB_CHUNK hex=${c.getString(0)} idx=${c.getInt(1)} taille=${c.getInt(2)} " +
+                        "crc32=${c.getLong(3)} echantillons=${c.getInt(4)} " +
+                        "complet=${c.getInt(5)} recuA=${c.getLong(6)}",
+                )
+            }
+        }
+    }
+
+    /**
+     * Le menage de fin de banc : la nuit fabriquee, ses chunks en base et ses fichiers.
+     *
+     * Elle est passee par `-e session <hex>` plutot que devinee : effacer « la derniere nuit »
+     * d'une base qui est celle d'un appareil du quotidien serait une regle qui se trompe un jour.
+     * La suppression de `night_session` emporte les lignes `chunk` par cle etrangere en cascade.
+     */
+    @Test
+    fun purgerBanc() {
+        val hex = InstrumentationRegistry.getArguments().getString("session")
+        if (hex.isNullOrBlank()) {
+            log("BANC_PURGE_FAIL aucune session passee par -e session <hex>")
+            return
+        }
+        val db = com.pendulum.phone.db.PendulumDatabase.get(ctx).openHelper.writableDatabase
+        val avant = db.query("SELECT count(*) FROM chunk WHERE sessionHex='$hex'")
+            .use { if (it.moveToFirst()) it.getInt(0) else -1 }
+        db.execSQL("DELETE FROM night_session WHERE sessionHex='$hex'")
+        val apres = db.query("SELECT count(*) FROM chunk WHERE sessionHex='$hex'")
+            .use { if (it.moveToFirst()) it.getInt(0) else -1 }
+        val dossier = java.io.File(java.io.File(ctx.filesDir, "chunks"), hex)
+        val fichiers = dossier.listFiles()?.size ?: 0
+        val efface = dossier.deleteRecursively()
+        log("BANC_PURGE hex=$hex chunks_avant=$avant chunks_apres=$apres " +
+            "fichiers=$fichiers dossier_efface=$efface")
+    }
+
     /** Tout ce que le magasin porte sous `/pendulum`, vu du telephone. */
     @Test
     fun listerItems() {

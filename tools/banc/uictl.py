@@ -11,6 +11,7 @@ Usage :
     uictl.py <serie> dump                     # ecrit l'arbre sur la sortie standard
     uictl.py <serie> find  <motif>            # rend les elements dont le texte/id contient le motif
     uictl.py <serie> tap   <motif>            # tape au centre du premier element trouve
+    uictl.py <serie> presse <motif> [ms]      # appui long (defaut 900 ms)
     uictl.py <serie> wait  <motif> [timeout]  # attend l'apparition d'un element (defaut 30 s)
     uictl.py <serie> shot  <fichier.png>      # capture d'ecran
     uictl.py <serie> cocher [n]               # coche les n premieres cases non cochees
@@ -186,6 +187,32 @@ def main():
         n = found[0]
         adb(serial, "shell", "input", "tap", str(n["cx"]), str(n["cy"]))
         print(f"UICTL_OK tap ({n['cx']},{n['cy']}) sur {describe(n)}")
+        return 0
+
+    if cmd == "presse":
+        # Appui long, par un `swipe` sans deplacement : `input` n'a pas de verbe pour ca et
+        # `motionevent DOWN/UP` ne produit rien sur les boutons Compose (§7.4). Le STOP de la
+        # montre est deliberement un appui long suivi d'une confirmation — deux gestes, aucun
+        # des deux involontaire — donc le banc doit savoir en produire un.
+        duree = int(sys.argv[4]) if len(sys.argv) > 4 else 900
+        found = nodes(dump(serial), arg)
+        pat = arg.lower()
+        found.sort(
+            key=lambda n: (
+                n["text"].strip().lower() != pat,
+                n["clickable"] != "true",
+                area(n),
+            )
+        )
+        if not found:
+            print(f"UICTL_FAIL motif absent: {arg}")
+            return 1
+        n = found[0]
+        adb(
+            serial, "shell", "input", "swipe",
+            str(n["cx"]), str(n["cy"]), str(n["cx"]), str(n["cy"]), str(duree),
+        )
+        print(f"UICTL_OK appui long {duree} ms ({n['cx']},{n['cy']}) sur {describe(n)}")
         return 0
 
     if cmd == "wait":

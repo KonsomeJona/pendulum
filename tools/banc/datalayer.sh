@@ -16,7 +16,7 @@
 #     bash tools/banc/datalayer.sh deploy
 #     bash tools/banc/datalayer.sh build  phone|wear
 #     bash tools/banc/datalayer.sh push   phone|wear <serie>
-#     bash tools/banc/datalayer.sh run    phone|wear <serie> <methode>
+#     bash tools/banc/datalayer.sh run    phone|wear <serie> <methode> [-e cle valeur ...]
 #
 # Chaque commande emet un marqueur `DATALAYER_*` : ssh via Tailscale ne propage pas les codes de
 # sortie, l'appelant distant doit lire le marqueur et non `$?`.
@@ -90,6 +90,10 @@ push() {
 
 run() {
   local m="$1" s="$2" meth="$3"
+  shift 3
+  # Ce qui reste est passe tel quel a `am instrument` : c'est par la que `purgerBanc` recoit
+  # `-e session <hex>`. Sans ce passe-plat, une sonde parametrable devrait deviner son argument.
+  local extra=("$@")
   local cls
   case "$m" in
     phone) cls="com.pendulum.phone.BancDataLayer" ;;
@@ -98,7 +102,7 @@ run() {
   esac
   "$ADB" -s "$s" logcat -c 2>/dev/null
   "$ADB" -s "$s" shell am instrument -w -r \
-    -e class "$cls#$meth" \
+    -e class "$cls#$meth" "${extra[@]}" \
     com.pendulum.test/androidx.test.runner.AndroidJUnitRunner 2>&1 \
     | grep -E "INSTRUMENTATION_(STATUS_)?CODE|shortMsg|Error|Failure|junit" | head -20
   sleep 2
@@ -111,6 +115,6 @@ case "$1" in
   deploy) deploy ;;
   build)  build "$2" ;;
   push)   push "$2" "$3" ;;
-  run)    run "$2" "$3" "$4" ;;
+  run)    run "$2" "$3" "$4" "${@:5}" ;;
   *) echo "DATALAYER_FAIL commande inconnue: $1" ;;
 esac
