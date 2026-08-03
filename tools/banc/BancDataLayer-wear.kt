@@ -81,6 +81,47 @@ class BancDataLayer {
             all.nodes.joinToString { "${it.displayName}/nearby=${it.isNearby}" })
     }
 
+    /**
+     * Les candidats a `Preflight.phoneReachable`, cote a cote, a la meme seconde.
+     *
+     * Trois lectures et un aller simple. Les trois premieres se deduisent d'une configuration ou
+     * d'une annonce ; la quatrieme exige que quelque chose parte reellement — `sendMessage` est
+     * la seule API du Data Layer qui **echoue** quand le noeud n'est pas joignable, la ou
+     * `putDataItem` bufferise et rend la main.
+     *
+     * Le chemin `/pendulum/banc-ping` n'est declare dans aucun filtre du telephone : le message
+     * ne reveille aucun composant et ne produit aucun effet de bord. On ne mesure que le trajet.
+     */
+    @Test
+    fun joignabilite() {
+        val nodes = Tasks.await(Wearable.getNodeClient(ctx).connectedNodes, 20, TimeUnit.SECONDS)
+        log("BANC_J_NODES n=${nodes.size} " +
+            nodes.joinToString { "${it.displayName}/${it.id}/nearby=${it.isNearby}" })
+
+        val reachable = Tasks.await(
+            Wearable.getCapabilityClient(ctx)
+                .getCapability("pendulum_phone_app", CapabilityClient.FILTER_REACHABLE),
+            20, TimeUnit.SECONDS,
+        )
+        log("BANC_J_CAP n=${reachable.nodes.size} " +
+            reachable.nodes.joinToString { "${it.displayName}/nearby=${it.isNearby}" })
+
+        for (n in nodes) {
+            val t0 = System.currentTimeMillis()
+            val r = runCatching {
+                Tasks.await(
+                    Wearable.getMessageClient(ctx)
+                        .sendMessage(n.id, "/pendulum/banc-ping", ByteArray(0)),
+                    15, TimeUnit.SECONDS,
+                )
+            }
+            val e = r.exceptionOrNull()
+            log("BANC_J_MSG ${n.id} ok=${r.isSuccess} ms=${System.currentTimeMillis() - t0} " +
+                "erreur=${e?.let { it.javaClass.simpleName + " " + it.message }}")
+        }
+        log("BANC_J_PREFLIGHT_ACTUEL " + Preflight.phoneReachable(nodes))
+    }
+
     /** Tout ce que le magasin porte sous `/pendulum`, vu de la montre. */
     @Test
     fun listerItems() {
@@ -230,13 +271,58 @@ class BancDataLayer {
                 .deleteDataItems(uri(WirePaths.session(hex)), DataClient.FILTER_LITERAL),
             30, TimeUnit.SECONDS,
         )
+        // L'apercu en direct est publie par la montre a chaque salve et ne part jamais tout seul :
+        // il ne fait pas partie du protocole d'accuse. Une nuit de banc laissee sans lui purger
+        // son `live` laisse un kilo-octet dans le magasin des deux appareils, pour toujours.
+        val live = Tasks.await(
+            Wearable.getDataClient(ctx)
+                .deleteDataItems(uri(WirePaths.live(hex)), DataClient.FILTER_LITERAL),
+            30, TimeUnit.SECONDS,
+        )
         val dossier = java.io.File(java.io.File(ctx.filesDir, "chunks"), hex)
         val fichiers = dossier.listFiles()?.size ?: 0
         val efface = dossier.deleteRecursively()
         log(
-            "BANC_PURGE hex=$hex items_chunk=$items item_session=$session " +
+            "BANC_PURGE hex=$hex items_chunk=$items item_session=$session item_live=$live " +
                 "fichiers=$fichiers dossier_efface=$efface",
         )
+    }
+
+    /**
+     * Une livraison montre -> telephone, aussi legere que possible, dont le seul objet est de
+     * savoir si GMS parvient a se **lier** au service d'ecoute d'en face.
+     *
+     * L'item est pose sous `/pendulum/chunk/`, le prefixe que le filtre du telephone declare, avec
+     * une charge utile volontairement illisible : `ChunkEnvelope.decode` leve, le `catch` de
+     * `onDataChanged` journalise « item ignore », et **rien n'est ecrit** — ni fichier, ni ligne
+     * de base, ni accuse. C'est exactement ce qu'on veut d'une sonde qui tourne sur l'appareil de
+     * quelqu'un : elle mesure la liaison, elle ne fabrique pas d'etat.
+     *
+     * L'horodatage dans la charge utile n'est pas decoratif : un `DataItem` repose avec des octets
+     * identiques n'est **pas** un changement, et GMS ne livre alors rien du tout.
+     */
+    @Test
+    fun livrerSonde() {
+        val hex = "ba0c0000000000000000000000000000"
+        val path = WirePaths.chunk(hex, 0)
+        val charge = "BANC-SONDE-${System.currentTimeMillis()}".toByteArray()
+        val item = Tasks.await(
+            Wearable.getDataClient(ctx)
+                .putDataItem(PutDataRequest.create(path).setData(charge).setUrgent()),
+            30, TimeUnit.SECONDS,
+        )
+        log("BANC_SONDE_PUBLIEE uri=${item.uri} ${charge.size}o")
+    }
+
+    /** Retire l'item de [livrerSonde]. A appeler apres chaque mesure : rien ne part tout seul. */
+    @Test
+    fun retirerSonde() {
+        val hex = "ba0c0000000000000000000000000000"
+        val n = Tasks.await(
+            Wearable.getDataClient(ctx).deleteDataItems(uri(WirePaths.chunk(hex, 0))),
+            30, TimeUnit.SECONDS,
+        )
+        log("BANC_SONDE_RETIREE supprimes=$n")
     }
 
     /** Les fichiers de chunks encore sur le disque : l'invariant « rien d'efface avant l'accuse ». */

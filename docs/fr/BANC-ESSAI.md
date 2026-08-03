@@ -12,6 +12,30 @@ commande qui la trancherait. Rien ici ne vient de la documentation d'Android.
 
 ## 1. Le verdict
 
+> **Complété le 3 août 2026 par le §12, troisième session sur les deux appareils réels.**
+> **La chaîne tient de bout en bout.** La ligne de manifeste qui tuait toute livraison est retirée,
+> et pour une raison mesurée plutôt que devinée : Play Services ne **demande** pas
+> `BIND_WEARABLE_LISTENER` — 384 permissions déclarées, pas celle-là — donc la définir soi-même,
+> en `signature` comme en `signatureOrSystem`, ne change rien. Ce qui protège les deux services à
+> la place n'est pas une supposition : la bibliothèque cliente filtre elle-même l'UID appelant sur
+> les onze méthodes de son interface, et refuse tout ce qui n'est pas GMS avant d'atteindre
+> `onDataChanged`. Un test instrumenté, rouge d'abord, vérifie désormais que toute permission
+> exigée par un composant existe sur l'appareil.
+>
+> **L'invariant central du protocole est vérifié dans les deux sens**, sur une nuit réelle de
+> 32 min 03 s : sept chunks émis, ingérés, vérifiés au CRC-32, acquittés, puis effacés de la montre
+> — et pas avant. **La première veille réelle** a tenu 32 minutes en Doze profond forcé, écran
+> éteint, sans que le service soit tué une seule fois, sans wake lock, sans dégradation, avec
+> 98,27 % de couverture d'échantillons dont le déficit est un coût de bordure de 33 s. Ce n'est pas
+> P1, et le §12.6 dit exactement ce qui manque — à commencer par la batterie, qu'une montre restée
+> sur son socle ne permet pas de mesurer.
+>
+> **Deux corrections proposées par le §11 sont écartées par la mesure.** `nodes.any { it.isNearby }`
+> est un **faux rouge** : Bluetooth coupé et les deux appareils sur le même WiFi, `isNearby` passe à
+> `false` et le Data Layer continue de transporter. Ce que le §11.3 lisait comme un transport mort
+> était une fenêtre d'attente trop courte. Et l'écran de mesure P1, à sa première utilisation
+> réelle, rapporte « hors P1 » une nuit simplement non encore analysée. Lire le §12.
+
 > **Complété le 3 août 2026 par le §11.5, sur les deux appareils réels.** **L'invariant central du
 > protocole est vérifié dans la direction qui protège les données** : les deux chunks d'une nuit
 > d'essai étaient dans le magasin du téléphone, et la montre ne les a pas effacés — la suppression
@@ -1688,7 +1712,614 @@ C'est un quart d'heure perdu à croire à une machine qui raccroche.
 
 ---
 
-## 12. L'état laissé sur le Mac
+## 12. La livraison rétablie, une correction écartée, et la première veille réelle
+
+**Mesures du 3 août 2026, troisième session sur les deux appareils réels.** Pixel Watch 3
+(`47201JEAYW08AF`, USB) et Pixel 10 Pro Fold (`5C171FDCG00089`, WiFi), API 37, par
+`ssh jona@192.168.86.161`.
+
+### Le verdict
+
+**La livraison est rétablie, et la correction retenue n'est pas celle que le §11.5.7 proposait à
+demi-mot : c'est la seule que la mesure autorise.** Définir soi-même
+`BIND_WEARABLE_LISTENER` — en `signature` puis en `signatureOrSystem` — ne change **rien**, et
+pour une raison que personne n'avait vérifiée : Play Services ne **demande** pas cette permission.
+Sur 384 permissions déclarées, pas celle-là. Une permission d'installation n'est accordée qu'aux
+paquets qui la déclarent, donc aucun `protectionLevel` ne répare quoi que ce soit. Retirer
+l'attribut est la seule option qui marche, et elle est plus sûre qu'il n'y paraissait : la
+bibliothèque cliente porte **son propre** filtre d'UID, sur les onze méthodes de son interface
+AIDL, et il refuse tout appelant qui n'est pas GMS avant que `onDataChanged` ne soit atteint.
+Mesuré, pas déduit.
+
+**La correction du §11.3 est fausse, et c'est la mesure qui le dit.** `nodes.any { it.isNearby }`
+produit un faux rouge : Bluetooth coupé et les deux appareils sur le même WiFi, `isNearby` passe à
+`false` des deux côtés **et le Data Layer continue de transporter** — un item publié arrive en
+moins de 45 s, une suppression en moins de 60 s. Ce que le §11.3 lisait comme un transport mort
+était une fenêtre d'attente trop courte. La correction n'est pas appliquée ; le faux vert reste, et
+il est désormais épinglé par un test qui dit ce qu'il est.
+
+**Le diviseur de temps ne peut plus se désaccorder en silence** : une compilation compressée sur le
+capteur réel refuse de démarrer, avec un bloqueur lisible à l'écran du coucher.
+
+**La veille réelle a été mesurée pour la première fois** — 30 minutes, écran éteint, Doze profond
+forcé, batterie déclarée débranchée. Ce qu'elle prouve et ce qu'elle ne prouve pas est au §12.4, et
+la deuxième chose est la plus importante des deux.
+
+---
+
+### 12.1 `BIND_WEARABLE_LISTENER` — trois options essayées, une seule marche
+
+La sonde qui mesure tient en une livraison, dans chaque sens, et elle ne fabrique aucun état : la
+montre pose un item sous `/pendulum/chunk/…`, le téléphone un item sous `/pendulum/ack/…`, tous
+deux avec une charge utile volontairement illisible. Le décodage échoue, le `catch` journalise,
+**rien n'est écrit** — ni fichier, ni ligne de base, ni accusé. Ce qu'on lit ensuite est soit le
+refus du système, soit la trace du service qui a tourné. Vingt-cinq secondes par variante.
+
+#### L'état de départ, reproduit dans les deux sens
+
+```
+# telephone, apres publication d'un item par la montre
+W ActivityManager: Permission Denial: Accessing service com.pendulum/.phone.ingest.PendulumListenerService
+    from pid=23433, uid=10155 requires com.google.android.gms.permission.BIND_WEARABLE_LISTENER
+W WearableService: java.lang.SecurityException: Not allowed to bind to service
+
+# montre, apres publication d'un item par le telephone
+W ActivityManager: Permission Denial: Accessing service com.pendulum/.wear.transfer.AckObserver
+    from pid=11351, uid=10098 requires com.google.android.gms.permission.BIND_WEARABLE_LISTENER
+```
+
+Le défaut est **symétrique**, ce que le §11.5.6 déduisait de la présence de la ligne sur les deux
+manifestes et qui est maintenant observé des deux côtés.
+
+#### (b) Définir la permission soi-même, `protectionLevel="signature"`
+
+```xml
+<permission android:name="com.google.android.gms.permission.BIND_WEARABLE_LISTENER"
+            android:protectionLevel="signature" />
+```
+
+Elle **existe** ensuite, ce qui n'était pas acquis — Android accepte qu'une application définisse
+une permission dans l'espace de noms d'une autre :
+
+```
+$ adb shell dumpsys package permission com.google.android.gms.permission.BIND_WEARABLE_LISTENER
+  Permission [com.google.android.gms.permission.BIND_WEARABLE_LISTENER]:
+    sourcePackage=com.pendulum
+    uid=10437 gids=[] type=0 prot=signature
+```
+
+**Et le refus est identique, au caractère près, dans les deux sens.** GMS ne la détient pas.
+
+#### (b') Même définition, `protectionLevel="signatureOrSystem"`
+
+L'outillage la compile en `prot=signature|privileged`, sa forme moderne. GMS est bien une
+application système privilégiée. **Le refus est identique, dans les deux sens.**
+
+#### Pourquoi aucune des deux ne pouvait marcher
+
+La sonde lit ce que le gestionnaire de paquets sait de Play Services, depuis le processus de
+l'application :
+
+```
+BANC_PERM_GMS demandees=384 demande_la_cible=false
+```
+
+**Play Services ne déclare pas `<uses-permission>` sur cette permission.** Une permission
+d'installation — quel que soit son `protectionLevel` — n'est accordée qu'aux paquets qui la
+demandent. `signature` échoue parce que GMS n'a pas notre signature *et* ne la demande pas ;
+`signature|privileged` échoue parce que GMS ne la demande pas, la partie « privileged » n'ayant
+jamais l'occasion de s'appliquer. Il n'existe pas de `protectionLevel` qui répare ça, et il n'y
+avait donc rien à essayer au-delà de ces deux-là.
+
+C'est la mesure qui manquait au §11.5.6 : il établissait que la permission n'est **définie** par
+personne, ce qui suffit à expliquer le refus, mais laissait ouverte l'idée qu'on pouvait la
+définir. On peut. Ça ne sert à rien.
+
+#### (a) Retirer `android:permission` — et la mesure de ce que ça coûte
+
+Les deux services se lient et s'exécutent :
+
+```
+# telephone
+W PendulumIngest: item ignore : /pendulum/chunk/ba0c…/00000
+    at com.pendulum.phone.ingest.PendulumListenerService.onChunk(PendulumListenerService.kt:181)
+    at com.pendulum.phone.ingest.PendulumListenerService.onDataChanged(PendulumListenerService.kt:85)
+    at com.google.android.gms.wearable.zzw.run(com.google.android.gms:play-services-wearable@@19.0.0:2)
+
+# montre
+E PendulumAck: accuse illisible sur /pendulum/ack/ba0c…
+    at com.pendulum.format.wire.Ack$Companion.decode(WireMessages.kt:288)
+    at com.pendulum.wear.transfer.AckObserver.onDataChanged(AckObserver.kt:34)
+```
+
+**La surface d'attaque, mesurée et non estimée.** La question posée était : un `Intent` forgé
+peut-il atteindre `onDataChanged` ? La réponse tient en deux parties, et la seconde renverse
+l'arbitrage.
+
+*Se lier : oui, n'importe qui peut.* `WearableListenerService.onBind` est `final` et ne contrôle
+pas son appelant — il rend son binder à qui présente l'une de sept actions, dont
+`com.google.android.gms.wearable.BIND_LISTENER`. Sonde exécutée sur le téléphone :
+
+```
+BANC_LIAISON bindService=true binder_rendu=true
+```
+
+*Se faire livrer : non.* Le binder rendu est une classe de la bibliothèque qui expose **onze**
+méthodes AIDL, et les onze passent par le même point de contrôle privé — onze appels pour onze
+méthodes, comptés dans le bytecode de `play-services-wearable 19.0.0`. Ce point lit
+`Binder.getCallingUid()`, le compare à l'UID de Play Services (`UidVerifier.isGooglePlayServicesUid`,
+plus l'UID du compagnon chinois `com.google.android.wearable.app.cn`), et **laisse tomber
+l'événement** sinon. Vérifié en l'appelant depuis un processus qui n'est pas GMS :
+
+```
+BANC_LIAISON_METHODE zze                       <- la methode qui porte onDataChanged
+E WearableLS: Caller is not GooglePlayServices; caller UID: 10437
+BANC_LIAISON_APPEL uid=10437 exception=aucune  <- pas d'exception : l'evenement est jete
+```
+
+L'UID 10437 est celui de `com.pendulum` sur le téléphone ; celui de GMS est 10155. `onDataChanged`
+n'a pas été atteint. Et un `Intent` seul ne peut rien : `WearableListenerService` ne redéfinit pas
+`onStartCommand`, donc un `startService` forgé n'atteint aucun code du produit. Le seul chemin est
+la liaison, et la liaison est filtrée par la bibliothèque.
+
+**Ce qui reste comme surface, et il faut le nommer :** une application locale peut faire *démarrer
+le processus* de Pendulum en s'y liant. Elle n'obtient aucune donnée et n'en injecte aucune. Le
+coût est un démarrage de processus.
+
+S'y ajoute ce que le §11.5.7 énumérait déjà, et qui reste vrai : le Data Layer ne transporte
+qu'entre applications de même `applicationId` **et** de même signature, `onDataChanged` ne lit que
+des chemins `/pendulum/`, vérifie un CRC-32 par charge utile et n'insère qu'en `INSERT OR IGNORE`,
+et l'application ne déclare pas la permission `INTERNET`.
+
+**Confiance haute.** L'arbitrage sécurité que le §11.5.7 demandait de faire explicitement est fait,
+et il ne repose pas sur « c'est ce que font les exemples officiels » : il repose sur le filtre
+d'UID de la bibliothèque, lu dans son bytecode et exercé sur l'appareil.
+
+#### Le garde-fou
+
+`PermissionsDesComposantsTest`, dans les deux modules. Il énumère les services, récepteurs,
+activités et fournisseurs de l'application **assemblée** et vérifie que chaque permission exigée
+existe sur l'appareil. Rouge d'abord, vérifié : la ligne fautive remise sur le seul manifeste du
+téléphone, recompilé, réinstallé,
+
+```
+java.lang.AssertionError: Permissions exigees par un composant et absentes de l'appareil — la
+liaison est alors refusee en silence :
+service com.pendulum.phone.ingest.PendulumListenerService exige
+com.google.android.gms.permission.BIND_WEARABLE_LISTENER, qu'aucun paquet ne definit sur cet appareil
+FAILURES!!!
+```
+
+et vert avec la correction, `OK (1 test)`, **sur les deux appareils réels**. Les quatre autres
+permissions déclarées par des composants du produit existent toutes :
+
+```
+BANC_PERM_COMPOSANT androidx.work.impl.background.systemjob.SystemJobService
+    exige=android.permission.BIND_JOB_SERVICE definie_sur_l_appareil=true
+BANC_PERM_COMPOSANT androidx.work.impl.diagnostics.DiagnosticsReceiver
+    exige=android.permission.DUMP definie_sur_l_appareil=true
+BANC_PERM_COMPOSANT androidx.profileinstaller.ProfileInstallReceiver
+    exige=android.permission.DUMP definie_sur_l_appareil=true
+BANC_PERM_COMPOSANT com.pendulum.phone.ViewPermissionUsageActivity
+    exige=android.permission.START_VIEW_PERMISSION_USAGE definie_sur_l_appareil=true
+```
+
+Le test de `:phone` tourne **à chaque poussée**, dans le job `instrumented-tests` de la CI qui
+exécute déjà `:phone:connectedDebugAndroidTest` sur un émulateur API 34. Celui de `:wear` n'a pas
+d'émulateur en CI — l'image montre refuserait l'APK téléphone et l'inverse — et se lance à la main
+par `./gradlew :wear:connectedDebugAndroidTest`. C'est un écart assumé : la ligne fautive était sur
+les deux manifestes, le garde-fou doit exister des deux côtés même si un seul est automatisé.
+
+Au passage, le module `:wear` a désormais un source set `androidTest` **versionné**. Il n'en avait
+pas : `datalayer.sh` en fabriquait un au vol, en modifiant `wear/build.gradle.kts` avec un
+correctif portant la mention « à ne pas commiter » — c'est-à-dire une consigne que seul un humain
+attentif applique, et que le dépôt a effectivement portée pendant toute une session (§11.7). Le
+correctif n'existe plus ; les quatre dépendances `androidTestImplementation` qu'il posait sont
+déclarées, où elles ne coûtent rien.
+
+---
+
+### 12.2 `PHONE_UNREACHABLE` — la correction proposée est fausse, mesuré
+
+Le §11.3 proposait `nodes.any { it.isNearby }` avec une réserve explicite : faux rouge possible en
+configuration LTE ou relais, non mesurée. **La réserve est levée, et elle emporte la correction.**
+
+#### Le cas produit
+
+Bluetooth du téléphone coupé par `cmd bluetooth_manager disable`, les deux appareils sur le même
+réseau WiFi — téléphone `192.168.86.207/24`, montre `192.168.86.138/24` —, l'état des radios relu à
+chaque pas et non supposé.
+
+| Instant | Radios | `connectedNodes` | `FILTER_REACHABLE` | `isNearby` | Le magasin de la montre |
+|---|---|---|---|---|---|
+| T0 | tout allumé | 1 nœud | 1 nœud | **true** | vide, vérifié des deux côtés |
+| T0+60 s | téléphone BT coupé | 1 nœud | 1 nœud | **false** | — |
+| publication par le téléphone | téléphone BT coupé | — | — | **false** | — |
+| T+45 s | téléphone BT coupé | 1 nœud | 1 nœud | **false** | **`wear://65b7e3d/pendulum/context/2026-08-03` 13 o** |
+| T+135 s | téléphone BT coupé | 1 nœud | 1 nœud | **false** | l'item est toujours là |
+| Bluetooth rétabli | tout allumé | 1 nœud | 1 nœud | **true** | l'item est là |
+
+L'autorité de l'URI est `65b7e3d`, l'identifiant de nœud du **téléphone**. C'est bien un item
+répliqué depuis l'autre appareil, publié pendant que `isNearby` valait `false` des deux côtés.
+
+Le contrôle symétrique a été fait dans la seconde passe, montre Bluetooth coupé et téléphone
+Bluetooth rallumé, les deux toujours sur le WiFi : une **suppression** émise par le téléphone
+atteint la montre en moins de 60 s, `BANC_ITEMS n=0`, avec `isNearby=false`.
+
+#### Ce que ça corrige dans le §11.3
+
+Le §11.3 concluait « la liaison est bien morte » de l'observation qu'une suppression n'avait pas
+atteint la montre en 45 s. **C'est une fenêtre trop courte, pas une liaison morte.** Le Data Layer
+bascule sur le WiFi, et `isNearby` — qui veut dire « joignable par un transport de proximité » — ne
+décrit plus ce transport-là. Appliquer `nodes.any { it.isNearby }` ferait afficher « Phone
+unreachable » pendant que la synchronisation se fait. C'est exactement le faux rouge que le §11.3
+redoutait sans pouvoir le produire.
+
+#### Le troisième candidat, et pourquoi il ne tranche pas non plus
+
+`MessageClient.sendMessage` est la seule API du Data Layer qui **échoue** quand le nœud n'est pas
+joignable, là où `putDataItem` bufferise et rend la main. Mesurée sur un chemin qu'aucun filtre du
+téléphone ne déclare — donc sans effet de bord :
+
+```
+tout allume            BANC_J_MSG 65b7e3d ok=true ms=12
+telephone BT coupe     BANC_J_MSG 65b7e3d ok=true ms=11
+montre BT coupee       BANC_J_MSG 65b7e3d ok=true ms=11
+tout retabli           BANC_J_MSG 65b7e3d ok=true ms=8
+```
+
+Huit à treize millisecondes : ce n'est pas un aller-retour, c'est une acceptation locale. Et
+surtout, **aucun état réellement injoignable n'a pu être produit** — couper le WiFi du téléphone
+couperait le lien `adb` qui sert à mesurer, et `svc wifi disable` sur la montre n'a pas pris effet
+(`wifi_on` relu à 1). Rien ne dit que `sendMessage` échouerait quand il le faudrait. On ne remplace
+pas un prédicat par un autre sur une intuition.
+
+#### Ce qui est appliqué
+
+**Rien de fonctionnel, et c'est le résultat.** `Preflight.phoneReachable` garde `isNotEmpty()`. Ce
+qui change est la testabilité et l'honnêteté : le prédicat est extrait de son appel GMS, et
+`PreflightJoignabiliteTest` épingle les quatre cas, dont les deux qui mentent, avec la mesure en
+face. Le jour où quelqu'un applique `isNearby`, un test tombe et lui dit pourquoi.
+
+**Le faux vert qui reste.** Sur émulateur, l'émulateur téléphone tué, `connectedNodes` rend
+toujours un nœud (§7.1) : `PHONE_UNREACHABLE` ne s'affiche jamais. **Sur matériel réel, ce faux
+vert n'a jamais été reproduit** — tous les états produits cette session étaient des états où le
+téléphone était effectivement joignable, et où `isNotEmpty()` disait donc vrai. Ce qui manque pour
+trancher est un téléphone réellement éteint, ou une montre hors de portée de son WiFi : les deux
+demandent un geste humain, aucun ne s'automatise depuis WSL.
+
+---
+
+### 12.3 Le diviseur de temps ne peut plus se désaccorder en silence
+
+Le §11.5.3 mesure qu'une compilation à `-Ppendulum.temps.diviseur=250` lancée sur le vrai capteur
+s'arrête en 14,636 s avec zéro chunk, sans rien signaler. La cause est une collision de deux durées
+dont ni l'une ni l'autre n'est un défaut : la latence de salve du FIFO vaut 30 s de temps capteur,
+matérielle et non comprimable, tandis que le délai de garde de l'heure butoir tombe de 1 h à
+14,4 s. L'enregistrement meurt avant le premier octet.
+
+**Le garde-fou refuse de démarrer** plutôt que de neutraliser le diviseur à l'exécution.
+Neutraliser reviendrait à faire tourner une compilation qui n'est pas celle qu'on croit lancer, et
+`Durees.ACTIVES` est un catalogue construit une fois pour toutes à partir d'une valeur compilée :
+il n'y a pas d'endroit honnête où le corriger. Refuser dit quoi faire.
+
+Le prédicat est `diviseur != 1 && !sourceSynthetique`, et il est placé dans `RecordingService`
+**après** `FabriqueSource.creer` — c'est cette fonction qui transcrit les extras de l'intent dans la
+préférence, donc la source n'est connue qu'à partir de là. Le refus s'enregistre comme celui du
+service de premier plan : une préférence que le préflight suivant transforme en bloqueur lisible.
+Un enregistrement qui s'arrête tout seul en quatorze secondes ne dit rien à personne ; un bloqueur
+à l'écran du coucher dit `Bench build: wall time is divided by 250, but the real sensor is not.`
+
+`FabriqueSource.sourceSynthetiqueActive` existe dans les deux source sets, comme le reste de la
+famille : la variante release rend `false` sans rien lire, et y compile la condition en une branche
+morte — `EchelleTemps.DIVISEUR` y vaut 1 par construction, donc le garde-fou n'existe que là où il
+peut servir.
+
+Deux tests, tous deux JVM, tous deux dans les jobs de CI qui tournent déjà :
+
+- `GardeEchelleTest` couvre les quatre combinaisons et vérifie que le refus ne dépend pas de la
+  valeur du diviseur — un garde-fou qui ne connaîtrait que 250 laisserait passer 600 ;
+- `CoherenceEchelleTest` gagne une assertion **inversée** qui écrit la raison en chiffres : à
+  l'échelle du rejeu, le délai de garde comprimé vaut 14 400 ms et la salve du FIFO 30 000 ms, donc
+  le premier est plus court que la seconde. Le jour où elle tombe, ce n'est pas le test qu'il faut
+  ajuster, c'est que la raison d'être du garde-fou a changé.
+
+---
+
+### 12.4 La veille réelle, mesurée pour la première fois
+
+**32 minutes, écran éteint, Doze profond forcé, montre sur son socle.** C'est la raison d'être du
+produit, et rien ne l'avait jamais vérifiée : la couture `SourceCapteur` dit explicitement qu'un
+banc sur source synthétique « ne rapproche P1 d'aucun pas », et `01-overview.md` §3 justifie le
+choix d'un service de premier plan `health` — plutôt que `dataSync`, plafonné à six heures par
+vingt-quatre — précisément sur cette veille-là.
+
+#### Ce qui a été mis en place, et ce qui n'a pas pu l'être
+
+| | |
+|---|---|
+| Écran | **éteint**, `input keyevent KEYCODE_SLEEP`, relu `mWakefulness=Dozing` aux six pas de cinq minutes. Jamais réveillé pendant la mesure. |
+| Doze | **forcé**, `dumpsys deviceidle force-idle` → `Now forced in to deep idle mode`, relu `deep=IDLE` et `light=OVERRIDE` aux six pas. |
+| Batterie | `dumpsys battery unplug` + `set status 3`, relu `AC powered: false, status: 3`. **Mais l'appareil est resté physiquement sur son socle** : le socle est son seul lien USB, et il n'y a personne pour l'en retirer. |
+| Contexte du soir | publié par le téléphone, lu par la montre : `BANC_PREFLIGHT demarrable=true`, **aucun bloqueur, aucun avertissement**. |
+| Démarrage | par le geste du produit, tap sur START. Écran de préflight : `Ready`, `Battery 100%`, `Free space 12.2 GB`, `START`. |
+
+**La batterie n'est donc pas mesurée, et ne pouvait pas l'être.** Une montre déclarée débranchée
+mais physiquement en charge reste à 100 % : `level: 100` aux six pas, et `Discharge: 0 mAh` dans
+`batterystats` avant comme après. Le critère batterie de P1 est hors de portée de ce banc tant que
+personne ne retire la montre du socle — et ce jour-là, il faudra que la montre porte le débogage
+sans fil, faute de quoi elle sortira aussi du champ d'`adb` (§11.6).
+
+#### La nuit
+
+```
+1785759009.654  PendulumRecord: capteur=Accelerometer (wake-up) wakeUp=true reserved=3000 max=3000 mode=WAKEUP 30 s
+1785760932.880  PendulumRecord: arret automatique : CHARGING
+1785760932.881  PendulumRecord: fermeture de session, raison CHARGING
+```
+
+Session `d663461f29234d38ab87754c5763c2ce`, **1 923 267 ms soit 32 min 03 s**, fuseau `Asia/Tokyo`.
+L'arrêt n'est pas celui qu'on visait : le geste STOP n'a pas été trouvé à l'écran après une demi-heure
+de Doze profond (`VEILLE_GESTE_FAIL presse =STOP`), et le repli du banc a redéclaré la montre en
+charge. `StopConditions` a fermé la nuit proprement, `StopReason.CHARGING`, fichier courant clos et
+salve finale émise. C'est un chemin du produit et non un `kill` — mais c'est un arrêt de repli, et
+il faut le lire comme tel.
+
+**Le journal complet de la montre fait dix lignes.** C'est le résultat, avant même les chiffres :
+
+- **une** ligne de capteur, au démarrage ;
+- **sept** lignes d'accusé ;
+- **deux** lignes de fermeture.
+
+Aucune dégradation de `GapMonitor`, aucun palier, **aucun wake lock pris**. Aucun `onTimeout`,
+aucune relance de chien de garde, aucune salve reportée. Et le PID est le même du début à la fin,
+`26805` : **le service n'a pas été tué une seule fois**, donc il n'y a eu ni reprise ni trou marqué.
+
+#### Les chunks, et la couverture d'échantillons
+
+Sept chunks, tous complets, tous ingérés, tous vérifiés au CRC-32 par le téléphone :
+
+| idx | octets | échantillons | reçu par le téléphone |
+|---|---|---|---|
+| 0 | 88 148 | 14 518 | 1785759946.542 |
+| 1 | 91 096 | 15 004 | 1785759947.532 |
+| 2 | 91 096 | 15 004 | 1785759948.402 |
+| 3 | 91 084 | 15 002 | 1785760851.701 |
+| 4 | 91 128 | 15 004 | 1785760852.640 |
+| 5 | 91 116 | 15 002 | 1785760853.534 |
+| 6 | 30 240 | 4 968 | 1785760933.798 |
+
+**94 502 échantillons** au total. La cadence nominale est 50 Hz, la session dure 1 923 267 ms, donc
+96 163 échantillons étaient attendus :
+
+> **Couverture d'échantillons : 94 502 / 96 163 = 98,27 %.**
+
+Il manque **1 661 échantillons, soit 33,2 s** — et cet écart n'est pas réparti, il est aux deux
+bords. Le chunk 0 ne porte que 14 518 échantillons là où un chunk plein en porte 15 004 : 290,4 s de
+temps capteur pour 300 s de temps mural, soit **9,6 s perdues au démarrage**, entre la création du
+marqueur de session et le premier échantillon livré. Les **23,6 s restantes** sont à la fermeture, et
+elles valent moins qu'une salve de FIFO — la latence de report est de 30 s, et ce qui est encore
+dans la file au moment du `unregisterListener` ne ressort pas toujours.
+
+C'est un **coût fixe de bordure**, pas un taux. Sur une nuit de huit heures il vaudrait 33,2 s sur
+28 800 s, soit 0,115 %, et la couverture serait de **99,88 %** — au-dessus du seuil de 99 %. Sur
+32 minutes il vaut 1,73 %, et il fait échouer le critère. **C'est la limite la plus importante de
+cette mesure**, et elle joue dans le sens favorable : une nuit courte est *plus* dure à passer
+qu'une nuit longue, ce qui veut dire que 98,27 % sur 32 minutes n'est pas un échec de la couverture,
+c'est une nuit trop courte pour que le critère ait un sens.
+
+**Le calcul ci-dessus est fait par le banc, sur la table `chunk` du téléphone, et non par le
+produit.** Le §12.5 dit pourquoi.
+
+La rotation, elle, s'observe enfin telle que le code l'annonce : 15 004 échantillons à 50 Hz font
+300,08 s, donc ce sont les 300 000 ms de `WireProtocol.CHUNK_ROTATION_MS` qui ferment les chunks,
+et ils sortent à 98,8 % du plafond d'octets (91 096 sur 92 160). C'est exactement la propriété que
+`CoherenceEchelleTest` protège en assertion inversée, et le §11.6 notait qu'elle n'avait jamais été
+observée : seule la rotation par finalisation l'avait été.
+
+#### Les salves sont bien parties pendant la veille
+
+Trois salves, aux instants où le code les prévoit — une tous les trois chunks fermés, plus la salve
+finale :
+
+| Salve | Instant | Contenu | État de la montre |
+|---|---|---|---|
+| 1 | T+15,6 min | chunks 0, 1, 2 | **`deep=IDLE`, écran `Dozing`** |
+| 2 | T+30,7 min | chunks 3, 4, 5 | **`deep=IDLE`, écran `Dozing`** |
+| 3 | à la fermeture | chunk 6 | Doze relâché |
+
+**Le Doze profond forcé n'a rien empêché**, ni dans le sens montre → téléphone, ni dans le sens
+retour : les sept accusés sont arrivés, dont six pendant que la montre était en `deep=IDLE`.
+
+---
+
+### 12.5 L'invariant, l'autre moitié — mesurée
+
+Le §11.5.5 avait vérifié le sens qui protège les données : rien n'est effacé avant l'accusé. Le sens
+inverse — **ce qui est acquitté est effacé** — était resté raisonné, et il est celui où un `count++`
+de trop ferait perdre des octets.
+
+L'accusé publié par le téléphone, décodé par la sonde côté montre :
+
+```
+BANC_ACK_ITEM wear://65b7e3d/pendulum/ack/d663461f… ackedUpTo=7 base=7 bitmap=0o resend=[]
+              phoneMs=1785760933804 acquittes=[0, 1, 2, 3, 4, 5, 6]
+```
+
+Sept index acquittés, aucune réémission demandée. Et le journal de la montre porte sept libérations,
+une par accusé :
+
+| Chunk reçu par le téléphone | Fichier libéré sur la montre | Écart |
+|---|---|---|
+| 1785759946.542 | 1785759946.930 | 388 ms |
+| 1785759947.532 | 1785759947.601 | 69 ms |
+| 1785759948.402 | 1785759948.567 | 165 ms |
+| 1785760851.701 | 1785760851.863 | 162 ms |
+| 1785760852.640 | 1785760852.690 | 50 ms |
+| 1785760853.534 | 1785760853.591 | 57 ms |
+| 1785760933.798 | 1785760933.998 | 200 ms |
+
+Les deux colonnes viennent de deux horloges différentes — celle du téléphone pour la réception,
+celle de la montre pour la libération — et l'écart de 50 à 388 ms ne doit donc pas être lu comme une
+latence exacte. L'**ordre**, lui, ne dépend pas des horloges : `publishAck` n'est appelé qu'après
+l'écriture du fichier et l'insertion de la ligne, et `applyAck` n'efface un fichier que si
+`isAcked(idx)`. Les horodatages corroborent une causalité que le code impose.
+
+**Et l'état final est celui qu'on attendait, des deux côtés :**
+
+```
+# montre
+BANC_CHUNKS_RACINE /data/user/0/com.pendulum/files/chunks existe=true     <- et aucun sous-dossier
+
+# telephone
+BANC_DB_SESSIONS n=1   BANC_DB_CHUNKS n=7
+files/chunks/d663461f…/00000.pendulum … 00006.pendulum   88148 … 30240 octets
+```
+
+Le disque de la montre est vide, celui du téléphone porte les sept fichiers, la base porte les sept
+lignes. **L'invariant central du protocole est vérifié dans les deux sens**, sur une nuit réelle, à
+la milliseconde des sept transitions. C'est le résultat que les deux sessions précédentes n'avaient
+pas pu obtenir.
+
+#### La porte P1, à sa première utilisation réelle — et le défaut qu'elle révèle
+
+```
+BANC_P1_NUIT hex=d663461f… soiree=2026-08-03 verdict=NON_CONFORME
+BANC_P1_CRITERE Signal coverage        valeur=0.0%              seuil=at least 99.0%     etat=NON_CONFORME
+BANC_P1_CRITERE Battery at end of night valeur=100%  ·  0 h 32  seuil=above 20% at 8 h   etat=INDETERMINE
+BANC_P1_CRITERE Measured frequency     valeur=—                 seuil=50 Hz ± 5.0%       etat=INDETERMINE
+BANC_P1_CAMPAGNE examinees=1 conformes=0 serieMax=0 franchie=false
+```
+
+L'export CSV sort à 959 octets, en-tête de seuils et de limites compris, et sa ligne dit
+`sample_count=0, expected_samples=96163, coverage=0.00000, coverage_state=NON_CONFORME`.
+
+**Les deux `INDETERMINE` sont justes** et font exactement ce que leur KDoc promet : une nuit de
+32 minutes ne dit rien sur la batterie à huit heures, et la cadence n'a pas été mesurée.
+
+**Le `0.0%` est faux, et c'est un défaut du produit.** `night_session.sampleCount` vaut 0 parce
+qu'**`AnalyzeWorker` n'a pas tourné** — `analyzedAtMs=null` cinquante minutes après la fermeture de
+la nuit. `Controles.couverture` divise alors 0 par 96 163 et rend `0.0`, que `couvertureTenue`
+juge `false`. Une nuit **non analysée** est donc rapportée « hors P1 » au lieu de « pas décidable »,
+et c'est précisément l'erreur que les trois états de `PorteP1.Conformite` existent pour éviter :
+« INDETERMINE n'est pas une commodité », dit sa KDoc. Le critère de couverture passe à côté.
+
+*Correction proposée, non appliquée* : `Controles.couverture` doit rendre `null` — et non `0.0` —
+tant que la nuit n'a pas d'analyse, c'est-à-dire tant que `analyzedAtMs` est nul. Le seul appelant
+qui change de comportement est celui-ci, et il rendra `INDETERMINE`, ce qui est la vérité. Confiance
+haute sur le diagnostic, haute sur la correction ; elle n'est pas faite ici parce qu'elle sort du
+périmètre de cette session et mérite son propre test sur les bornes.
+
+**Pourquoi l'analyse n'a pas tourné**, mesuré et non supposé : le travail est bien enfilé
+(`JOB #AnalyzeWorker#@androidx.work.systemjobscheduler@com.pendulum` visible dans
+`dumpsys jobscheduler`, sans contrainte de charge ni de réseau), mais le processus est gelé —
+`ActivityManager: freezing 4063 com.pendulum` quarante secondes après avoir été réveillé — et
+l'application est dans le seau de veille **`RESTRICTED` (45)**, où elle atterrit parce que personne
+ne l'a jamais ouverte. Ce qui est exactement le cas d'usage que le produit décrit : le téléphone
+reçoit les chunks la nuit, application fermée.
+
+Deux tentatives de forçage ont échoué et sont notées comme telles : porter le seau à `ACTIVE` pendant
+six minutes n'a pas suffi, et `cmd jobscheduler run -f com.pendulum <id>` ne trouve pas les travaux
+(les identifiants lus dans `dumpsys` sont ceux de WorkManager, pas ceux du `JobScheduler`). Le seau a
+été **rendu à 45**, relu.
+
+**Ce que ça veut dire pour le produit**, et ce n'est pas forcément un défaut : l'ingestion est
+immédiate parce qu'elle est portée par un service que GMS démarre ; l'analyse, elle, est un travail
+différé, et sur un téléphone où l'application n'est jamais ouverte, elle attend le bon vouloir du
+système. Une nuit analysée trois heures plus tard reste une nuit analysée. Ce qui est un défaut, en
+revanche, c'est que l'écran de mesure affiche « hors P1 » pendant cette attente.
+
+---
+
+### 12.6 Ce que cette session prouve, et ce qu'elle ne prouve pas
+
+**Ce qui est acquis.**
+
+- La livraison du Data Layer fonctionne dans les deux sens, sur matériel réel, et la cause du blocage
+  est comprise jusqu'à sa racine — Play Services ne demande pas la permission qu'on exigeait de lui.
+- L'invariant du transfert est vérifié **dans les deux sens** sur une nuit réelle.
+- La chaîne complète — préflight, capture, rotation, salve, ingestion, vérification CRC-32, accusé,
+  suppression — a tourné de bout en bout sans une seule intervention entre le START et l'arrêt.
+- Le service de premier plan `health` a survécu 32 minutes de Doze profond forcé, écran éteint, sans
+  être tué, sans wake lock, sans dégradation.
+
+**Ce qui n'est pas prouvé, et il faut le dire aussi net.**
+
+- **Ce n'est pas P1.** P1 demande **trois nuits consécutives de huit heures**. Cette mesure fait
+  32 minutes, une fois. Elle ne franchit aucun critère et n'en approche qu'un.
+- **La batterie n'est pas mesurée du tout**, et ne peut pas l'être tant que la montre est sur son
+  socle. C'est le critère le plus discriminant de P1 et celui dont on ne sait rien.
+- **La couverture de 98,27 % n'est pas la couverture d'une nuit.** Elle est dominée par un coût de
+  bordure de 33 s qui deviendrait négligeable sur huit heures. Ce que cette mesure établit est
+  qu'**il n'y a pas de perte proportionnelle** — pas de trou pendant les 32 minutes — et non que le
+  seuil de 99 % est tenu.
+- **La montre était sur son socle, pas au poignet.** Le capteur a mesuré un objet immobile. Rien de
+  ce qui touche au mouvement, au détecteur off-body ou à la détection d'éveil n'a été exercé.
+- **Trente-deux minutes ne disent rien de huit heures.** Le plafond de six heures par vingt-quatre de
+  `dataSync` — la raison même du choix de `health` — se franchit à la sixième heure : cette mesure
+  s'arrête un ordre de grandeur avant. Ce qu'elle établit est plus modeste et vaut quand même : **si
+  le service mourait en trente minutes de veille, on le saurait, et il ne meurt pas.**
+- **Le chien de garde n'a pas été exercé.** Il n'avait rien à reprendre.
+- **Le faux vert de `PHONE_UNREACHABLE` n'est toujours pas reproduit sur matériel réel** (§12.2).
+
+**Ce qu'il reste à obtenir pour P1**, dans l'ordre où ça coûte :
+
+1. **La montre au poignet et hors du socle**, une nuit entière. C'est la seule mesure qui rende le
+   critère batterie accessible, et elle demande un geste humain. Elle demande aussi le débogage sans
+   fil sur la montre, sinon la nuit sort du champ d'`adb`.
+2. **Trois nuits de suite**, la porte comptant les soirées consécutives et non les nuits réussies.
+3. **Que `AnalyzeWorker` tourne**, sans quoi le rapport P1 ne dira rien de vrai — et la correction du
+   §12.5 pour que, tant qu'il n'a pas tourné, il dise « pas décidable » plutôt que « hors P1 ».
+4. Une couverture calculée sur la nuit entière, où le coût de bordure de 33 s tombe à 0,115 %.
+
+---
+
+### 12.7 L'état laissé sur les appareils
+
+Chaque ligne vient d'une lecture faite après coup, pas de la mémoire de ce qui a été tapé.
+
+| | |
+|---|---|
+| **Pixel Watch 3** | `com.pendulum` réinstallé, keystore de debug, **compilation ordinaire** (aucun `-Ppendulum.temps.diviseur`). `com.pendulum.test` réinstallé, déjà présent avant. `dumpsys battery` truqué pendant la mesure puis **rendu par `reset`**, relu `AC powered: true, status: 5, level: 100`. `deviceidle` **rendu** : `deep=ACTIVE`, `light=ACTIVE`. `screen_off_timeout` **non modifié**, relu à **600000**. Bluetooth coupé puis rallumé pendant le §12.2, relu `bluetooth_on=1` ; WiFi jamais modifié, relu `wifi_on=1`, `192.168.86.138/24`. **Un enregistrement de 32 min 03 s a été fait et vérifié arrêté** : aucun `RecordingService` dans `dumpsys activity services`. Les sept fichiers de la nuit ont été effacés **par le protocole lui-même**, sur accusé, et le dossier de session a été purgé. Les préférences portent `fgs_refused=false` et `echelle_desaccordee=false` — la seconde est écrite par le garde-fou du §12.3, qui a donc bien tourné et laissé passer ; `stop_at_minutes` reste **absente**. |
+| **Pixel 10 Pro Fold** | `com.pendulum` et `com.pendulum.test` réinstallés, même keystore. La base reste en **v3**. La nuit d'essai — une ligne `night_session`, sept lignes `chunk`, sept fichiers — a été **purgée** : elle aurait compté comme une nuit hors P1 dans la campagne, ce qui est faux et se serait vu à l'écran. Le seau de veille, porté à `ACTIVE` pour tenter de déclencher l'analyse, est **rendu à `RESTRICTED` (45)**. Bluetooth coupé puis rallumé pendant le §12.2, relu `bluetooth_on=1`. Le fichier CSV de la porte P1 écrit par la sonde dans le stockage privé a été rapatrié puis **effacé**. |
+| **Data Layer** | **Vide, vérifié des deux côtés.** Le contexte du soir, les sept items de chunk, l'item de session, l'aperçu en direct et l'accusé ont tous été retirés. `purgerBanc` a été complété pour couvrir l'aperçu en direct et l'accusé, que le protocole ne retire jamais de lui-même. |
+| **TV** (`192.168.86.129:5555`) | jamais touchée. Elle apparaît `unauthorized` dans `adb devices` et a été ignorée. |
+| **Mac** (`192.168.86.161`) | `~/builds/pendulum-banc` remis à jour par `rsync`. **Plus aucun correctif de build à ne pas commiter** : `datalayer.sh` ne modifie plus les fichiers Gradle (§12.1). Les sondes déposées dans les source sets `androidTest` sont désormais ignorées par `.gitignore`. Aucun émulateur démarré. |
+
+#### Refaire les mesures
+
+```bash
+# 12.1 — la liaison des deux services d'ecoute, dans les deux sens, sans fabriquer d'etat
+bash tools/banc/datalayer.sh run wear  <montre>    livrerSonde
+bash tools/banc/datalayer.sh run phone <telephone> livrerSonde
+bash tools/banc/datalayer.sh run phone <telephone> permissionsDesComposants
+bash tools/banc/datalayer.sh run phone <telephone> surfaceDeLiaison
+bash tools/banc/datalayer.sh run wear  <montre>    retirerSonde
+bash tools/banc/datalayer.sh run phone <telephone> retirerSonde
+
+# 12.2 — les candidats a phoneReachable, cote a cote
+adb -s <telephone> shell cmd bluetooth_manager disable
+bash tools/banc/datalayer.sh run wear <montre> joignabilite
+adb -s <telephone> shell cmd bluetooth_manager enable    # sans faute, et relire bluetooth_on
+
+# 12.4 — la veille, dont la sequence est celle de tools/banc/transfert.sh a trois lignes pres
+bash tools/banc/transfert.sh preparer <montre>           # dumpsys battery unplug + status 3
+#   tap START, puis :
+adb -s <montre> shell input keyevent KEYCODE_SLEEP
+adb -s <montre> shell dumpsys deviceidle force-idle
+adb -s <montre> shell dumpsys deviceidle get deep        # doit rendre IDLE
+#   ... la duree ...
+adb -s <montre> shell dumpsys deviceidle unforce
+bash tools/banc/transfert.sh restaurer <montre>
+
+# 12.5 — le verdict de la porte P1 et son export, calcules par le code du produit
+bash tools/banc/datalayer.sh run phone <telephone> porteP1
+adb -s <telephone> shell run-as com.pendulum cat files/banc-porte-p1.csv
+```
+
+---
+
+## 13. L'état laissé sur le Mac
 
 > **Mis à jour le 3 août 2026 après le §7.1.** Les deux snapshots `banc_pret` ont été réécrits sur
 > l'état appairé, et c'est l'état recommandé — il évite d'avoir à refaire l'installation du

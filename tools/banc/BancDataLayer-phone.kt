@@ -204,8 +204,175 @@ class BancDataLayer {
         val dossier = java.io.File(java.io.File(ctx.filesDir, "chunks"), hex)
         val fichiers = dossier.listFiles()?.size ?: 0
         val efface = dossier.deleteRecursively()
+        // L'accuse est publie par le telephone et reste dans le magasin une fois la nuit finie :
+        // il est un etat, pas un evenement, et rien ne le retire.
+        val ack = Tasks.await(
+            Wearable.getDataClient(ctx)
+                .deleteDataItems(uri(WirePaths.ack(hex)), DataClient.FILTER_LITERAL),
+            30, TimeUnit.SECONDS,
+        )
         log("BANC_PURGE hex=$hex chunks_avant=$avant chunks_apres=$apres " +
-            "fichiers=$fichiers dossier_efface=$efface")
+            "fichiers=$fichiers dossier_efface=$efface item_ack=$ack")
+    }
+
+    /**
+     * La livraison symetrique de `BancDataLayer#livrerSonde` cote montre : telephone -> montre,
+     * sous le prefixe `/pendulum/ack/` que `AckObserver` declare dans son filtre.
+     *
+     * Charge utile illisible, donc `Ack.decode` leve et `AckObserver` journalise « accuse
+     * illisible » : aucun fichier n'est efface sur la montre, aucun item supprime. La seule chose
+     * que cette sonde etablit est que GMS a pu se lier — ou qu'il ne l'a pas pu.
+     */
+    @Test
+    fun livrerSonde() {
+        val path = WirePaths.ack("ba0c0000000000000000000000000000")
+        val charge = "BANC-SONDE-${System.currentTimeMillis()}".toByteArray()
+        val item = Tasks.await(
+            Wearable.getDataClient(ctx)
+                .putDataItem(PutDataRequest.create(path).setData(charge).setUrgent()),
+            30, TimeUnit.SECONDS,
+        )
+        log("BANC_SONDE_PUBLIEE uri=${item.uri} ${charge.size}o")
+    }
+
+    /** Retire l'item de [livrerSonde]. */
+    @Test
+    fun retirerSonde() {
+        val n = Tasks.await(
+            Wearable.getDataClient(ctx)
+                .deleteDataItems(uri(WirePaths.ack("ba0c0000000000000000000000000000"))),
+            30, TimeUnit.SECONDS,
+        )
+        log("BANC_SONDE_RETIREE supprimes=$n")
+    }
+
+    /**
+     * Les permissions declarees par les composants de l'application, et leur existence reelle sur
+     * l'appareil. C'est la lecture qui manquait au §11.5.6 : une permission qu'un composant exige
+     * et que personne ne definit interdit **toute** liaison, en silence.
+     *
+     * La sonde lit aussi ce que GMS **demande**, parce que c'est la que se joue la question :
+     * une permission d'installation n'est accordee qu'aux paquets qui la declarent en
+     * `<uses-permission>`, quel que soit son `protectionLevel`.
+     */
+    @Test
+    fun permissionsDesComposants() {
+        val pm = ctx.packageManager
+        val infos = pm.getPackageInfo(
+            ctx.packageName,
+            android.content.pm.PackageManager.GET_SERVICES or
+                android.content.pm.PackageManager.GET_RECEIVERS or
+                android.content.pm.PackageManager.GET_ACTIVITIES,
+        )
+        val composants = (infos.services.orEmpty().map { it.name to it.permission }) +
+            (infos.receivers.orEmpty().map { it.name to it.permission }) +
+            (infos.activities.orEmpty().map { it.name to it.permission })
+        for ((nom, perm) in composants) {
+            if (perm == null) continue
+            val existe = runCatching { pm.getPermissionInfo(perm, 0) }.isSuccess
+            log("BANC_PERM_COMPOSANT $nom exige=$perm definie_sur_l_appareil=$existe")
+        }
+
+        val cible = "com.google.android.gms.permission.BIND_WEARABLE_LISTENER"
+        log("BANC_PERM_CIBLE definie=" + runCatching { pm.getPermissionInfo(cible, 0) }.isSuccess)
+        val gms = pm.getPackageInfo(
+            "com.google.android.gms",
+            android.content.pm.PackageManager.GET_PERMISSIONS,
+        )
+        val demandees = gms.requestedPermissions.orEmpty()
+        log("BANC_PERM_GMS demandees=${demandees.size} demande_la_cible=${cible in demandees.toSet()}")
+    }
+
+    /**
+     * La surface d'attaque de `PendulumListenerService` quand il ne porte plus `android:permission`.
+     *
+     * Deux questions, deux mesures. **Se lier** : le `onBind` de `WearableListenerService` est
+     * `final` et ne controle rien — il rend son binder a qui presente l'une de sept actions. **Se
+     * faire livrer** : chacune des onze methodes de l'interface AIDL passe par le meme filtre, qui
+     * compare `Binder.getCallingUid()` a l'UID des services Google Play et refuse tout le reste.
+     *
+     * Cette sonde exerce le second depuis un processus qui n'est pas GMS — le sien. Un refus ici
+     * ne prouve pas qu'une application tierce serait refusee pour la meme raison ; il prouve que
+     * le filtre existe, qu'il s'execute, et qu'il refuse un UID qui n'est pas celui de GMS.
+     */
+    @Test
+    fun surfaceDeLiaison() {
+        val intent = android.content.Intent("com.google.android.gms.wearable.BIND_LISTENER")
+            .setClassName(ctx, "com.pendulum.phone.ingest.PendulumListenerService")
+        val verrou = java.util.concurrent.CountDownLatch(1)
+        var binder: android.os.IBinder? = null
+        val conn = object : android.content.ServiceConnection {
+            override fun onServiceConnected(n: android.content.ComponentName?, b: android.os.IBinder?) {
+                binder = b
+                verrou.countDown()
+            }
+
+            override fun onServiceDisconnected(n: android.content.ComponentName?) = Unit
+        }
+        val lie = ctx.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
+        verrou.await(20, TimeUnit.SECONDS)
+        log("BANC_LIAISON bindService=$lie binder_rendu=${binder != null}")
+
+        val b = binder
+        if (b != null) {
+            val methode = b.javaClass.methods.firstOrNull {
+                it.parameterTypes.size == 1 &&
+                    it.parameterTypes[0].name == "com.google.android.gms.common.data.DataHolder"
+            }
+            log("BANC_LIAISON_METHODE ${methode?.name ?: "introuvable"}")
+            if (methode != null) {
+                val vide = com.google.android.gms.common.data.DataHolder.empty(0)
+                val issue = runCatching { methode.invoke(b, vide) }
+                log("BANC_LIAISON_APPEL uid=${android.os.Process.myUid()} " +
+                    "exception=${issue.exceptionOrNull()?.cause?.javaClass?.simpleName ?: "aucune"}")
+            }
+        }
+        ctx.unbindService(conn)
+    }
+
+    /**
+     * Le verdict de la porte P1, calcule par le code du produit et non par le banc.
+     *
+     * `PorteP1` et `PorteP1Exporter` sont l'ecran « Reglages › Mesure » et son export CSV. Les
+     * appeler ici plutot que de piloter l'ecran est impose par le meme mur que le reste : le
+     * telephone est verrouille par un code. Le fichier est ecrit dans le stockage prive et se
+     * rapatrie par `run-as com.pendulum cat files/banc-porte-p1.csv`.
+     */
+    @Test
+    fun porteP1() = kotlinx.coroutines.runBlocking {
+        val db = com.pendulum.phone.db.PendulumDatabase.get(ctx)
+        val sessions = db.nightDao().all()
+        log("BANC_P1_SESSIONS n=${sessions.size}")
+        val verdicts = sessions.map { com.pendulum.phone.ui.model.PorteP1.de(it) }
+        for (v in verdicts) {
+            log("BANC_P1_NUIT hex=${v.sessionHex} soiree=${v.soiree} verdict=${v.verdict}")
+            for (c in v.criteres) {
+                log("BANC_P1_CRITERE ${c.libelle} valeur=${c.valeur} seuil=${c.seuil} etat=${c.etat}")
+            }
+        }
+        val campagne = com.pendulum.phone.ui.model.PorteP1.campagne(verdicts)
+        log(
+            "BANC_P1_CAMPAGNE examinees=${campagne.nuitsExaminees} conformes=${campagne.nuitsConformes} " +
+                "serieMax=${campagne.serieMax} franchie=${campagne.franchie}",
+        )
+        val f = java.io.File(ctx.filesDir, "banc-porte-p1.csv")
+        f.outputStream().use { com.pendulum.phone.export.PorteP1Exporter.exportCsv(ctx, it) }
+        log("BANC_P1_CSV ${f.absolutePath} ${f.length()}o")
+    }
+
+    /** Ce que la base porte pour une nuit, champ par champ — le detail que `porteP1` resume. */
+    @Test
+    fun detailNuit() = kotlinx.coroutines.runBlocking {
+        val db = com.pendulum.phone.db.PendulumDatabase.get(ctx)
+        for (s in db.nightDao().all()) {
+            log(
+                "BANC_NUIT hex=${s.sessionHex} etat=${s.state} debut=${s.startWallMs} fin=${s.endWallMs} " +
+                    "chunks=${s.totalChunks} echantillons=${s.sampleCount} fs=${s.fsMeasuredHz} " +
+                    "trous=${s.gapCount}/${s.gapTotalMs}ms batterie=${s.batteryPctLast} " +
+                    "nominal=${s.nominalRateHz} arret=${s.stopReason} analysee=${s.analyzedAtMs}",
+            )
+        }
+        log("BANC_NUIT_FIN")
     }
 
     /** Tout ce que le magasin porte sous `/pendulum`, vu du telephone. */
