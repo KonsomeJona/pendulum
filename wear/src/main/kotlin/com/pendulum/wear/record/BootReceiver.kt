@@ -63,8 +63,7 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private fun shouldResume(context: Context, m: SessionMarker, nowMs: Long): Boolean {
-        if (nowMs >= m.startWallMs + 14 * 3_600_000L) return false
-        if (nowMs >= m.plannedStopWallMs) return false
+        if (m.estPerimee(nowMs)) return false
 
         val cal = Calendar.getInstance().apply { timeInMillis = nowMs }
         val localMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)

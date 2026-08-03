@@ -43,6 +43,20 @@ android {
         }
     }
 
+    // Diviseur de temps du banc instrumente.
+    //
+    // Le champ n'est declare **que** dans le bloc `debug`. C'est ce qui donne au jumeau
+    // `src/release/.../EchelleTemps.kt` sa garantie : la variante release compile contre un
+    // `BuildConfig` qui ne porte pas ce champ, donc le code de compression du temps n'y existe
+    // pas — il ne s'y desactive pas, il ne s'y compile pas.
+    //
+    // Sur le banc : `./gradlew -Ppendulum.temps.diviseur=600 :wear:assembleDebug`. La valeur
+    // passee a `:wear` et a `:phone` doit etre la meme, ce que seule l'invocation unique garantit.
+    val diviseurTemps = (project.findProperty("pendulum.temps.diviseur") as String?)
+        ?.toLongOrNull()
+        ?.also { require(it >= 1L) { "pendulum.temps.diviseur doit valoir au moins 1, recu $it" } }
+        ?: 1L
+
     buildTypes {
         release {
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")
@@ -50,10 +64,15 @@ android {
             // que les quelques centaines de kilo-octets economises.
             isMinifyEnabled = false
         }
+        debug {
+            buildConfigField("long", "TEMPS_DIVISEUR", "${diviseurTemps}L")
+        }
     }
 
     buildFeatures {
         compose = true
+        // Uniquement pour `TEMPS_DIVISEUR` ci-dessus.
+        buildConfig = true
     }
 
     compileOptions {

@@ -29,6 +29,7 @@ import com.pendulum.format.wire.SessionState
 import com.pendulum.format.wire.StopReason
 import com.pendulum.wear.R
 import com.pendulum.wear.Watchdog
+import com.pendulum.wear.temps.Durees
 import com.pendulum.wear.transfer.DataLayerTransfer
 import com.pendulum.wear.transfer.SyncWorker
 import com.pendulum.wear.ui.MainActivity
@@ -66,7 +67,7 @@ class RecordingService : Service() {
         const val RATE_HZ = 50
 
         /** Un tick toutes les dix secondes de temps **eveille**. Voir [tick]. */
-        private const val TICK_MS = 10_000L
+        private val TICK_MS = Durees.ACTIVES.tickServiceMs
 
         /** Vu du watchdog : un `bindService` pour repondre a une question binaire serait plus
          *  cher en complexite que le `@Volatile` qu'il remplace. */
@@ -191,8 +192,7 @@ class RecordingService : Service() {
         // Les memes garde-fous que BootReceiver, parce que ce chemin est aussi celui d'un
         // redemarrage par START_STICKY : ne jamais relancer une nuit dont l'heure est passee.
         if (resume && existing != null) {
-            val now = System.currentTimeMillis()
-            if (now >= existing.plannedStopWallMs || now >= existing.startWallMs + 14 * 3_600_000L) {
+            if (existing.estPerimee(System.currentTimeMillis())) {
                 Log.i(TAG, "reprise refusee : la nuit est terminee, on finalise")
                 SyncWorker.enqueue(this, existing.sessionHex)
                 stopSelfClean()

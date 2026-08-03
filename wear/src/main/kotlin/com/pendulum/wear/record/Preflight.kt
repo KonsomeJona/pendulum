@@ -36,7 +36,13 @@ object Preflight {
      *  remonter a l'ecran du coucher un echec qui, sinon, ne vit que dans logcat. */
     const val PREF_FGS_REFUSED = "fgs_refused"
 
-    fun check(ctx: Context): PreflightResult {
+    /**
+     * @param nowMs l'horloge, en parametre plutot que lue au fond de la fonction. C'est elle qui
+     *   determine la cle de nuit, donc *quel* contexte du soir est cherche : le defaut qui a
+     *   coute le plus cher a ce produit — un contexte scelle sous une cle et lu sous une autre —
+     *   se rejoue ici a une milliseconde pres, et sans ce parametre il n'est pas reproductible.
+     */
+    fun check(ctx: Context, nowMs: Long = System.currentTimeMillis()): PreflightResult {
         val blockers = mutableListOf<Issue>()
         val warnings = mutableListOf<Issue>()
 
@@ -62,7 +68,7 @@ object Preflight {
             blockers += Issue(IssueId.STORAGE_FULL, listOf(formatBytes(free), pending.toString()))
         }
 
-        val nightKey = DataLayerTransfer.nightKey(System.currentTimeMillis())
+        val nightKey = DataLayerTransfer.nightKey(nowMs)
         val sealed = try {
             DataLayerTransfer.isEveningContextSealed(ctx, nightKey)
         } catch (e: Exception) {

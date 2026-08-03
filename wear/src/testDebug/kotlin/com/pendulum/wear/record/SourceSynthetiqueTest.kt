@@ -23,6 +23,12 @@ import org.junit.jupiter.api.Test
  * Les nuits generees ici sont courtes (30 min) : la propriete testee est locale — l'espacement de
  * deux echantillons consecutifs — et rien ne la rend plus vraie sur huit heures que sur trente
  * minutes, alors qu'une nuit complete couterait seize fois le temps de generation a chaque test.
+ *
+ * **Pourquoi `src/testDebug/` et non `src/test/`.** Il teste `SourceSynthetique`, qui vit dans
+ * `src/debug/`, et il importe `:algo`, declare en `debugImplementation`. Depuis `src/test/` —
+ * partage par les deux variantes — il rendait `:wear:testReleaseUnitTest` incompilable, donc
+ * jamais execute : une tache de test qui n'a jamais tourne ne protege rien, et son silence
+ * ressemble a s'y meprendre a un succes.
  */
 class SourceSynthetiqueTest {
 

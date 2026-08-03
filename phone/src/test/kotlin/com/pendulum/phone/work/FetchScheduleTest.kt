@@ -18,9 +18,28 @@ class FetchScheduleTest {
     private fun h(n: Long) = TimeUnit.HOURS.toMillis(n)
     private fun min(n: Long) = TimeUnit.MINUTES.toMillis(n)
 
+    /**
+     * L'echelle **nominale**, passee explicitement, jamais lue dans `FetchSchedule.OFFSETS_MS`.
+     *
+     * Ce fichier affirme des valeurs — « la premiere tentative est a T+30 minutes », « on
+     * abandonne a T+36 h ». Les laisser suivre le diviseur de la variante compilee ferait tomber
+     * ces affirmations parce qu'un banc a ete construit avec le temps comprime, c'est-a-dire pour
+     * une raison qui n'apprend rien sur la replanification. La compression se verifie dans
+     * `DureesTest` ; ici on verifie la regle.
+     */
+    private val offsets = longArrayOf(min(30), h(1), h(2), h(4), h(8), h(16), h(32))
+    private val abandon = h(36)
+    private val minEntre = min(10)
+
+    private fun plan(attemptsDone: Int, sessionEndMs: Long = fin, nowMs: Long) =
+        FetchSchedule.plan(attemptsDone, sessionEndMs, nowMs, offsets, abandon)
+
+    private fun opportuniste(nowMs: Long, derniereTentativeMs: Long?) =
+        FetchSchedule.opportunisteAdmissible(fin, nowMs, derniereTentativeMs, abandon, minEntre)
+
     @Test
     fun `la premiere tentative est a T+30 minutes`() {
-        val plan = FetchSchedule.plan(attemptsDone = 0, sessionEndMs = fin, nowMs = fin)
+        val plan = plan(attemptsDone = 0, nowMs = fin)
         assertThat(plan).isInstanceOf(FetchSchedule.Plan.Retry::class.java)
         assertThat((plan as FetchSchedule.Plan.Retry).delayMs).isEqualTo(min(30))
     }
@@ -29,7 +48,7 @@ class FetchScheduleTest {
     fun `l'echelle double a chaque rang`() {
         val attendus = listOf(min(30), h(1), h(2), h(4), h(8), h(16), h(32))
         attendus.forEachIndexed { rang, attendu ->
-            val plan = FetchSchedule.plan(rang, fin, fin) as FetchSchedule.Plan.Retry
+            val plan = plan(rang, nowMs = fin) as FetchSchedule.Plan.Retry
             assertThat(plan.delayMs).describedAs("rang $rang").isEqualTo(attendu)
             assertThat(plan.attemptIndex).isEqualTo(rang)
         }
@@ -40,26 +59,22 @@ class FetchScheduleTest {
         // Telephone eteint toute la matinee : on ne saute pas les rangs, on les rattrape un par
         // un. Chacun laisse une ligne `hc_snapshot`, et cette trace est ce qui permettra de
         // recaler l'echelle sur la latence reellement observee.
-        val plan = FetchSchedule.plan(attemptsDone = 0, sessionEndMs = fin, nowMs = fin + h(5))
+        val plan = plan(attemptsDone = 0, nowMs = fin + h(5))
         assertThat((plan as FetchSchedule.Plan.Retry).delayMs).isZero()
     }
 
     @Test
     fun `on abandonne a T+36 heures`() {
-        val plan = FetchSchedule.plan(attemptsDone = 2, sessionEndMs = fin, nowMs = fin + h(36))
+        val plan = plan(attemptsDone = 2, nowMs = fin + h(36))
         assertThat(plan).isInstanceOf(FetchSchedule.Plan.GiveUp::class.java)
 
-        val juste = FetchSchedule.plan(2, fin, fin + h(36) - 1)
+        val juste = plan(2, nowMs = fin + h(36) - 1)
         assertThat(juste).isInstanceOf(FetchSchedule.Plan.Retry::class.java)
     }
 
     @Test
     fun `on abandonne aussi quand l'echelle est epuisee`() {
-        val plan = FetchSchedule.plan(
-            attemptsDone = FetchSchedule.OFFSETS_MS.size,
-            sessionEndMs = fin,
-            nowMs = fin + h(1),
-        )
+        val plan = plan(attemptsDone = offsets.size, nowMs = fin + h(1))
         assertThat(plan).isInstanceOf(FetchSchedule.Plan.GiveUp::class.java)
     }
 
@@ -83,13 +98,13 @@ class FetchScheduleTest {
         // Chargeur branche a T+2 h, aucune lecture recente : on lit tout de suite plutot que
         // d'attendre le rang T+4 h. La synchronisation Health Connect est correlee a l'usage —
         // montre sur le chargeur, application source ouverte — pas a une horloge.
-        assertThat(FetchSchedule.opportunisteAdmissible(fin, fin + h(2), null)).isTrue()
+        assertThat(opportuniste(fin + h(2), null)).isTrue()
     }
 
     @Test
     fun `une lecture opportuniste est refusee hors de la fenetre`() {
-        assertThat(FetchSchedule.opportunisteAdmissible(fin, fin - min(1), null)).isFalse()
-        assertThat(FetchSchedule.opportunisteAdmissible(fin, fin + h(36), null)).isFalse()
+        assertThat(opportuniste(fin - min(1), null)).isFalse()
+        assertThat(opportuniste(fin + h(36), null)).isFalse()
     }
 
     @Test
@@ -97,14 +112,8 @@ class FetchScheduleTest {
         // Un cable qui fait faux contact emet la diffusion plusieurs fois par minute. Chaque
         // lecture interroge un fournisseur ; sans ce delai minimal, on le martelerait.
         val recente = fin + h(2)
-        assertThat(FetchSchedule.opportunisteAdmissible(fin, recente + min(1), recente)).isFalse()
-        assertThat(
-            FetchSchedule.opportunisteAdmissible(
-                fin,
-                recente + FetchSchedule.MIN_ENTRE_OPPORTUNISTES_MS,
-                recente,
-            ),
-        ).isTrue()
+        assertThat(opportuniste(recente + min(1), recente)).isFalse()
+        assertThat(opportuniste(recente + minEntre, recente)).isTrue()
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.pendulum.wear.record
 
 import com.pendulum.format.wire.StopReason
+import com.pendulum.wear.temps.Durees
 
 /**
  * Conditions d'arret automatique. **Pur** : l'etat est passe en entree, rien n'est lu du systeme
@@ -22,13 +23,28 @@ class StopConditions(
     private val startWallMs: Long,
     /** Minutes depuis minuit local. Defaut 10:00. */
     private val stopAtLocalMinutes: Int,
+    /**
+     * Les trois durees, en parametres plutot que lues dans le catalogue au fond de [evaluate].
+     *
+     * Cette classe est pure et ses tests le sont aussi : ils affirment des bornes a la
+     * milliseconde pres (« 59 999 ms de charge continuent, 60 000 arretent »). Les faire dependre
+     * du diviseur de la variante compilee ferait echouer un test de logique metier parce qu'un
+     * banc a ete configure autrement — c'est-a-dire pour une raison qui n'a rien a voir avec ce
+     * qu'il verifie.
+     */
+    private val antiRebondChargeMs: Long = CHARGING_DEBOUNCE_MS,
+    private val dureeMaxMs: Long = MAX_DURATION_MS,
+    private val delaiMinAvantHeureButoirMs: Long = DELAI_MIN_AVANT_HEURE_BUTOIR_MS,
 ) {
 
     companion object {
         /** Un chargeur magnetique produit de faux contacts brefs : 60 s de charge soutenue. */
-        const val CHARGING_DEBOUNCE_MS = 60_000L
+        val CHARGING_DEBOUNCE_MS = Durees.ACTIVES.antiRebondChargeMs
 
-        const val MAX_DURATION_MS = 10 * 3_600_000L
+        val MAX_DURATION_MS = Durees.ACTIVES.dureeMaxSessionMs
+
+        /** Voir [evaluate] : l'heure butoir ne vaut que passe ce delai depuis le debut. */
+        val DELAI_MIN_AVANT_HEURE_BUTOIR_MS = Durees.ACTIVES.delaiMinAvantHeureButoirMs
 
         /** Fermeture propre *avant* que le systeme ne tue quoi que ce soit. */
         const val LOW_BATTERY_PCT = 5
@@ -53,16 +69,16 @@ class StopConditions(
     ): StopReason? {
         if (isCharging) {
             if (chargingSinceMs == 0L) chargingSinceMs = nowMs
-            if (nowMs - chargingSinceMs >= CHARGING_DEBOUNCE_MS) return StopReason.CHARGING
+            if (nowMs - chargingSinceMs >= antiRebondChargeMs) return StopReason.CHARGING
         } else {
             chargingSinceMs = 0L
         }
 
         if (batteryPct in 0..LOW_BATTERY_PCT) return StopReason.LOW_BATTERY
-        if (nowMs - startWallMs >= MAX_DURATION_MS) return StopReason.MAX_DURATION
+        if (nowMs - startWallMs >= dureeMaxMs) return StopReason.MAX_DURATION
         // L'heure butoir ne vaut que si la nuit a commence avant elle : un enregistrement
         // demarre a 11 h ne doit pas s'arreter a la milliseconde suivante.
-        if (localMinutes >= stopAtLocalMinutes && nowMs - startWallMs > 3_600_000L) {
+        if (localMinutes >= stopAtLocalMinutes && nowMs - startWallMs > delaiMinAvantHeureButoirMs) {
             return StopReason.TIME_LIMIT
         }
         if (wakeRatio > 0.80) return StopReason.WAKE_DETECTED

@@ -33,7 +33,7 @@ class MachineReveilTest {
         masqueSommeilApplique: Boolean = true,
         hypnogrammeRecu: Boolean = true,
         tentativesHc: Int = 1,
-        derniereTentativeMs: Long? = fin + TimeUnit.MINUTES.toMillis(30),
+        derniereTentativeMs: Long? = fin + FetchSchedule.OFFSETS_MS[0],
         integriteRejetee: Double = 0.0,
     ) = MachineReveil.Faits(
         sessionHex = "abcd",
@@ -52,7 +52,14 @@ class MachineReveilTest {
         integriteRejetee = integriteRejetee,
     )
 
-    private fun etat(f: MachineReveil.Faits?, maintenant: Long = fin + h(2)) =
+    /**
+     * L'instant par defaut est le **rang T+2 h de l'echelle**, et non deux heures ecrites en
+     * clair. Les deux coincident en temps reel ; ils divergent des qu'une variante de banc
+     * comprime l'echelle, et c'est alors la lecture de `MachineReveil` qui echouerait — pour une
+     * raison qui n'a rien a voir avec ce que ce fichier verifie. La machine se lit relativement
+     * a l'echelle, donc ses tests aussi.
+     */
+    private fun etat(f: MachineReveil.Faits?, maintenant: Long = fin + FetchSchedule.OFFSETS_MS[2]) =
         MachineReveil.de(f, maintenant, heure)
 
     // -------------------------------------------------------------------------------------

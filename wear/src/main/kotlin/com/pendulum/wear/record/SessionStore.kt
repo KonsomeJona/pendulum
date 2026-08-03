@@ -4,6 +4,7 @@ import android.content.Context
 import com.pendulum.format.wire.StopReason
 import com.pendulum.format.wire.sessionHexToBytes
 import com.pendulum.format.wire.toSessionHex
+import com.pendulum.wear.temps.Durees
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -167,7 +168,26 @@ data class SessionMarker(
     val nominalRateHz: Int,
     val zoneId: String,
     val stopAtLocalMinutes: Int,
-)
+) {
+
+    /**
+     * « Cette nuit est finie, quoi qu'en dise le marqueur. »
+     *
+     * Les trois chemins de reprise — `BOOT_COMPLETED`, le chien de garde, et le redemarrage
+     * `START_STICKY` du service — posaient la meme question avec le meme couple de conditions
+     * recopie a la main, dont la seconde etait ecrite `14 * 3_600_000L` aux trois endroits. Trois
+     * copies d'un predicat de reprise, c'est trois occasions d'en corriger deux ; et un marqueur
+     * perime repris par un seul des trois chemins produit un enregistrement de plein jour dont
+     * rien ne dit qu'il n'aurait pas du exister.
+     *
+     * L'horloge est un parametre, comme dans `MachineAccueil` et `EveningViewModel` : la fonction
+     * est pure, donc les trois chemins partagent desormais un predicat qui a des tests.
+     *
+     * @param ageMaxMs borne de securite pour le cas ou `plannedStopWallMs` serait lui-meme faux.
+     */
+    fun estPerimee(nowMs: Long, ageMaxMs: Long = Durees.ACTIVES.ageMaxSessionMs): Boolean =
+        nowMs >= plannedStopWallMs || nowMs >= startWallMs + ageMaxMs
+}
 
 /** Metriques de la nuit. Aucune n'est necessaire a la relecture des chunks : elles expliquent. */
 data class Sidecar(

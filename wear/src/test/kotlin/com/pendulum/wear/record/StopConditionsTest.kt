@@ -22,7 +22,22 @@ class StopConditionsTest {
         const val TWO_HOURS = 2 * 3_600_000L
     }
 
-    private fun conditions(stopAt: Int = 600) = StopConditions(START, stopAt)
+    /**
+     * Les durees sont passees **nominales**, jamais lues dans `Durees.ACTIVES`.
+     *
+     * Ce fichier affirme des bornes a la milliseconde pres — « 59 999 ms de charge continuent,
+     * 60 000 arretent ». Les laisser suivre le diviseur de la variante compilee ferait echouer
+     * toutes ces assertions des qu'un banc serait construit avec une echelle comprimee, pour une
+     * raison qui n'a rien a voir avec ce qu'elles verifient : la logique d'arret, elle, ne depend
+     * pas de la vitesse a laquelle le temps passe.
+     */
+    private fun conditions(stopAt: Int = 600) = StopConditions(
+        startWallMs = START,
+        stopAtLocalMinutes = stopAt,
+        antiRebondChargeMs = 60_000L,
+        dureeMaxMs = 10 * 3_600_000L,
+        delaiMinAvantHeureButoirMs = 3_600_000L,
+    )
 
     /** Une nuit saine a 3 h du matin : aucune condition ne doit se presenter. */
     private fun StopConditions.eval(
@@ -99,8 +114,9 @@ class StopConditionsTest {
     @Test
     @DisplayName("dix heures pile arretent ; une milliseconde de moins continue")
     fun `borne de duree maximale`() {
-        assertThat(conditions().eval(nowMs = START + StopConditions.MAX_DURATION_MS - 1)).isNull()
-        assertThat(conditions().eval(nowMs = START + StopConditions.MAX_DURATION_MS))
+        val dixHeures = 10 * 3_600_000L
+        assertThat(conditions().eval(nowMs = START + dixHeures - 1)).isNull()
+        assertThat(conditions().eval(nowMs = START + dixHeures))
             .isEqualTo(StopReason.MAX_DURATION)
     }
 

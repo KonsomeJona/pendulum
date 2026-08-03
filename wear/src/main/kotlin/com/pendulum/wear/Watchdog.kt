@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.pendulum.wear.record.RecordingService
 import com.pendulum.wear.record.SessionStore
+import com.pendulum.wear.temps.Durees
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,6 +28,12 @@ import java.util.concurrent.TimeUnit
  * Le watchdog relit le marqueur de session toutes les quinze minutes : si une nuit est declaree
  * active et que le service ne tourne pas, il le relance. Quinze minutes est le minimum d'un
  * `PeriodicWorkRequest`, et c'est aussi la granularite de perte deja acceptee par ailleurs.
+ *
+ * **Ce plancher rend ce chemin incompressible.** Le banc peut diviser la periode demandee
+ * (`Durees.periodeWatchdogMs`), WorkManager la ramenera a quinze minutes reelles. Un banc qui
+ * veut exercer la reprise doit donc declencher le travail lui-meme, et il ne mesurera de toute
+ * facon jamais la vraie propriete en jeu : qu'un travail prevu dans quinze minutes s'execute
+ * parfois dans quarante-cinq.
  *
  * **Limite assumee.** Depuis Android 12, une application en arriere-plan ne peut pas toujours
  * demarrer un service de premier plan, et un worker ordinaire ne fait pas partie des exemptions.
@@ -51,7 +58,10 @@ object Watchdog {
             // etait ici un quasi no-op. `CANCEL_AND_REENQUEUE` est la seule politique qui annule
             // l'instance existante et repart de zero — c'est celle que decrivait le commentaire.
             ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE,
-            PeriodicWorkRequestBuilder<WatchdogWorker>(15, TimeUnit.MINUTES).build(),
+            PeriodicWorkRequestBuilder<WatchdogWorker>(
+                Durees.ACTIVES.periodeWatchdogMs,
+                TimeUnit.MILLISECONDS,
+            ).build(),
         )
     }
 
@@ -69,7 +79,7 @@ object Watchdog {
             RESTART_NAME,
             ExistingWorkPolicy.REPLACE,
             OneTimeWorkRequestBuilder<WatchdogWorker>()
-                .setInitialDelay(30, TimeUnit.SECONDS)
+                .setInitialDelay(Durees.ACTIVES.relanceApresTimeoutMs, TimeUnit.MILLISECONDS)
                 .setInputData(workDataOf(KEY_RESTART to true))
                 .build(),
         )
@@ -93,12 +103,10 @@ class WatchdogWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
 
         if (RecordingService.isRunning) return Result.success()
 
-        val now = System.currentTimeMillis()
-        // Les memes garde-fous que la reprise apres reboot : on ne relance jamais un
-        // enregistrement dont l'heure est passee, sous pretexte qu'un marqueur traine.
-        if (now >= marker.plannedStopWallMs || now >= marker.startWallMs + 14 * 3_600_000L) {
-            return Result.success()
-        }
+        // Les memes garde-fous que la reprise apres reboot, et desormais le meme code : on ne
+        // relance jamais un enregistrement dont l'heure est passee, sous pretexte qu'un marqueur
+        // traine. Voir `SessionMarker.estPerimee`.
+        if (marker.estPerimee(System.currentTimeMillis())) return Result.success()
 
         return start(ctx, RecordingService.ACTION_RESUME)
     }

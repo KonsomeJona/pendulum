@@ -1,6 +1,6 @@
 package com.pendulum.phone.work
 
-import java.util.concurrent.TimeUnit
+import com.pendulum.phone.temps.Durees
 
 /**
  * La replanification de la lecture Health Connect. Fonction pure, testable sans appareil.
@@ -38,23 +38,15 @@ import java.util.concurrent.TimeUnit
  */
 object FetchSchedule {
 
-    /** Delais depuis la **fin** de la nuit, en millisecondes. */
-    val OFFSETS_MS: LongArray = longArrayOf(
-        TimeUnit.MINUTES.toMillis(30),
-        TimeUnit.HOURS.toMillis(1),
-        TimeUnit.HOURS.toMillis(2),
-        TimeUnit.HOURS.toMillis(4),
-        TimeUnit.HOURS.toMillis(8),
-        TimeUnit.HOURS.toMillis(16),
-        TimeUnit.HOURS.toMillis(32),
-    )
+    /** Delais depuis la **fin** de la nuit, en millisecondes. Valeurs dans `Durees`. */
+    val OFFSETS_MS: LongArray = Durees.ACTIVES.offsetsLectureMs
 
     /**
      * Au-dela, on arrete. Trente-six heures ne sont pas un compromis : c'est le point ou
      * continuer d'essayer coute plus (des reveils, une notification qui reste en suspens, une
      * nuit dont l'etat n'est jamais final) que ce que la reponse rapporterait.
      */
-    val GIVE_UP_MS: Long = TimeUnit.HOURS.toMillis(36)
+    val GIVE_UP_MS: Long = Durees.ACTIVES.abandonLectureMs
 
     sealed interface Plan {
         /** @param delayMs attente avant la prochaine tentative. Zero = rattrapage immediat. */
@@ -77,15 +69,32 @@ object FetchSchedule {
      * derniere : chacune produit une ligne `hc_snapshot`, et cette trace est ce qui permettra
      * de recaler l'echelle sur la latence reelle.
      */
-    fun plan(attemptsDone: Int, sessionEndMs: Long, nowMs: Long): Plan {
+    fun plan(
+        attemptsDone: Int,
+        sessionEndMs: Long,
+        nowMs: Long,
+        /**
+         * L'echelle et son mur, en parametres plutot que lus au fond de la fonction.
+         *
+         * Cette fonction est pure et ses tests affirment des valeurs — « la premiere tentative est
+         * a T+30 minutes », « on abandonne a T+36 h ». Les laisser suivre le diviseur de la
+         * variante compilee ferait echouer ces affirmations parce qu'un banc a ete construit
+         * autrement, ce qui n'apprend rien a personne sur la replanification.
+         */
+        offsetsMs: LongArray = OFFSETS_MS,
+        abandonMs: Long = GIVE_UP_MS,
+    ): Plan {
         val elapsed = nowMs - sessionEndMs
-        if (elapsed >= GIVE_UP_MS) {
-            return Plan.GiveUp("T+36 h depasse (${elapsed / 3_600_000} h)")
+        if (elapsed >= abandonMs) {
+            // Le message se derive de la borne au lieu de la citer : sur le banc la borne est
+            // comprimee, et un journal qui annoncerait « T+36 h » apres trois minutes serait la
+            // premiere chose a envoyer un lecteur sur une fausse piste.
+            return Plan.GiveUp("abandon : $elapsed ms ecoulees, borne $abandonMs ms")
         }
-        if (attemptsDone >= OFFSETS_MS.size) {
-            return Plan.GiveUp("echelle epuisee apres ${OFFSETS_MS.size} tentatives")
+        if (attemptsDone >= offsetsMs.size) {
+            return Plan.GiveUp("echelle epuisee apres ${offsetsMs.size} tentatives")
         }
-        val target = sessionEndMs + OFFSETS_MS[attemptsDone]
+        val target = sessionEndMs + offsetsMs[attemptsDone]
         return Plan.Retry(delayMs = (target - nowMs).coerceAtLeast(0L), attemptIndex = attemptsDone)
     }
 
@@ -125,15 +134,18 @@ object FetchSchedule {
         sessionEndMs: Long,
         nowMs: Long,
         derniereTentativeMs: Long?,
+        /** Voir [plan] : les bornes sont des parametres pour que les tests puissent les nommer. */
+        abandonMs: Long = GIVE_UP_MS,
+        minEntreMs: Long = MIN_ENTRE_OPPORTUNISTES_MS,
     ): Boolean {
         val elapsed = nowMs - sessionEndMs
-        if (elapsed < 0 || elapsed >= GIVE_UP_MS) return false
+        if (elapsed < 0 || elapsed >= abandonMs) return false
         val derniere = derniereTentativeMs ?: return true
-        return nowMs - derniere >= MIN_ENTRE_OPPORTUNISTES_MS
+        return nowMs - derniere >= minEntreMs
     }
 
     /** Delai minimal entre deux lectures opportunistes. Anti-rafale, rien de plus. */
-    val MIN_ENTRE_OPPORTUNISTES_MS: Long = TimeUnit.MINUTES.toMillis(10)
+    val MIN_ENTRE_OPPORTUNISTES_MS: Long = Durees.ACTIVES.minEntreOpportunistesMs
 
     /**
      * `attemptIndex` des lignes `hc_snapshot` produites hors echelle.

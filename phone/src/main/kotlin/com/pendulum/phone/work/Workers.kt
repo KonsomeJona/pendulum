@@ -13,7 +13,7 @@ import com.pendulum.phone.health.SleepReader
 import com.pendulum.phone.ingest.ChunkStore
 import com.pendulum.phone.ingest.SessionReassembler
 import com.pendulum.format.ChunkReader
-import java.util.concurrent.TimeUnit
+import com.pendulum.phone.temps.Durees
 
 internal const val KEY_SESSION = "sessionHex"
 
@@ -326,23 +326,44 @@ class WatchdogWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
         val now = System.currentTimeMillis()
 
         for (s in db.nightDao().openOrStale()) {
-            val silence = now - s.lastChunkArrivalMs
-            val age = now - s.startWallMs
-            when {
-                age > MAX_NIGHT_MS -> {
+            when (etatSuivant(s.state, s.startWallMs, s.lastChunkArrivalMs, now)) {
+                "TRUNCATED" -> {
                     db.nightDao().setState(s.sessionHex, "TRUNCATED")
                     WorkScheduler.enqueueNightChain(applicationContext, s.sessionHex)
                 }
-                s.state == "OPEN" && s.lastChunkArrivalMs > 0 && silence > STALE_MS -> {
-                    db.nightDao().setState(s.sessionHex, "STALE")
-                }
+                "STALE" -> db.nightDao().setState(s.sessionHex, "STALE")
+                else -> Unit
             }
         }
         return Result.success()
     }
 
-    private companion object {
-        val STALE_MS = TimeUnit.MINUTES.toMillis(45)
-        val MAX_NIGHT_MS = TimeUnit.HOURS.toMillis(14)
+    companion object {
+        val STALE_MS = Durees.ACTIVES.silenceAvantStaleMs
+        val MAX_NIGHT_MS = Durees.ACTIVES.ageMaxNuitMs
+
+        /**
+         * Les deux paliers, isoles de la base et de l'horloge. **Pur**, donc testable.
+         *
+         * L'ordre des deux branches est le contrat : `TRUNCATED` l'emporte sur `STALE`, parce
+         * qu'une nuit de plus de quatorze heures doit etre analysee meme si des chunks
+         * continuent d'arriver. L'ecrire dans un `when` au fond d'une coroutine qui lit
+         * `System.currentTimeMillis()` rendait cette priorite indemontrable autrement qu'en
+         * relisant le code.
+         *
+         * @return le nouvel etat, ou `null` si rien ne change.
+         */
+        fun etatSuivant(
+            etat: String,
+            startWallMs: Long,
+            lastChunkArrivalMs: Long,
+            nowMs: Long,
+            staleMs: Long = STALE_MS,
+            ageMaxMs: Long = MAX_NIGHT_MS,
+        ): String? = when {
+            nowMs - startWallMs > ageMaxMs -> "TRUNCATED"
+            etat == "OPEN" && lastChunkArrivalMs > 0 && nowMs - lastChunkArrivalMs > staleMs -> "STALE"
+            else -> null
+        }
     }
 }

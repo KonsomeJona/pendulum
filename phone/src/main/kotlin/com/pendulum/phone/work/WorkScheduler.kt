@@ -9,6 +9,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.pendulum.phone.db.PendulumDatabase
+import com.pendulum.phone.temps.Durees
 import java.util.concurrent.TimeUnit
 
 /**
@@ -132,9 +133,20 @@ object WorkScheduler {
         )
     }
 
-    /** Calcule le rang suivant de l'echelle et le planifie, ou ne planifie rien si on abandonne. */
-    fun scheduleNextSleepFetch(context: Context, sessionHex: String, endMs: Long, attemptsDone: Int) {
-        when (val plan = FetchSchedule.plan(attemptsDone, endMs, System.currentTimeMillis())) {
+    /**
+     * Calcule le rang suivant de l'echelle et le planifie, ou ne planifie rien si on abandonne.
+     *
+     * @param nowMs l'horloge en parametre : c'est elle qui decide entre replanifier et abandonner,
+     *   et la lire au fond de la fonction rendait cette bifurcation-la impossible a exercer.
+     */
+    fun scheduleNextSleepFetch(
+        context: Context,
+        sessionHex: String,
+        endMs: Long,
+        attemptsDone: Int,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        when (val plan = FetchSchedule.plan(attemptsDone, endMs, nowMs)) {
             is FetchSchedule.Plan.Retry -> scheduleSleepFetch(context, sessionHex, plan.delayMs)
             is FetchSchedule.Plan.GiveUp -> Unit
         }
@@ -167,9 +179,15 @@ object WorkScheduler {
      * Le chien de garde tourne toutes les 30 minutes. C'est le minimum autorise par WorkManager
      * pour un travail periodique (15 min) double d'une marge : il ne fait rien tant qu'aucune
      * session n'est ouverte, et son cout est une requete SQL.
+     *
+     * La periode passe par `Durees`, mais WorkManager ramene toute valeur sous quinze minutes a
+     * quinze minutes : sur le banc, ce chemin ne s'accelere pas. Voir `Durees.periodeWatchdogMs`.
      */
     fun ensureWatchdog(context: Context) {
-        val request = PeriodicWorkRequestBuilder<WatchdogWorker>(30, TimeUnit.MINUTES)
+        val request = PeriodicWorkRequestBuilder<WatchdogWorker>(
+            Durees.ACTIVES.periodeWatchdogMs,
+            TimeUnit.MILLISECONDS,
+        )
             .setConstraints(constraints)
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(

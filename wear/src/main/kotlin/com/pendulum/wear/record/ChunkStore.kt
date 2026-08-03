@@ -4,6 +4,7 @@ import com.pendulum.format.ChunkFormat
 import com.pendulum.format.ChunkHeader
 import com.pendulum.format.ChunkWriter
 import com.pendulum.format.wire.WireProtocol
+import com.pendulum.wear.temps.Durees
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -16,6 +17,10 @@ import java.util.TimeZone
  * depasser 92 160 octets. Les deux conditions sont necessaires : la duree borne ce qu'on perd
  * si la montre meurt, le plafond d'octets garantit que le fichier tient dans la charge utile de
  * 100 Ko d'un `DataItem` meme si `fs` reel derive ou si un mode degrade change la cadence.
+ *
+ * **Sur le banc, les deux conditions ne courent plus a la meme vitesse.** La duree se comprime,
+ * le volume non — c'est le choix explique dans `Temps`. La consequence est chiffree dans la KDoc
+ * de [writeBlock], parce que c'est la que la course se decide.
  *
  * Le fichier porte son nom definitif des l'ouverture : c'est le **marqueur de fin** qui
  * distingue un chunk complet d'un chunk en cours, pas son extension. Un `.part` renomme a la
@@ -31,6 +36,9 @@ class ChunkStore(
     startIndex: Int,
     private var rateHz: Int,
     private var modeFlags: Int,
+    /** Borne de duree de la rotation. Parametre plutot que constante lue au fond de [writeBlock] :
+     *  c'est ce qui rend la rotation testable a une echelle choisie, sans horloge a bousculer. */
+    private val rotationMs: Long = Durees.ACTIVES.rotationChunkMs,
 ) {
 
     /** Index du prochain chunk a ouvrir. Continue la numerotation apres une reprise : jamais
@@ -59,6 +67,33 @@ class ChunkStore(
     /**
      * Ecrit un bloc, en ouvrant ou en faisant tourner le chunk si necessaire.
      *
+     * ### Laquelle des deux conditions ferme le chunk, et ce que le banc en change
+     *
+     * En marche reelle les deux sont a egalite, a un pour cent pres : 50 Hz x 6 octets font
+     * environ 303 o/s une fois les entetes de bloc comptes, donc les 92 160 octets sont atteints
+     * apres a peu pres 304 s — juste **apres** les 300 s de la borne de duree. C'est la duree qui
+     * ferme, d'un cheveu, et les chunks sortent remplis a ~99 % du plafond. Le plafond d'octets ne
+     * gagne que dans les cas degrades, qui sont exactement ceux pour lesquels il existe.
+     *
+     * Sur le banc, deux accelerations independantes se superposent :
+     *
+     *  - le **rejeu** avance de 250 s de temps capteur par seconde de temps mural, et ce facteur
+     *    n'est pas libre — `SourceSynthetique` le derive de la taille de salve et de
+     *    `SensorPipeline.FLUSH_GAP_NS`. Les octets s'accumulent donc 250 fois plus vite ;
+     *  - la **borne de duree**, elle, est divisee par `EchelleTemps.DIVISEUR`.
+     *
+     * L'egalite d'origine n'est preservee que si ces deux facteurs sont **le meme nombre**. A 250,
+     * la borne tombe a 1 200 ms de temps mural et le plafond d'octets est atteint vers 1 216 ms :
+     * meme cheveu, memes chunks, memes octets — c'est le comportement reel, joue plus vite. A 600,
+     * la borne tombe a 500 ms alors qu'il faut toujours 1 216 ms pour remplir le chunk : la duree
+     * gagne largement, les chunks sortent a ~40 % du plafond, et le banc **cesse d'exercer** ce
+     * pour quoi le plafond existe — la tenue des tampons memoire et le passage sous les 100 Ko
+     * d'un `DataItem`.
+     *
+     * C'est pourquoi `CoherenceEchelleTest` refuse tout diviseur qui ne soit pas l'acceleration du
+     * rejeu. La regle en une phrase : **comprimer le temps mural exactement autant que le rejeu
+     * comprime le temps capteur, sinon on ne teste plus la meme rotation.**
+     *
      * @return l'index du chunk ferme par cette ecriture, ou `null` si aucune rotation n'a eu lieu.
      */
     fun writeBlock(
@@ -75,7 +110,8 @@ class ChunkStore(
         val w = writer
         if (w != null) {
             val blockBytes = blockBytes(count)
-            if (nowMs - openedAtMs >= WireProtocol.CHUNK_ROTATION_MS ||
+            if (nowMs - openedAtMs >= rotationMs ||
+                // Jamais mis a l'echelle. Voir la KDoc ci-dessus, et celle de `Temps`.
                 w.bytesWritten + blockBytes > WireProtocol.CHUNK_ROTATION_BYTES
             ) {
                 closed = close()

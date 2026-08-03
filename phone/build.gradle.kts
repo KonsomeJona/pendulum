@@ -47,12 +47,29 @@ android {
         }
     }
 
+    // Diviseur de temps du banc instrumente.
+    //
+    // Le champ n'est declare **que** dans le bloc `debug`, exactement comme dans `:wear`. C'est ce
+    // qui donne au jumeau `src/release/.../EchelleTemps.kt` sa garantie : la variante release
+    // compile contre un `BuildConfig` qui ne porte pas ce champ.
+    //
+    // Sur le banc : `./gradlew -Ppendulum.temps.diviseur=600 :wear:assembleDebug :phone:assembleDebug`,
+    // en une seule invocation — rien dans le code ne peut constater que les deux moities ont recu
+    // la meme valeur.
+    val diviseurTemps = (project.findProperty("pendulum.temps.diviseur") as String?)
+        ?.toLongOrNull()
+        ?.also { require(it >= 1L) { "pendulum.temps.diviseur doit valoir au moins 1, recu $it" } }
+        ?: 1L
+
     buildTypes {
         release {
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")
             // Pas de minification pour l'instant : Room + KSP + reflexion des workers
             // demandent des regles de conservation qu'on n'ecrira pas avant d'en avoir besoin.
             isMinifyEnabled = false
+        }
+        debug {
+            buildConfigField("long", "TEMPS_DIVISEUR", "${diviseurTemps}L")
         }
     }
 
