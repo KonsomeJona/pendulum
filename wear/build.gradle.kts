@@ -18,6 +18,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        // Tests instrumentes. Ils n'existaient pas ici, et le banc les ajoutait par un correctif
+        // applique a ce fichier au vol — un correctif « a ne pas commiter », donc un correctif
+        // qu'on oublie. Ce qu'ils verifient ne se verifie nulle part ailleurs : qu'une permission
+        // exigee par un composant existe reellement sur l'appareil (`PermissionsDesComposantsTest`).
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // Signature de publication.
@@ -145,4 +151,16 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testRuntimeOnly(libs.junit.platform.launcher)
+
+    // JUnit 4 et non 5 : l'orchestrateur Android n'execute pas la plateforme JUnit 5. Ces
+    // dependances ne partent pas dans l'APK publie — `androidTestImplementation` n'est ni sur le
+    // chemin de compilation ni sur le chemin d'execution des variantes ordinaires.
+    //
+    // `:format` et le client Data Layer sont la pour les sondes de `tools/banc/`, qui se posent
+    // dans ce source set : les avoir ici evite de retoucher ce fichier a chaque deploiement du
+    // banc, ce qui etait la seule facon connue de commiter un correctif de banc par accident.
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(project(":format"))
+    androidTestImplementation(libs.play.services.wearable)
 }

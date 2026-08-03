@@ -26,51 +26,21 @@ ADB="${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}"
 RACINE="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$RACINE" || exit 1
 
+# Les sondes sont **copiees** dans les source sets androidTest des deux modules et n'y sont pas
+# versionnees : elles vivent dans `tools/banc/` pour qu'un fichier de test du banc ne se retrouve
+# jamais dans l'APK d'une variante ordinaire par distraction.
+#
+# Ce deploiement ne touche plus aux fichiers de build. Il les modifiait, avec la mention « a ne
+# pas commiter » — c'est-a-dire une consigne que seul un humain attentif applique, et le depot a
+# porte ce correctif pendant toute une session. Les quatre dependances `androidTestImplementation`
+# dont les sondes ont besoin sont desormais declarees dans `wear/build.gradle.kts` et
+# `phone/build.gradle.kts`, ou elles ne coutent rien : `androidTestImplementation` n'est ni sur le
+# chemin de compilation ni sur le chemin d'execution des variantes publiees.
 deploy() {
   mkdir -p phone/src/androidTest/kotlin/com/pendulum/phone
   mkdir -p wear/src/androidTest/kotlin/com/pendulum/wear
   cp tools/banc/BancDataLayer-phone.kt phone/src/androidTest/kotlin/com/pendulum/phone/BancDataLayer.kt
   cp tools/banc/BancDataLayer-wear.kt  wear/src/androidTest/kotlin/com/pendulum/wear/BancDataLayer.kt
-
-  # `:wear` n'a pas de source set androidTest : ni runner, ni dependances. On les ajoute, une
-  # seule fois. Le marqueur `BANC-DATALAYER` rend le patch idempotent et repérable.
-  if ! grep -q "BANC-DATALAYER" wear/build.gradle.kts; then
-    python3 - <<'PY'
-import re, pathlib
-p = pathlib.Path("wear/build.gradle.kts")
-s = p.read_text()
-s = s.replace(
-    '        versionName = "0.1.0"\n',
-    '        versionName = "0.1.0"\n'
-    '        // BANC-DATALAYER : ajoute par tools/banc/datalayer.sh, a ne pas commiter.\n'
-    '        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"\n',
-    1)
-s = s.rstrip() + """
-
-// BANC-DATALAYER : ajoute par tools/banc/datalayer.sh, a ne pas commiter.
-dependencies {
-    androidTestImplementation(libs.androidx.test.ext.junit)
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(project(":format"))
-    androidTestImplementation(libs.play.services.wearable)
-}
-"""
-p.write_text(s)
-PY
-  fi
-
-  # `androidTestImplementation` n'herite pas des `implementation` du module teste : sans ces deux
-  # lignes, `WirePaths` et `Wearable` ne sont pas sur le chemin de compilation du test.
-  if ! grep -q "BANC-DATALAYER" phone/build.gradle.kts; then
-    cat >> phone/build.gradle.kts <<'EOF'
-
-// BANC-DATALAYER : ajoute par tools/banc/datalayer.sh, a ne pas commiter.
-dependencies {
-    androidTestImplementation(project(":format"))
-    androidTestImplementation(libs.play.services.wearable)
-}
-EOF
-  fi
   echo "DATALAYER_DEPLOY_OK"
 }
 

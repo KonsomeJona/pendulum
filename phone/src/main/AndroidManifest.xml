@@ -164,18 +164,37 @@
         </receiver>
 
         <!--
-          Reception Data Layer. `exported="true"` et la permission GMS sont imposes par le
-          protocole : c'est le service Google Play qui demarre ce service, y compris quand
-          l'application n'a jamais ete ouverte — ce qui est exactement le cas d'usage (le
-          telephone recoit les chunks pendant la nuit, ecran eteint).
+          Reception Data Layer. `exported="true"` est impose par le protocole : c'est le service
+          Google Play qui demarre ce service, y compris quand l'application n'a jamais ete ouverte
+          — ce qui est exactement le cas d'usage (le telephone recoit les chunks pendant la nuit,
+          ecran eteint).
+
+          **Pas d'`android:permission`, et c'est mesure.** Ce service a longtemps porte
+          `android:permission="com.google.android.gms.permission.BIND_WEARABLE_LISTENER"`, et cette
+          ligne interdisait *toute* livraison : la permission n'est definie par aucun paquet, et
+          surtout Play Services ne la **demande** pas — 384 permissions declarees, pas celle-la.
+          Une permission d'installation n'est accordee qu'aux paquets qui la declarent, donc
+          aucun `protectionLevel` ne repare quoi que ce soit : la definir soi-meme en `signature`
+          puis en `signatureOrSystem` a ete essaye, et le refus est identique au caractere pres
+          (`Permission Denial: ... requires com.google.android.gms.permission.BIND_WEARABLE_LISTENER`).
+          Le mode de defaillance est le silence : l'application ne voit rien, seul le journal
+          systeme porte la trace. `BANC-ESSAI.md` §12.1.
+
+          **Ce qui protege ce service a la place, et qui est un vrai verrou.** Le `onBind` de
+          `WearableListenerService` est `final` et ne controle pas l'appelant, mais les onze
+          methodes de l'interface AIDL passent toutes par le meme filtre, qui compare
+          `Binder.getCallingUid()` a l'UID des services Google Play et laisse tomber l'evenement
+          sinon (`E WearableLS: Caller is not GooglePlayServices`). Mesure faite : un appel emis
+          depuis un processus qui n'est pas GMS n'atteint jamais `onDataChanged`. S'y ajoutent le
+          Data Layer, qui ne transporte qu'entre memes `applicationId` et meme signature, le CRC-32
+          verifie par charge utile, l'`INSERT OR IGNORE`, et l'absence de permission `INTERNET`.
 
           Le filtre `DATA_CHANGED` est restreint par prefixe de chemin : on ne veut pas etre
           reveille par les items d'une autre application.
         -->
         <service
             android:name="com.pendulum.phone.ingest.PendulumListenerService"
-            android:exported="true"
-            android:permission="com.google.android.gms.permission.BIND_WEARABLE_LISTENER">
+            android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
                 <data

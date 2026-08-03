@@ -166,5 +166,10 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.room.testing)
+    // Pour les sondes de `tools/banc/`, qui se posent dans ce source set. Les avoir ici evite le
+    // correctif de build applique au vol par `datalayer.sh`, qui portait la mention « a ne pas
+    // commiter » — c'est-a-dire une consigne que seul un humain attentif applique.
+    androidTestImplementation(project(":format"))
+    androidTestImplementation(libs.play.services.wearable)
     debugImplementation(libs.compose.ui.test.manifest)
 }

@@ -27,3 +27,8 @@ sessions/
 
 # Sorties de build hors projet (voir README, contournement drvfs sous WSL)
 .cache/
+
+# Sondes du banc, deposees par `tools/banc/datalayer.sh deploy` dans les source sets
+# androidTest des deux modules. Leur source versionnee est `tools/banc/BancDataLayer-*.kt` ;
+# la copie deposee ne doit pas etre commitee, sinon elle se compile chez tout le monde.
+**/src/androidTest/kotlin/com/pendulum/*/BancDataLayer.kt

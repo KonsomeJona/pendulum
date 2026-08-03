@@ -64,10 +64,20 @@
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
 
+        <!--
+          Reception Data Layer cote montre : accuses, demandes de balayage, demandes de demarrage.
+
+          **Pas d'`android:permission`, et c'est mesure.** Le symetrique exact du service du module
+          `:phone` : la ligne `android:permission="…BIND_WEARABLE_LISTENER"` qui etait ici
+          interdisait toute livraison, parce que Play Services ne demande pas cette permission et
+          ne peut donc pas la detenir, quel que soit le `protectionLevel` sous lequel on la
+          definirait soi-meme. Le refus est silencieux pour l'application. Ce qui protege le
+          service a sa place est le filtre d'UID de la bibliotheque, qui refuse tout appelant qui
+          n'est pas GMS avant que `onDataChanged` ne soit atteint. `BANC-ESSAI.md` §12.1.
+        -->
         <service
             android:name="com.pendulum.wear.transfer.AckObserver"
-            android:exported="true"
-            android:permission="com.google.android.gms.permission.BIND_WEARABLE_LISTENER">
+            android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
                 <data
