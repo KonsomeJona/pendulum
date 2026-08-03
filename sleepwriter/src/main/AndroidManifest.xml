@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifeste de `:sleepwriter`, l'ecrivain d'hypnogrammes du banc.
+
+  ### Pourquoi cette application a le droit d'ecrire alors que Pendulum ne l'a pas
+
+  Dans la realite, l'hypnogramme est ecrit par une application tierce — bague, montre de poignet,
+  capteur sous matelas — et Pendulum ne fait que le lire. C'est la moitie « denominateur » de la
+  mesure, et le produit repose sur le fait qu'elle vienne d'un **autre capteur que le sien** :
+  si les deux venaient du meme accelerometre, un traitement qui supprime des mouvements baisserait
+  le numerateur et monterait le denominateur du meme geste (`docs/01-overview.md` §1).
+
+  Cette application est donc la contrepartie fidele de cette separation, pas un contournement.
+  Elle ne partage ni le paquet, ni le processus, ni la base de Pendulum : elle est reellement une
+  autre application, ce qui est exactement ce que le banc doit simuler.
+
+  `:phone` ne declare que `READ_SLEEP`, `READ_HEALTH_DATA_IN_BACKGROUND` et
+  `READ_HEALTH_DATA_HISTORY`, et cela ne doit jamais changer. Voir le commentaire de
+  `androidComponents` dans `build.gradle.kts` : ce module n'a pas de variante release.
+
+  ### `READ_SLEEP` ici aussi, et ce n'est pas une contradiction
+
+  Le mode « verifier » relit ce qui vient d'etre ecrit pour qu'un script sache si l'ecriture a
+  abouti sans regarder l'ecran. Health Connect n'accorde pas la lecture au titre de l'ecriture :
+  sans `READ_SLEEP`, `readRecords` echoue meme sur ses propres enregistrements. La verification
+  serait alors impossible autrement qu'a l'oeil, ce qui est precisement ce qu'on veut eviter.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.health.WRITE_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+
+    <!--
+      Visibilite de paquets. Sans cette declaration, `HealthConnectClient.getSdkStatus()` rend
+      `SDK_UNAVAILABLE` sur Android 11+ **alors que Health Connect est installe** : le filtrage
+      des requetes de paquet empeche simplement de le voir. Le symptome est un faux negatif, pas
+      une erreur.
+    -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:supportsRtl="true">
+
+        <!--
+          L'unique activite. `exported="true"` est une exigence du banc et non un oubli : c'est
+          `adb shell am start -n <paquet>/com.pendulum.sleepwriter.EcrivainActivity` qui la lance,
+          et une activite non exportee refuse un demarrage venu du shell (`SecurityException`,
+          « not exported from uid »).
+
+          Le nom de classe est **absolu**. Un nom relatif (`.EcrivainActivity`) se resout sur
+          `applicationId`, qui vaut ici `com.pendulum.sleepwriter.a` ou `.b` selon la variante,
+          alors que la classe vit dans `com.pendulum.sleepwriter` : le manifeste fusionnerait sans
+          rien dire et l'activite serait introuvable a l'execution.
+
+          MAIN/LAUNCHER est conserve pour le seul geste que le banc ne sait pas scripter de facon
+          fiable : accorder la permission a la main quand la sequence UiAutomator echoue.
+        -->
+        <activity
+            android:name="com.pendulum.sleepwriter.EcrivainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Justification des permissions Health Connect — **deux declarations obligatoires**, la
+          meme paire que le manifeste de `:phone` documente.
+
+          Le chemin `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` est celui de l'APK Health
+          Connect (Android 13 et anterieur) ; l'alias `ViewPermissionUsageActivity` est celui du
+          framework (Android 14+, Health Connect integre au systeme). Avec `minSdk 30` les deux
+          moities du parc existent, et n'en declarer qu'une fait que Health Connect **refuse
+          d'afficher l'application dans sa liste** : le symptome est une absence, pas une erreur.
+
+          Ce n'est pas de la cosmetique pour un outil de banc — c'est par cette liste qu'on
+          accorde `WRITE_SLEEP` a la main quand le pilotage par UiAutomator echoue.
+        -->
+        <activity
+            android:name="com.pendulum.sleepwriter.PermissionsRationaleActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity="com.pendulum.sleepwriter.PermissionsRationaleActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
+    </application>
+</manifest>
