@@ -22,4 +22,13 @@ object FabriqueSource {
     @Suppress("UNUSED_PARAMETER")
     fun creer(context: Context, intent: Intent?): SourceCapteur =
         SourceCapteurMaterielle(context.getSystemService(SensorManager::class.java))
+
+    /**
+     * Toujours `false` : il n'y a pas de rejeu dans cette variante, et rien a lire pour s'en
+     * assurer. La fonction existe pour que le garde-fou d'echelle de `RecordingService` ait une
+     * seule signature d'appel — en release il se compile en une condition toujours fausse, ce qui
+     * est exactement ce qu'on veut, `EchelleTemps.DIVISEUR` y valant 1 par construction.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun sourceSynthetiqueActive(context: Context): Boolean = false
 }

@@ -76,6 +76,18 @@ object FabriqueSource {
     }
 
     /**
+     * La source qui sera construite au prochain demarrage est-elle le rejeu synthetique.
+     *
+     * Elle est lue **apres** [creer], jamais avant : c'est [creer] qui transcrit les extras de
+     * l'intent dans la preference, et interroger cette derniere plus tot rendrait l'etat de la
+     * nuit precedente. Son unique appelant est le garde-fou d'echelle de `RecordingService`.
+     *
+     * Le jumeau `src/release/` rend `false` sans rien lire : il n'existe pas de rejeu la-bas.
+     */
+    fun sourceSynthetiqueActive(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(EXTRA_ACTIF, false)
+
+    /**
      * Configuration directe, pour un test instrumente qui tourne dans le processus de
      * l'application et n'a donc pas d'intent a fabriquer.
      */

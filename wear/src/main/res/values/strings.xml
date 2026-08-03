@@ -52,6 +52,8 @@
     <string name="blocker_no_accelerometer">Accelerometer unavailable. Restart the watch.</string>
     <string name="blocker_storage_full">Storage full: %1$s free, 300 MB needed. Sync first (%2$s chunks waiting).</string>
     <string name="blocker_fgs_refused">The watch refuses to start the measurement service. Restart the watch, then try again.</string>
+    <!-- Bench build only: never reachable in a release, where the divider is 1. -->
+    <string name="blocker_bench_scale">Bench build: wall time is divided by %1$s, but the real sensor is not. Rebuild without -Ppendulum.temps.diviseur, or start with the synthetic source.</string>
 
     <!-- Avertissements : le START reste possible, l\'utilisateur décide. -->
     <string name="warning_low_battery">Battery %1$s%% — 50%% recommended for eight hours.</string>

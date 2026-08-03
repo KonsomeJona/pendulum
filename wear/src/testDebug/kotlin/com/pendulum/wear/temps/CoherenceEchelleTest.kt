@@ -59,6 +59,30 @@ class CoherenceEchelleTest {
             .isEqualTo(accelerationRejeu)
     }
 
+    /**
+     * Pourquoi le garde-fou de `Preflight.echelleDesaccordee` existe, en chiffres.
+     *
+     * A l'echelle du banc, le delai de garde de l'heure butoir passe sous la latence de salve du
+     * FIFO. Sur le rejeu ce n'est pas un probleme : la salve est elle aussi comprimee, puisque le
+     * temps capteur avance 250 fois plus vite. Sur le capteur reel elle ne l'est pas — c'est du
+     * materiel — et l'enregistrement s'arrete donc avant son premier echantillon. C'est la mesure
+     * du §11.5.3 : 14,636 s de nuit, zero chunk, aucun message.
+     *
+     * Assertion **inversee**, comme celle du remplissage : le jour ou elle tombe, ce n'est pas ce
+     * test qu'il faut ajuster, c'est que la raison d'etre du garde-fou a change.
+     */
+    @Test
+    fun `a l'echelle du banc, l'heure butoir couperait avant la premiere salve du FIFO`() {
+        val gardeButoirMs = com.pendulum.wear.temps.Durees(accelerationRejeu).delaiMinAvantHeureButoirMs
+        val salveFifoMs = modeNominal.maxReportLatencyUs / 1_000L
+
+        assertThat(gardeButoirMs)
+            .`as`("delai de garde de l'heure butoir, comprime au diviseur du banc")
+            .isLessThan(salveFifoMs)
+        assertThat(salveFifoMs).isEqualTo(30_000L)
+        assertThat(gardeButoirMs).isEqualTo(14_400L)
+    }
+
     @Test
     fun `a l'echelle du rejeu, la duree ferme le chunk juste avant le plafond d'octets`() {
         // C'est la propriete que le banc doit conserver, et elle est vraie en marche reelle :

@@ -219,6 +219,34 @@ class RecordingService : Service() {
         }
         source = src
 
+        // Le garde-fou d'echelle, place ici et pas plus tot : c'est `FabriqueSource.creer` qui
+        // transcrit les extras de l'intent dans la preference, donc la source n'est connue qu'a
+        // partir de cette ligne. Le refus est enregistre comme l'est celui du service de premier
+        // plan — une preference que le preflight suivant transforme en bloqueur lisible — parce
+        // qu'un enregistrement qui s'arrete tout seul en quatorze secondes ne dit rien a personne.
+        if (Preflight.echelleDesaccordee(
+                diviseur = com.pendulum.wear.temps.EchelleTemps.DIVISEUR,
+                sourceSynthetique = FabriqueSource.sourceSynthetiqueActive(this),
+            )
+        ) {
+            Log.e(
+                TAG,
+                "demarrage refuse : compilation de banc a l'echelle " +
+                    "${com.pendulum.wear.temps.EchelleTemps.DIVISEUR} sur le capteur reel. " +
+                    "Le diviseur ne comprime que le temps mural ; la latence de salve du FIFO ne " +
+                    "se comprime pas, et l'heure butoir couperait la nuit avant le premier " +
+                    "echantillon. Recompiler sans -Ppendulum.temps.diviseur, ou demarrer avec " +
+                    "--ez pendulum.synth true.",
+            )
+            prefs().edit().putBoolean(Preflight.PREF_ECHELLE_DESACCORDEE, true).commit()
+            RecordingState.update { it.copy(phase = RecordPhase.IDLE) }
+            src.arreter()
+            source = null
+            stopSelfClean()
+            return
+        }
+        prefs().edit().putBoolean(Preflight.PREF_ECHELLE_DESACCORDEE, false).apply()
+
         // La strategie est decidee ici, a l'execution, sur `fifoReservedEventCount` : la part
         // *garantie* a cette application. `fifoMaxEventCount` est partage entre tous les clients
         // du capteur, et budgeter dessus revient a parier que personne d'autre n'ecoute.

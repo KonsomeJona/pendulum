@@ -514,6 +514,7 @@ private fun issueText(issue: Issue): String = when (issue.id) {
     IssueId.NO_ACCELEROMETER -> stringResource(R.string.blocker_no_accelerometer)
     IssueId.STORAGE_FULL -> stringResource(R.string.blocker_storage_full, issue.args[0], issue.args[1])
     IssueId.FGS_REFUSED -> stringResource(R.string.blocker_fgs_refused)
+    IssueId.BENCH_SCALE_MISMATCH -> stringResource(R.string.blocker_bench_scale, issue.args[0])
     IssueId.LOW_BATTERY -> stringResource(R.string.warning_low_battery, issue.args[0])
     IssueId.PHONE_UNREACHABLE -> stringResource(R.string.warning_phone_unreachable)
     IssueId.NO_WAKEUP_SENSOR -> stringResource(R.string.warning_no_wakeup_sensor)
