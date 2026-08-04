@@ -381,6 +381,10 @@ class PendulumRepository(context: Context) {
                 mouvementsRetenus = (resultat?.plmsCount ?: 0) + (resultat?.plmwCount ?: 0),
                 regle = Textes.Reglages.REGLE_AASM,
                 sourceSommeil = sourceSommeil,
+                // Ce qui explique une decision de detection : l'ecretage du capteur, la gigue et
+                // sa consequence sur la datation, les gels d'ecriture. Trois grandeurs mesurees
+                // qui decidaient du seuil et de l'instant sans etre visibles nulle part.
+                metrologie = Metrologie.resume(telemetrie, session.nominalRateHz),
             ),
             situation = Situations.nuit(nuit, session),
         )

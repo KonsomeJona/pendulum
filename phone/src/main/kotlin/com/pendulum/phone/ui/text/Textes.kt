@@ -980,6 +980,52 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
                         "take if every movement that could belong to a respiratory event were " +
                         "removed. The true figure lies between the two."
 
+                // --- ce qui explique une decision de detection ---------------------------
+                //
+                // Trois grandeurs, trois conditions de mesure. Elles ne sont pas comparees entre
+                // elles, elles ne portent pas de part, et le bloc ne les classe pas : ce sont des
+                // etapes du chemin de calcul, pas des facteurs contributifs.
+
+                const val ECRETAGE = "Sensor range limit"
+                const val DATATION = "Sample timing"
+                const val GELS = "Write freezes"
+
+                /** La valeur quand il n'y a rien a signaler. Un tiret dirait « non mesure ». */
+                const val AUCUN = "none"
+
+                /** `1,204 samples over 7 minutes`. */
+                fun ecretage(echantillons: Int, minutes: Int) =
+                    "${Textes.espaceMilliers(echantillons)} samples over $minutes minutes"
+
+                const val ECRETAGE_NOTE =
+                    "Samples that reached the physical range of the sensor — 4 g or 8 g depending " +
+                        "on the watch, not the 16 g the file format can hold. Above that rail the " +
+                        "envelope is artificially flat at the top: it looks like a plateau, and it " +
+                        "understates the amplitude. Amplitude is what the detection threshold " +
+                        "reads, so a movement kept or dropped over these minutes was decided on " +
+                        "the clipping, not on the signal."
+
+                /** `±1.4 ms typical · worst gap 41 ms`. */
+                fun datation(dispersion: String, maximum: String) =
+                    "±$dispersion typical  ·  worst gap $maximum"
+
+                const val DATATION_NOTE =
+                    "The file format writes no timestamp per sample: it interpolates between the " +
+                        "two ends of each block. What that costs is set by the dispersion of the " +
+                        "intervals, not by their mean — a mean of exactly 50 Hz obtained by " +
+                        "alternating 10 ms and 30 ms dates every sample to within 10 ms. The " +
+                        "worst gap is the bound on that error."
+
+                /** `4 longer than one sampling period · worst 38 ms`. */
+                fun gels(nombre: Int, maximum: String) =
+                    "$nombre longer than one sampling period  ·  worst $maximum"
+
+                const val GELS_NOTE =
+                    "Moments when writing to disk froze the processor for longer than the time " +
+                        "between two samples, which is long enough for a sensor interrupt to have " +
+                        "been missed. The worst freeze is what explains a missed interrupt at a " +
+                        "precise instant; the total only gives the budget."
+
                 const val AVERTISSEMENT =
                     "This table shows how the figure is obtained. It does not indicate what " +
                         "caused these movements."
