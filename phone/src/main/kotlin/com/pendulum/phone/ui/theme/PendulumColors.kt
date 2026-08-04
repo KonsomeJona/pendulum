@@ -74,7 +74,11 @@ data class PendulumColors(
             outline = Color(0xFF2A313C),
             textPrimary = Color(0xFFE6EAF0),
             textSecondary = Color(0xFFA3ADBB),
-            textTertiary = Color(0xFF7C8695),
+            // #7C8695 jusqu'ici, et sous le seuil : 4,28:1 sur [surfaceElevated], qui est le fond
+            // de la feuille « valeurs » — ou toutes les en-tetes de colonne sont dans ce role.
+            // Mesure par `ContrasteTexteTest`, jamais par un oeil : un gris a 4,28:1 se lit
+            // « discret », pas « non conforme ».
+            textTertiary = Color(0xFF818B9B),
             accent = Color(0xFF6FB2FF),
             onAccent = Color(0xFF0B1017),
             attention = Color(0xFFE0A33E),
@@ -97,7 +101,10 @@ data class PendulumColors(
             outline = Color(0xFFD8DDE4),
             textPrimary = Color(0xFF12161C),
             textSecondary = Color(0xFF4C5663),
-            textTertiary = Color(0xFF666F7D),
+            // #666F7D jusqu'ici : 4,48:1 sur [surfaceMuted]. La meme regle que dans la palette
+            // sombre, et pour la meme raison — [ThemeMode.Light] est un theme d'ecran declare,
+            // pas seulement la palette de l'export.
+            textTertiary = Color(0xFF646D7A),
             accent = Color(0xFF1E63C8),
             onAccent = Color(0xFFFFFFFF),
             attention = Color(0xFF8A5D0B),

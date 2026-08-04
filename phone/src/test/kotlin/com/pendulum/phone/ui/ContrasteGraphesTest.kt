@@ -6,7 +6,6 @@ import com.pendulum.phone.ui.theme.PendulumColors
 import com.pendulum.phone.ui.theme.RenderTarget
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import kotlin.math.pow
 
 /**
  * Le contraste des elements de graphe, calcule plutot que suppose.
@@ -37,50 +36,15 @@ import kotlin.math.pow
 class ContrasteGraphesTest {
 
     /** Seuil WCAG 1.4.11 pour un objet graphique. */
-    private val minimum = 3.0
+    private val minimum = Colorimetrie.GRAPHIQUE_MINIMUM
 
-    // -------------------------------------------------------------------------------------
-    // Colorimetrie : luminance relative sRGB et composition alpha, telles que la norme les
-    // definit. Trente lignes, aucune dependance, et surtout aucune approximation « a l'oeil ».
-    // -------------------------------------------------------------------------------------
-
-    private fun canalLineaire(c: Float): Double {
-        val v = c.toDouble()
-        return if (v <= 0.04045) v / 12.92 else ((v + 0.055) / 1.055).pow(2.4)
-    }
-
-    private fun luminance(c: Color): Double =
-        0.2126 * canalLineaire(c.red) +
-            0.7152 * canalLineaire(c.green) +
-            0.0722 * canalLineaire(c.blue)
-
-    private fun ratio(a: Color, b: Color): Double {
-        val la = luminance(a)
-        val lb = luminance(b)
-        val haut = maxOf(la, lb)
-        val bas = minOf(la, lb)
-        return (haut + 0.05) / (bas + 0.05)
-    }
-
-    /**
-     * Composition `SrcOver` en espace sRGB, exactement ce que fait `drawRect(..., alpha = a)` :
-     * la fusion se fait sur les valeurs encodees, pas sur les valeurs linearisees.
-     */
-    private fun compose(dessus: Color, dessous: Color, alpha: Float): Color = Color(
-        red = dessus.red * alpha + dessous.red * (1f - alpha),
-        green = dessus.green * alpha + dessous.green * (1f - alpha),
-        blue = dessus.blue * alpha + dessous.blue * (1f - alpha),
-    )
-
-    /** L'opacite minimale qui ferait passer [dessus] sur [fond] a 3:1. Sert au diagnostic. */
-    private fun alphaPourTrois(dessus: Color, fond: Color): Float {
-        var a = 0.01f
-        while (a < 1f) {
-            if (ratio(compose(dessus, fond, a), fond) >= minimum) return a
-            a += 0.01f
-        }
-        return 1f
-    }
+    // La colorimetrie elle-meme vit dans `Colorimetrie` : `ContrasteTexteTest` en a besoin du
+    // meme calcul, et c'est ce partage qui ferme le trou par lequel est passe l'avertissement du
+    // premier lancement — les graphes etaient mesures, le texte ne l'etait pas.
+    private fun ratio(a: Color, b: Color) = Colorimetrie.ratio(a, b)
+    private fun compose(dessus: Color, dessous: Color, alpha: Float) =
+        Colorimetrie.compose(dessus, dessous, alpha)
+    private fun alphaPourTrois(dessus: Color, fond: Color) = Colorimetrie.alphaPourTrois(dessus, fond)
 
     // -------------------------------------------------------------------------------------
     // Mesure

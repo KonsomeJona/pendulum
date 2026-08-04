@@ -574,9 +574,18 @@ Four chart hues at most, all separable under deuteranopia and protanopia, and **
 | Primary data | `#6FB2FF` | `#1E63C8` | envelope, points, median |
 | Quality / attention | `#E0A33E` | `#8A5D0B` | flags, disagreement, degraded mask |
 | Second signal | `#8E7BEF` | `#4F3FB8` | REM, second rule overlaid |
-| Structural neutral | `#7C8695` | `#666F7D` | noise floor, axes, excluded nights |
+| Structural neutral | `#818B9B` | `#646D7A` | noise floor, axes, excluded nights |
 
 All are at or above 4.4:1 against the plot background, beyond the 3:1 required for graphical elements.
+
+The structural neutral was `#7C8695` / `#666F7D`. It carries the tertiary text role as well as the axes,
+and in that role it measured 4.28:1 on the elevated surface — under the 4.5:1 that WCAG 1.4.3 asks of
+body text, on the sheet where every column header uses it. It is now measured rather than assumed:
+`ContrasteTexteTest` holds every text role against every surface it can land on, **including the
+window background declared in `res/values/themes.xml`**. That last one is not a formality: the phone
+module declared no `android:theme` at all, so Android applied `Theme.DeviceDefault.Light.DarkActionBar`
+and its light window background showed through wherever the composition painted none — which made the
+first-launch notice unreadable at 1.06:1.
 Redundancy is mandatory: solid / dashed / dotted for the three lines of the night chart; filled /
 ringed / hollow for the three night states; vertical position for sleep stages; hatching for REM and
 for gaps. The acceptance test is to convert each screenshot to greyscale and confirm nothing is lost.
