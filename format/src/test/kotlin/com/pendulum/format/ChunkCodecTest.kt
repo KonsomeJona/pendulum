@@ -149,6 +149,55 @@ class ChunkCodecTest {
     }
 
     @Test
+    fun `un chunk du format v1 se decode toujours`() {
+        // **La compatibilite descendante, verifiee sur des octets et non sur du code.**
+        //
+        // Ces octets ne sont pas produits par `ChunkWriter` : ils ont ete generes une fois, hors
+        // de Kotlin, a partir de la seule specification ecrite dans la KDoc de `ChunkFormat`. Un
+        // temoin regenere par le code qu'il surveille ne surveille rien — il suivrait la
+        // regression. Celui-ci est fige, et le depot ne supprime jamais du brut : c'est la seule
+        // chose qui permettra de rescorer une nuit de 2026 le jour ou l'algorithme changera.
+        val bytes = hex(CHUNK_V1)
+        assertThat(bytes).hasSize(248)
+
+        val read = ChunkReader.read(ByteArrayInputStream(bytes))
+
+        assertThat(read.header.formatVersion).isEqualTo(1)
+        assertThat(read.header.headerSize).isEqualTo(ChunkFormat.HEADER_SIZE)
+        assertThat(read.header.chunkIndex).isEqualTo(3)
+        assertThat(read.header.nominalRateHz).isEqualTo(50)
+        assertThat(read.header.fifoMaxEventCount).isEqualTo(3000)
+        assertThat(read.header.tzOffsetMin).isEqualTo(120)
+        assertThat(read.header.modeFlags)
+            .isEqualTo(ChunkFormat.MODE_WAKEUP_SENSOR or ChunkFormat.MODE_BATCHED)
+        assertThat(read.header.sessionUuid).isEqualTo(ByteArray(16) { it.toByte() })
+        assertThat(read.header.startWallMs).isEqualTo(1_753_600_000_000L)
+        assertThat(read.header.firstEventTimestampNs).isEqualTo(987_654_321_000L)
+
+        assertThat(read.blocks).hasSize(2)
+        assertThat(read.blocks[0].sampleCount).isEqualTo(8)
+        assertThat(read.blocks[0].flags).isEqualTo(ChunkFormat.FLAG_FIFO_BOUNDARY)
+        assertThat(read.blocks[1].sampleCount).isEqualTo(4)
+        assertThat(read.blocks[1].flags).isEqualTo(ChunkFormat.FLAG_GAP_BEFORE)
+        // Les echantillons sont relus a l'identique : la quantification n'a pas bouge.
+        for (i in 0 until 8) {
+            assertThat(read.blocks[0].x[i]).isEqualTo(ChunkFormat.toMs2((i * 100).toShort()))
+            assertThat(read.blocks[0].z[i]).isEqualTo(ChunkFormat.toMs2(2048))
+        }
+
+        assertThat(read.scan.complete).isTrue()
+        assertThat(read.scan.declaredBlockCount).isEqualTo(2)
+        assertThat(read.scan.declaredSampleCount).isEqualTo(12L)
+        assertThat(read.corruptBlocks).isZero()
+        assertThat(read.scan.desynchronised).isFalse()
+        // Les deux octets ou vit desormais `telemetryCount` etaient a zero en v1 : le chunk
+        // annonce donc zero point, ce qui est la verite et non une valeur par defaut.
+        assertThat(read.telemetry).isEmpty()
+        assertThat(read.scan.declaredTelemetryPointCount).isZero()
+        assertThat(read.scan.lostTelemetryPoints).isZero()
+    }
+
+    @Test
     fun `l'entete refuse un FIFO ou une cadence hors u16`() {
         // F-26 : le .toShort() silencieux enregistrait 70000 comme 4464.
         assertThatThrownBy {
@@ -639,9 +688,40 @@ class ChunkCodecTest {
         val samples = 50 * 3600 * 8
         val blocks = (samples + ChunkFormat.MAX_SAMPLES_PER_BLOCK - 1) / ChunkFormat.MAX_SAMPLES_PER_BLOCK
         val chunks = 8 * 3600 / 300 // rotation 5 min
+        // La telemetrie compte dans le meme budget : un point par minute, chacun dans son propre
+        // bloc. C'est la mesure de ce que « le debit est derisoire » veut dire.
+        val telemetryPoints = 8 * 60
+        val telemetryBytes = telemetryPoints.toLong() *
+            (ChunkFormat.TELEMETRY_HEADER_SIZE + ChunkFormat.TELEMETRY_POINT_SIZE)
         val bytes = (ChunkFormat.HEADER_SIZE + ChunkFormat.FOOTER_SIZE).toLong() * chunks +
             blocks.toLong() * ChunkFormat.BLOCK_HEADER_SIZE +
-            samples.toLong() * ChunkFormat.BYTES_PER_SAMPLE
+            samples.toLong() * ChunkFormat.BYTES_PER_SAMPLE +
+            telemetryBytes
         assertThat(bytes).isLessThan(9L * 1024 * 1024)
+        // ~30 Ko de telemetrie contre ~8,3 Mo de signal : moins de 0,4 % du volume de la nuit.
+        assertThat(telemetryBytes.toDouble() / bytes).isLessThan(0.005)
+    }
+
+    private fun hex(s: String): ByteArray =
+        ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+
+    private companion object {
+
+        /**
+         * Un chunk complet au format **v1**, fige. Deux blocs de signal (8 puis 4 echantillons a
+         * 50 Hz), marqueur de fin, aucune telemetrie — puisque la v1 n'en avait pas.
+         *
+         * Ne jamais le regenerer : le jour ou il faut le changer pour faire passer un test, c'est
+         * que la compatibilite descendante vient d'etre cassee et que c'est ca, la nouvelle.
+         */
+        const val CHUNK_V1 =
+            "50454e4443484e4b010050003200b80b000102030405060708090a0b0c0d0e0f" +
+                "0080b44a98010000081a99be1c00000068f3c8f4e500000080ff1c3b0ae89c42" +
+                "0300000003007800000000000000bf59424c4b21080068f3c8f4e5000000682e" +
+                "21fde5000000010043a300000000000000000000000864000000000" +
+                "8c800000000082c0100000008900100000008f40100000008580200000008bc02" +
+                "00000008424c4b210400685b52fee500000068e2e501e60000000200888a00000" +
+                "0000000000000000008ceff000000089cff000000086aff00000008454e445045" +
+                "4e4421020000000c0000000000000068e2e501e60000000000cf79"
     }
 }

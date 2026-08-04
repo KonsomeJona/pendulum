@@ -58,6 +58,20 @@ class GapMonitor(rateHz: Int) {
     private var manquantsDejaComptes = 0
     private val bigGapTimestamps = ArrayDeque<Long>()
 
+    /**
+     * Accumulateurs de la dispersion, en **microsecondes** et non en nanosecondes.
+     *
+     * Le choix d'unite n'est pas cosmetique : la variance se calcule par somme des carres, et un
+     * trou de 3 s vaut 3e9 ns, dont le carre est 9e18 — a un facteur 1,03 du plus grand `Long`.
+     * Un seul gros trou suffisait donc a faire deborder l'accumulateur et a rendre un ecart-type
+     * negatif sous la racine. En microsecondes le meme trou vaut 9e12, et une fenetre entiere de
+     * trous ne s'en approche pas.
+     */
+    private var sumDtUs = 0L
+    private var sumDtUs2 = 0L
+    private var nbDt = 0
+    private var maxDtUs = 0L
+
     /** Nombre de trous detectes, tous signaux confondus. */
     var gapCount: Int = 0
         private set
@@ -73,6 +87,36 @@ class GapMonitor(rateHz: Int) {
     /** `fs` reellement delivre sur la derniere fenetre de 60 s. 0 tant qu'aucune n'est close. */
     var measuredRateHz: Double = 0.0
         private set
+
+    /**
+     * Ecart-type des intervalles inter-echantillons sur la derniere fenetre close, en
+     * microsecondes. 0 tant qu'aucune fenetre n'est close.
+     *
+     * **La moyenne ne dit pas ce qu'on croit qu'elle dit.** [measuredRateHz] repond a « combien
+     * d'echantillons par seconde », et une cadence qui alterne 10 ms et 30 ms rend exactement
+     * 50 Hz — donc un `fs` parfait, donc `rateDeviates` faux, donc aucun signal nulle part. Or le
+     * format n'a pas de timestamp par echantillon : il **interpole lineairement** entre `tFirstNs`
+     * et `tLastNs`, et cette interpolation est fausse d'autant que les intervalles sont disperses.
+     * C'est donc la regularite, et non la moyenne, qui decide de la datation d'un mouvement.
+     *
+     * Mesure et non action : rien ici ne declenche d'escalade. La dispersion part au telephone
+     * dans la telemetrie, ou elle explique une datation, et c'est tout ce qu'on sait en faire
+     * aujourd'hui.
+     */
+    var jitterStdUs: Double = 0.0
+        private set
+
+    /**
+     * Pire intervalle entre deux echantillons consecutifs de la derniere fenetre close, en
+     * microsecondes. C'est la borne de l'erreur de datation dans cette fenetre, la ou
+     * [jitterStdUs] n'en donne que l'ordre de grandeur.
+     */
+    var maxIntervalUs: Long = 0
+        private set
+
+    /** Dernier `SensorEvent.timestamp` vu. 0 avant le premier echantillon et apres une
+     *  re-inscription du capteur. Il ancre la telemetrie sur la base de temps des echantillons. */
+    val lastTimestampNs: Long get() = lastTsNs
 
     /**
      * Vrai quand `fs` mesure s'ecarte de plus de 5 % du nominal. La cadence demandee n'est pas
@@ -110,6 +154,12 @@ class GapMonitor(rateHz: Int) {
         lastTsNs = tsNs
         windowCount++
 
+        val dtUs = dt / 1_000
+        sumDtUs += dtUs
+        sumDtUs2 += dtUs * dtUs
+        nbDt++
+        if (dtUs > maxDtUs) maxDtUs = dtUs
+
         var gapHere = false
         if (dt > 3 * periodNs) {
             gapHere = true
@@ -134,6 +184,7 @@ class GapMonitor(rateHz: Int) {
         windowStartNs = 0L
         windowCount = 0
         manquantsDejaComptes = 0
+        raz()
     }
 
     fun consumePendingStep(): Int? = pendingStep.also { pendingStep = null }
@@ -141,6 +192,16 @@ class GapMonitor(rateHz: Int) {
     private fun closeWindow(tsNs: Long) {
         val spanNs = tsNs - windowStartNs
         measuredRateHz = windowCount * 1e9 / spanNs
+        if (nbDt > 0) {
+            val moyenne = sumDtUs.toDouble() / nbDt
+            // `coerceAtLeast(0.0)` : la variance calculee par difference de moments peut sortir
+            // legerement negative par annulation quand tous les intervalles sont identiques, et
+            // une racine de negatif rendrait NaN — c'est-a-dire un ecart-type illisible pile dans
+            // le cas le plus sain qui soit.
+            val variance = (sumDtUs2.toDouble() / nbDt - moyenne * moyenne).coerceAtLeast(0.0)
+            jitterStdUs = Math.sqrt(variance)
+            maxIntervalUs = maxDtUs
+        }
         val nominal = 1e9 / periodNs
         rateDeviates = Math.abs(measuredRateHz - nominal) / nominal > 0.05
 
@@ -164,6 +225,15 @@ class GapMonitor(rateHz: Int) {
         windowStartNs = tsNs
         windowCount = 0
         manquantsDejaComptes = 0
+        raz()
+    }
+
+    /** Vide les accumulateurs de dispersion. La fenetre suivante ne doit rien devoir a la precedente. */
+    private fun raz() {
+        sumDtUs = 0
+        sumDtUs2 = 0
+        nbDt = 0
+        maxDtUs = 0
     }
 
     /** Trois gros trous dans une fenetre glissante de 10 min font monter d'un palier. */

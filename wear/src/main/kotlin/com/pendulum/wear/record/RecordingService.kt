@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -23,6 +24,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
 import com.pendulum.format.ChunkFormat
+import com.pendulum.format.TelemetryPoint
 import com.pendulum.format.wire.LivePreview
 import com.pendulum.format.wire.SessionHeader
 import com.pendulum.format.wire.SessionState
@@ -391,6 +393,7 @@ class RecordingService : Service() {
         val charging = bm?.isCharging ?: false
         if (pct >= 0) batterySeries += pct
         if (offBody) offBodySeconds += 60
+        ecrireTelemetrie(bm, pct, charging)
 
         val reason = stopConditions?.evaluate(
             nowMs = System.currentTimeMillis(),
@@ -408,6 +411,90 @@ class RecordingService : Service() {
         // La notification n'est reecrite qu'une fois par minute : elle est le seul moyen de
         // verifier d'un coup d'oeil que la nuit tourne, mais chaque reecriture est du travail.
         updateNotification()
+    }
+
+    /**
+     * Le point de telemetrie de la minute, ecrit **dans le chunk courant**.
+     *
+     * ### Pourquoi ici, et pas sur une horloge a soi
+     *
+     * La mesure de veille du 3 aout 2026 (`docs/fr/BANC-ESSAI.md` §12.4) donne dix lignes de
+     * journal, zero trou, zero escalade, aucun wake lock et le meme PID sur trente-deux minutes de
+     * Doze profond. C'est le resultat a ne pas abimer. La telemetrie n'ajoute donc **ni `Handler`
+     * periodique, ni alarme, ni wake lock** : elle est portee par [minuteTick], c'est-a-dire par le
+     * seul tick du service, dont la KDoc explique qu'il vit sur l'horloge d'uptime — laquelle ne
+     * s'ecoule pas pendant la suspension du SoC. Le point tombe donc dans le sillage d'un reveil
+     * que le vidage du FIFO cause de toute facon, et jamais a la place d'un sommeil.
+     *
+     * Le choix de la minute plutot que d'une autre periode suit la meme logique : c'est la branche
+     * qui **lit deja la batterie**, et sa periode est aussi celle de la fenetre de mesure de
+     * [GapMonitor] — chaque point porte donc une fenetre fraichement close plutot qu'une fenetre a
+     * moitie remplie. Et 60 s divise les 300 s de la rotation de chunk, ce qui garantit qu'un chunk
+     * complet porte cinq points : sans cette division, un chunk perdu emporterait un trou de
+     * telemetrie qu'aucun autre chunk ne comblerait. Voir
+     * [WireProtocol.TELEMETRY_PERIOD_MS][com.pendulum.format.wire.WireProtocol.TELEMETRY_PERIOD_MS].
+     *
+     * Les compteurs ne sont consommes que si le point peut reellement partir : sinon on les
+     * perdrait alors qu'ils decrivent du temps deja passe.
+     */
+    private fun ecrireTelemetrie(bm: BatteryManager?, pct: Int, charging: Boolean) {
+        val cs = store ?: return
+        if (!cs.chunkOuvert) return
+        val gm = gaps
+        val ecritures = cs.consommerEcrituresFlash()
+        val ecretages = cs.consommerEcretages()
+        cs.writeTelemetry(
+            TelemetryPoint(
+                elapsedRealtimeNs = SystemClock.elapsedRealtimeNanos(),
+                sensorTsNs = gm?.lastTimestampNs ?: 0L,
+                // Rend deja Integer.MIN_VALUE quand l'appareil ne sait pas compter les coulombs,
+                // ce qui est exactement la sentinelle du format.
+                batteryChargeUah = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
+                    ?: TelemetryPoint.CHARGE_INCONNUE,
+                maxIntervalUs = TelemetryPoint.borneU32(gm?.maxIntervalUs ?: 0L),
+                fsyncTotalUs = TelemetryPoint.borneU32(ecritures.totalUs),
+                fsyncMaxUs = TelemetryPoint.borneU32(ecritures.maxUs),
+                temperatureDeciC = temperatureDeciC(),
+                measuredRateCentiHz = TelemetryPoint.borneU16(
+                    Math.round((gm?.measuredRateHz ?: 0.0) * 100),
+                ),
+                jitterStdUs = TelemetryPoint.borneU16(Math.round(gm?.jitterStdUs ?: 0.0)),
+                clippedSamples = TelemetryPoint.borneU16(ecretages),
+                fsyncCount = TelemetryPoint.borneU16(ecritures.count.toLong()),
+                batteryPct = if (pct in 0..100) pct else TelemetryPoint.BATTERIE_INCONNUE,
+                offBody = when {
+                    offBodySensor == null -> TelemetryPoint.OFF_BODY_ABSENT
+                    offBody -> TelemetryPoint.OFF_BODY_RETIRE
+                    else -> TelemetryPoint.OFF_BODY_PORTE
+                },
+                charging = charging,
+            ),
+        )
+    }
+
+    /**
+     * Temperature de la batterie, en dixiemes de degre Celsius.
+     *
+     * **Une lecture synchrone d'un etat deja publie, pas un recepteur qui vivrait.**
+     * `registerReceiver(null, ...)` sur une diffusion collante rend l'intention courante et
+     * n'enregistre rien : aucun reveil, aucune alarme, rien qui s'execute entre deux appels. C'est
+     * le meme ordre de cout que le `getIntProperty` de batterie fait juste a cote.
+     *
+     * C'est aussi la seule source accessible a une application ordinaire : `BatteryManager`
+     * n'expose aucune propriete de temperature, `TYPE_AMBIENT_TEMPERATURE` est absent de la
+     * quasi-totalite des montres, et `HardwarePropertiesManager` est reserve au systeme. Ce qu'on
+     * mesure est donc la temperature de la **batterie**, qui suit celle du boitier avec quelques
+     * minutes de retard — assez fin pour voir une montre quitter un poignet, trop grossier pour
+     * autre chose, et c'est exactement l'usage qu'on en fait.
+     */
+    private fun temperatureDeciC(): Int = try {
+        val etat = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val deci = etat?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
+        if (deci == Int.MIN_VALUE) TelemetryPoint.TEMPERATURE_INCONNUE else deci.coerceIn(-32768, 32767)
+    } catch (e: Exception) {
+        // Une temperature manquante n'a jamais valu qu'on perde la nuit qui va avec.
+        Log.w(TAG, "temperature illisible", e)
+        TelemetryPoint.TEMPERATURE_INCONNUE
     }
 
     /**

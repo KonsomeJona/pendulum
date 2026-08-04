@@ -1,6 +1,7 @@
 package com.pendulum.wear.temps
 
 import com.pendulum.format.temps.Temps
+import com.pendulum.format.wire.WireProtocol
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Method
@@ -98,6 +99,22 @@ class DureesTest {
                 .`as`("nom d'une duree du catalogue")
                 .endsWith("Ms")
         }
+    }
+
+    @Test
+    fun `la cadence de telemetrie est celle du tick de la minute`() {
+        // La telemetrie de nuit n'a **pas** d'horloge a elle : elle est emise par
+        // `RecordingService.minuteTick`, c'est-a-dire un tick de service sur six. Le protocole,
+        // lui, annonce au telephone une cadence nominale d'une minute, et c'est sur cette annonce
+        // qu'il comptera les points manquants.
+        //
+        // Les deux affirmations doivent rester la meme. Le jour ou le tick du service change de
+        // periode, ce test tombe — sinon le telephone continuerait d'attendre un point par minute
+        // devant une montre qui en emet un toutes les trente secondes, et il conclurait a des
+        // points en trop plutot qu'a un changement de cadence.
+        assertThat(WireProtocol.TELEMETRY_PERIOD_MS)
+            .`as`("la periode annoncee au telephone doit valoir six ticks de service")
+            .isEqualTo(6 * Durees(Temps.DIVISEUR_REEL).tickServiceMs)
     }
 
     @Test

@@ -22,6 +22,21 @@ class ChunkWriter(
 ) {
     private val blockHeader = ByteArray(ChunkFormat.BLOCK_HEADER_SIZE)
     private val payload = ByteArray(ChunkFormat.MAX_SAMPLES_PER_BLOCK * ChunkFormat.BYTES_PER_SAMPLE)
+    private val telemetryBuf =
+        ByteArray(ChunkFormat.TELEMETRY_HEADER_SIZE + ChunkFormat.TELEMETRY_POINT_SIZE)
+
+    /**
+     * Seuil d'ecretage **du capteur**, en m/s2. Un cran de `resolution` sous `sensorMaxRange` :
+     * le HAL rend la valeur de rail exactement, mais les arrondis de la chaine flottante peuvent
+     * la manquer d'un LSB, et manquer l'ecretage est bien plus couteux que de le declarer un LSB
+     * trop tot. `Float.POSITIVE_INFINITY` quand la dynamique est inconnue : on ne devine pas.
+     */
+    private val clipThreshold: Float =
+        if (header.sensorMaxRange > 0f && header.sensorMaxRange.isFinite()) {
+            header.sensorMaxRange - Math.max(header.sensorResolution, 0f)
+        } else {
+            Float.POSITIVE_INFINITY
+        }
 
     var bytesWritten: Long = 0
         private set
@@ -45,6 +60,19 @@ class ChunkWriter(
      * est indiscernable d'une chute libre : sans ce compteur, le defaut se lit comme un mouvement.
      */
     var nonFiniteSamples: Long = 0
+        private set
+
+    /**
+     * Nombre d'echantillons ayant touche la dynamique du **capteur** (`sensorMaxRange`), et non
+     * le plafond du format. Voir [ChunkFormat.FLAG_SENSOR_CLIPPED] : c'est un ecretage
+     * qui restait totalement invisible, puisqu'un capteur a 8 g s'ecrete a la moitie de ce que
+     * la quantification sait coder.
+     */
+    var clippedSamples: Long = 0
+        private set
+
+    /** Points de telemetrie ecrits dans ce chunk. Recopie dans le marqueur de fin. */
+    var telemetryPointsWritten: Int = 0
         private set
 
     /** Vrai une fois le marqueur de fin ecrit : plus aucun bloc n'est accepte. */
@@ -126,6 +154,7 @@ class ChunkWriter(
 
         var saturated = false
         var nonFinite = false
+        var clipped = false
         var p = 0
         for (i in 0 until count) {
             val rx = ChunkFormat.toRaw(x[i])
@@ -136,9 +165,18 @@ class ChunkWriter(
             if (!x[i].isFinite() || !y[i].isFinite() || !z[i].isFinite()) {
                 nonFiniteSamples++
                 nonFinite = true
-            } else if (isSaturated(rx) || isSaturated(ry) || isSaturated(rz)) {
-                saturatedSamples++
-                saturated = true
+            } else {
+                if (isSaturated(rx) || isSaturated(ry) || isSaturated(rz)) {
+                    saturatedSamples++
+                    saturated = true
+                }
+                // Compte a part et non en `else if` : les deux ecretages repondent a deux
+                // questions differentes — « le format a-t-il deborde » et « le capteur a-t-il
+                // touche son rail » — et sur un capteur a 8 g le second arrive sans le premier.
+                if (isClipped(x[i]) || isClipped(y[i]) || isClipped(z[i])) {
+                    clippedSamples++
+                    clipped = true
+                }
             }
             putShortLe(payload, p, rx); p += 2
             putShortLe(payload, p, ry); p += 2
@@ -148,7 +186,8 @@ class ChunkWriter(
 
         val effectiveFlags = flags or
             (if (saturated) ChunkFormat.FLAG_SATURATED else 0) or
-            (if (nonFinite) ChunkFormat.FLAG_NON_FINITE else 0)
+            (if (nonFinite) ChunkFormat.FLAG_NON_FINITE else 0) or
+            (if (clipped) ChunkFormat.FLAG_SENSOR_CLIPPED else 0)
 
         val b = ByteBuffer.wrap(blockHeader).order(ByteOrder.LITTLE_ENDIAN)
         b.clear()
@@ -178,6 +217,59 @@ class ChunkWriter(
     }
 
     /**
+     * Ecrit un bloc de telemetrie portant un point unique.
+     *
+     * Un point par bloc, et non une salve accumulee : un bloc est l'unite de perte du format, et
+     * accumuler dix minutes de telemetrie pour les ecrire d'un coup ferait perdre dix minutes la
+     * ou on n'en perd qu'une. Le surcout est de 16 octets d'entete par point, soit 80 octets sur
+     * un chunk de 92 160 — 0,09 %.
+     *
+     * Le bloc est ecrit **entre** deux blocs de signal, jamais a l'interieur : chaque bloc du
+     * format est auto-delimite et protege par son propre CRC, donc l'intercalation ne coute rien
+     * a la relecture et n'importe quel bloc reste sautable seul.
+     */
+    fun writeTelemetry(point: TelemetryPoint) {
+        check(!finished) { "le chunk est clos, plus aucun bloc ne peut y etre ajoute" }
+        val b = ByteBuffer.wrap(telemetryBuf).order(ByteOrder.LITTLE_ENDIAN)
+        b.clear()
+        b.put(ChunkFormat.TELEMETRY_MAGIC)                          // 4  -> 4
+        b.putShort(1)                                               // 2  -> 6   count
+        b.putShort(ChunkFormat.TELEMETRY_POINT_SIZE.toShort())      // 2  -> 8   pointSize
+        b.putShort(0)                                               // 2  -> 10  flags, reserve
+        // crc en 10..12, ecrit en dernier ; 12..16 reserves, deja a zero.
+        java.util.Arrays.fill(telemetryBuf, ChunkFormat.TELEMETRY_CRC_OFFSET, ChunkFormat.TELEMETRY_HEADER_SIZE, 0)
+
+        b.position(ChunkFormat.TELEMETRY_HEADER_SIZE)
+        b.putLong(point.elapsedRealtimeNs)                          // 8  -> 8
+        b.putLong(point.sensorTsNs)                                 // 8  -> 16
+        b.putInt(point.batteryChargeUah)                            // 4  -> 20
+        b.putInt(point.maxIntervalUs.toInt())                       // 4  -> 24
+        b.putInt(point.fsyncTotalUs.toInt())                        // 4  -> 28
+        b.putInt(point.fsyncMaxUs.toInt())                          // 4  -> 32
+        b.putShort(point.temperatureDeciC.toShort())                // 2  -> 34
+        b.putShort(point.measuredRateCentiHz.toShort())             // 2  -> 36
+        b.putShort(point.jitterStdUs.toShort())                     // 2  -> 38
+        b.putShort(point.clippedSamples.toShort())                  // 2  -> 40
+        b.putShort(point.fsyncCount.toShort())                      // 2  -> 42
+        b.put(point.batteryPct.toByte())                            // 1  -> 43
+        b.put(point.offBody.toByte())                               // 1  -> 44
+        b.put(if (point.charging) 1 else 0)                         // 1  -> 45
+        java.util.Arrays.fill(telemetryBuf, ChunkFormat.TELEMETRY_HEADER_SIZE + 45, telemetryBuf.size, 0)
+
+        // Meme chainage que pour un bloc de signal : l'entete d'abord, le payload ensuite.
+        val crc = ChunkFormat.crc16(
+            telemetryBuf, ChunkFormat.TELEMETRY_HEADER_SIZE, ChunkFormat.TELEMETRY_POINT_SIZE,
+            seed = ChunkFormat.crc16(telemetryBuf, 0, ChunkFormat.TELEMETRY_CRC_OFFSET),
+        )
+        putShortLe(telemetryBuf, ChunkFormat.TELEMETRY_CRC_OFFSET, crc.toShort())
+
+        out.write(telemetryBuf)
+        out.flush()
+        bytesWritten += telemetryBuf.size
+        telemetryPointsWritten++
+    }
+
+    /**
      * Ecrit le marqueur de fin de fichier (F-37) et vide le flux. Idempotent.
      *
      * Sans ce marqueur, un chunk en cours d'ecriture est indiscernable d'un chunk complet :
@@ -191,7 +283,9 @@ class ChunkWriter(
         f.putInt(blocksWritten)                 // 4  -> 12
         f.putLong(samplesWritten)               // 8  -> 20
         f.putLong(lastTimestampNs)              // 8  -> 28
-        // 2 octets reserves                            -> 30
+        // Les deux octets que la v1 laissait a zero. Un chunk v1 relu ici annonce donc zero point
+        // de telemetrie, ce qui est la verite et non une valeur par defaut.
+        f.putShort(telemetryPointsWritten.coerceAtMost(0xFFFF).toShort()) // 2 -> 30
         val bytes = f.array()
         val crc = ChunkFormat.crc16(bytes, 0, ChunkFormat.FOOTER_SIZE - 2)
         putShortLe(bytes, ChunkFormat.FOOTER_SIZE - 2, crc.toShort())
@@ -207,6 +301,9 @@ class ChunkWriter(
      */
     private fun isSaturated(raw: Short): Boolean =
         raw == Short.MAX_VALUE || raw == Short.MIN_VALUE
+
+    /** Vrai si la valeur touche la dynamique du capteur. Voir [clipThreshold]. */
+    private fun isClipped(ms2: Float): Boolean = Math.abs(ms2) >= clipThreshold
 
     private fun putShortLe(buf: ByteArray, offset: Int, v: Short) {
         buf[offset] = (v.toInt() and 0xFF).toByte()
@@ -283,9 +380,17 @@ class ChunkScanResult(
     val desynchronised: Boolean,
     val declaredBlockCount: Int?,
     val declaredSampleCount: Long?,
+    /** Points de telemetrie decodes. Zero sur un chunk du format v1, qui n'en portait pas. */
+    val telemetryPointCount: Int = 0,
+    /** Points annonces par le marqueur de fin, `null` sans marqueur. */
+    val declaredTelemetryPointCount: Int? = null,
 ) {
     /** Blocs annonces par le marqueur de fin mais absents a la relecture. `null` sans marqueur. */
     val lostBlocks: Int? get() = declaredBlockCount?.let { it - blockCount }
+
+    /** Points de telemetrie annonces mais absents a la relecture. `null` sans marqueur. */
+    val lostTelemetryPoints: Int?
+        get() = declaredTelemetryPointCount?.let { it - telemetryPointCount }
 
     /** Duree totale de signal manquante, sur les seules zones dont les deux bornes sont connues. */
     val missingDurationNs: Long get() = damagedRanges.sumOf { it.missingDurationNs ?: 0L }
@@ -298,6 +403,8 @@ class ChunkScanResult(
 class ChunkFile(
     val scan: ChunkScanResult,
     val blocks: List<DecodedBlock>,
+    /** Les points de telemetrie du chunk, dans l'ordre d'ecriture. */
+    val telemetry: List<TelemetryPoint> = emptyList(),
 ) {
     val header: ChunkHeader get() = scan.header
 
@@ -345,14 +452,23 @@ object ChunkReader {
      * Le [DecodedBlock] passe a [onBlock] n'est pas reutilise : l'appelant peut le conserver
      * s'il le souhaite, mais c'est alors sa consommation memoire, pas celle du lecteur.
      */
-    fun forEachBlock(input: InputStream, onBlock: (DecodedBlock) -> Unit): ChunkScanResult {
+    fun forEachBlock(
+        input: InputStream,
+        /** Les points de telemetrie du chunk. Par defaut ignores : la plupart des appelants —
+         *  la salve de la montre, l'export, le reassemblage — ne s'interessent qu'au signal. */
+        onTelemetry: (TelemetryPoint) -> Unit = {},
+        onBlock: (DecodedBlock) -> Unit,
+    ): ChunkScanResult {
         val sc = ByteScanner(input, BUFFER_SIZE)
         val header = readHeader(sc)
 
         val blockHeader = ByteArray(ChunkFormat.BLOCK_HEADER_SIZE)
         val payload = ByteArray(ChunkFormat.MAX_SAMPLES_PER_BLOCK * ChunkFormat.BYTES_PER_SAMPLE)
+        val telemetryBuf = ByteArray(MAX_BLOCK_SIZE)
         val damaged = ArrayList<DamagedRange>()
 
+        var telemetryCount = 0
+        var declaredTelemetry: Int? = null
         var blockCount = 0
         var sampleCount = 0L
         var corrupt = 0
@@ -403,12 +519,14 @@ object ChunkReader {
                 f.position(8)
                 val fBlocks = f.int
                 val fSamples = f.long
-                f.position(ChunkFormat.FOOTER_SIZE - 2)
+                f.position(28)
+                val fTelemetry = f.short.toInt() and 0xFFFF
                 val fCrc = f.short.toInt() and 0xFFFF
                 if (ChunkFormat.crc16(footer, 0, ChunkFormat.FOOTER_SIZE - 2) == fCrc) {
                     complete = true
                     declaredBlocks = fBlocks
                     declaredSamples = fSamples
+                    declaredTelemetry = fTelemetry
                     sc.skip(ChunkFormat.FOOTER_SIZE)
                 } else {
                     damageAndResync(DamageReason.BAD_CRC)
@@ -416,6 +534,61 @@ object ChunkReader {
                     continue
                 }
                 break
+            }
+
+            if (sc.startsWith(ChunkFormat.TELEMETRY_MAGIC, ChunkFormat.TELEMETRY_MAGIC.size)) {
+                if (!sc.ensure(ChunkFormat.TELEMETRY_HEADER_SIZE)) {
+                    damageTail(DamageReason.TRUNCATED_TAIL)
+                    break
+                }
+                sc.copyOut(telemetryBuf, 0, ChunkFormat.TELEMETRY_HEADER_SIZE)
+                val t = ByteBuffer.wrap(telemetryBuf).order(ByteOrder.LITTLE_ENDIAN)
+                t.position(4)
+                val tCount = t.short.toInt() and 0xFFFF
+                val tPointSize = t.short.toInt() and 0xFFFF
+                t.position(ChunkFormat.TELEMETRY_CRC_OFFSET)
+                val tCrc = t.short.toInt() and 0xFFFF
+
+                // `pointSize` plus grand que celui de cette version est **legal** : un ecrivain
+                // plus recent a ajoute des champs en queue du point, on lit ce qu'on connait a
+                // offset fixe et on saute le reste. Plus petit, non : il n'y aurait pas de quoi
+                // remplir les champs. Meme regle que `headerSize` pour l'entete de fichier (F-32).
+                val tBlockSize = ChunkFormat.TELEMETRY_HEADER_SIZE + tCount * tPointSize
+                if (tCount < 1 || tCount > ChunkFormat.MAX_TELEMETRY_POINTS ||
+                    tPointSize < ChunkFormat.TELEMETRY_POINT_SIZE ||
+                    tBlockSize > MAX_BLOCK_SIZE
+                ) {
+                    corrupt++
+                    damageAndResync(DamageReason.BAD_COUNT)
+                    continue
+                }
+                if (!sc.ensure(tBlockSize)) {
+                    damageTail(DamageReason.TRUNCATED_TAIL)
+                    break
+                }
+                sc.copyOut(telemetryBuf, 0, tBlockSize)
+                val computed = ChunkFormat.crc16(
+                    telemetryBuf, ChunkFormat.TELEMETRY_HEADER_SIZE, tCount * tPointSize,
+                    seed = ChunkFormat.crc16(telemetryBuf, 0, ChunkFormat.TELEMETRY_CRC_OFFSET),
+                )
+                if (computed != tCrc) {
+                    corrupt++
+                    damageAndResync(DamageReason.BAD_CRC)
+                    continue
+                }
+                for (i in 0 until tCount) {
+                    onTelemetry(
+                        decodeTelemetryPoint(
+                            telemetryBuf,
+                            ChunkFormat.TELEMETRY_HEADER_SIZE + i * tPointSize,
+                        ),
+                    )
+                    telemetryCount++
+                }
+                sc.skip(tBlockSize)
+                // `openDamageIdx` et `lastValidTLast` ne bougent pas : un point de telemetrie
+                // n'est pas du signal, il ne peut donc pas borner une zone de signal perdue.
+                continue
             }
 
             if (!sc.startsWith(ChunkFormat.BLOCK_MAGIC, ChunkFormat.BLOCK_MAGIC.size)) {
@@ -516,14 +689,43 @@ object ChunkReader {
             desynchronised = damaged.any { it.reason != DamageReason.TRUNCATED_TAIL },
             declaredBlockCount = declaredBlocks,
             declaredSampleCount = declaredSamples,
+            telemetryPointCount = telemetryCount,
+            declaredTelemetryPointCount = declaredTelemetry,
         )
     }
 
     /** Lecture materialisee. Voir [forEachBlock] pour l'API a utiliser sur une nuit entiere. */
     fun read(input: InputStream): ChunkFile {
         val blocks = ArrayList<DecodedBlock>()
-        val scan = forEachBlock(input) { blocks.add(it) }
-        return ChunkFile(scan, blocks)
+        val telemetry = ArrayList<TelemetryPoint>()
+        val scan = forEachBlock(input, onTelemetry = { telemetry.add(it) }) { blocks.add(it) }
+        return ChunkFile(scan, blocks, telemetry)
+    }
+
+    /**
+     * Decode un point a `offset`. Ne lit que les [ChunkFormat.TELEMETRY_POINT_SIZE] octets connus
+     * de cette version : un point plus long produit par un ecrivain plus recent laisse sa queue
+     * intacte, et l'appelant a deja calcule l'offset du suivant sur le `pointSize` du bloc.
+     */
+    private fun decodeTelemetryPoint(buf: ByteArray, offset: Int): TelemetryPoint {
+        val b = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
+        b.position(offset)
+        return TelemetryPoint(
+            elapsedRealtimeNs = b.long,
+            sensorTsNs = b.long,
+            batteryChargeUah = b.int,
+            maxIntervalUs = b.int.toLong() and 0xFFFFFFFFL,
+            fsyncTotalUs = b.int.toLong() and 0xFFFFFFFFL,
+            fsyncMaxUs = b.int.toLong() and 0xFFFFFFFFL,
+            temperatureDeciC = b.short.toInt(),
+            measuredRateCentiHz = b.short.toInt() and 0xFFFF,
+            jitterStdUs = b.short.toInt() and 0xFFFF,
+            clippedSamples = b.short.toInt() and 0xFFFF,
+            fsyncCount = b.short.toInt() and 0xFFFF,
+            batteryPct = b.get().toInt() and 0xFF,
+            offBody = b.get().toInt() and 0xFF,
+            charging = b.get().toInt() != 0,
+        )
     }
 
     private fun readHeader(sc: ByteScanner): ChunkHeader {
@@ -586,14 +788,18 @@ object ChunkReader {
     }
 
     /**
-     * Avance jusqu'au prochain magic de bloc ou de fin de fichier. Renvoie le nombre d'octets
-     * sautes, curseur positionne sur le magic trouve (ou sur la fin du flux).
+     * Avance jusqu'au prochain magic — bloc de signal, bloc de telemetrie ou fin de fichier.
+     * Renvoie le nombre d'octets sautes, curseur positionne sur le magic trouve (ou sur la fin
+     * du flux). Les trois magics sont cherches ensemble : ne pas connaitre `TLM!` ferait sauter
+     * tout ce qui suit un bloc de signal corrompu jusqu'au bloc de signal suivant, telemetrie
+     * comprise, alors qu'elle est intacte et qu'elle explique peut-etre la corruption.
      */
     private fun resync(sc: ByteScanner): Long {
         val from = sc.offset
         sc.skip(1)
         while (sc.ensure(4)) {
             if (sc.startsWith(ChunkFormat.BLOCK_MAGIC, 4) ||
+                sc.startsWith(ChunkFormat.TELEMETRY_MAGIC, 4) ||
                 sc.startsWith(ChunkFormat.FILE_FOOTER_MAGIC, 4)
             ) {
                 break

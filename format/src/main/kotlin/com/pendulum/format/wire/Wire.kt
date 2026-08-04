@@ -33,6 +33,23 @@ object WireProtocol {
     /** 90 Kio. Voir [CHUNK_ROTATION_MS] : c'est le garde-fou dur des deux. */
     const val CHUNK_ROTATION_BYTES = 92_160L
 
+    /**
+     * Cadence nominale de la telemetrie de nuit
+     * ([com.pendulum.format.TelemetryPoint]) : un point par minute.
+     *
+     * **Elle divise [CHUNK_ROTATION_MS], et ce n'est pas un reglage.** Un chunk est l'unite de
+     * perte du protocole ; si la cadence de telemetrie etait une horloge independante, un chunk
+     * perdu emporterait un trou de telemetrie qu'aucun autre chunk ne comblerait, et le trou ne
+     * serait meme pas comptable. En divisant la rotation, chaque chunk complet porte au moins un
+     * point — cinq, en marche reelle — et le telephone peut affirmer « il manque un point » plutot
+     * que de constater un silence. `WireCodecTest` verrouille la divisibilite.
+     *
+     * Cote montre, cette cadence n'est **pas** un nouveau timer : elle est celle de
+     * `RecordingService.minuteTick`, la branche qui lit deja la batterie une fois par minute. Voir
+     * la KDoc de ce tick pour pourquoi il ne reveille rien.
+     */
+    const val TELEMETRY_PERIOD_MS = 60_000L
+
     /** Plafond documente de la charge utile d'un `DataItem`. */
     const val MAX_DATA_ITEM_BYTES = 100 * 1024
 }

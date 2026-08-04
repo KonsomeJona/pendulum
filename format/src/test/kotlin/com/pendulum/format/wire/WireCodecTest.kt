@@ -37,6 +37,20 @@ class WireCodecTest {
         assertThat(WireProtocol.CHUNK_ROTATION_BYTES).isLessThan(WireProtocol.MAX_DATA_ITEM_BYTES.toLong())
     }
 
+    @Test
+    fun `la cadence de telemetrie divise la rotation de chunk`() {
+        // **La propriete, pas la valeur.** Un chunk est l'unite de perte du protocole : si la
+        // telemetrie avait une horloge a elle, un chunk perdu emporterait un trou de telemetrie
+        // qu'aucun autre chunk ne comblerait, et que personne ne saurait meme compter. En divisant
+        // la rotation, chaque chunk complet porte un nombre connu de points, et « il en manque
+        // trois » devient une phrase verifiable.
+        assertThat(WireProtocol.CHUNK_ROTATION_MS % WireProtocol.TELEMETRY_PERIOD_MS).isZero()
+        assertThat(WireProtocol.CHUNK_ROTATION_MS / WireProtocol.TELEMETRY_PERIOD_MS)
+            .`as`("points de telemetrie par chunk complet")
+            .isGreaterThanOrEqualTo(1L)
+            .isEqualTo(5L)
+    }
+
     // --- Aller-retour des quatre structures ---
 
     @Test

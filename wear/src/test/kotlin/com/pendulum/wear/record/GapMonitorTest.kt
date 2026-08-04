@@ -241,6 +241,106 @@ class GapMonitorTest {
     }
 
     // -------------------------------------------------------------------------------------
+    // Dispersion : ce que la moyenne ne dit pas
+    // -------------------------------------------------------------------------------------
+
+    /** Alterne deux intervalles dont la moyenne vaut exactement la periode nominale. */
+    private fun fluxAlterne(monitor: GapMonitor, courtNs: Long, longNs: Long, jusquaNs: Long) {
+        var t = T0
+        monitor.onSample(t)
+        var i = 0
+        while (t < jusquaNs) {
+            t += if (i % 2 == 0) courtNs else longNs
+            monitor.onSample(t)
+            i++
+        }
+    }
+
+    @Test
+    @DisplayName("une cadence parfaite a une dispersion nulle")
+    fun `dispersion nulle sur une cadence reguliere`() {
+        val monitor = GapMonitor(50)
+        val flux = Flux(monitor, T0)
+        flux.regularUntil(T0 + 60_000_000_000L)
+
+        // Assertion inversee : une dispersion qui ne serait jamais nulle ne distinguerait plus
+        // rien. Et le calcul par difference de moments doit rendre 0, pas un NaN d'annulation.
+        assertThat(monitor.jitterStdUs).isEqualTo(0.0)
+        assertThat(monitor.maxIntervalUs).isEqualTo(20_000L)
+    }
+
+    @Test
+    @DisplayName("une cadence qui alterne 10 et 30 ms rend un fs parfait — et une dispersion de 10 ms")
+    fun `la moyenne ne voit pas la gigue`() {
+        val monitor = GapMonitor(50)
+        fluxAlterne(monitor, 10_000_000L, 30_000_000L, T0 + 60_000_000_000L)
+
+        // Le point de tout ce mecanisme, en trois lignes : tout ce que le moniteur savait dire
+        // avant est **vert**. 50 Hz pile, aucune deviation, aucun trou.
+        assertThat(monitor.measuredRateHz).isCloseTo(50.0, within(0.1))
+        assertThat(monitor.rateDeviates).isFalse()
+        assertThat(monitor.gapCount).isZero()
+
+        // Et pourtant chaque echantillon est date a 10 ms pres. Le format n'a pas d'horodatage par
+        // echantillon : il interpole lineairement entre `tFirstNs` et `tLastNs`, et cette
+        // interpolation est fausse d'autant que les intervalles sont disperses. C'est ce chiffre,
+        // et lui seul, qui dit si un mouvement a ete date ou seulement situe.
+        assertThat(monitor.jitterStdUs).isCloseTo(10_000.0, within(1.0))
+        assertThat(monitor.maxIntervalUs).isEqualTo(30_000L)
+    }
+
+    @Test
+    @DisplayName("la dispersion d'une fenetre ne deborde pas sur la suivante")
+    fun `la dispersion repart de zero a chaque fenetre`() {
+        val monitor = GapMonitor(50)
+        fluxAlterne(monitor, 10_000_000L, 30_000_000L, T0 + 60_000_000_000L)
+        assertThat(monitor.jitterStdUs).isGreaterThan(1_000.0)
+
+        // Seconde fenetre, reguliere. Sans remise a zero des accumulateurs, la telemetrie
+        // continuerait d'annoncer une gigue eteinte depuis une minute — une panne resolue qui
+        // reste affichee est aussi trompeuse qu'une panne manquee.
+        var t = T0 + 60_000_000_000L
+        while (t < T0 + 120_000_000_000L) {
+            t += PERIOD
+            monitor.onSample(t)
+        }
+        assertThat(monitor.jitterStdUs).isEqualTo(0.0)
+        assertThat(monitor.maxIntervalUs).isEqualTo(20_000L)
+    }
+
+    @Test
+    @DisplayName("un gros trou ne fait pas deborder l'accumulateur de variance")
+    fun `pas de debordement sur un trou de plusieurs secondes`() {
+        // La somme des carres se fait en microsecondes et non en nanosecondes : en nanosecondes,
+        // un trou de 3 s vaut 9e18, a un facteur 1,03 du plus grand Long, et un seul suffisait a
+        // rendre une variance negative — donc un ecart-type NaN.
+        val monitor = GapMonitor(50)
+        val flux = Flux(monitor, T0)
+        flux.regularUntil(T0 + 10_000_000_000L)
+        flux.hole(30_000_000_000L)
+        flux.regularUntil(T0 + 61_000_000_000L)
+
+        assertThat(monitor.jitterStdUs).isNotNaN().isGreaterThan(0.0)
+        assertThat(monitor.maxIntervalUs).isEqualTo(30_000_000L)
+    }
+
+    @Test
+    @DisplayName("le dernier horodatage capteur est lisible, et remis a zero par une re-inscription")
+    fun `dernier horodatage expose`() {
+        // C'est lui qui ancre un point de telemetrie sur la base de temps des echantillons : sans
+        // lui, aligner « la temperature a chute » sur « ce mouvement a ete rejete » passerait par
+        // une conversion d'horloge dont la mesure du 3 aout 2026 montre qu'elle derive.
+        val monitor = GapMonitor(50)
+        assertThat(monitor.lastTimestampNs).isZero()
+        monitor.onSample(T0)
+        monitor.onSample(T0 + PERIOD)
+        assertThat(monitor.lastTimestampNs).isEqualTo(T0 + PERIOD)
+
+        monitor.onRateChanged(25)
+        assertThat(monitor.lastTimestampNs).isZero()
+    }
+
+    // -------------------------------------------------------------------------------------
     // Re-inscription du capteur
     // -------------------------------------------------------------------------------------
 

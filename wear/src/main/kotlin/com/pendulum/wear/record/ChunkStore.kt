@@ -3,6 +3,7 @@ package com.pendulum.wear.record
 import com.pendulum.format.ChunkFormat
 import com.pendulum.format.ChunkHeader
 import com.pendulum.format.ChunkWriter
+import com.pendulum.format.TelemetryPoint
 import com.pendulum.format.wire.WireProtocol
 import com.pendulum.wear.temps.Durees
 import java.io.BufferedOutputStream
@@ -21,6 +22,12 @@ import java.util.TimeZone
  * **Sur le banc, les deux conditions ne courent plus a la meme vitesse.** La duree se comprime,
  * le volume non — c'est le choix explique dans `Temps`. La consequence est chiffree dans la KDoc
  * de [writeBlock], parce que c'est la que la course se decide.
+ *
+ * **La telemetrie de nuit voyage dans les memes fichiers**, comme un type de bloc de plus (voir la
+ * KDoc de `ChunkFormat`). Elle n'a donc pas de plafond a elle : ses octets comptent dans le
+ * `bytesWritten` du writer, c'est-a-dire dans la condition de rotation par le volume. Le garde-fou
+ * des 92 160 octets couvre la telemetrie sans qu'on ait rien a lui ajouter — et il aurait fallu y
+ * penser si elle avait eu son propre chemin.
  *
  * Le fichier porte son nom definitif des l'ouverture : c'est le **marqueur de fin** qui
  * distingue un chunk complet d'un chunk en cours, pas son extension. Un `.part` renomme a la
@@ -58,11 +65,26 @@ class ChunkStore(
     var totalBytes: Long = 0
         private set
 
+    /** Gels de processeur dus aux `fsync`, depuis le dernier [consommerEcrituresFlash]. */
+    private var fsyncCount = 0
+    private var fsyncTotalUs = 0L
+    private var fsyncMaxUs = 0L
+
+    /** Echantillons ecretes par le capteur depuis le dernier [consommerEcretages]. */
+    private var ecretagesDepuisPoint = 0L
+
+    /** Valeur du compteur du writer courant deja imputee : le writer repart de zero a chaque
+     *  chunk, la telemetrie, elle, court sur toute la nuit. */
+    private var ecretagesDuChunk = 0L
+
     init {
         sessionDir.mkdirs()
     }
 
     fun chunkFile(idx: Int): File = File(sessionDir, "%05d.pendulum".format(idx))
+
+    /** Vrai si un chunk est ouvert, donc si un point de telemetrie a ou aller. */
+    val chunkOuvert: Boolean get() = writer != null
 
     /**
      * Ecrit un bloc, en ouvrant ou en faisant tourner le chunk si necessaire.
@@ -118,10 +140,51 @@ class ChunkStore(
             }
         }
         if (writer == null) open(tFirstNs, nowMs)
-        writer!!.writeBlock(x, y, z, count, tFirstNs, tLastNs, flags)
+        val w2 = writer!!
+        w2.writeBlock(x, y, z, count, tFirstNs, tLastNs, flags)
+        // Le compteur d'ecretage du writer est cumulatif *par chunk* ; le point de telemetrie
+        // compte, lui, depuis le point precedent. La difference se fait ici, la ou les deux
+        // horizons se croisent.
+        val cumulChunk = w2.clippedSamples
+        ecretagesDepuisPoint += cumulChunk - ecretagesDuChunk
+        ecretagesDuChunk = cumulChunk
         totalSamples += count
         totalBytes += blockBytes(count)
         return closed
+    }
+
+    /**
+     * Ecrit un point de telemetrie dans le chunk courant.
+     *
+     * **N'ouvre jamais de chunk a lui seul**, et c'est delibere : l'entete de fichier porte
+     * `firstEventTimestampNs`, qui n'existe pas tant qu'aucun echantillon n'est arrive. Un chunk
+     * ouvert par la telemetrie porterait donc une base de temps inventee. Le cas ne se produit
+     * qu'avant le premier bloc de la nuit et juste apres une rotation forcee par [rotate] —
+     * quelques secondes sur huit heures.
+     *
+     * @return vrai si le point a ete ecrit, faux si aucun chunk n'etait ouvert.
+     */
+    fun writeTelemetry(point: TelemetryPoint): Boolean {
+        val w = writer ?: return false
+        w.writeTelemetry(point)
+        totalBytes += ChunkFormat.TELEMETRY_HEADER_SIZE + ChunkFormat.TELEMETRY_POINT_SIZE
+        return true
+    }
+
+    /** Les gels dus aux `fsync` depuis le dernier appel, puis remise a zero. */
+    fun consommerEcrituresFlash(): EcrituresFlash {
+        val e = EcrituresFlash(fsyncCount, fsyncTotalUs, fsyncMaxUs)
+        fsyncCount = 0
+        fsyncTotalUs = 0
+        fsyncMaxUs = 0
+        return e
+    }
+
+    /** Les echantillons ecretes par le capteur depuis le dernier appel, puis remise a zero. */
+    fun consommerEcretages(): Long {
+        val n = ecretagesDepuisPoint
+        ecretagesDepuisPoint = 0
+        return n
     }
 
     private fun blockBytes(count: Int): Long =
@@ -148,7 +211,23 @@ class ChunkStore(
     fun sync() {
         val fos = out ?: return
         buffered?.flush()
+        mesurer(fos)
+    }
+
+    /**
+     * `fsync` chronometre. La duree part dans la telemetrie parce que c'est le seul moment ou le
+     * processeur **gele** de son propre fait : pendant ce gel, une interruption capteur peut etre
+     * ratee, et un trou qui tombe la n'a pas la meme cause qu'un trou tombe ailleurs. Le
+     * chronometrage lui-meme ne coute que deux `System.nanoTime()`, autour d'un appel qui dure
+     * deja des millisecondes.
+     */
+    private fun mesurer(fos: FileOutputStream) {
+        val t0 = System.nanoTime()
         fos.fd.sync()
+        val dtUs = (System.nanoTime() - t0) / 1_000
+        fsyncCount++
+        fsyncTotalUs += dtUs
+        if (dtUs > fsyncMaxUs) fsyncMaxUs = dtUs
     }
 
     /** Ferme le chunk courant en ecrivant son marqueur de fin, puis le `fsync`. */
@@ -157,7 +236,7 @@ class ChunkStore(
         w.finish()
         buffered?.flush()
         out?.let {
-            it.fd.sync()
+            mesurer(it)
             it.close()
         }
         totalBytes += ChunkFormat.FOOTER_SIZE
@@ -197,10 +276,22 @@ class ChunkStore(
         openedAtMs = nowMs
         openIndex = idx
         nextIndex = idx + 1
+        ecretagesDuChunk = 0
         totalBytes += ChunkFormat.HEADER_SIZE
         // L'entete est encore dans le tampon a ce stade : la vider avant le `fsync`, sinon le
         // fichier existe sur le disque mais vide, et une coupure ici laisse un fichier sans magic.
         bos.flush()
-        fos.fd.sync()
+        mesurer(fos)
     }
 }
+
+/**
+ * Ce que les ecritures sur la memoire flash ont coute depuis le point de telemetrie precedent.
+ *
+ * @param count nombre de `fsync`. Il normalise les deux autres : dix gels de 2 ms et un gel de
+ *   20 ms ne s'expliquent pas pareil.
+ * @param totalUs temps cumule passe a geler. C'est le budget de la periode.
+ * @param maxUs pire gel de la periode. C'est celui-la qui explique une interruption ratee a un
+ *   instant precis, la ou le cumul ne dit que la tendance.
+ */
+data class EcrituresFlash(val count: Int, val totalUs: Long, val maxUs: Long)
