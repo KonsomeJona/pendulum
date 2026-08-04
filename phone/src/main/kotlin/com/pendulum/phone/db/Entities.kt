@@ -12,10 +12,10 @@ import androidx.room.PrimaryKey
  *
  * **Le brut est la seule chose irremplaçable.** Un resultat, un masque, un evenement CLM :
  * tout cela se recalcule a partir des chunks. Les chunks, eux, ne se recalculent pas. Le schema
- * separe donc strictement ce qui est *recu* (`night_session`, `chunk`, `night_context`,
- * `hc_snapshot`, `questionnaire_response`) de ce qui est *derive* (`sleep_window`, `clm_event`,
- * `plm_result`). Tout le derive porte un `paramsHash` et peut etre efface et reconstruit ;
- * rien du recu ne le peut.
+ * separe donc strictement ce qui est *recu* (`night_session`, `chunk`, `telemetry_point`,
+ * `night_context`, `hc_snapshot`, `questionnaire_response`) de ce qui est *derive*
+ * (`sleep_window`, `clm_event`, `plm_result`). Tout le derive porte un `paramsHash` et peut etre
+ * efface et reconstruit ; rien du recu ne le peut.
  *
  * Consequence directe sur les migrations : voir [Migrations]. `fallbackToDestructiveMigration`
  * est interdit, parce qu'il detruirait justement la moitie qui ne se reconstruit pas.
@@ -135,6 +135,84 @@ data class ChunkEntity(
     val flagsOr: Int,
     val complete: Boolean,
     val receivedAtMs: Long,
+)
+
+/**
+ * L'etat de l'appareil a un instant de la nuit — un point par minute, cinq par chunk complet.
+ *
+ * ### Ce n'est pas une table derivee
+ *
+ * Elle est rangee ici avec `chunk` et `night_context`, et pas avec `sleep_window` ou `clm_event`,
+ * parce qu'elle en partage la propriete qui gouverne tout ce fichier : **elle ne se reconstitue
+ * pas**. Les points vivent dans les blocs `TLM!` des chunks, et les chunks sont effaces de la
+ * montre des qu'ils sont acquittes ; une nuit dont la telemetrie serait perdue en base garderait
+ * son signal mais plus aucune trace de la batterie, de la gigue ou de l'ecretage qui ont decide
+ * de sa lecture. Consequence directe : aucune migration ne la supprime, et le rescore ne la
+ * touche pas — elle ne porte pas de `paramsHash`, parce qu'aucun parametre ne la produit.
+ *
+ * Techniquement le brut serait relisable : les fichiers de chunks restent sur le telephone. Mais
+ * relire sept fichiers de 90 Ko a chaque ouverture d'ecran pour retrouver quarante points est
+ * exactement le calcul que `detailDeNuit` refuse deja de faire pour l'enveloppe. La table est
+ * l'extraction, faite une fois, a l'ingestion.
+ *
+ * ### La cle d'idempotence n'est pas `sensorTsNs`, et c'est mesure et non suppose
+ *
+ * Un chunk peut arriver deux fois — accuse perdu, balayage apres coupure, redemarrage du
+ * telephone — et l'ingestion doit alors etre un no-op silencieux, exactement comme pour `chunk`.
+ * Il faut donc une cle unique par point.
+ *
+ * `sensorTsNs` ne peut pas la porter : il vaut **0 tant qu'aucun echantillon n'a ete vu**
+ * (`TelemetryPoint.sensorTsNs`), c'est-a-dire pour les premiers points d'une session, et deux
+ * points a zero se confondraient. C'est `elapsedRealtimeNs` qui est unique : une horloge monotone
+ * lue une fois par minute, jamais deux fois la meme valeur dans une session. L'unicite est donc
+ * `(sessionHex, elapsedRealtimeNs)`.
+ *
+ * `(sessionHex, sensorTsNs)` reste **indexe**, parce que c'est l'ordre de lecture : la bande de
+ * metrologie place chaque point sur la base de temps des echantillons, la seule qui date les
+ * mouvements, et elle lit la nuit dans cet ordre.
+ *
+ * @param sessionHex la nuit. `CASCADE` : effacer une nuit efface sa telemetrie, comme ses chunks.
+ * @param charging un point sous charge doit **sortir** de toute regression de pente de batterie.
+ *   Il est conserve — c'est un fait de la nuit — mais [com.pendulum.phone.ui.model.PenteBatterie]
+ *   le retire avant de calculer quoi que ce soit.
+ *
+ * Les autres champs sont ceux de [com.pendulum.format.TelemetryPoint], sans renommage et sans
+ * conversion d'unite : la table est une projection du bloc `TLM!`, et toute unite convertie ici
+ * serait une seconde convention a tenir. Ce que chacun explique est documente une seule fois,
+ * dans la KDoc du format.
+ */
+@Entity(
+    tableName = "telemetry_point",
+    indices = [
+        Index(value = ["sessionHex", "elapsedRealtimeNs"], unique = true),
+        Index(value = ["sessionHex", "sensorTsNs"]),
+    ],
+    foreignKeys = [
+        ForeignKey(
+            entity = NightSessionEntity::class,
+            parentColumns = ["sessionHex"],
+            childColumns = ["sessionHex"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+data class TelemetryPointEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sessionHex: String,
+    val elapsedRealtimeNs: Long,
+    val sensorTsNs: Long,
+    val batteryChargeUah: Int,
+    val maxIntervalUs: Long,
+    val fsyncTotalUs: Long,
+    val fsyncMaxUs: Long,
+    val temperatureDeciC: Int,
+    val measuredRateCentiHz: Int,
+    val jitterStdUs: Int,
+    val clippedSamples: Int,
+    val fsyncCount: Int,
+    val batteryPct: Int,
+    val offBody: Int,
+    val charging: Boolean,
 )
 
 /**

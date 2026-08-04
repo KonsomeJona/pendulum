@@ -40,6 +40,11 @@ import org.junit.runner.RunWith
  *  - la v1 s'en deduit en **defaisant** ce que fait `MIGRATION_1_2`, seule source qui decrive la
  *    forme d'avant : `night_session` sans `nightKey` ni son index, `night_context` cle par
  *    `sessionHex`.
+ *  - la v3 est la v2 **plus la vue telle que Room l'attend**. C'est la seule fixture ou le texte
+ *    de la vue compte : `MIGRATION_2_3` la reecrit sur les chemins v1 et v2, alors qu'un depart
+ *    en v3 la laisse telle quelle et la donne a valider a Room. Une fixture v3 qui porterait la
+ *    vue simplifiee des deux autres ferait echouer le chemin v3 → v4 pour une raison qui
+ *    n'aurait rien a voir avec la migration testee.
  *
  * L'empreinte d'identite de la fixture v1 n'est pas inventee : c'est celle **relevee sur le Pixel
  * 10 Pro Fold de l'utilisateur**, `0be59c8b3c17593df65ff797802f5eb4`. Elle n'est de toute facon
@@ -88,6 +93,51 @@ class MigrationTest {
         ouvrirParRoom()
     }
 
+    @Test
+    fun une_base_v3_s_ouvre_apres_migration() {
+        poser(3, IDENTITE_V3) { db -> DDL_V3.forEach(db::execSQL) }
+        ouvrirParRoom()
+    }
+
+    /**
+     * La telemetrie ne se reconstitue pas depuis le brut, donc la migration ne doit pas la perdre —
+     * mais en v4 elle n'existe pas encore en base, et il n'y a rien a conserver. Ce que ce test
+     * verifie est l'autre moitie : la table est **la** et **utilisable** apres la montee de version,
+     * sur les trois chemins. Une table creee avec un schema que Room refuse ne se voit pas
+     * autrement : la validation echoue a la premiere ouverture, pas a la migration.
+     */
+    @Test
+    fun apres_migration_la_table_de_telemetrie_accepte_un_point() {
+        // Depuis la v3, et pas depuis la v1 : c'est la version que porte le telephone de
+        // l'utilisateur aujourd'hui, et donc le seul chemin qu'une base reelle empruntera.
+        poser(3, IDENTITE_V3) { db -> DDL_V3.forEach(db::execSQL) }
+        val db = Room.databaseBuilder(ctx, PendulumDatabase::class.java, nom)
+            .addMigrations(*Migrations.ALL)
+            .build()
+        try {
+            val brut = db.openHelper.writableDatabase
+            brut.execSQL(
+                "INSERT INTO night_session (sessionHex, nightKey, startWallMs, plannedStopWallMs, " +
+                    "zoneId, tzOffsetStartMin, tzOffsetEndMin, nominalRateHz, modeFlags, state, " +
+                    "lastChunkArrivalMs, sampleCount, gapCount, gapTotalMs, analysableMin, " +
+                    "truncated, integrityRejectedFraction) " +
+                    "VALUES ('deadbeef', '2026-08-03', 1, 2, 'Asia/Tokyo', 540, 540, 50, 0, " +
+                    "'CLOSED', 0, 0, 0, 0, 0.0, 0, 0.0)"
+            )
+            kotlinx.coroutines.runBlocking {
+                db.telemetryDao().insertAllIfAbsent(listOf(POINT))
+                // Le meme point une seconde fois : une reemission de chunk repasse par ici, et
+                // elle doit etre un no-op silencieux comme l'est celle d'un chunk.
+                db.telemetryDao().insertAllIfAbsent(listOf(POINT))
+                val lus = db.telemetryDao().ofSession("deadbeef")
+                if (lus.size != 1) error("telemetrie non idempotente : ${lus.size} lignes")
+                if (lus.first().jitterStdUs != POINT.jitterStdUs) error("point relu different")
+            }
+        } finally {
+            db.close()
+        }
+    }
+
     /** Fabrique le fichier de base a la version voulue, sans Room. */
     private fun poser(version: Int, identite: String, ddl: (SQLiteDatabase) -> Unit) {
         val fichier = ctx.getDatabasePath(nom)
@@ -129,6 +179,31 @@ class MigrationTest {
 
         /** `identityHash` de `phone/schemas/…/2.json`. */
         const val IDENTITE_V2 = "4facf3419337c094acd674fadd5c65e9"
+
+        /** `identityHash` de `phone/schemas/…/3.json`. C'est la version portee par le terrain. */
+        const val IDENTITE_V3 = "083f84b1b64d678022c610c10ec623da"
+
+        /**
+         * Un point de telemetrie quelconque, mais **pas nul de partout** : un point tout a zero
+         * passerait un test d'insertion tout en cachant une colonne oubliee.
+         */
+        val POINT = TelemetryPointEntity(
+            sessionHex = "deadbeef",
+            elapsedRealtimeNs = 12_345_678_901L,
+            sensorTsNs = 98_765_432_100L,
+            batteryChargeUah = 312_400,
+            maxIntervalUs = 41_000,
+            fsyncTotalUs = 8_200,
+            fsyncMaxUs = 3_100,
+            temperatureDeciC = 312,
+            measuredRateCentiHz = 5031,
+            jitterStdUs = 1_450,
+            clippedSamples = 7,
+            fsyncCount = 4,
+            batteryPct = 88,
+            offBody = 0,
+            charging = false,
+        )
 
         const val VUE_V2 = "CREATE VIEW `comparable_night` AS SELECT " +
             "s.sessionHex AS sessionHex, s.startWallMs AS startWallMs FROM night_session s"
@@ -253,5 +328,22 @@ class MigrationTest {
             listOf(NIGHT_SESSION_V1) +
                 "CREATE INDEX IF NOT EXISTS `index_night_session_startWallMs` ON `night_session` (`startWallMs`)" +
                 TABLES_COMMUNES + NIGHT_CONTEXT_V1 + DECLENCHEURS_V1 + VUE_V2
+
+        /**
+         * La v3 : les tables de la v2, et la vue **exactement telle que Room la valide**.
+         *
+         * `MIGRATION_3_4` ne touche pas a la vue — elle n'a aucune raison de le faire — donc c'est
+         * celle de la fixture qui sera comparee au texte genere par le processeur d'annotations. Le
+         * `trim()` est le meme que celui de `MIGRATION_2_3`, et pour la meme raison : le litteral
+         * commence par un saut de ligne et douze espaces, et treize caracteres suffisent a faire
+         * echouer la validation.
+         */
+        val VUE_V3 = "CREATE VIEW `comparable_night` AS ${ComparableNightSql.SQL.trim()}"
+
+        val DDL_V3: List<String> =
+            listOf(NIGHT_SESSION_V2) +
+                "CREATE INDEX IF NOT EXISTS `index_night_session_startWallMs` ON `night_session` (`startWallMs`)" +
+                "CREATE INDEX IF NOT EXISTS `index_night_session_nightKey` ON `night_session` (`nightKey`)" +
+                TABLES_COMMUNES + NIGHT_CONTEXT_V2 + VUE_V3
     }
 }

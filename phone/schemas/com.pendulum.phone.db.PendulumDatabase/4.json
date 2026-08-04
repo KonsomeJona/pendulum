@@ -1,0 +1,1308 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "f15db7b8f9dead40a01c9d3eeb82e82b",
+    "entities": [
+      {
+        "tableName": "night_session",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionHex` TEXT NOT NULL, `nightKey` TEXT NOT NULL, `startWallMs` INTEGER NOT NULL, `plannedStopWallMs` INTEGER NOT NULL, `endWallMs` INTEGER, `zoneId` TEXT NOT NULL, `tzOffsetStartMin` INTEGER NOT NULL, `tzOffsetEndMin` INTEGER NOT NULL, `nominalRateHz` INTEGER NOT NULL, `modeFlags` INTEGER NOT NULL, `state` TEXT NOT NULL, `stopReason` TEXT, `totalChunks` INTEGER, `lastChunkArrivalMs` INTEGER NOT NULL, `batteryPctLast` INTEGER, `analyzedAtMs` INTEGER, `algoVersion` TEXT, `paramsHash` TEXT, `fsMeasuredHz` REAL, `sampleCount` INTEGER NOT NULL, `gapCount` INTEGER NOT NULL, `gapTotalMs` INTEGER NOT NULL, `analysableMin` REAL NOT NULL, `gainCalG` REAL, `gainSource` TEXT, `truncated` INTEGER NOT NULL, `integrityRejectedFraction` REAL NOT NULL, `revealedAtMs` INTEGER, PRIMARY KEY(`sessionHex`))",
+        "fields": [
+          {
+            "fieldPath": "sessionHex",
+            "columnName": "sessionHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nightKey",
+            "columnName": "nightKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startWallMs",
+            "columnName": "startWallMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plannedStopWallMs",
+            "columnName": "plannedStopWallMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endWallMs",
+            "columnName": "endWallMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zoneId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tzOffsetStartMin",
+            "columnName": "tzOffsetStartMin",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tzOffsetEndMin",
+            "columnName": "tzOffsetEndMin",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nominalRateHz",
+            "columnName": "nominalRateHz",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modeFlags",
+            "columnName": "modeFlags",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stopReason",
+            "columnName": "stopReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "totalChunks",
+            "columnName": "totalChunks",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastChunkArrivalMs",
+            "columnName": "lastChunkArrivalMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryPctLast",
+            "columnName": "batteryPctLast",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "analyzedAtMs",
+            "columnName": "analyzedAtMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "algoVersion",
+            "columnName": "algoVersion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "paramsHash",
+            "columnName": "paramsHash",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fsMeasuredHz",
+            "columnName": "fsMeasuredHz",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sampleCount",
+            "columnName": "sampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gapCount",
+            "columnName": "gapCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gapTotalMs",
+            "columnName": "gapTotalMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "analysableMin",
+            "columnName": "analysableMin",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gainCalG",
+            "columnName": "gainCalG",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gainSource",
+            "columnName": "gainSource",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "truncated",
+            "columnName": "truncated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "integrityRejectedFraction",
+            "columnName": "integrityRejectedFraction",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revealedAtMs",
+            "columnName": "revealedAtMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionHex"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_night_session_startWallMs",
+            "unique": false,
+            "columnNames": [
+              "startWallMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_night_session_startWallMs` ON `${TABLE_NAME}` (`startWallMs`)"
+          },
+          {
+            "name": "index_night_session_nightKey",
+            "unique": false,
+            "columnNames": [
+              "nightKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_night_session_nightKey` ON `${TABLE_NAME}` (`nightKey`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "chunk",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionHex` TEXT NOT NULL, `idx` INTEGER NOT NULL, `path` TEXT NOT NULL, `size` INTEGER NOT NULL, `crc32` INTEGER NOT NULL, `sampleCount` INTEGER NOT NULL, `tFirstNs` INTEGER NOT NULL, `tLastNs` INTEGER NOT NULL, `flagsOr` INTEGER NOT NULL, `complete` INTEGER NOT NULL, `receivedAtMs` INTEGER NOT NULL, FOREIGN KEY(`sessionHex`) REFERENCES `night_session`(`sessionHex`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionHex",
+            "columnName": "sessionHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idx",
+            "columnName": "idx",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "size",
+            "columnName": "size",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "crc32",
+            "columnName": "crc32",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleCount",
+            "columnName": "sampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tFirstNs",
+            "columnName": "tFirstNs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tLastNs",
+            "columnName": "tLastNs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "flagsOr",
+            "columnName": "flagsOr",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "complete",
+            "columnName": "complete",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAtMs",
+            "columnName": "receivedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_chunk_sessionHex_idx",
+            "unique": true,
+            "columnNames": [
+              "sessionHex",
+              "idx"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_chunk_sessionHex_idx` ON `${TABLE_NAME}` (`sessionHex`, `idx`)"
+          },
+          {
+            "name": "index_chunk_sessionHex",
+            "unique": false,
+            "columnNames": [
+              "sessionHex"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_chunk_sessionHex` ON `${TABLE_NAME}` (`sessionHex`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "night_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionHex"
+            ],
+            "referencedColumns": [
+              "sessionHex"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "telemetry_point",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionHex` TEXT NOT NULL, `elapsedRealtimeNs` INTEGER NOT NULL, `sensorTsNs` INTEGER NOT NULL, `batteryChargeUah` INTEGER NOT NULL, `maxIntervalUs` INTEGER NOT NULL, `fsyncTotalUs` INTEGER NOT NULL, `fsyncMaxUs` INTEGER NOT NULL, `temperatureDeciC` INTEGER NOT NULL, `measuredRateCentiHz` INTEGER NOT NULL, `jitterStdUs` INTEGER NOT NULL, `clippedSamples` INTEGER NOT NULL, `fsyncCount` INTEGER NOT NULL, `batteryPct` INTEGER NOT NULL, `offBody` INTEGER NOT NULL, `charging` INTEGER NOT NULL, FOREIGN KEY(`sessionHex`) REFERENCES `night_session`(`sessionHex`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionHex",
+            "columnName": "sessionHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "elapsedRealtimeNs",
+            "columnName": "elapsedRealtimeNs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sensorTsNs",
+            "columnName": "sensorTsNs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryChargeUah",
+            "columnName": "batteryChargeUah",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxIntervalUs",
+            "columnName": "maxIntervalUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fsyncTotalUs",
+            "columnName": "fsyncTotalUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fsyncMaxUs",
+            "columnName": "fsyncMaxUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "temperatureDeciC",
+            "columnName": "temperatureDeciC",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "measuredRateCentiHz",
+            "columnName": "measuredRateCentiHz",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "jitterStdUs",
+            "columnName": "jitterStdUs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clippedSamples",
+            "columnName": "clippedSamples",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fsyncCount",
+            "columnName": "fsyncCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryPct",
+            "columnName": "batteryPct",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "offBody",
+            "columnName": "offBody",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "charging",
+            "columnName": "charging",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_telemetry_point_sessionHex_elapsedRealtimeNs",
+            "unique": true,
+            "columnNames": [
+              "sessionHex",
+              "elapsedRealtimeNs"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_telemetry_point_sessionHex_elapsedRealtimeNs` ON `${TABLE_NAME}` (`sessionHex`, `elapsedRealtimeNs`)"
+          },
+          {
+            "name": "index_telemetry_point_sessionHex_sensorTsNs",
+            "unique": false,
+            "columnNames": [
+              "sessionHex",
+              "sensorTsNs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_telemetry_point_sessionHex_sensorTsNs` ON `${TABLE_NAME}` (`sessionHex`, `sensorTsNs`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "night_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionHex"
+            ],
+            "referencedColumns": [
+              "sessionHex"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sleep_window",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionHex` TEXT NOT NULL, `source` TEXT NOT NULL, `stage` TEXT NOT NULL, `startMsRel` INTEGER NOT NULL, `endMsRel` INTEGER NOT NULL, `sourcePackage` TEXT, `paramsHash` TEXT NOT NULL, FOREIGN KEY(`sessionHex`) REFERENCES `night_session`(`sessionHex`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionHex",
+            "columnName": "sessionHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stage",
+            "columnName": "stage",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startMsRel",
+            "columnName": "startMsRel",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endMsRel",
+            "columnName": "endMsRel",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourcePackage",
+            "columnName": "sourcePackage",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "paramsHash",
+            "columnName": "paramsHash",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sleep_window_sessionHex_source",
+            "unique": false,
+            "columnNames": [
+              "sessionHex",
+              "source"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sleep_window_sessionHex_source` ON `${TABLE_NAME}` (`sessionHex`, `source`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "night_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionHex"
+            ],
+            "referencedColumns": [
+              "sessionHex"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "clm_event",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionHex` TEXT NOT NULL, `paramsHash` TEXT NOT NULL, `onsetMsRel` INTEGER NOT NULL, `durationMs` INTEGER NOT NULL, `peakAmpG` REAL NOT NULL, `medianAmpG` REAL NOT NULL, `noiseFloorG` REAL NOT NULL, `thresholdOnG` REAL NOT NULL, `tiltChangeDeg` REAL NOT NULL, `flags` INTEGER NOT NULL, `rejectReason` TEXT, `inSeriesAasm` INTEGER NOT NULL, `inSeriesWasm` INTEGER NOT NULL, `stageAtOnset` TEXT, `duringWake` INTEGER NOT NULL, FOREIGN KEY(`sessionHex`) REFERENCES `night_session`(`sessionHex`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionHex",
+            "columnName": "sessionHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paramsHash",
+            "columnName": "paramsHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "onsetMsRel",
+            "columnName": "onsetMsRel",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peakAmpG",
+            "columnName": "peakAmpG",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "medianAmpG",
+            "columnName": "medianAmpG",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noiseFloorG",
+            "columnName": "noiseFloorG",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "thresholdOnG",
+            "columnName": "thresholdOnG",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tiltChangeDeg",
+            "columnName": "tiltChangeDeg",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "flags",
+            "columnName": "flags",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rejectReason",
+            "columnName": "rejectReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "inSeriesAasm",
+            "columnName": "inSeriesAasm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inSeriesWasm",
+            "columnName": "inSeriesWasm",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stageAtOnset",
+            "columnName": "stageAtOnset",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "duringWake",
+            "columnName": "duringWake",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_clm_event_sessionHex_paramsHash",
+            "unique": false,
+            "columnNames": [
+              "sessionHex",
+              "paramsHash"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_clm_event_sessionHex_paramsHash` ON `${TABLE_NAME}` (`sessionHex`, `paramsHash`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "night_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionHex"
+            ],
+            "referencedColumns": [
+              "sessionHex"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "plm_result",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionHex` TEXT NOT NULL, `paramsHash` TEXT NOT NULL, `rule` TEXT NOT NULL, `maskSource` TEXT NOT NULL, `computedAtMs` INTEGER NOT NULL, `algoVersion` TEXT NOT NULL, `plmsCount` INTEGER NOT NULL, `plmwCount` INTEGER NOT NULL, `isolatedCount` INTEGER NOT NULL, `shortImiCount` INTEGER NOT NULL, `tstMin` REAL NOT NULL, `analysableTstMin` REAL NOT NULL, `sptMin` REAL NOT NULL, `wasoMin` REAL NOT NULL, `plmi` REAL NOT NULL, `plmiSpt` REAL NOT NULL, `plmw` REAL NOT NULL, `plmiFirstHalf` REAL NOT NULL, `plmiSecondHalf` REAL NOT NULL, `plmiRespWorstCase` REAL NOT NULL, `periodicityIndex` REAL NOT NULL, `periodicityValid` INTEGER NOT NULL, `fundamentalSec` REAL NOT NULL, `muLog` REAL NOT NULL, `sigmaLog` REAL NOT NULL, `missRate` REAL NOT NULL, `alternationSuspect` INTEGER NOT NULL, `rhythmConverged` INTEGER NOT NULL, `rhythmValid` INTEGER NOT NULL, `truncatedSeriesDropped` INTEGER NOT NULL, `respiratoryConfidence` TEXT NOT NULL, `independence` TEXT NOT NULL, `gate` TEXT NOT NULL, `floorMode` TEXT NOT NULL, FOREIGN KEY(`sessionHex`) REFERENCES `night_session`(`sessionHex`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionHex",
+            "columnName": "sessionHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paramsHash",
+            "columnName": "paramsHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rule",
+            "columnName": "rule",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maskSource",
+            "columnName": "maskSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "computedAtMs",
+            "columnName": "computedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algoVersion",
+            "columnName": "algoVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plmsCount",
+            "columnName": "plmsCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plmwCount",
+            "columnName": "plmwCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isolatedCount",
+            "columnName": "isolatedCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortImiCount",
+            "columnName": "shortImiCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tstMin",
+            "columnName": "tstMin",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "analysableTstMin",
+            "columnName": "analysableTstMin",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sptMin",
+            "columnName": "sptMin",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wasoMin",
+            "columnName": "wasoMin",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plmi",
+            "columnName": "plmi",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plmiSpt",
+            "columnName": "plmiSpt",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plmw",
+            "columnName": "plmw",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plmiFirstHalf",
+            "columnName": "plmiFirstHalf",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plmiSecondHalf",
+            "columnName": "plmiSecondHalf",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plmiRespWorstCase",
+            "columnName": "plmiRespWorstCase",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodicityIndex",
+            "columnName": "periodicityIndex",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodicityValid",
+            "columnName": "periodicityValid",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fundamentalSec",
+            "columnName": "fundamentalSec",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "muLog",
+            "columnName": "muLog",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sigmaLog",
+            "columnName": "sigmaLog",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "missRate",
+            "columnName": "missRate",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alternationSuspect",
+            "columnName": "alternationSuspect",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rhythmConverged",
+            "columnName": "rhythmConverged",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rhythmValid",
+            "columnName": "rhythmValid",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "truncatedSeriesDropped",
+            "columnName": "truncatedSeriesDropped",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "respiratoryConfidence",
+            "columnName": "respiratoryConfidence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "independence",
+            "columnName": "independence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gate",
+            "columnName": "gate",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "floorMode",
+            "columnName": "floorMode",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_plm_result_sessionHex_paramsHash_rule_maskSource",
+            "unique": true,
+            "columnNames": [
+              "sessionHex",
+              "paramsHash",
+              "rule",
+              "maskSource"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_plm_result_sessionHex_paramsHash_rule_maskSource` ON `${TABLE_NAME}` (`sessionHex`, `paramsHash`, `rule`, `maskSource`)"
+          },
+          {
+            "name": "index_plm_result_paramsHash",
+            "unique": false,
+            "columnNames": [
+              "paramsHash"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_plm_result_paramsHash` ON `${TABLE_NAME}` (`paramsHash`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "night_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionHex"
+            ],
+            "referencedColumns": [
+              "sessionHex"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "night_context",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`nightKey` TEXT NOT NULL, `sealedAtMs` INTEGER NOT NULL, `leg` TEXT NOT NULL, `strapId` TEXT NOT NULL, `aloneInBed` INTEGER NOT NULL, `bedTimeLocalMs` INTEGER, `riseTimeLocalMs` INTEGER, `medicationJson` TEXT NOT NULL, `caffeineAfter16h` INTEGER NOT NULL, `alcoholUnits` REAL NOT NULL, `unusualExercise` INTEGER NOT NULL, `notes` TEXT, PRIMARY KEY(`nightKey`))",
+        "fields": [
+          {
+            "fieldPath": "nightKey",
+            "columnName": "nightKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sealedAtMs",
+            "columnName": "sealedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leg",
+            "columnName": "leg",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "strapId",
+            "columnName": "strapId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aloneInBed",
+            "columnName": "aloneInBed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bedTimeLocalMs",
+            "columnName": "bedTimeLocalMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "riseTimeLocalMs",
+            "columnName": "riseTimeLocalMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "medicationJson",
+            "columnName": "medicationJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "caffeineAfter16h",
+            "columnName": "caffeineAfter16h",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alcoholUnits",
+            "columnName": "alcoholUnits",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unusualExercise",
+            "columnName": "unusualExercise",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "nightKey"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "hc_snapshot",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionHex` TEXT NOT NULL, `fetchedAtMs` INTEGER NOT NULL, `attemptIndex` INTEGER NOT NULL, `selectedPackage` TEXT, `selectedRecordId` TEXT, `lastModifiedTimeMs` INTEGER, `sessionStartMs` INTEGER, `sessionEndMs` INTEGER, `stageCount` INTEGER NOT NULL, `distinctStageTypes` INTEGER NOT NULL, `stageCoverageMin` REAL NOT NULL, `overlapFraction` REAL NOT NULL, `aggregateTstMin` REAL, `originCount` INTEGER NOT NULL, `selectedStagesCsv` TEXT NOT NULL, `recordsJson` TEXT NOT NULL, `outcome` TEXT NOT NULL, FOREIGN KEY(`sessionHex`) REFERENCES `night_session`(`sessionHex`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionHex",
+            "columnName": "sessionHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fetchedAtMs",
+            "columnName": "fetchedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptIndex",
+            "columnName": "attemptIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedPackage",
+            "columnName": "selectedPackage",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "selectedRecordId",
+            "columnName": "selectedRecordId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastModifiedTimeMs",
+            "columnName": "lastModifiedTimeMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sessionStartMs",
+            "columnName": "sessionStartMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sessionEndMs",
+            "columnName": "sessionEndMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "stageCount",
+            "columnName": "stageCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "distinctStageTypes",
+            "columnName": "distinctStageTypes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stageCoverageMin",
+            "columnName": "stageCoverageMin",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "overlapFraction",
+            "columnName": "overlapFraction",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aggregateTstMin",
+            "columnName": "aggregateTstMin",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "originCount",
+            "columnName": "originCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedStagesCsv",
+            "columnName": "selectedStagesCsv",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordsJson",
+            "columnName": "recordsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_hc_snapshot_sessionHex_fetchedAtMs",
+            "unique": false,
+            "columnNames": [
+              "sessionHex",
+              "fetchedAtMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_hc_snapshot_sessionHex_fetchedAtMs` ON `${TABLE_NAME}` (`sessionHex`, `fetchedAtMs`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "night_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "sessionHex"
+            ],
+            "referencedColumns": [
+              "sessionHex"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "questionnaire_response",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `sessionHex` TEXT, `kind` TEXT NOT NULL, `answeredAtMs` INTEGER NOT NULL, `answersJson` TEXT NOT NULL, `score` REAL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionHex",
+            "columnName": "sessionHex",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "answeredAtMs",
+            "columnName": "answeredAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "answersJson",
+            "columnName": "answersJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "score",
+            "columnName": "score",
+            "affinity": "REAL",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_questionnaire_response_sessionHex",
+            "unique": false,
+            "columnNames": [
+              "sessionHex"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_questionnaire_response_sessionHex` ON `${TABLE_NAME}` (`sessionHex`)"
+          },
+          {
+            "name": "index_questionnaire_response_kind_answeredAtMs",
+            "unique": false,
+            "columnNames": [
+              "kind",
+              "answeredAtMs"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_questionnaire_response_kind_answeredAtMs` ON `${TABLE_NAME}` (`kind`, `answeredAtMs`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "param_profile",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`paramsHash` TEXT NOT NULL, `createdAtMs` INTEGER NOT NULL, `algoVersion` TEXT NOT NULL, `paramsJson` TEXT NOT NULL, `active` INTEGER NOT NULL, `label` TEXT, PRIMARY KEY(`paramsHash`))",
+        "fields": [
+          {
+            "fieldPath": "paramsHash",
+            "columnName": "paramsHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "algoVersion",
+            "columnName": "algoVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paramsJson",
+            "columnName": "paramsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "active",
+            "columnName": "active",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "paramsHash"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [
+      {
+        "viewName": "comparable_night",
+        "createSql": "CREATE VIEW `${VIEW_NAME}` AS SELECT\n                s.sessionHex          AS sessionHex,\n                s.startWallMs         AS startWallMs,\n                s.zoneId              AS zoneId,\n                r.paramsHash          AS paramsHash,\n                r.rule                AS rule,\n                r.maskSource          AS maskSource,\n                r.gate                AS gate,\n                r.independence        AS independence,\n                r.plmi                AS plmi,\n                r.plmiSpt             AS plmiSpt,\n                r.fundamentalSec      AS fundamentalSec,\n                r.rhythmValid         AS rhythmValid,\n                r.periodicityIndex    AS periodicityIndex,\n                r.missRate            AS missRate,\n                r.analysableTstMin    AS analysableTstMin,\n                s.analysableMin       AS analysableMin,\n                s.truncated           AS truncated,\n                s.revealedAtMs        AS revealedAtMs,\n                CASE\n                    WHEN c.nightKey IS NULL THEN 0\n                    WHEN ref.refLeg IS NULL OR ref.refStrapId IS NULL THEN 0\n                    WHEN c.leg <> ref.refLeg THEN 0\n                    WHEN c.strapId <> ref.refStrapId THEN 0\n                    WHEN c.aloneInBed = 0 THEN 0\n                    WHEN s.gainCalG IS NULL OR ref.refGainCalG IS NULL OR ref.refGainCalG <= 0 THEN 0\n                    WHEN abs(s.gainCalG - ref.refGainCalG) / ref.refGainCalG > 0.35 + 1e-9 THEN 0\n                    WHEN s.analysableMin < 240.0 THEN 0\n                    WHEN s.tzOffsetStartMin <> s.tzOffsetEndMin THEN 0\n                    ELSE 1\n                END AS comparable,\n                CASE\n                    WHEN c.nightKey IS NULL THEN 'NO_CONTEXT'\n                    WHEN ref.refLeg IS NULL OR ref.refStrapId IS NULL THEN 'NO_CONTEXT'\n                    WHEN c.leg <> ref.refLeg THEN 'LEG_CHANGED'\n                    WHEN c.strapId <> ref.refStrapId THEN 'STRAP_CHANGED'\n                    WHEN c.aloneInBed = 0 THEN 'NOT_ALONE'\n                    WHEN s.gainCalG IS NULL OR ref.refGainCalG IS NULL OR ref.refGainCalG <= 0\n                        THEN 'CAL_GAIN_UNKNOWN'\n                    WHEN abs(s.gainCalG - ref.refGainCalG) / ref.refGainCalG > 0.35 + 1e-9\n                        THEN 'CAL_GAIN_OUT_OF_TOLERANCE'\n                    WHEN s.analysableMin < 240.0 THEN 'TOO_SHORT'\n                    WHEN s.tzOffsetStartMin <> s.tzOffsetEndMin THEN 'DST_NIGHT'\n                    ELSE 'OK'\n                END AS exclusionReason\n            FROM plm_result r\n            JOIN night_session s ON s.sessionHex = r.sessionHex\n            LEFT JOIN night_context c ON c.nightKey = s.nightKey\n            LEFT JOIN (\n                SELECT nc.leg AS refLeg, nc.strapId AS refStrapId, ns.gainCalG AS refGainCalG\n                FROM night_context nc\n                JOIN night_session ns ON ns.nightKey = nc.nightKey\n                ORDER BY nc.sealedAtMs ASC\n                LIMIT 1\n            ) ref ON 1 = 1"
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f15db7b8f9dead40a01c9d3eeb82e82b')"
+    ]
+  }
+}

@@ -176,6 +176,39 @@ interface ChunkDao {
 }
 
 /**
+ * La telemetrie de nuit. **Ecrite par l'ingestion, jamais par l'analyse**, et jamais effacee par
+ * un rescore : c'est du recu, pas du derive.
+ *
+ * Il n'existe volontairement ni `@Update` ni `@Delete`. Un point de telemetrie decrit l'etat d'un
+ * appareil a un instant : il n'y a rien a y corriger, et le seul effacement legitime est celui qui
+ * emporte la nuit entiere, porte par la cle etrangere en `CASCADE`.
+ */
+@Dao
+interface TelemetryDao {
+
+    /**
+     * `IGNORE` sur `UNIQUE(sessionHex, elapsedRealtimeNs)`, exactement pour la meme raison que
+     * `ChunkDao.insertIfAbsent` : un chunk reemis repasse ses points par ici, et re-inserer doit
+     * etre un no-op silencieux plutot qu'un doublon. Un doublon ne leverait rien et fausserait
+     * toutes les moyennes de la bande de metrologie.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIfAbsent(points: List<TelemetryPointEntity>)
+
+    /**
+     * Les points d'une nuit, dans l'ordre de la base de temps des **echantillons**. C'est celle
+     * qui date les mouvements ; trier sur l'horloge monotone donnerait le meme ordre dans le cas
+     * nominal et un ordre different exactement quand les deux horloges divergent, c'est-a-dire
+     * dans le seul cas ou la question se pose.
+     */
+    @Query("SELECT * FROM telemetry_point WHERE sessionHex = :hex ORDER BY sensorTsNs ASC, elapsedRealtimeNs ASC")
+    suspend fun ofSession(hex: String): List<TelemetryPointEntity>
+
+    @Query("SELECT COUNT(*) FROM telemetry_point WHERE sessionHex = :hex")
+    suspend fun count(hex: String): Int
+}
+
+/**
  * Tout le derive. Une seule regle : **on efface avant de reecrire, par `(nuit, paramsHash)`**.
  * Un rescore qui empilerait au lieu d'ecraser doublerait les evenements a chaque passage, et le
  * symptome (un index qui double) ressemblerait a une aggravation clinique.

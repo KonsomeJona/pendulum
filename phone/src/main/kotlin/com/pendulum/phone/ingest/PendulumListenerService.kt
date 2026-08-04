@@ -34,8 +34,9 @@ import kotlinx.coroutines.runBlocking
  *
  * 1. verifier la taille, puis le CRC-32 sur les octets recus ;
  * 2. ecrire le fichier de facon atomique ;
- * 3. `INSERT OR IGNORE` sur `(sessionHex, idx)` ;
- * 4. relire l'etat **depuis la base** et publier l'accuse.
+ * 3. relire le fichier : le marqueur de fin, et les points de telemetrie du bloc `TLM!` ;
+ * 4. `INSERT OR IGNORE` la telemetrie, puis `INSERT OR IGNORE` sur `(sessionHex, idx)` ;
+ * 5. relire l'etat **depuis la base** et publier l'accuse.
  *
  * Aucune de ces etapes n'est commutative. Acquitter avant d'avoir ecrit ferait supprimer par la
  * montre le seul exemplaire correct ; inserer avant d'avoir verifie enregistrerait des octets
@@ -196,8 +197,28 @@ class PendulumListenerService : WearableListenerService() {
         // Le fichier est relu pour savoir s'il est *complet* : le marqueur de fin est la seule
         // chose qui distingue un chunk clos d'un chunk en cours d'ecriture, et un chunk non
         // complet ne doit jamais etre acquitte.
+        //
+        // La telemetrie est recoltee **dans la meme passe**. Le lecteur traversait deja les blocs
+        // `TLM!` pour verifier leur CRC et jetait les points ; les collecter ici ne coute pas une
+        // seconde lecture de 90 Ko, et une seconde passe serait de toute facon une occasion de
+        // diverger — un chunk juge complet par la premiere et illisible par la seconde.
+        val telemetrie = ArrayList<com.pendulum.format.TelemetryPoint>()
         val complete = store.fileFor(meta.sessionHex, meta.idx).inputStream().buffered().use {
-            com.pendulum.format.ChunkReader.forEachBlock(it) { }.complete
+            com.pendulum.format.ChunkReader
+                .forEachBlock(it, onTelemetry = { point -> telemetrie += point }) { }
+                .complete
+        }
+
+        // Ecrite **avant** la ligne de chunk, et donc avant tout accuse : l'accuse fait supprimer
+        // le fichier sur la montre, et c'est ce fichier qui porte les points. L'ordre du protocole
+        // est le meme que pour le signal — rien ne s'acquitte avant d'etre en base.
+        //
+        // Un chunk v1 du format ne porte aucun bloc `TLM!` : la liste est vide, l'insertion est un
+        // no-op, et la nuit n'aura pas de bande de metrologie. C'est la verite, pas une panne.
+        if (telemetrie.isNotEmpty()) {
+            db.telemetryDao().insertAllIfAbsent(
+                TelemetryAdapter.versEntites(meta.sessionHex, telemetrie)
+            )
         }
 
         db.chunkDao().insertIfAbsent(

@@ -37,6 +37,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         NightSessionEntity::class,
         ChunkEntity::class,
+        TelemetryPointEntity::class,
         SleepWindowEntity::class,
         ClmEventEntity::class,
         PlmResultEntity::class,
@@ -53,6 +54,7 @@ abstract class PendulumDatabase : RoomDatabase() {
 
     abstract fun nightDao(): NightDao
     abstract fun chunkDao(): ChunkDao
+    abstract fun telemetryDao(): TelemetryDao
     abstract fun derivedDao(): DerivedDao
     abstract fun contextDao(): ContextDao
     abstract fun hcSnapshotDao(): HcSnapshotDao
@@ -62,7 +64,7 @@ abstract class PendulumDatabase : RoomDatabase() {
     abstract fun maintenanceDao(): MaintenanceDao
 
     companion object {
-        const val VERSION = 3
+        const val VERSION = 4
         const val NAME = "pendulum.db"
 
         @Volatile
@@ -147,8 +149,15 @@ private fun createTriggers(db: SupportSQLiteDatabase) {
  * Les migrations.
  *
  * Regle a tenir : **une migration ne perd jamais une colonne du brut.** Renommer, oui ;
- * recopier dans une table neuve, oui ; supprimer une colonne de `chunk` ou de `night_context`,
- * non — ce sont les seules donnees que rien ne permet de reconstituer.
+ * recopier dans une table neuve, oui ; supprimer une colonne de `chunk`, de `telemetry_point` ou
+ * de `night_context`, non — ce sont les seules donnees que rien ne permet de reconstituer.
+ *
+ * Seconde regle, tiree du defaut du 3 aout 2026 : **on ne recree une vue que si on la change**, et
+ * quand on la recree, on la construit depuis [ComparableNightSql.SQL] avec `trim()`. Room ne
+ * compare pas une vue champ par champ, il compare son **texte** a celui, normalise, que son
+ * processeur d'annotations a genere ; un saut de ligne et douze espaces d'indentation suffisent a
+ * rendre toute base deja installee inouvrable, et `fallbackToDestructiveMigration` est
+ * volontairement absent pour ne pas transformer cet echec en effacement.
  */
 object Migrations {
 
@@ -270,7 +279,7 @@ object Migrations {
      *
      * Le defaut a ete trouve le 3 aout 2026 par le banc sur materiel reel, sur un telephone
      * portant une base en v1, et non par la suite de tests, qui ne comportait alors aucun test de
-     * migration. `MigrationTest` couvre desormais les chemins v1 → v3 et v2 → v3.
+     * migration. `MigrationTest` couvre desormais les chemins v1 → v4, v2 → v4 et v3 → v4.
      */
     val MIGRATION_2_3 = object : Migration(2, 3) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -279,7 +288,85 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+    /**
+     * v3 → v4 : la telemetrie de nuit entre en base.
+     *
+     * Elle arrivait deja dans les chunks depuis le bloc `TLM!`, et l'ingestion la jetait : le
+     * telephone lisait les points pour verifier le CRC du bloc et n'en gardait rien. La table
+     * `telemetry_point` est l'extraction, faite une fois a la reception.
+     *
+     * ### Purement additive, et c'est ce qui la rend sure
+     *
+     * Aucune table existante n'est touchee, aucune colonne n'est deplacee, aucune donnee n'est
+     * recopiee. Une base v3 monte en v4 en creant une table vide : les nuits deja enregistrees
+     * n'ont pas de telemetrie et n'en auront jamais — leurs chunks sont en v1 du format et ne
+     * portent aucun bloc `TLM!`. C'est la verite, et l'ecran la dit par l'absence de la bande
+     * plutot qu'en dessinant une bande vide.
+     *
+     * ### Le seul chemin qui compte est v3 → v4, et c'est dit ici plutot que taise
+     *
+     * `MIGRATION_1_2` et `MIGRATION_2_3` restent en place et restent testees — elles ne coutent
+     * rien et les retirer serait perdre de la couverture deja acquise — mais **aucune base n'a
+     * jamais emprunte les chemins anterieurs a la v3 en dehors du developpement**. L'application
+     * est privee : un seul appareil porte des donnees, et sa base est passee en v3 le 3 aout 2026,
+     * a la correction du `trim()` de `MIGRATION_2_3`. Un lecteur qui trouverait dans six mois que
+     * v1 → v4 n'a pas ete pense pour le terrain aurait raison, et c'est deliberé.
+     *
+     * Ce qui rend v3 → v4 non negociable est la suite : P1 demande trois nuits consecutives, et
+     * cette base portera alors des chunks bruts qui ne se reconstituent pas. Une migration fausse
+     * le jour ou deux nuits sont deja enregistrees coute la campagne — c'est exactement le cas
+     * pour lequel `fallbackToDestructiveMigration` est interdit dans ce depot, et il le reste.
+     *
+     * ### Ce que la vue devient, c'est-a-dire rien
+     *
+     * `comparable_night` n'est **pas** recreee ici. C'est deliberé, et c'est l'inverse de ce que
+     * fait `MIGRATION_2_3` : cette migration-la la reecrivait parce qu'elle en changeait les
+     * colonnes. Celle-ci n'y touche pas, donc la reposer serait une occasion de plus de se
+     * tromper de treize caracteres — le defaut trouve le 3 aout 2026 sur le Pixel 10 Pro Fold,
+     * qui empechait **toute** mise a jour d'un appareil deja installe. La regle qui en sort : on
+     * ne recree une vue que si l'on en change, et si on la recree, on la construit depuis
+     * [ComparableNightSql.SQL] avec `trim()`, jamais depuis une seconde redaction.
+     *
+     * Le DDL ci-dessous est celui que Room genere pour [TelemetryPointEntity] — quotes obliques
+     * comprises. Il n'est pas recopie a la main sur la foi d'une relecture : `MigrationTest`
+     * ouvre une base v1, v2 et v3 par Room apres migration, et la validation de schema compare
+     * colonne par colonne et index par index.
+     */
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `telemetry_point` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`sessionHex` TEXT NOT NULL, " +
+                    "`elapsedRealtimeNs` INTEGER NOT NULL, " +
+                    "`sensorTsNs` INTEGER NOT NULL, " +
+                    "`batteryChargeUah` INTEGER NOT NULL, " +
+                    "`maxIntervalUs` INTEGER NOT NULL, " +
+                    "`fsyncTotalUs` INTEGER NOT NULL, " +
+                    "`fsyncMaxUs` INTEGER NOT NULL, " +
+                    "`temperatureDeciC` INTEGER NOT NULL, " +
+                    "`measuredRateCentiHz` INTEGER NOT NULL, " +
+                    "`jitterStdUs` INTEGER NOT NULL, " +
+                    "`clippedSamples` INTEGER NOT NULL, " +
+                    "`fsyncCount` INTEGER NOT NULL, " +
+                    "`batteryPct` INTEGER NOT NULL, " +
+                    "`offBody` INTEGER NOT NULL, " +
+                    "`charging` INTEGER NOT NULL, " +
+                    "FOREIGN KEY(`sessionHex`) REFERENCES `night_session`(`sessionHex`) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE )"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_telemetry_point_sessionHex_elapsedRealtimeNs` " +
+                    "ON `telemetry_point` (`sessionHex`, `elapsedRealtimeNs`)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_telemetry_point_sessionHex_sensorTsNs` " +
+                    "ON `telemetry_point` (`sessionHex`, `sensorTsNs`)"
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 }
 
 /**
