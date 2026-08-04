@@ -1186,6 +1186,7 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
         const val EFFACER_FAIT = "Everything has been erased."
 
         const val APPARENCE = "Appearance"
+        const val THEME = "Theme"
         const val THEME_SYSTEME = "System"
         const val THEME_SOMBRE = "Dark"
         const val THEME_CLAIR = "Light"

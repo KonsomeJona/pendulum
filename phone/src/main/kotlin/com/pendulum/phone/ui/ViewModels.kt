@@ -721,7 +721,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             espaceOccupe = espace,
             versionApp = com.pendulum.phone.BuildConfig.VERSION_NAME,
             versionAlgo = NON_RENSEIGNE,
-            theme = theme,
+            theme = libelleTheme(theme),
             dernierImport = importe,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), REGLAGES_VIDES)
@@ -790,8 +790,24 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
             espaceOccupe = NON_RENSEIGNE,
             versionApp = NON_RENSEIGNE,
             versionAlgo = NON_RENSEIGNE,
-            theme = PendulumPreferences.THEME_SOMBRE,
+            theme = Textes.Reglages.THEME_SOMBRE,
         )
+
+        /**
+         * Le jeton persiste, rendu dans la langue de l'interface.
+         *
+         * `PendulumPreferences` ecrit `SOMBRE`, `CLAIR`, `SYSTEME` — des jetons de stockage, en
+         * francais parce que la langue de travail du projet l'est. L'ecran affichait ce jeton tel
+         * quel : « Theme  SOMBRE » au milieu d'une interface anglaise, alors que les trois
+         * libelles anglais existaient dans `Textes.Reglages` et n'avaient aucun appelant. Un
+         * jeton de stockage n'est pas un texte d'interface, et il ne le devient pas parce qu'il
+         * se lit.
+         */
+        fun libelleTheme(jeton: String): String = when (jeton) {
+            PendulumPreferences.THEME_SYSTEME -> Textes.Reglages.THEME_SYSTEME
+            PendulumPreferences.THEME_CLAIR -> Textes.Reglages.THEME_CLAIR
+            else -> Textes.Reglages.THEME_SOMBRE
+        }
     }
 }
 

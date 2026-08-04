@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -135,7 +138,11 @@ fun OnboardingPager(
         }
     }
 
-    Column(modifier.fillMaxSize()) {
+    // `safeDrawing` : l'assistant est le seul ecran du produit sans `Scaffold`, donc le seul dont
+    // personne d'autre ne reserve la place des barres systeme. La fenetre etant sans barre
+    // d'action et l'application bord a bord des Android 15, sans cette ligne la barre de
+    // progression passe sous l'horloge et le rappel du bas sous la barre de navigation.
+    Column(modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Progression((etat.currentPage + 1) / RepriseAssistant.PAGES.toFloat())
         Text(
             Textes.Accueil.ETAPE.format(etat.currentPage + 1),
@@ -269,20 +276,20 @@ fun DisclaimerPage(onContinuer: () -> Unit) {
             Spacer(Modifier.height(Spacing.l.dp))
         }
         Spacer(Modifier.height(Spacing.sm.dp))
-        Button(
+        // `BoutonMotive` et non un `Button` grise : le libelle de l'etat desactive **porte
+        // l'instruction** — « faites defiler jusqu'en bas » — et les couleurs desactivees par
+        // defaut de Material le rendaient a 3,02:1, mesure sur l'appareil. Un utilisateur qui ne
+        // lit pas cette phrase conclut au bug, ce que la KDoc ci-dessus donne precisement comme
+        // motif de l'ecrire. Le composant existait, avec les bonnes teintes (4,93:1).
+        BoutonMotive(
+            libelle = Textes.Avertissement.BOUTON,
+            motifIndisponible = when {
+                !lu -> Textes.Avertissement.BOUTON_BLOQUE
+                !toutesCochees -> Textes.Avertissement.BOUTON_A_CONFIRMER
+                else -> null
+            },
             onClick = onContinuer,
-            enabled = lu && toutesCochees,
-            shape = PendulumShapes.button,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                when {
-                    !lu -> Textes.Avertissement.BOUTON_BLOQUE
-                    !toutesCochees -> Textes.Avertissement.BOUTON_A_CONFIRMER
-                    else -> Textes.Avertissement.BOUTON
-                }
-            )
-        }
+        )
         Spacer(Modifier.height(Spacing.s.dp))
         Text(Textes.Avertissement.RAPPEL, style = PendulumType.caption, color = c.textTertiary)
     }

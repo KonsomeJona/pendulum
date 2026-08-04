@@ -22,6 +22,11 @@
   `allowBackup="false"` **et** les deux fichiers de regles : voir la KDoc de
   `res/xml/data_extraction_rules.xml` pour la raison — le transfert D2D est un canal distinct
   qu'`allowBackup` ne couvre pas.
+
+  ### Theme
+  `android:theme` est **obligatoire ici** : sans lui, Android n'applique pas un theme neutre mais
+  `Theme.DeviceDefault.Light.DarkActionBar`, dont le fond de fenetre clair transparait partout ou
+  la composition n'en peint pas. Voir `res/values/themes.xml`, qui porte la mesure.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -74,7 +79,8 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Pendulum">
 
         <!--
           Activite principale. La CLASSE appartient au paquet `com.pendulum.phone.ui` et n'est pas

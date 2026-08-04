@@ -113,7 +113,7 @@ fun SettingsScreen(
             SectionHeader(Textes.Reglages.APPARENCE)
             // Sombre par defaut, et force au premier lancement : consultation nocturne et
             // matinale, souvent dans le noir.
-            InlineValue("Theme", etat.theme)
+            InlineValue(Textes.Reglages.THEME, etat.theme)
         }
 
         PendulumCard {

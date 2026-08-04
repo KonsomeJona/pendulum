@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.pendulum.phone.data.SaisieDuSoir
+import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
@@ -152,14 +153,13 @@ fun EveningContextScreen(
             )
         }
 
-        Button(
+        // Meme regle qu'a l'avertissement : le libelle de l'etat desactive porte le motif, donc
+        // il doit se lire. Les teintes desactivees par defaut de Material tombent a 3,02:1.
+        BoutonMotive(
+            libelle = Textes.CeSoir.SCELLEMENT_BOUTON,
+            motifIndisponible = Textes.CeSoir.CHAMP_BRACELET_MANQUANT.takeIf { !complet },
             onClick = { confirmation = true },
-            enabled = complet,
-            shape = PendulumShapes.button,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (complet) Textes.CeSoir.SCELLEMENT_BOUTON else Textes.CeSoir.CHAMP_BRACELET_MANQUANT)
-        }
+        )
         TextButton(onClick = onAnnuler, modifier = Modifier.fillMaxWidth()) {
             Text(Textes.CeSoir.ANNULER)
         }
