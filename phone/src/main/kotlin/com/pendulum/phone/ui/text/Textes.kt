@@ -985,6 +985,21 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
                         "caused these movements."
             }
 
+            /**
+             * La legende de la bande d'etat de l'appareil, sous elle.
+             *
+             * Elle dit en mots ce que la forme dit deja a l'oeil — gouttiere, blocs, absence de
+             * courbe : ces voies decrivent l'enregistreur, pas le dormeur. La phrase existe parce
+             * que la forme seule ne protege pas un lecteur presse, et parce que rien ne dit a
+             * quelqu'un qui n'a pas vu la bande qu'aucune de ces voies n'a de lien de cause avec
+             * les mouvements traces au-dessus.
+             */
+            const val METROLOGIE_NOTE =
+                "Device state, on the same time axis. These lanes describe the recorder, not the " +
+                    "sleeper: they say when the sampling was coarse, when the sensor hit its " +
+                    "range limit, and whether the watch lasted the night. None of them caused " +
+                    "the movements above."
+
             const val PARAMS_AVANCES = "Advanced parameters"
             const val RECALCULER_TOUTES = "Apply to every night"
             const val RECALCUL_CONFIRMATION =
@@ -1467,6 +1482,54 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
         const val VOIE_MASQUE = "Accelerometer mask"
         const val VOIE_HYPNO = "Hypnogram"
         const val VOIE_DESACCORD = "Disagreement"
+
+        // --- la bande d'etat de l'appareil ------------------------------------------------
+        //
+        // Les noms de voie sont volontairement courts et nominaux : ils tiennent dans la marge
+        // gauche, ils ne portent aucune unite, et aucun d'eux ne se lit comme une grandeur. C'est
+        // ce qui distingue une echelle nominale d'un axe gradue.
+
+        const val VOIE_PORT = "worn"
+        const val VOIE_CHARGE = "charger"
+        const val VOIE_ECRETAGE = "clip"
+        const val VOIE_GELS = "freeze"
+        const val VOIE_BATTERIE = "battery"
+
+        /** Trois etats, et celui-ci n'est pas « porte ». Voir `EtatPort`. */
+        const val PORT_SANS_CAPTEUR = "no off-body sensor on this watch"
+
+        const val METRO_INDISPONIBLE =
+            "No device telemetry for this night — recorded before the watch sent any."
+
+        /** `62% left at the end of the night`. Un fait, pas une extrapolation. */
+        fun batterieJauge(pctFin: String) = "$pctFin left at the end of the night"
+
+        /**
+         * Le fait et la projection, cote a cote, et etiquetes comme tels. Le premier est mesure,
+         * le second est ajuste sur le compteur coulombmetrique : les confondre serait lire une
+         * extrapolation comme une mesure.
+         */
+        fun batterieJaugeProjetee(pctFin: String, pct8: String, heures: Int) =
+            "$pctFin at the end of the night  ·  $pct8 projected at $heures h"
+
+        /**
+         * Le resume lu par TalkBack pour la bande d'etat de l'appareil.
+         *
+         * Il finit par la phrase de non-causalite. Elle n'est pas une precaution de style : la
+         * separation graphique — gouttiere, blocs, absence de courbe — dit a l'oeil que ces voies
+         * ne se correlent pas avec les mouvements du dessus, et un lecteur qui ne voit pas la
+         * bande n'a que cette phrase pour l'apprendre.
+         */
+        fun descriptionMetrologie(
+            points: Int,
+            gigue: String,
+            ecretes: Int,
+            gels: Int,
+            batterie: String,
+        ) = "Device state, $points points, one per minute. Median timing dispersion $gigue. " +
+            "$ecretes samples at the sensor range limit. $gels write freezes longer than one " +
+            "sampling period. Battery: $batterie. These lanes describe the recorder, not the " +
+            "sleeper: none of them caused the movements shown above."
 
         fun descriptionNuit(date: String, evenements: Int, debut: String, fin: String) =
             "Chart of the night of $date, $evenements movements detected between $debut and $fin. " +

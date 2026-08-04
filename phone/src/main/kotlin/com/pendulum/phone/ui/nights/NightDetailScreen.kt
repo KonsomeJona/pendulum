@@ -13,9 +13,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.pendulum.phone.ui.chart.BandeMetrologie
 import com.pendulum.phone.ui.chart.GrapheNuit
 import com.pendulum.phone.ui.chart.HypnogrammeSpec
 import com.pendulum.phone.ui.chart.Hypnogramme
+import com.pendulum.phone.ui.chart.MetrologieSpec
 import com.pendulum.phone.ui.chart.NuitChartSpec
 import com.pendulum.phone.ui.chart.XTransform
 import com.pendulum.phone.ui.common.BoutonMotive
@@ -55,6 +57,18 @@ data class NuitDetailUi(
      */
     val graphe: NuitChartSpec?,
     val hypnogramme: HypnogrammeSpec?,
+    /**
+     * L'etat de l'appareil pendant la nuit, sur le **meme axe** que les deux bandes du dessus.
+     *
+     * Elle est independante de [graphe] et de [hypnogramme] : elle vient de `telemetry_point`, que
+     * l'ingestion remplit au fil des chunks, la ou l'enveloppe demande de refaire toute la chaine
+     * de traitement. Une nuit peut donc avoir sa bande d'etat sans avoir sa courbe — et c'est le
+     * cas courant tant que la relecture du brut n'existe pas.
+     *
+     * `null` quand la nuit ne porte aucune telemetrie : une nuit enregistree avant que le bloc
+     * `TLM!` n'existe, ou par une montre dont les chunks sont en v1 du format.
+     */
+    val metrologie: MetrologieSpec?,
     val mouvements: Int,
     val plms: Int,
     val plmw: Int,
@@ -120,8 +134,14 @@ fun NightDetailScreen(
 ) {
     val devoile = detail.nuit.devoileeAtMs != null
     val c = LocalPendulumColors.current
-    val transform = remember(detail.graphe) {
-        detail.graphe?.let { XTransform(it.debutMs, it.finMs) }
+    // **Une seule transformation pour les trois bandes.** C'est elle qui fait l'axe commun, et
+    // l'axe commun est ce qui empeche de lire un artefact de mesure comme un evenement
+    // physiologique. La fenetre vient du graphe quand il existe, de la bande de metrologie sinon —
+    // les deux specs portent les memes bornes, construites ensemble par le ViewModel.
+    val fenetre = detail.graphe?.let { it.debutMs to it.finMs }
+        ?: detail.metrologie?.let { it.debutMs to it.finMs }
+    val transform = remember(fenetre) {
+        fenetre?.let { (debut, fin) -> XTransform(debut, fin) }
     }
     var curseur by remember { mutableStateOf<Long?>(null) }
     var valeursOuvertes by remember { mutableStateOf(false) }
@@ -165,24 +185,50 @@ fun NightDetailScreen(
             }
         }
 
-        // --- Section 2 : les deux graphes, un seul axe X, un seul curseur
+        // --- Section 2 : les trois bandes, un seul axe X, un seul curseur
         //
-        // La carte entiere disparait quand l'enveloppe n'a pas ete reconstruite. Ni cadre vide, ni
-        // message d'erreur : il n'y a rien de casse, il y a seulement une donnee que cette version
-        // ne relit pas encore depuis le brut.
-        if (devoile && detail.graphe != null && detail.hypnogramme != null && transform != null) {
+        // En haut la physiologie — enveloppe et hypnogramme, continues, analogiques, traits fins.
+        // En bas la metrologie, separee par une gouttiere franche et dessinee dans une grammaire
+        // etrangere : blocs, escaliers durs, rug plots, aucune courbe. L'axe est commun parce que
+        // sans lui on lit un artefact de mesure comme un evenement physiologique ; la forme est
+        // separee parce que la batterie et les mouvements n'ont aucune causalite entre eux.
+        //
+        // Chaque bande disparait quand sa donnee manque, et aucune n'est dessinee vide : ni cadre
+        // vide, ni message d'erreur. L'enveloppe n'est pas persistee et n'est pas encore relue
+        // depuis le brut ; la telemetrie, elle, est en base des l'ingestion, donc la bande d'etat
+        // s'affiche sur des nuits ou la courbe manque encore.
+        //
+        // La bande d'etat de l'appareil est dans la **meme carte** que les deux autres, et pas
+        // dans une carte a elle : une carte separee serait une seconde surface, donc un second
+        // contexte, et l'alignement des trois axes cesserait d'etre evident a l'oeil. Ce qui les
+        // separe est la gouttiere, qui appartient au dessin.
+        //
+        // Elle s'affiche meme quand l'enveloppe manque. Ce n'est pas une exception a la regle du
+        // « pas de cadre vide » : elle ne dessine pas l'absence du signal, elle dessine ce que la
+        // telemetrie porte, qui existe independamment.
+        if (devoile && transform != null && (detail.graphe != null || detail.metrologie != null)) {
             PendulumCard {
-                GrapheNuit(
-                    spec = detail.graphe,
-                    transform = transform,
-                    curseurMs = curseur,
-                    onCurseur = { curseur = it },
-                    onEvenement = {},
-                    onValeurs = { valeursOuvertes = true },
-                )
-                Hypnogramme(detail.hypnogramme, transform, curseur)
-                Spacer(Modifier.height(Spacing.xs.dp))
-                Text(detail.hypnogramme.statistiques, style = PendulumType.caption, color = c.textTertiary)
+                if (detail.graphe != null && detail.hypnogramme != null) {
+                    GrapheNuit(
+                        spec = detail.graphe,
+                        transform = transform,
+                        curseurMs = curseur,
+                        onCurseur = { curseur = it },
+                        onEvenement = {},
+                        onValeurs = { valeursOuvertes = true },
+                    )
+                    Hypnogramme(detail.hypnogramme, transform, curseur)
+                    Spacer(Modifier.height(Spacing.xs.dp))
+                    Text(detail.hypnogramme.statistiques, style = PendulumType.caption, color = c.textTertiary)
+                }
+                detail.metrologie?.let { metro ->
+                    BandeMetrologie(metro, transform, curseur)
+                    Spacer(Modifier.height(Spacing.xs.dp))
+                    // La legende dit ce que la forme dit deja a l'oeil : ces voies decrivent
+                    // l'enregistreur, pas le dormeur. Elle est courte et elle est ici, sous la
+                    // bande, parce qu'une legende posee ailleurs se lit apres la conclusion.
+                    Paragraphe(Textes.Nuits.Detail.METROLOGIE_NOTE)
+                }
             }
         }
 

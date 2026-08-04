@@ -106,7 +106,7 @@ fun DrawScope.dessinerGrapheNuit(
 
     // --- axes
     dessinerAxeYLog(spec, t, aireSignal, mesureur, scratch, ::yDe)
-    dessinerAxeXHoraire(spec, t, aireSignal, m, x, mesureur, scratch, ::xDe)
+    dessinerAxeXHoraire(spec, t, aireSignal, m, mesureur, scratch, ::xDe)
 
     // --- curseur, partage avec l'hypnogramme
     curseurMs?.let {
@@ -230,39 +230,27 @@ private fun DrawScope.dessinerAxeYLog(
     }
 }
 
-/** Heure murale locale. Une nuit contenant un changement d'heure porte sa marque sur l'axe. */
+/**
+ * Heure murale locale. Une nuit contenant un changement d'heure porte sa marque sur l'axe.
+ *
+ * Les graduations elles-memes vivent dans `Dessin.kt` : les trois bandes empilees partagent le
+ * meme axe, donc elles doivent partager la fonction qui le gradue.
+ */
 private fun DrawScope.dessinerAxeXHoraire(
     spec: NuitChartSpec,
     t: ChartTokens,
     aire: Rect,
     m: Marges,
-    x: XTransform,
     mesureur: TextMeasurer,
     scratch: ChartScratch,
     xDe: (Long) -> Float,
-) {
-    val heureMs = 3_600_000L
-    var ms = (spec.debutMs / heureMs) * heureMs
-    if (ms < spec.debutMs) ms += heureMs
-    while (ms <= spec.finMs) {
-        val px = xDe(ms)
-        if (px in aire.left..aire.right) {
-            drawLine(t.structural, Offset(px, aire.bottom), Offset(px, aire.bottom + dpPx(3f)), t.strokeThin)
-            texteAxe(mesureur, scratch, t, formatHeure(ms), px, size.height - m.bas + dpPx(4f), centre = true)
-        }
-        ms += heureMs
-    }
-}
-
-/**
- * Format d'heure minimal, sans dependance a un fuseau : les horodatages passes ici ont deja ete
- * decales par le ViewModel a l'heure murale locale enregistree avec la nuit. Faire la conversion
- * ici obligerait la fonction de dessin a connaitre un `ZoneId`, donc a differer entre l'ecran et
- * l'export.
- */
-private fun formatHeure(ms: Long): String {
-    val minutesJour = ((ms / 60000L) % 1440L).toInt()
-    val h = minutesJour / 60
-    val mn = minutesJour % 60
-    return "%02d:%02d".format(h, mn)
-}
+) = dessinerGraduationsHoraires(
+    debutMs = spec.debutMs,
+    finMs = spec.finMs,
+    aire = aire,
+    yTexte = size.height - m.bas + dpPx(4f),
+    t = t,
+    mesureur = mesureur,
+    scratch = scratch,
+    xDe = xDe,
+)

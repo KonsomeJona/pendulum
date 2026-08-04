@@ -54,8 +54,11 @@ class RecensementDureesTest {
     private val tolerances = mapOf(
         "TimeAnchor.kt:1_000_000L" to
             "conversion nanosecondes -> millisecondes, pas un delai",
-        "DessinNuit.kt:3_600_000L" to
-            "une heure en millisecondes, facteur d'echelle de l'axe temps d'un graphe",
+        // Les graduations horaires ont quitte `DessinNuit.kt` pour `Dessin.kt` : les trois bandes
+        // empilees partagent le meme axe, donc elles doivent partager la fonction qui le gradue.
+        // La tolerance suit le code — un facteur de conversion reste un facteur de conversion.
+        "Dessin.kt:3_600_000L" to
+            "une heure en millisecondes, facteur d'echelle de l'axe temps partage par les trois bandes",
         "Mapping.kt:1_000_000_000L" to
             "seuil d'affichage en gigaoctets — un volume, jamais une duree",
         "Mapping.kt:1_000_000L" to

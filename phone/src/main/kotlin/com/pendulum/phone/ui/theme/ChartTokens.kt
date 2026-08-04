@@ -48,6 +48,29 @@ data class ChartTokens(
     /** Plancher de bruit, axes, nuits ecartees. */
     val structural: Color,
 
+    /**
+     * Etat **technique** tenu, et rien d'autre. La jauge de batterie de la bande de metrologie
+     * quand la montre a tenu la nuit.
+     *
+     * ### Le seul usage autorise du couple rouge-vert dans un graphe
+     *
+     * La regle du projet est que [PendulumColors.error] et [PendulumColors.success] ne decrivent
+     * **jamais** un resultat de sante : un rythme court n'est pas rouge, un compte horaire eleve
+     * n'est pas rouge. Elle ne dit pas qu'ils ne servent a rien — elle dit a quoi. Transfert,
+     * permission, appairage, integrite de fichier, stockage : des etats d'appareil. « La batterie
+     * a tenu la nuit » en est un, au meme titre que « le fichier est complet », et c'est
+     * precisement pour cela que la bande de metrologie est isolee du reste du dessin.
+     *
+     * Les quatre teintes de donnee restent sans paire rouge-vert, et la distinction ici n'est de
+     * toute facon **pas portee par la couleur seule** (P6) : la jauge tenue est un aplat plein, la
+     * jauge non tenue est hachuree, et le chiffre est ecrit a cote dans les deux cas. En niveaux
+     * de gris, rien ne se perd.
+     */
+    val technicalOk: Color,
+
+    /** Etat **technique** non tenu. Voir [technicalOk] pour ce que ce couple a le droit de coder. */
+    val technicalFail: Color,
+
     // --- texte
     val axisText: Color,
     val annotationText: Color,
@@ -110,6 +133,17 @@ data class ChartTokens(
         const val GRADUATION_ALPHA = 0.22f
 
         /**
+         * Hauteur de la gouttiere qui separe la physiologie de la metrologie, en dp.
+         *
+         * **Anormalement large, et c'est tout l'objet.** Les voies de l'hypnogramme sont separees
+         * de 4 dp ; celle-ci vaut cinq fois plus et porte en son milieu un filet dur pleine
+         * largeur. Une separation de la meme epaisseur que les autres se lirait comme une voie de
+         * plus du meme graphe, et l'oeil chercherait alors une correlation entre la batterie et
+         * les mouvements — entre lesquels il n'y en a aucune.
+         */
+        const val GOUTTIERE_DP = 20f
+
+        /**
          * `density` convertit des dp en pixels a l'ecran ; a l'export, l'appelant passe le
          * facteur points/dp de la page. Une seule echelle, un seul chemin.
          */
@@ -127,6 +161,8 @@ data class ChartTokens(
                 attention = colors.attention,
                 secondSignal = colors.secondSignal,
                 structural = colors.textTertiary,
+                technicalOk = colors.success,
+                technicalFail = colors.error,
                 axisText = colors.textTertiary,
                 annotationText = colors.textSecondary,
                 // Pas de `* density` : la valeur est en sp, voir la KDoc du champ.

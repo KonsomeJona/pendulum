@@ -101,6 +101,13 @@ class ContrasteGraphesTest {
             m("REM / seconde regle", t.secondSignal),
             m("plancher de bruit / nuit ecartee", t.structural),
             m("texte d'axe", t.axisText),
+            // --- bande de metrologie : les deux seules teintes du produit qui codent un etat, et
+            //     elles ne codent qu'un etat **technique**. Elles sont opaques partout ou elles
+            //     servent — jauge pleine, hachure, tics de rug plot — donc sans alpha a mesurer,
+            //     mais elles sont tenues au meme 3:1 que le reste : la jauge est le seul endroit de
+            //     l'application ou un utilisateur lit « la montre a tenu la nuit ».
+            m("jauge de batterie tenue (technicalOk)", t.technicalOk),
+            m("jauge de batterie non tenue (technicalFail)", t.technicalFail),
             // --- teintes composees : c'est la que le critere se joue
             m("seuil d'onset (thresholdAlpha)", t.primaryData, t.thresholdAlpha),
             m("barre de serie (seriesBarAlpha)", t.primaryData, t.seriesBarAlpha),
@@ -109,7 +116,41 @@ class ContrasteGraphesTest {
             // --- exemptes, mesurees quand meme : une exemption non chiffree est une excuse
             m("remplissage de la bande IC (ciBandAlpha)", t.primaryData, t.ciBandAlpha, exige = false),
             m("graduation Y", t.structural, ChartTokens.GRADUATION_ALPHA, exige = false),
+            // Les lignes de base des deux rug plots, exemptees pour la meme raison que les
+            // graduations : elles situent les tics, elles n'informent pas. Ce sont les tics —
+            // opaques, mesures plus haut — qui portent.
+            m("ligne de base des rug plots", t.technicalFail, ChartTokens.GRADUATION_ALPHA, exige = false),
         )
+    }
+
+    /**
+     * Le couple rouge-vert de la bande de metrologie ne code jamais un resultat de sante, et il ne
+     * code jamais **seul**.
+     *
+     * Ce test verifie la moitie que la colorimetrie ne verifie pas : que les deux teintes sont bien
+     * celles de [PendulumColors.success] et [PendulumColors.error], c'est-a-dire les deux roles que
+     * la palette reserve aux etats techniques, et qu'elles ne se confondent avec aucune des quatre
+     * teintes de donnee. Le jour ou quelqu'un branchera `technicalFail` sur `attention` pour
+     * « adoucir » la bande, ou `primaryData` sur `success`, ce test tombera — et la regle
+     * semantique de la palette n'a aucun autre gardien executable.
+     *
+     * Que la couleur ne soit pas seule porteuse est tenu par la forme (aplat plein contre hachure)
+     * et par le chiffre ecrit a cote : cela se verifie a l'oeil sur une capture en niveaux de gris,
+     * pas par un calcul de luminance.
+     */
+    @Test
+    fun `les teintes d'etat technique sont celles de la palette, et distinctes des teintes de donnee`() {
+        listOf(
+            PendulumColors.Dark to RenderTarget.Screen,
+            PendulumColors.Light to RenderTarget.Print,
+        ).forEach { (couleurs, cible) ->
+            val t = ChartTokens.of(couleurs, cible)
+            assertThat(t.technicalOk).isEqualTo(couleurs.success)
+            assertThat(t.technicalFail).isEqualTo(couleurs.error)
+            assertThat(listOf(t.primaryData, t.attention, t.secondSignal, t.structural))
+                .describedAs("aucune teinte de donnee ne doit valoir une teinte d'etat technique")
+                .doesNotContain(t.technicalOk, t.technicalFail)
+        }
     }
 
     private fun rapport(titre: String, mesures: List<Mesure>): String = buildString {

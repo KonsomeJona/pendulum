@@ -16,9 +16,14 @@ import com.pendulum.phone.ui.model.TendanceUiState
 
 import com.pendulum.phone.ui.chart.EnvelopePyramid
 import com.pendulum.phone.ui.chart.EtatPoint
+import com.pendulum.phone.ui.chart.EtatPort
 import com.pendulum.phone.ui.chart.GenreMarqueur
 import com.pendulum.phone.ui.chart.HypnogrammeSpec
 import com.pendulum.phone.ui.chart.Intervalle
+import com.pendulum.phone.ui.chart.JaugeBatterie
+import com.pendulum.phone.ui.chart.MetrologieSpec
+import com.pendulum.phone.ui.chart.NiveauDatation
+import com.pendulum.phone.ui.chart.PalierDatation
 import com.pendulum.phone.ui.chart.LigneReference
 import com.pendulum.phone.ui.chart.Marqueur
 import com.pendulum.phone.ui.chart.NuitChartSpec
@@ -214,6 +219,79 @@ object ApercuDonnees {
     )
 
     val hypnogrammeAbsent = hypnogramme.copy(stades = null, desaccord = emptyList())
+
+    // ---------------------------------------------------------------------------------
+    // Etat de l'appareil — la troisieme bande
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Une nuit de metrologie **volontairement imparfaite**.
+     *
+     * Un apercu ou tout va bien ne permet de juger aucune des trois choses que cette bande doit
+     * rendre lisibles : que la datation se degrade par paliers, que l'ecretage se produit par
+     * salves et non en continu, et qu'une jauge non tenue se distingue d'une jauge tenue **sans la
+     * couleur**. Il y a donc ici une heure sous chargeur au debut, une periode ou le capteur a
+     * ecrete, une degradation de gigue au milieu de la nuit, et une batterie qui ne passe pas le
+     * critere — c'est-a-dire une jauge hachuree.
+     *
+     * Le pluriel des voies est aussi ce qui montre la gouttiere a l'echelle : sur une capture, la
+     * separation doit sauter aux yeux avant qu'on ait lu une seule etiquette.
+     */
+    val metrologie = MetrologieSpec(
+        debutMs = DEBUT_NUIT,
+        finMs = FIN_NUIT,
+        etatPort = EtatPort.RETIRE,
+        horsPoignet = listOf(
+            Intervalle(DEBUT_NUIT, DEBUT_NUIT + 12 * 60_000L),
+            Intervalle(FIN_NUIT - 22 * 60_000L, FIN_NUIT),
+        ),
+        charge = listOf(Intervalle(DEBUT_NUIT, DEBUT_NUIT + 58 * 60_000L)),
+        datation = buildList {
+            var t = DEBUT_NUIT
+            var i = 0
+            while (t < FIN_NUIT) {
+                val fin = minOf(t + 37 * 60_000L, FIN_NUIT)
+                val niveau = when {
+                    i in 4..5 -> NiveauDatation.GROSSIERE
+                    i % 3 == 2 -> NiveauDatation.MOYENNE
+                    else -> NiveauDatation.FINE
+                }
+                add(PalierDatation(t, fin, niveau))
+                t = fin
+                i++
+            }
+        },
+        // Deux salves : l'ecretage n'est jamais uniforme, il suit les mouvements amples.
+        ecretage = buildList {
+            var t = DEBUT_NUIT + 62 * 60_000L
+            while (t < DEBUT_NUIT + 78 * 60_000L) { add(t); t += 60_000L }
+            t = DEBUT_NUIT + 196 * 60_000L
+            while (t < DEBUT_NUIT + 203 * 60_000L) { add(t); t += 60_000L }
+        },
+        gels = listOf(
+            DEBUT_NUIT + 41 * 60_000L,
+            DEBUT_NUIT + 154 * 60_000L,
+            DEBUT_NUIT + 155 * 60_000L,
+            DEBUT_NUIT + 302 * 60_000L,
+        ),
+        batterie = JaugeBatterie(
+            fraction = 0.34f,
+            tenue = false,
+            libelle = Textes.Graphes.batterieJaugeProjetee("34%", "12%", 8),
+        ),
+        points = 468,
+        texteIndisponible = Textes.Graphes.METRO_INDISPONIBLE,
+        descriptionAccessible = Textes.Graphes.descriptionMetrologie(
+            points = 468,
+            gigue = "1.4 ms",
+            ecretes = 1_204,
+            gels = 4,
+            batterie = "34% at the end of the night",
+        ),
+    )
+
+    /** La meme nuit, mais sans un seul point : c'est ce que rend une nuit d'avant la telemetrie. */
+    val metrologieAbsente = metrologie.copy(points = 0)
 
     // ---------------------------------------------------------------------------------
     // Nuits

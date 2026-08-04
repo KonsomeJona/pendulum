@@ -216,6 +216,117 @@ enum class StadeUi(val rang: Int, val libelle: String) {
     }
 }
 
+// =========================================================================================
+// La bande d'etat de l'appareil — troisieme bande, meme axe, forme volontairement etrangere
+// =========================================================================================
+
+/**
+ * Le port, en trois etats et non deux.
+ *
+ * [SANS_CAPTEUR] n'est pas une commodite : le Pixel Watch 3 porte bien un
+ * `TYPE_LOW_LATENCY_OFFBODY_DETECT`, mais un appareil qui n'en a pas rendrait une bande vide
+ * indiscernable d'une bande « porte toute la nuit ». Et la KDoc de `RecordingService` note que
+ * **a la cheville**, ce detecteur lit tres probablement « non porte » en permanence : la voie est
+ * donc une indication a croiser avec la temperature, pas un verdict.
+ */
+enum class EtatPort { PORTE, RETIRE, SANS_CAPTEUR }
+
+/**
+ * Le niveau de datation, en classes nommees et **sans axe gradue**.
+ *
+ * Ce que la classe designe est l'incertitude que la gigue fait peser sur l'instant d'un
+ * echantillon : le format interpole lineairement entre `tFirstNs` et `tLastNs`, donc une cadence
+ * moyenne parfaite obtenue en alternant 10 et 30 ms date chaque echantillon a 10 ms pres. C'est la
+ * **dispersion** qui decide de la datation, jamais la moyenne — et c'est pour cela que la voie
+ * montre `jitterStdUs` et non `measuredRateCentiHz`.
+ *
+ * Trois classes et pas une echelle continue, parce qu'une echelle continue invite a lire une
+ * tendance dans une grandeur qui n'en a pas : ce qui compte est de quel cote d'une periode
+ * d'echantillonnage on se trouve, pas si la gigue a monte de 1,2 a 1,4 ms.
+ */
+enum class NiveauDatation(val libelle: String) {
+    FINE("≤ 2 ms"),
+    MOYENNE("≤ 10 ms"),
+    GROSSIERE("> 10 ms"),
+}
+
+/** Un palier de datation. Marche horizontale, marche verticale : aucune interpolation. */
+@Immutable
+data class PalierDatation(val debutMs: Long, val finMs: Long, val niveau: NiveauDatation)
+
+/**
+ * La jauge de batterie — **une jauge, pas une courbe**.
+ *
+ * Une courbe qui descend suggere une dynamique et invite a chercher une correlation entre la
+ * batterie et les mouvements, entre lesquels il n'y a aucune causalite. La question posee a cette
+ * voie est « la montre a-t-elle tenu la nuit », pas « quelle charge a 3 h 12 » — et une jauge
+ * repond a la premiere sans permettre de poser la seconde.
+ *
+ * @param fraction remplissage dans `[0, 1]`, la charge restante a la fin de la nuit.
+ * @param tenue le critere batterie de la porte P1 est-il tenu ? Il est **calcule ailleurs** —
+ *   [com.pendulum.phone.ui.model.PenteBatterie] quand la pente aboutit, le dernier pourcentage
+ *   sinon — et jamais recalcule ici : deux lectures du meme seuil finissent par diverger.
+ * @param libelle le chiffre en clair, a cote de la jauge. La jauge situe, le texte mesure.
+ */
+@Immutable
+data class JaugeBatterie(val fraction: Float, val tenue: Boolean, val libelle: String)
+
+/**
+ * L'etat de l'appareil pendant la nuit — la troisieme bande, sous l'hypnogramme.
+ *
+ * ### L'axe partage est une necessite, pas un confort
+ *
+ * Sans lui, on lit un artefact de mesure comme un evenement physiologique : un signal plat pris
+ * pour du calme alors que la montre etait hors du poignet, un mouvement absent pris pour une nuit
+ * tranquille alors que l'ecretage du capteur avait aplati son sommet. Les trois bandes partagent
+ * donc `debutMs`, `finMs` et la meme [XTransform] — un seul proprietaire du geste, le graphe de
+ * nuit, exactement comme pour l'hypnogramme.
+ *
+ * ### Et la separation doit etre totale dans la forme
+ *
+ * L'oeil ne doit **pas** correler la batterie aux mouvements : il n'y a aucune causalite entre les
+ * deux, et un lecteur qui en trouverait une aurait raison de croire ce qu'il voit et tort sur le
+ * fond. Trois moyens, cumules :
+ *
+ *  1. **Une gouttiere franche**, anormalement large, avec un filet dur de separation. Elle dit
+ *     « ce qui suit n'est pas du signal » avant qu'on ait lu quoi que ce soit.
+ *  2. **Une grammaire graphique etrangere** : rien de continu, rien de courbe. Des blocs, des
+ *     escaliers durs, des *rug plots*, une jauge. C'est la convention du *housekeeping* en
+ *     telemetrie scientifique, isolee precisement pour ne pas etre lue comme de la mesure.
+ *  3. **Aucune echelle Y graduee.** Les voies portent des noms, pas des valeurs : `worn`,
+ *     `charger`, `timing`. Un axe chiffre en face d'un axe chiffre invite a la comparaison.
+ *
+ * ### Les intervalles couvrent la minute qui *precede* leur point
+ *
+ * `fsyncCount`, `fsyncTotalUs`, `fsyncMaxUs` et `clippedSamples` comptent **depuis le point
+ * precedent** ([com.pendulum.format.TelemetryPoint]). Un bloc d'etat s'etend donc du point
+ * precedent au point courant, et non l'inverse — poser l'intervalle a l'envers decalerait toute la
+ * bande d'une minute, ce qui est exactement l'ordre de grandeur d'un mouvement.
+ *
+ * @param ecretage instants ou au moins un echantillon a touche la dynamique du capteur. *Rug
+ *   plot* : des tics de meme hauteur, parce que la hauteur serait une echelle.
+ * @param gels instants ou le pire `fsync` de la periode a depasse une periode d'echantillonnage —
+ *   c'est-a-dire ou le processeur a pu geler assez longtemps pour manquer une interruption.
+ * @param texteIndisponible ce qui s'ecrit quand la nuit ne porte aucune telemetrie. Une bande
+ *   vide avec ses voies ferait chercher une panne la ou il y a une nuit enregistree avant que la
+ *   telemetrie n'existe.
+ */
+@Immutable
+data class MetrologieSpec(
+    val debutMs: Long,
+    val finMs: Long,
+    val etatPort: EtatPort,
+    val horsPoignet: List<Intervalle>,
+    val charge: List<Intervalle>,
+    val datation: List<PalierDatation>,
+    val ecretage: List<Long>,
+    val gels: List<Long>,
+    val batterie: JaugeBatterie?,
+    val points: Int,
+    val texteIndisponible: String,
+    val descriptionAccessible: String,
+)
+
 /**
  * L'hypnogramme, sous le graphe de nuit, meme largeur, meme transformation X.
  *

@@ -58,6 +58,7 @@ val apercuNuitDetail = NuitDetailUi(
     auLit = "7 h 46",
     graphe = ApercuDonnees.nuit,
     hypnogramme = ApercuDonnees.hypnogramme,
+    metrologie = ApercuDonnees.metrologie,
     mouvements = 412,
     plms = 278,
     plmw = 64,
@@ -87,6 +88,30 @@ private fun ApercuDetail() = PendulumTheme {
 @Composable
 private fun ApercuDetailSansHypno() = PendulumTheme {
     NightDetailScreen(apercuNuitDetail.copy(hypnogramme = ApercuDonnees.hypnogrammeAbsent), {}, {}, {}, {}, {})
+}
+
+/**
+ * Le cas courant tant que l'enveloppe n'est pas relue depuis le brut : la bande d'etat de
+ * l'appareil **seule**, sur son axe. C'est aussi la capture qui montre le mieux que la bande se
+ * suffit — elle regradue l'axe horaire sous elle.
+ */
+@Preview(name = "Night — device state only", widthDp = 411, heightDp = 1200, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuDetailMetrologieSeule() = PendulumTheme {
+    NightDetailScreen(
+        apercuNuitDetail.copy(graphe = null, hypnogramme = null),
+        {}, {}, {}, {}, {},
+    )
+}
+
+/** Une nuit d'avant la telemetrie : la bande dit qu'il n'y en a pas, elle ne dessine pas vide. */
+@Preview(name = "Night — no telemetry", widthDp = 411, heightDp = 1200, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuDetailSansTelemetrie() = PendulumTheme {
+    NightDetailScreen(
+        apercuNuitDetail.copy(graphe = null, hypnogramme = null, metrologie = ApercuDonnees.metrologieAbsente),
+        {}, {}, {}, {}, {},
+    )
 }
 
 // --- issu de ui/nights/NightListScreen.kt -----------------------------------

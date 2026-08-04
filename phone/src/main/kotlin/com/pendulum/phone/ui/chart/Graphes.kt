@@ -109,6 +109,35 @@ fun Hypnogramme(
     }
 }
 
+/**
+ * La bande d'etat de l'appareil, sous l'hypnogramme, **meme axe et meme curseur**.
+ *
+ * Aucun `pointerInput` ici non plus : le proprietaire unique du geste reste le graphe de nuit. Sa
+ * hauteur est plus grande que celle de l'hypnogramme parce qu'elle porte six voies et la gouttiere
+ * — et cette gouttiere fait partie du dessin, pas de la mise en page : elle doit rester attachee a
+ * la bande quel que soit l'espacement que le composant parent applique.
+ */
+@Composable
+fun BandeMetrologie(
+    spec: MetrologieSpec,
+    transform: XTransform,
+    curseurMs: Long?,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = LocalChartTokens.current
+    val mesureur = rememberTextMeasurer()
+    val scratch = remember { ChartScratch() }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .semantics { contentDescription = spec.descriptionAccessible },
+    ) {
+        dessinerBandeMetrologie(spec, tokens, transform, mesureur, scratch, curseurMs)
+    }
+}
+
 @Composable
 fun GrapheTendance(
     spec: TendanceChartSpec,

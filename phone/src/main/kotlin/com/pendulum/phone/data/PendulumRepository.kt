@@ -13,6 +13,7 @@ import com.pendulum.phone.ui.model.CheminDeCalcul
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.MachineReveil
 import com.pendulum.phone.ui.model.Mapping
+import com.pendulum.phone.ui.model.Metrologie
 import com.pendulum.phone.ui.model.Controles
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.model.PorteP1
@@ -337,11 +338,27 @@ class PendulumRepository(context: Context) {
         // nuit montrait alors deux libelles de source pour la meme nuit.
         val sourceSommeil = Mapping.libelleSource(nuit.maskSource, sourcePreferee)
 
+        // La telemetrie, elle, est en base des l'ingestion : la bande d'etat de l'appareil
+        // s'affiche donc sur des nuits dont l'enveloppe n'a pas encore ete relue depuis le brut.
+        val telemetrie = db.telemetryDao().ofSession(sessionHex)
+        val metrologie = if (telemetrie.isEmpty()) null else {
+            Metrologie.spec(
+                session = session,
+                points = telemetrie,
+                debutMs = axeDebutMs(session),
+                finMs = axeFinMs(session),
+                // L'origine de la base de temps capteur : le `tFirstNs` du premier chunk. C'est
+                // sur elle que la telemetrie s'aligne, et c'est la seule qui date les mouvements.
+                t0Ns = db.chunkDao().ofSession(sessionHex).minOfOrNull { it.tFirstNs },
+            )
+        }
+
         NuitDetailUi(
             nuit = versNuitUi(nuit, session, sourcePreferee),
             auLit = Mapping.dureeLisible(nuit.analysableMin),
             graphe = null,
             hypnogramme = null,
+            metrologie = metrologie,
             mouvements = evenements.size,
             plms = resultat?.plmsCount ?: 0,
             plmw = resultat?.plmwCount ?: 0,
@@ -367,6 +384,29 @@ class PendulumRepository(context: Context) {
             ),
             situation = Situations.nuit(nuit, session),
         )
+    }
+
+    /**
+     * L'origine de l'axe des trois bandes, **deja decalee a l'heure murale locale**.
+     *
+     * Les fonctions de dessin ne connaissent aucun fuseau : elles formatent une heure en prenant le
+     * reste d'une division par un jour. Leur passer un epoch UTC afficherait l'heure de Greenwich
+     * sur une nuit vecue a Tokyo. Le decalage est donc applique ici, une seule fois, a partir de
+     * l'offset que l'ingestion a enregistre avec la nuit — et pas a partir du fuseau du telephone,
+     * qui peut avoir change depuis.
+     */
+    private fun axeDebutMs(session: NightSessionEntity): Long =
+        session.startWallMs + session.tzOffsetStartMin * 60_000L
+
+    /**
+     * La fin de l'axe. L'offset de **fin** est utilise et non celui du debut : une nuit de
+     * changement d'heure porte les deux, et c'est precisement pour cela que l'ingestion les
+     * enregistre separement. Une nuit encore ouverte n'a pas de fin ; on prend alors la duree
+     * prevue, faute de quoi l'axe serait de longueur nulle et la bande, invisible.
+     */
+    private fun axeFinMs(session: NightSessionEntity): Long {
+        val fin = session.endWallMs ?: session.plannedStopWallMs
+        return maxOf(fin, session.startWallMs + 60_000L) + session.tzOffsetEndMin * 60_000L
     }
 
     /**

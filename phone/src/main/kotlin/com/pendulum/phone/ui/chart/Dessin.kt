@@ -227,3 +227,50 @@ fun DrawScope.pointNuit(centre: Offset, etat: EtatPoint, t: ChartTokens, rayon: 
 }
 
 internal fun bornerColonnes(largeur: Float): Int = max(1, largeur.toInt())
+
+/**
+ * Les graduations horaires de l'axe X, **ecrites une seule fois pour toutes les bandes**.
+ *
+ * L'axe temporel est partage par le graphe de nuit, l'hypnogramme et la bande de metrologie ; s'il
+ * existait deux redactions de ses graduations, elles finiraient par tomber sur des heures
+ * differentes et l'alignement, qui est la raison d'etre de l'empilement, deviendrait faux d'un
+ * pixel. Un mouvement lu dans le mauvais stade, ou attribue a une minute ou la montre etait sur son
+ * chargeur, ne leve aucune exception.
+ *
+ * @param yTexte ordonnee du texte, qui differe d'une bande a l'autre selon sa marge basse.
+ */
+internal fun DrawScope.dessinerGraduationsHoraires(
+    debutMs: Long,
+    finMs: Long,
+    aire: Rect,
+    yTexte: Float,
+    t: ChartTokens,
+    mesureur: TextMeasurer,
+    scratch: ChartScratch,
+    xDe: (Long) -> Float,
+) {
+    val heureMs = 3_600_000L
+    var ms = (debutMs / heureMs) * heureMs
+    if (ms < debutMs) ms += heureMs
+    while (ms <= finMs) {
+        val px = xDe(ms)
+        if (px in aire.left..aire.right) {
+            drawLine(t.structural, Offset(px, aire.bottom), Offset(px, aire.bottom + dpPx(3f)), t.strokeThin)
+            texteAxe(mesureur, scratch, t, formatHeure(ms), px, yTexte, centre = true)
+        }
+        ms += heureMs
+    }
+}
+
+/**
+ * Format d'heure minimal, sans dependance a un fuseau : les horodatages passes aux fonctions de
+ * dessin ont deja ete decales par le ViewModel a l'heure murale locale enregistree avec la nuit.
+ * Faire la conversion ici obligerait la fonction de dessin a connaitre un `ZoneId`, donc a differer
+ * entre l'ecran et l'export.
+ */
+internal fun formatHeure(ms: Long): String {
+    val minutesJour = ((ms / 60000L) % 1440L).toInt()
+    val h = minutesJour / 60
+    val mn = minutesJour % 60
+    return "%02d:%02d".format(h, mn)
+}
