@@ -204,27 +204,42 @@ fun RecordScreen(
     onOuvrirLeTelephone: () -> Unit = {},
     ouverture: OuvertureTelephone = OuvertureTelephone.Aucune,
 ) {
-    // Marges calculees depuis la forme reelle de l'ecran, et non fixees en dur.
+    // Le contenu ne doit toucher le verre a aucune position de defilement, et Google le verifie :
+    // le motif de rejet « aucun texte ou controle n'est coupe par les bords de l'ecran » se teste
+    // sur le plus petit cadran rond, police au maximum.
     //
-    // Sur un cadran rond, la seule marge qui garantisse qu'aucun pixel ne sorte **a n'importe
-    // quelle hauteur** est celle du carre inscrit dans le cercle : de cote D/racine(2), soit un
-    // retrait de (1 - 1/racine(2))/2 = 14,6 % du diametre sur chaque bord. Toute valeur
-    // inferieure fonctionne au centre, ou le cercle est large, et coupe le texte pres du haut
-    // et du bas, ou il se resserre — ce qui est exactement ce qu'on observait : un padding de
-    // 16 dp laissait les dernieres lignes du message d'erreur passer sous le verre.
+    // Deux valeurs, et une seule chose qui les rend suffisantes.
     //
-    // Defaut invisible en previsualisation, qui est carree. Trouve sur capture reelle, et le
-    // premier correctif (10,4 %) ne suffisait pas non plus : verifie une seconde fois sur
-    // capture avant d'etre retenu.
+    // 14,6 % est le retrait du **carre inscrit** : pour un diametre D, le carre inscrit a pour
+    // cote D/racine(2), donc (1 - 1/racine(2))/2 = 14,6 % de retrait par bord. 18 % horizontal
+    // vient d'un calcul plus severe : le contenu defile, donc une ligne finit toujours par passer
+    // pres du haut ou du bas, la ou la corde 2R*racine(1-t²) se resserre.
+    //
+    // **Mais aucune marge ne suffit si elle est du mauvais cote du defilement.** C'est le defaut
+    // qui a survecu a deux corrections successives (16 dp, puis 10,4 %) : `padding` etait applique
+    // **apres** `verticalScroll` dans la chaine, donc il appartenait au contenu defilant. Il
+    // n'ecartait le texte du verre qu'a la position de repos ; des qu'on faisait defiler, la marge
+    // partait avec le contenu et la ligne du haut se faisait trancher par le cadran. Ce qu'on
+    // voyait sur capture reelle : « Free space 12.2 GB » coupe net a mi-hauteur des glyphes.
+    //
+    // Inverser les deux modificateurs suffit, et c'est demontrable plutot que constatable :
+    // `padding` avant `verticalScroll` fait de la zone marginee le **viewport**, et
+    // `verticalScroll` clippe son contenu au viewport. Le texte disparait donc dans le noir a la
+    // limite du rectangle, jamais sous le verre. Reste a prouver que ce rectangle tient dans le
+    // cercle — c'est le seul calcul qui compte :
+    //
+    //   demi-largeur = (1 - 2*0,18)/2 * D  = 0,64 R
+    //   demi-hauteur = (1 - 2*0,146)/2 * D = 0,708 R
+    //   coin         = R*racine(0,64² + 0,708²) = 0,954 R  <  R
+    //
+    // Les quatre coins sont strictement interieurs. Aucun pixel du viewport n'atteint le verre,
+    // a n'importe quelle position de defilement et a n'importe quelle echelle de police.
+    //
+    // Defaut invisible en previsualisation, qui est carree, et invisible au repos. Il a fallu
+    // faire defiler un vrai cadran pour le voir.
     val config = LocalConfiguration.current
     val rond = config.isScreenRound
     val cote = config.screenWidthDp.dp
-    // Correction du correctif : 14,6 % borne le carre inscrit, ce qui suffirait pour un contenu
-    // **statique** centre. Ici la colonne defile, donc n'importe quelle ligne finit par passer
-    // pres du haut ou du bas du cadran, la ou la largeur utile chute a 2R*racine(1-t²). A 77 %
-    // du rayon, elle ne vaut plus que 64 % du diametre. La marge horizontale doit donc etre
-    // dimensionnee sur ce pire cas et non sur le centre : 18 % de chaque cote. La marge
-    // verticale, elle, reste celle du carre inscrit — le defilement s'occupe du reste.
     val margeH = if (rond) cote * 0.18f else 16.dp
     val margeV = if (rond) cote * 0.146f else 24.dp
 
@@ -232,8 +247,9 @@ fun RecordScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = margeH, vertical = margeV),
+            // L'ordre est le correctif. Ne pas intervertir ces deux lignes.
+            .padding(horizontal = margeH, vertical = margeV)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
