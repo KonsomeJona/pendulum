@@ -2358,3 +2358,120 @@ Trois émulateurs d'autres projets ont été arrêtés en début de session (`pe
 `FarkleShot34`, `MdmTest`), et deux autres en cours de route (`farkle_wear_small_round`,
 `takotv_atv`), parce que la machine n'avait plus que 93 Mo de RAM libre. Leurs AVD sont intacts ;
 seuls les processus ont été arrêtés proprement par `adb emu kill`.
+
+---
+
+## 14. Revue d'écrans sur matériel réel — le thème, et ce que les captures ont montré d'autre
+
+**4 août 2026.** Pixel 10 Pro Fold (`rango`, écran de couverture, display `4619827677550801153`) et
+Pixel Watch 3 (`sol`), pilotés depuis le Mac. Build debug de la branche
+`app-honnete-premier-lancement`.
+
+### 14.1 Le défaut, et sa cause mesurée
+
+L'écran d'avertissement du premier lancement — celui qui porte « ceci n'est pas un dispositif
+médical », rendu non esquivable par un défilement bloquant et quatre acquittements — était
+illisible.
+
+![Avant : gris très clair sur gris très clair](img/revue-avertissement-avant.png)
+
+La cause n'est ni la palette ni `PendulumScreen`. **Le module `:phone` ne déclarait aucun
+`android:theme`.** Sans cet attribut, Android n'applique pas un thème neutre : `selectDefaultTheme`
+choisit `Theme.DeviceDefault.Light.DarkActionBar` dès que `targetSdk` dépasse 17. Le nom décrit
+exactement ce qu'on voyait — fond de fenêtre **clair**, barre d'action **sombre**.
+
+Trois mesures, dans cet ordre :
+
+| Mesure | Commande | Résultat |
+|---|---|---|
+| Le manifeste installé ne porte pas de thème | `aapt2 dump xmltree --file AndroidManifest.xml base.apk` | l'élément `application` a `label`, `icon`, `name`, `debuggable`, `allowBackup`, `supportsRtl`, `extractNativeLibs`, `fullBackupContent`, `roundIcon`, `appComponentFactory`, `dataExtractionRules` — **et pas `theme`** |
+| Le fond réellement affiché | échantillonnage de la capture | `#F0EDEF` sur la zone de contenu, `#1C1B1C` sur la barre de titre |
+| Le contraste du texte | `#E6EAF0` (`PendulumColors.Dark.textPrimary`) sur `#F0EDEF` | **1,06:1** |
+
+Compose ne peint aucun fond de lui-même. Partout où la composition en peignait un par accident — le
+`Scaffold` de `PendulumNavHost`, dont le `containerColor` vaut `colorScheme.background` — le fond
+clair de la fenêtre était recouvert et le défaut invisible. L'assistant du premier lancement est une
+simple `Column` sans `Scaffold` : c'est le seul endroit où la fenêtre restait visible.
+
+**Et c'est aussi pourquoi la barre de titre paraissait juste : elle n'était pas la nôtre.** Aucun
+composable du produit ne dessine de `TopAppBar` portant « Pendulum ». C'était la barre d'action du
+framework, dont le nom du thème par défaut annonce qu'elle est sombre.
+
+Le module `:wear`, lui, déclarait son thème depuis toujours (`Theme.Pendulum`, `windowBackground` à
+`@android:color/black`), et sa palette Compose met `background = Color.Black`. Les deux concordent :
+la montre n'a jamais eu ce défaut.
+
+### 14.2 Après
+
+![Après : la palette sombre, sur tout l'arbre](img/revue-avertissement-apres.png)
+
+Le bouton bloqué porte son motif, et ce motif se lit — il était rendu par les couleurs désactivées
+par défaut de Material, mesurées **3,02:1** sur l'appareil, alors que `BoutonMotive` existait déjà
+avec les bonnes teintes (4,93:1).
+
+![Le motif d'indisponibilité, lisible](img/revue-avertissement-bouton-bloque.png)
+![Les quatre acquittements](img/revue-avertissement-confirme.png)
+
+### 14.3 Les cinq étapes de l'assistant
+
+![Étape 2 — ce dont Pendulum a besoin](img/revue-assistant-besoins.png)
+![Étape 3 — appairage](img/revue-assistant-appairage.png)
+![Étape 4 — source de sommeil](img/revue-assistant-source-sommeil.png)
+![Étape 5 — notifications et conditions](img/revue-assistant-notifications.png)
+
+### 14.4 L'application
+
+![Accueil](img/revue-accueil.png)
+![Tendance, état de refus](img/revue-tendance-refus.png)
+![Réglages](img/revue-reglages.png)
+![Réglages — apparence et à propos](img/revue-reglages-apparence.png)
+![Rapport P1](img/revue-rapport-p1.png)
+![L'avertissement relu depuis Réglages › À propos](img/revue-avertissement-relu.png)
+![Effacement total](img/revue-effacement.png)
+![Formulaire du soir](img/revue-formulaire-du-soir.png)
+
+### 14.5 La montre
+
+![Écran de repos, avec son bloqueur](img/revue-montre-repos.png)
+![Le bloqueur et le START inactif](img/revue-montre-repos-bas.png)
+
+### 14.6 Cinq écrans n'ont pas pu être vus, et c'est un constat
+
+Sur une installation neuve, la liste des nuits, le détail d'une nuit, le questionnaire, la
+comparaison et l'export **n'ont aucune porte**. `TrendScreen` ne pose `LigneAction` vers les nuits,
+la comparaison et le questionnaire que dans la branche `TendanceUiState.Pret`, c'est-à-dire à partir
+de trois nuits éligibles ; la carte HISTORIQUE de l'accueil porte son bouton désactivé. Aucun de ces
+écrans n'a donc été capturé, et ils ne l'ont pas été **sans fabriquer de nuits**. Injecter des nuits
+factices dans la base pour photographier des écrans, c'est exactement le défaut que le déplacement
+d'`ApercuDonnees` vers `src/debug` a corrigé.
+
+Le questionnaire mérite une question de conception : c'est un dépistage, il ne dépend d'aucune nuit,
+et il est aujourd'hui inatteignable jusqu'à la troisième.
+
+### 14.7 Ce que les captures ont montré d'autre, et qui n'a pas été corrigé
+
+| Écran | Constat |
+|---|---|
+| Réglages › Mesure | `Arrêt automatique  →  Automatic stop` : la valeur de la ligne est la constante qui sert déjà d'intitulé (`ReglagesUi.arretAutomatique = Textes.Reglages.ARRET_AUTO`). Ce qu'elle devrait dire est une décision produit. |
+| Tendance, install. neuve | « Sleep access revoked — the permission to read sleep has been **withdrawn** ». Elle n'a jamais été accordée. Sur un premier lancement, l'écran annonce un retrait qui n'a pas eu lieu. |
+| Tendance | L'étiquette « Nights recorded » est rendue loin des trois pastilles qu'elle décrit, en bas de carte, sans valeur à côté. |
+| Accueil | Les boutons désactivés répètent mot pour mot la ligne d'état juste au-dessus (« No recording open » deux fois, « No night recorded yet » deux fois). |
+| Assistant, étape 4 | Un bouton actif « Allow Health Connect » est immédiatement suivi d'un bouton inactif « Allow Health Connect first ». Le second est le bouton *Continuer* portant son motif ; les deux se lisent comme des doublons. |
+| Assistant, étape 3 | La ligne mono de vérification du capteur (`Accelerometer: — · FIFO: — · wake-up sensor: —`) ne tient pas dans la largeur et renvoie son dernier tiret seul à la ligne. |
+| Assistant étape 5, effacement | Les listes à puces n'ont pas d'indentation suspendue : la deuxième ligne d'une puce repart à la marge gauche, sous la puce et non sous le texte. |
+| Formulaire du soir | « Jambe droite » est présélectionné. Une réponse par défaut sur un formulaire qui se scelle une fois mérite d'être un choix explicite. |
+| Montre | « Free space 12.2 / GB » : la valeur et son unité sont séparées par un retour à la ligne. |
+| Montre | Le bloqueur « remplissez le formulaire du soir » est rendu en **rouge d'erreur**. La règle sémantique de `PendulumColors` dit que tout ce qui est *situation* et non *panne* s'affiche en `attention`. Un contexte non scellé est une situation. |
+| Montre | Sur l'écran rond, le texte défilé passe sous le bord : à `y = 27` d'un disque de 456 px, la largeur visible est `[120, 336]`, et « Free space 12.2 » commence à `x = 80`. |
+| Écrans empilés | Le contenu défilant arrive jusqu'au bord bas de la fenêtre, sous la zone du geste de navigation. Rien n'est perdu — le contenu défile — mais la dernière ligne se lit coupée. |
+
+### 14.8 L'état laissé sur les appareils
+
+Les données privées de l'application ont été sauvegardées avant la session
+(`run-as com.pendulum tar cf -`), puis **restaurées et relues** : `files/` ne contient à nouveau que
+`profileInstalled`, donc aucun compteur d'étapes, et l'application rouvre sur « Step 1 of 5 ».
+Aucune permission n'a été accordée — l'étape Health Connect a été franchie par son échappatoire.
+Aucun enregistrement n'a été lancé, aucun contexte n'a été scellé, rien n'a été désinstallé.
+
+`connectedAndroidTest` n'a **pas** été exécuté : `GardeFousTest` appelle `eraseEverything()` et
+l'orchestrateur désinstalle le paquet en fin de série.
