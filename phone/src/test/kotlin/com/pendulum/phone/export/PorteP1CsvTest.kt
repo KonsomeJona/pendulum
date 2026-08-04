@@ -1,6 +1,7 @@
 package com.pendulum.phone.export
 
 import com.pendulum.phone.db.NightSessionEntity
+import com.pendulum.phone.ui.model.PenteBatterie
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.ZoneId
@@ -32,6 +33,11 @@ class PorteP1CsvTest {
             modeFlags = 0,
             state = "CLOSED",
             batteryPctLast = batterie,
+            // Sans cette date, la couverture est `null` — une nuit non analysee n'a pas de
+            // numerateur — et la colonne `coverage` sort vide. C'est le comportement voulu depuis
+            // le defaut du 3 aout 2026 ; ce que ce fichier verifie est la mise en forme d'une nuit
+            // qui, elle, a bien ete analysee.
+            analyzedAtMs = debut + dureeMs + 600_000L,
             fsMeasuredHz = 50.31,
             sampleCount = Math.round(dureeMs * 50 / 1000.0 * couverture),
         )
@@ -65,9 +71,14 @@ class PorteP1CsvTest {
         // Une seule nuit ne peut pas franchir une porte qui en demande trois d'affilee.
         assertThat(csv).contains("# longest_consecutive_run=1")
         assertThat(csv).contains("# gate_passed=false")
-        // Les deux trous de mesure sont dans le fichier, pas seulement a l'ecran.
+        // Le trou de mesure qui reste est dans le fichier, pas seulement a l'ecran.
         assertThat(csv).contains("# not transmitted: largest single gap")
-        assertThat(csv).contains("# not transmitted: battery level at the start of the night")
+        // Et la facon dont la batterie est obtenue, avec le seuil de refus : un pourcentage
+        // extrapole qui ne dirait pas qu'il l'est se relirait comme un pourcentage mesure.
+        assertThat(csv).contains("least-squares fit on the coulomb counter")
+        // Le seuil de refus est lu depuis la constante et non recopie : un fichier qui annoncerait
+        // un seuil different de celui qu'applique le code serait pire qu'un fichier muet.
+        assertThat(csv).contains("refused below ${PenteBatterie.POINTS_MIN} points")
 
         val entete = lignes.first { !it.startsWith("#") }
         assertThat(entete.split(",")).startsWith("night_key", "session_hex")

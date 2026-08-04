@@ -3,11 +3,14 @@ package com.pendulum.phone.ui
 import com.pendulum.phone.db.ComparabilityRule
 import com.pendulum.phone.db.ComparableNight
 import com.pendulum.phone.db.NightSessionEntity
+import com.pendulum.phone.db.TelemetryPointEntity
 import com.pendulum.phone.ui.model.Controles
+import com.pendulum.phone.ui.model.PenteBatterie
 import com.pendulum.phone.ui.model.PorteP1
 import com.pendulum.phone.ui.model.PorteP1.Conformite
 import com.pendulum.phone.ui.text.Textes
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.time.ZoneId
@@ -43,6 +46,9 @@ class PorteP1Test {
      * @param couverture fraction des echantillons attendus. Le nombre d'echantillons est derive
      *   d'elle plutot que donne : c'est le chemin que suit la vraie donnee, et ecrire directement
      *   un `sampleCount` laisserait passer une erreur de denominateur.
+     * @param analysee la nuit a-t-elle ete analysee ? Le defaut est **oui**, parce que c'est
+     *   l'etat dans lequel un verdict de couverture a un sens. Le cas contraire a son propre test
+     *   et n'a pas a se glisser en silence dans tous les autres.
      */
     private fun nuit(
         debutMs: Long = COUCHER,
@@ -51,6 +57,7 @@ class PorteP1Test {
         batterie: Int? = 50,
         fs: Double? = CADENCE.toDouble(),
         zone: String = "Europe/Paris",
+        analysee: Boolean = true,
     ): NightSessionEntity {
         val dureeMs = heures?.let { (it * HEURE_MS).toLong() }
         val attendus = (dureeMs ?: 0L) * CADENCE / 1000.0
@@ -66,8 +73,59 @@ class PorteP1Test {
             modeFlags = 0,
             state = if (dureeMs == null) "OPEN" else "CLOSED",
             batteryPctLast = batterie,
+            analyzedAtMs = if (analysee) debutMs + 9 * HEURE_MS else null,
             fsMeasuredHz = fs,
             sampleCount = Math.round(attendus * couverture),
+        )
+    }
+
+    /**
+     * Une serie de telemetrie qui se decharge lineairement, sans bruit.
+     *
+     * Elle est **exacte par construction** : c'est ce qui permet de verifier la droite a la
+     * decimale plutot que de constater qu'elle a « l'air correcte ». Le bruit reel de la mesure
+     * n'a rien a apprendre a un test de moindres carres — ce qui compte ici est que l'horizon
+     * d'extrapolation parte du debut de la nuit, que les points sous charge sortent, et que le
+     * refus se declenche ou il est annonce.
+     *
+     * @param nombre nombre de points.
+     * @param pctParHeure consommation, en points de pourcentage par heure.
+     * @param pasS intervalle entre deux points, en secondes. Une minute sur l'appareil ; le
+     *   parametre existe pour pouvoir separer les deux conditions de refus, qui coincident a la
+     *   cadence reelle et ne coincideraient plus a une autre.
+     * @param capaciteUah capacite pleine ; le pourcentage entier en decoule, comme sur l'appareil.
+     * @param enCharge indices des points a marquer sous charge. Leur compteur **remonte**, ce qui
+     *   est le piege : les laisser entrer inverserait le signe de la pente.
+     */
+    private fun telemetrie(
+        nombre: Int,
+        pctParHeure: Double,
+        pctDepart: Double = 100.0,
+        pasS: Long = 60L,
+        capaciteUah: Double = 300_000.0,
+        enCharge: Set<Int> = emptySet(),
+    ): List<TelemetryPointEntity> = (0 until nombre).map { i ->
+        val h = i * pasS / 3_600.0
+        val pct = pctDepart - pctParHeure * h
+        val charge = if (i in enCharge) capaciteUah else capaciteUah * pct / 100.0
+        TelemetryPointEntity(
+            sessionHex = "t",
+            // L'horloge monotone, en nanosecondes : c'est la seule sur laquelle une duree se
+            // calcule, et c'est celle que le point porte.
+            elapsedRealtimeNs = i * pasS * 1_000_000_000L,
+            sensorTsNs = i * pasS * 1_000_000_000L,
+            batteryChargeUah = Math.round(charge).toInt(),
+            maxIntervalUs = 25_000,
+            fsyncTotalUs = 0,
+            fsyncMaxUs = 0,
+            temperatureDeciC = 320,
+            measuredRateCentiHz = 5000,
+            jitterStdUs = 800,
+            clippedSamples = 0,
+            fsyncCount = 0,
+            batteryPct = Math.round(pct).toInt().coerceIn(0, 100),
+            offBody = 0,
+            charging = i in enCharge,
         )
     }
 
@@ -108,6 +166,45 @@ class PorteP1Test {
             .isEqualTo(Conformite.CONFORME)
         assertThat(PorteP1.de(nuit(couverture = 0.989)).couverture.etat)
             .isEqualTo(Conformite.NON_CONFORME)
+    }
+
+    /**
+     * Le defaut du 3 aout 2026, epingle.
+     *
+     * `night_session.sampleCount` vaut 0 tant qu'`AnalyzeWorker` n'a pas tourne, et l'ancienne
+     * version divisait alors 0 par 96 163 : la nuit sortait `NON_CONFORME` avec `coverage=0.0%`.
+     * Une nuit **non analysee** etait donc rapportee « hors P1 », ce qui est faux dans les deux
+     * sens — elle n'a pas echoue, et elle a peut-etre parfaitement tenu.
+     *
+     * Le second cas est celui qu'il ne faut pas confondre avec le premier : une nuit **analysee**
+     * dont l'analyse n'a retenu aucun echantillon a bel et bien une couverture de zero, et
+     * celle-la echoue.
+     */
+    @Test
+    fun `une nuit non analysee n'est pas hors P1, elle n'est pas decidable`() {
+        val nonAnalysee = PorteP1.de(nuit(couverture = 0.0, analysee = false))
+        assertThat(Controles.couverture(nuit(couverture = 0.0, analysee = false))).isNull()
+        assertThat(nonAnalysee.couverture.etat).isEqualTo(Conformite.INDETERMINE)
+        assertThat(nonAnalysee.couverture.valeur).isEqualTo("—")
+        assertThat(nonAnalysee.verdict).isNotEqualTo(Conformite.NON_CONFORME)
+
+        // Analysee, et zero echantillon retenu : la couverture est nulle et le verdict tombe.
+        val analyseeVide = PorteP1.de(nuit(couverture = 0.0, analysee = true))
+        assertThat(analyseeVide.couverture.etat).isEqualTo(Conformite.NON_CONFORME)
+        assertThat(analyseeVide.couverture.valeur).isEqualTo("0.0%")
+    }
+
+    /**
+     * La ligne de controle du detail de nuit lit la meme inconnue. Deux ecrans, un seul calcul :
+     * c'est la regle que `Controles` porte deja pour le seuil de batterie.
+     */
+    @Test
+    fun `la ligne de controle rend un tiret sur une nuit non analysee`() {
+        val ligne = Controles
+            .de(nuit(couverture = 0.0, analysee = false), nuitComparable(), null, Textes.Reglages.HEALTH_CONNECT)
+            .first { it.libelle == Textes.Nuits.Detail.COUVERTURE }
+        assertThat(ligne.valeur).isEqualTo("—")
+        assertThat(ligne.ok).isFalse()
     }
 
     @Test
@@ -169,6 +266,96 @@ class PorteP1Test {
     @Test
     fun `sans niveau rapporte, le critere est indetermine et non satisfait`() {
         assertThat(PorteP1.de(nuit(batterie = null)).batterie.etat).isEqualTo(Conformite.INDETERMINE)
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Batterie — la pente, qui rend le critere decidable sur une nuit courte
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Le cas que le pourcentage seul ne sait pas trancher, et qui est le cas reel.
+     *
+     * Une heure de veille a 100 % : le pourcentage n'a pas bouge d'un palier — c'est exactement ce
+     * qu'a mesure le §12.4, `level: 100` aux six pas — et l'ancienne lecture rendait `INDETERMINE`.
+     * Le compteur coulombmetrique, lui, a une pente, et huit heures a ce regime finissent sous le
+     * seuil.
+     */
+    @Test
+    fun `une nuit courte se tranche sur la pente, la ou le pourcentage ne bouge pas`() {
+        // 11 % par heure : a 8 h il resterait 12 %, donc l'echec — sur une nuit ou le dernier
+        // pourcentage rapporte est 100 et ne dit rien.
+        val trop = PorteP1.de(nuit(heures = 1.0, batterie = 100), telemetrie(60, pctParHeure = 11.0))
+        assertThat(trop.batterie.etat).isEqualTo(Conformite.NON_CONFORME)
+
+        // 5 % par heure : 60 % a huit heures.
+        val large = PorteP1.de(nuit(heures = 1.0, batterie = 100), telemetrie(60, pctParHeure = 5.0))
+        assertThat(large.batterie.etat).isEqualTo(Conformite.CONFORME)
+        assertThat(large.batterie.valeur).contains("60%").contains("8 h").contains("60 points")
+    }
+
+    /**
+     * L'origine des temps est le **debut de la nuit**, pas le premier point utilisable.
+     *
+     * Une montre restee une heure sur son socle avant de commencer a se decharger n'a que sept
+     * heures devant elle, pas huit. Prendre le premier point retenu comme origine offrirait une
+     * heure gratuite a chaque nuit ou la montre a ete branchee, et l'ecart ne se verrait nulle part.
+     */
+    @Test
+    fun `les points sous charge sortent de la pente sans decaler l'horizon`() {
+        // Deux heures : la premiere sous charge (compteur a fond), la seconde en decharge a 10 %/h.
+        val points = telemetrie(120, pctParHeure = 10.0, enCharge = (0 until 60).toSet())
+        val p = PenteBatterie.de(points, PorteP1.DUREE_CIBLE_H)!!
+        assertThat(p.pointsSousCharge).isEqualTo(60)
+        assertThat(p.pointsRetenus).isEqualTo(60)
+        assertThat(p.pctParHeure).isCloseTo(10.0, within(0.2))
+        // La droite passe par 100 % a t=0 — le debut de la nuit — donc 20 % a huit heures. Si
+        // l'origine avait ete le premier point retenu, on lirait 30 %.
+        assertThat(p.pctA8h).isCloseTo(20.0, within(0.5))
+    }
+
+    @Test
+    fun `une pente sur trois points n'est pas une pente`() {
+        assertThat(PenteBatterie.de(telemetrie(3, pctParHeure = 10.0), PorteP1.DUREE_CIBLE_H)).isNull()
+        // Juste sous le compte minimal, et juste a lui. La borne est celle qui bascule en
+        // silence : au-dessus on publie un chiffre, en dessous on rend un tiret.
+        assertThat(PenteBatterie.de(telemetrie(PenteBatterie.POINTS_MIN - 1, 10.0), PorteP1.DUREE_CIBLE_H))
+            .isNull()
+        assertThat(PenteBatterie.de(telemetrie(PenteBatterie.POINTS_MIN, 10.0), PorteP1.DUREE_CIBLE_H))
+            .isNotNull()
+    }
+
+    /**
+     * Assez de points, mais pas assez d'etendue : trente points survivants disperses dans une nuit
+     * passee sur son socle ne portent pas une extrapolation a huit heures. Le compte et l'etendue
+     * sont deux conditions et non une.
+     */
+    @Test
+    fun `assez de points mais trop peu d'etendue ne conclut pas`() {
+        // Quarante points espaces de dix secondes : le compte passe largement, l'etendue fait
+        // six minutes et demie. C'est la condition d'etendue, et elle seule, qui refuse — ce qui
+        // est exactement ce qu'elle protege le jour ou la cadence des points changerait.
+        val serres = telemetrie(40, pctParHeure = 10.0, pasS = 10L)
+        assertThat(serres).hasSizeGreaterThan(PenteBatterie.POINTS_MIN)
+        assertThat(PenteBatterie.de(serres, PorteP1.DUREE_CIBLE_H)).isNull()
+    }
+
+    @Test
+    fun `un compteur qui ne descend pas ne rend pas une autonomie infinie`() {
+        // Consommation nulle : la pente est plate. On refuse plutot que d'annoncer 100 % a huit
+        // heures — c'est le faux vert le plus cher possible sur le critere le plus discriminant.
+        assertThat(PenteBatterie.de(telemetrie(120, pctParHeure = 0.0), PorteP1.DUREE_CIBLE_H)).isNull()
+    }
+
+    /**
+     * Sans telemetrie, rien ne change : les trois lectures exactes du dernier pourcentage restent
+     * le chemin, et une nuit enregistree avant que la telemetrie n'existe garde son verdict.
+     */
+    @Test
+    fun `sans telemetrie le critere retombe sur les trois lectures exactes`() {
+        assertThat(PorteP1.de(nuit(heures = 6.0, batterie = 45), emptyList()).batterie.etat)
+            .isEqualTo(Conformite.INDETERMINE)
+        assertThat(PorteP1.de(nuit(heures = 8.0, batterie = 45), emptyList()).batterie.etat)
+            .isEqualTo(Conformite.CONFORME)
     }
 
     // -------------------------------------------------------------------------------------

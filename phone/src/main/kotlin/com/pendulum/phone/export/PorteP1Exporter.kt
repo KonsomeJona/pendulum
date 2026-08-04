@@ -4,7 +4,9 @@ import android.content.Context
 import android.net.Uri
 import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.db.PendulumDatabase
+import com.pendulum.phone.db.TelemetryPointEntity
 import com.pendulum.phone.ui.model.Controles
+import com.pendulum.phone.ui.model.PenteBatterie
 import com.pendulum.phone.ui.model.PorteP1
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,6 +54,13 @@ object PorteP1Exporter {
         "coverage_state",
         "battery_pct_end",
         "battery_min_pct",
+        // La pente, ses trois chiffres de support et son resultat. Un pourcentage extrapole sans
+        // le nombre de points qui portent la droite ne se relit pas : trente points et quatre
+        // cents points donnent la meme colonne si on ne l'ecrit pas.
+        "battery_points_used",
+        "battery_points_charging",
+        "battery_uah_per_h",
+        "battery_pct_at_8h",
         "battery_state",
         "fs_measured_hz",
         "fs_nominal_hz",
@@ -74,7 +83,11 @@ object PorteP1Exporter {
     suspend fun exportCsv(context: Context, out: OutputStream) {
         val db = PendulumDatabase.get(context)
         val sessions = db.nightDao().all()
-        out.write(csv(sessions).toByteArray(Charsets.UTF_8))
+        // La meme telemetrie que celle de l'ecran, lue de la meme facon. Le fichier et l'ecran
+        // doivent rendre le meme verdict sur la meme nuit : leur faire lire deux sources serait
+        // rouvrir exactement l'ecart que `Controles` a ferme sur le seuil de batterie.
+        val telemetrie = sessions.associate { it.sessionHex to db.telemetryDao().ofSession(it.sessionHex) }
+        out.write(csv(sessions, telemetrie).toByteArray(Charsets.UTF_8))
         out.flush()
     }
 
@@ -83,8 +96,11 @@ object PorteP1Exporter {
      * nuits font quelques kilo-octets, la ou une seule nuit de signal brut en fait quatre-vingt-dix
      * mille.
      */
-    internal fun csv(sessions: List<NightSessionEntity>): String {
-        val verdicts = sessions.map { PorteP1.de(it) }
+    internal fun csv(
+        sessions: List<NightSessionEntity>,
+        telemetrie: Map<String, List<TelemetryPointEntity>> = emptyMap(),
+    ): String {
+        val verdicts = sessions.map { PorteP1.de(it, telemetrie[it.sessionHex].orEmpty()) }
         val campagne = PorteP1.campagne(verdicts)
         return buildString {
             // Le preambule est commente `#` : les tableurs et `pandas` savent l'ignorer, et un
@@ -105,18 +121,28 @@ object PorteP1Exporter {
             // Les deux trous de mesure, dans le fichier et pas seulement a l'ecran : une colonne
             // vide dont on ignore pourquoi elle est vide se lit comme une panne.
             appendLine("# not transmitted: largest single gap (only the total reaches the phone)")
-            appendLine("# not transmitted: battery level at the start of the night")
+            appendLine("# battery_pct_at_8h is a least-squares fit on the coulomb counter,")
+            appendLine("# charging points removed, refused below ${PenteBatterie.POINTS_MIN} points")
+            appendLine("#   or ${nombre(PenteBatterie.DUREE_MIN_H, 1)} h of observed discharge")
             appendLine(ENTETE.joinToString(","))
             for ((session, verdict) in sessions.zip(verdicts)) {
-                appendLine(ligne(session, verdict))
+                appendLine(ligne(session, verdict, telemetrie[session.sessionHex].orEmpty()))
             }
         }
     }
 
-    private fun ligne(s: NightSessionEntity, v: PorteP1.VerdictNuit): String {
+    private fun ligne(
+        s: NightSessionEntity,
+        v: PorteP1.VerdictNuit,
+        telemetrie: List<TelemetryPointEntity>,
+    ): String {
         val couverture = Controles.couverture(s)
         val heures = PorteP1.heuresEnregistrees(s)
         val attendus = heures?.let { it * 3_600.0 * s.nominalRateHz }
+        // La meme pente que celle qui a produit `battery_state`, pas une seconde. Un fichier dont
+        // les colonnes de support ne seraient pas celles qui ont porte le verdict serait pire
+        // qu'un fichier sans colonnes de support.
+        val pente = PenteBatterie.de(telemetrie, PorteP1.DUREE_CIBLE_H)
         return listOf(
             v.soiree.toString(),
             s.sessionHex,
@@ -131,6 +157,10 @@ object PorteP1Exporter {
             v.couverture.etat.name,
             s.batteryPctLast?.toString() ?: "",
             Controles.BATTERIE_MIN_PCT.toString(),
+            pente?.pointsRetenus?.toString() ?: "",
+            pente?.pointsSousCharge?.toString() ?: "",
+            pente?.let { nombre(it.penteUahParH, 1) } ?: "",
+            pente?.let { nombre(it.pctA8h, 1) } ?: "",
             v.batterie.etat.name,
             s.fsMeasuredHz?.let { nombre(it, 4) } ?: "",
             s.nominalRateHz.toString(),

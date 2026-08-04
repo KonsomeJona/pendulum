@@ -2,9 +2,11 @@ package com.pendulum.phone.ui.model
 
 import com.pendulum.format.wire.WirePaths
 import com.pendulum.phone.db.NightSessionEntity
+import com.pendulum.phone.db.TelemetryPointEntity
 import com.pendulum.phone.ui.text.Textes
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.Locale
 
 /**
  * La porte P1, rendue **calculable** — c'est-a-dire verifiable sans le souvenir de personne.
@@ -123,7 +125,20 @@ object PorteP1 {
         val franchie: Boolean get() = serieMax >= NUITS_CONSECUTIVES
     }
 
-    fun de(session: NightSessionEntity): VerdictNuit {
+    /**
+     * @param telemetrie les points de `telemetry_point` de cette nuit, ou la liste vide.
+     *
+     * Le defaut est **la liste vide et non un parametre obligatoire**, pour une raison qui n'est
+     * pas la commodite d'appel : une nuit enregistree avant que la telemetrie n'existe — ou par
+     * une montre dont les chunks sont en v1 du format — n'en a pas et n'en aura jamais. Le verdict
+     * doit rester calculable sur elle, avec les trois lectures exactes que `batteryPctLast`
+     * autorise. Ce qu'une liste vide ne doit **pas** produire, c'est un chiffre extrapole : c'est
+     * [PenteBatterie] qui refuse, pas ce fichier qui devine.
+     */
+    fun de(
+        session: NightSessionEntity,
+        telemetrie: List<TelemetryPointEntity> = emptyList(),
+    ): VerdictNuit {
         val zone = runCatching { ZoneId.of(session.zoneId) }.getOrDefault(ZoneId.systemDefault())
         return VerdictNuit(
             sessionHex = session.sessionHex,
@@ -133,7 +148,7 @@ object PorteP1 {
             // produirait deux calendriers dans la meme application.
             soiree = LocalDate.parse(WirePaths.nightKey(session.startWallMs, zone)),
             couverture = couverture(session),
-            batterie = batterie(session),
+            batterie = batterie(session, telemetrie),
             frequence = frequence(session),
         )
     }
@@ -195,36 +210,72 @@ object PorteP1 {
     }
 
     /**
-     * La batterie restante **a huit heures**, et l'inference qu'on a le droit d'en tirer.
+     * La batterie restante **a huit heures**. Deux chemins, et le premier est celui qui decide.
      *
-     * Ce que la base porte est le dernier niveau rapporte par la montre et lui seul : le niveau
-     * de depart n'est stocke nulle part (`night_session` n'a que `batteryPctLast`, la montre
-     * garde sa serie complete et n'en publie que le dernier point). La consommation d'une nuit
-     * n'est donc pas calculable, et l'extrapoler depuis un depart suppose a 100 % reviendrait a
-     * fabriquer le chiffre meme que la porte existe pour mesurer.
+     * ### 1. La pente, quand la telemetrie de la nuit la porte
      *
-     * Restent trois lectures, toutes exactes :
+     * `batteryChargeUah` est regresse sur le temps, points sous charge exclus, et la droite est
+     * evaluee a huit heures : voir [PenteBatterie], qui porte les hypotheses de l'extrapolation et
+     * le nombre de points sous lequel elle refuse de conclure. C'est ce chemin qui rend le critere
+     * mesurable sur une nuit courte — le pourcentage, lui, ne bouge pas d'un palier en une demi-heure
+     * (`docs/fr/BANC-ESSAI.md` §12.4 : `level: 100` aux six pas de mesure) — et **sans garder la
+     * montre sur son socle**, ce qui est la seule facon de mesurer une autonomie.
+     *
+     * Le verdict est alors franc : au-dessus du seuil ou en dessous. L'extrapolation ne rend pas
+     * `INDETERMINE` quand elle aboutit ; c'est [PenteBatterie] qui rend `null` quand elle n'a pas
+     * de quoi conclure, et on retombe alors sur le chemin 2.
+     *
+     * ### 2. Le dernier pourcentage, quand il n'y a que lui
+     *
+     * C'est le cas d'une nuit enregistree avant que la telemetrie n'existe, ou d'une nuit dont la
+     * decharge a ete trop courte ou trop souvent interrompue par une charge. Restent trois
+     * lectures, toutes exactes :
      *  - la nuit a dure huit heures ou plus : le niveau rapporte **est** le niveau a huit heures ;
      *  - la nuit a ete plus courte et le niveau est deja au seuil ou en dessous : il ne remontera
      *    pas, donc la nuit echoue, et l'affirmer ne suppose rien ;
      *  - la nuit a ete plus courte et le niveau tient encore : on ne sait pas, et on le dit.
      *
-     * Le comparateur est **strict** — 20 % pile echoue. C'est la lecture de `01-overview.md` §5
-     * (« battery above 20 % »), et c'est celle de [Controles.BATTERIE_MIN_PCT], ou elle porte sa
-     * justification. Les deux fichiers doivent rendre le meme verdict sur la meme nuit.
+     * Le comparateur est **strict** dans les deux chemins — 20 % pile echoue. C'est la lecture de
+     * `01-overview.md` §5 (« battery above 20 % »), et c'est celle de [Controles.BATTERIE_MIN_PCT],
+     * ou elle porte sa justification. Les deux fichiers doivent rendre le meme verdict sur la meme
+     * nuit, et le chemin emprunte ne doit pas changer la borne.
      */
-    private fun batterie(session: NightSessionEntity): Critere {
+    private fun batterie(
+        session: NightSessionEntity,
+        telemetrie: List<TelemetryPointEntity>,
+    ): Critere {
+        val seuil = Textes.P1.batterieSeuil(Controles.BATTERIE_MIN_PCT, DUREE_CIBLE_H.toInt())
+        val libelle = Textes.Nuits.Detail.BATTERIE_FIN
+
+        PenteBatterie.de(telemetrie, DUREE_CIBLE_H)?.let { p ->
+            return Critere(
+                libelle = libelle,
+                valeur = Textes.P1.batterieExtrapolee(
+                    pct = "%.0f%%".format(Locale.UK, p.pctA8h),
+                    heures = DUREE_CIBLE_H.toInt(),
+                    parHeure = "%.1f%%".format(Locale.UK, p.pctParHeure),
+                    points = p.pointsRetenus,
+                ),
+                seuil = seuil,
+                etat = if (p.pctA8h > Controles.BATTERIE_MIN_PCT) {
+                    Conformite.CONFORME
+                } else {
+                    Conformite.NON_CONFORME
+                },
+            )
+        }
+
         val pct = session.batteryPctLast
         val heures = heuresEnregistrees(session)
         val atteintHuitHeures = heures != null && heures >= DUREE_CIBLE_H
         return Critere(
-            libelle = Textes.Nuits.Detail.BATTERIE_FIN,
+            libelle = libelle,
             valeur = when {
                 pct == null -> TIRET
                 heures == null -> "$pct%"
                 else -> "$pct%  ·  ${Mapping.dureeLisible(heures * 60.0)}"
             },
-            seuil = Textes.P1.batterieSeuil(Controles.BATTERIE_MIN_PCT, DUREE_CIBLE_H.toInt()),
+            seuil = seuil,
             // Le seul des trois criteres qui ne se reduise pas a [verdict] : un niveau tenu ne
             // conclut que si la nuit a effectivement atteint huit heures.
             etat = when (Controles.batterieTenue(pct)) {

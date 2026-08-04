@@ -412,7 +412,12 @@ class PendulumRepository(context: Context) {
      */
     suspend fun rapportP1(limite: Int = PorteP1.NUITS_RAPPORT): RapportP1Ui =
         withContext(Dispatchers.IO) {
-            val verdicts = db.nightDao().all().take(limite).map { PorteP1.de(it) }
+            // La telemetrie est relue nuit par nuit : c'est elle qui rend le critere batterie
+            // decidable. Quatorze nuits font au plus quatorze fois cinq cents lignes, lues une
+            // fois a l'ouverture d'un ecran qui est deja un instantane.
+            val verdicts = db.nightDao().all().take(limite).map {
+                PorteP1.de(it, db.telemetryDao().ofSession(it.sessionHex))
+            }
             RapportP1Ui(nuits = verdicts, campagne = PorteP1.campagne(verdicts))
         }
 

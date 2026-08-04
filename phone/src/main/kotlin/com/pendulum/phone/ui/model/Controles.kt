@@ -40,10 +40,33 @@ object Controles {
      * 99 %, et le corriger demanderait de persister les bornes de `SensorEvent.timestamp` que le
      * format porte deja mais que la base n'extrait pas.
      *
-     * @return la couverture dans `[0, 1]`, ou `null` si la nuit n'a pas de fin connue — une
-     *   session ouverte n'a pas de couverture, elle a une couverture *pour l'instant*.
+     * ### Le numerateur n'existe qu'apres l'analyse, et le taire coutait un faux verdict
+     *
+     * `night_session.sampleCount` est ecrit par `AnalyzeWorker` et par lui seul. Tant qu'il n'a pas
+     * tourne, la colonne vaut 0 — non pas parce qu'aucun echantillon n'est arrive, mais parce que
+     * personne ne les a encore comptes. Ce fichier divisait alors 0 par le denominateur et rendait
+     * `0.0`, que [couvertureTenue] juge `false` : une nuit **non analysee** etait rapportee « hors
+     * P1 ».
+     *
+     * Le defaut n'est pas theorique. Le 3 aout 2026, a la premiere utilisation reelle de la porte,
+     * une nuit de 32 minutes parfaitement transferee — sept chunks, sept accuses, 94 502
+     * echantillons sur le disque du telephone — est sortie `NON_CONFORME` avec
+     * `coverage=0.00000` (`docs/fr/BANC-ESSAI.md` §12.5). L'analyse n'avait pas tourne :
+     * `analyzedAtMs` etait nul cinquante minutes apres la fermeture, l'application etant dans le
+     * seau de veille `RESTRICTED` ou elle atterrit parce que personne ne l'ouvre jamais — ce qui
+     * est **exactement** le cas d'usage decrit par le produit.
+     *
+     * Le test est donc `analyzedAtMs`, et non `sampleCount > 0` : une nuit analysee dont l'analyse
+     * n'a effectivement retenu aucun echantillon a une couverture de 0 %, et celle-la est vraie.
+     * Distinguer les deux est tout l'objet des trois etats de [PorteP1.Conformite] — « on ne sait
+     * pas » n'est pas une commodite.
+     *
+     * @return la couverture dans `[0, 1]` ; `null` si la nuit n'a pas de fin connue — une session
+     *   ouverte n'a pas de couverture, elle a une couverture *pour l'instant* — ou si l'analyse
+     *   n'a pas encore tourne, auquel cas le numerateur n'a pas ete compte.
      */
     fun couverture(session: NightSessionEntity): Double? {
+        if (session.analyzedAtMs == null) return null
         val fin = session.endWallMs ?: return null
         val dureeMs = fin - session.startWallMs
         if (dureeMs <= 0 || session.nominalRateHz <= 0) return null

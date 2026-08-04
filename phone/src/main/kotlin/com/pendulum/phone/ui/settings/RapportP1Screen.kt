@@ -104,6 +104,11 @@ fun RapportP1Screen(
         PendulumCard {
             Paragraphe(Textes.P1.INTRO)
             Spacer(Modifier.height(Spacing.s.dp))
+            // Le chiffre de batterie est extrapole quand la nuit porte de la telemetrie. Un
+            // pourcentage extrapole ressemble a un pourcentage mesure : ce qu'il suppose est ecrit
+            // a cote de lui, sur le meme ecran, et pas seulement dans une KDoc.
+            Paragraphe(Textes.P1.BATTERIE_EXTRAPOLATION)
+            Spacer(Modifier.height(Spacing.s.dp))
             Paragraphe(Textes.P1.NON_TRANSMIS)
         }
 

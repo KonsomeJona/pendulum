@@ -379,6 +379,11 @@ object ApercuDonnees {
             modeFlags = 0,
             state = "CLOSED",
             batteryPctLast = batterie,
+            // Sans cette date la couverture est `null` — une nuit non analysee n'a pas de
+            // numerateur — et l'apercu montrerait trois tirets a la place des trois chiffres qu'il
+            // existe pour montrer. C'est le comportement voulu du produit, pas un contournement :
+            // ces trois nuits d'apercu **ont** ete analysees.
+            analyzedAtMs = debut + dureeMs + 1_800_000L,
             fsMeasuredHz = fs,
             sampleCount = (dureeMs * cadence / 1000.0 * couverture).toLong(),
             gapCount = 3,

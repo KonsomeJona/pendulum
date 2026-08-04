@@ -1224,6 +1224,18 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
          */
         fun batterieSeuil(pct: Int, heures: Int) = "above $pct% at $heures h"
 
+        /**
+         * La valeur du critere batterie quand elle vient de la pente du compteur coulombmetrique
+         * et non du dernier pourcentage.
+         *
+         * Elle porte les trois choses ensemble — le niveau extrapole, la consommation moyenne, et
+         * **sur combien de points** la droite a ete ajustee — parce qu'un chiffre extrapole sans
+         * son support se lit comme un chiffre mesure. Trente points et quatre cents points donnent
+         * la meme phrase si on ne l'ecrit pas.
+         */
+        fun batterieExtrapolee(pct: String, heures: Int, parHeure: String, points: Int) =
+            "$pct at $heures h, extrapolated  ·  $parHeure per hour over $points points"
+
         fun frequenceSeuil(nominalHz: Int, tolerance: String) = "$nominalHz Hz ± $tolerance"
 
         const val CONFORME = "meets P1"
@@ -1259,11 +1271,27 @@ Note down the strap hole you use: Pendulum will remind you of it at bedtime."""
          * croire que le controle n'existe pas ; un tiret explique dit qu'il n'est pas transmis.
          */
         const val NON_TRANSMIS =
-            "Two figures are missing and are shown as a dash. The largest single gap is measured " +
-                "on the watch, but only the total reaches the phone. Battery use over the night " +
-                "cannot be scaled to eight hours either: only the level at the end of the night " +
-                "is stored, never the level at the start — so a night shorter than eight hours " +
-                "answers the battery criterion only when it is already under the threshold."
+            "One figure is still missing and is shown as a dash: the largest single gap is " +
+                "measured on the watch, but only the total reaches the phone."
+
+        /**
+         * Ce que le chiffre de batterie suppose, ecrit a cote de lui.
+         *
+         * Un pourcentage extrapole ressemble a un pourcentage mesure. La phrase dit donc les trois
+         * hypotheses que `PenteBatterie` porte dans sa KDoc — droite ajustee sur le compteur en
+         * micro-amperes-heures, points sous charge retires, capacite pleine estimee sur la nuit
+         * elle-meme — et le fait qu'en dessous d'une demi-heure de decharge la ligne rend un tiret
+         * plutot qu'une droite tracee sur trop peu.
+         */
+        const val BATTERIE_EXTRAPOLATION =
+            "When the night carries device telemetry, the battery criterion is answered by " +
+                "fitting a line to the coulomb counter in microampere-hours, not by reading the " +
+                "last percentage: a percentage does not move over a short night. Points recorded " +
+                "while the watch was on its charger are removed, and full capacity is estimated " +
+                "from the night itself. Below half an hour of continuous discharge the line is " +
+                "refused and the criterion reads “not decidable” — a slope over three points is " +
+                "not a slope. Nights recorded before telemetry existed still answer with the " +
+                "level at the end of the night alone."
 
         const val EXPORTER = "Export as CSV"
         const val NOM_FICHIER = "pendulum-p1.csv"
