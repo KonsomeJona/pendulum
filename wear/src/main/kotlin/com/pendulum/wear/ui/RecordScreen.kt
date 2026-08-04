@@ -49,6 +49,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import com.pendulum.format.wire.StopReason
 import com.pendulum.wear.R
+import com.pendulum.wear.record.estUnePanne
 import com.pendulum.wear.record.Issue
 import com.pendulum.wear.record.IssueId
 import com.pendulum.wear.record.Preflight
@@ -292,11 +293,13 @@ private fun IdleContent(
         )
     }
 
-    // Les bloqueurs en premier, en rouge : ils sont la seule chose a lire quand ils existent.
+    // Les bloqueurs en premier : ils sont la seule chose a lire quand ils existent. Rouge s'ils
+    // decrivent une panne, ambre s'ils decrivent une etape que l'utilisateur n'a pas encore
+    // faite — voir `IssueId.estUnePanne`, qui porte la regle et la raison.
     preflight.blockers.forEach { issue ->
         Text(
             text = issueText(issue),
-            color = MaterialTheme.colors.error,
+            color = if (issue.id.estUnePanne) MaterialTheme.colors.error else Amber,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.body2,
         )

@@ -363,10 +363,26 @@ fun ErrorCard(
 }
 
 /**
- * Un bouton dont le motif d'indisponibilite est ecrit **sur le bouton lui-meme**.
+ * Un bouton grise qui dit **pourquoi** il l'est, sans jamais cesser de dire **ce qu'il fait**.
  *
  * Jamais un bouton actif qui echoue, jamais un bouton grise sans explication : l'utilisateur qui
  * appuie sur « Exporter » et recoit une erreur apprend a se mefier de tous les boutons.
+ *
+ * ### Pourquoi le motif est sous le bouton et non dessus
+ *
+ * La premiere version ecrivait le motif **a la place** du libelle. Vu sur appareil, le resultat
+ * est illisible des que le motif ne parle pas du bouton lui-meme :
+ *
+ * - a l'etape 4 de l'assistant, deux boutons empiles affichaient « Allow Health Connect » et
+ *   « Allow Health Connect first » — le second etant *Continuer*, dont le motif nommait le
+ *   premier. Rien ne permettait de savoir lequel faisait quoi ;
+ * - a l'accueil, les cartes « Fin de nuit » et « Historique » enoncent deja leur situation en
+ *   titre. Le bouton la repetait mot pour mot, deux fois a 200 px d'ecart.
+ *
+ * Un bouton dont le libelle change selon son etat cesse d'etre reconnaissable : c'est la meme
+ * raison qui interdit ailleurs de deplacer les cartes de l'accueil selon l'heure. Le libelle est
+ * donc invariant, et le motif prend une ligne sous le bouton — presente, lue, et jamais confondue
+ * avec l'action.
  */
 @Composable
 fun BoutonMotive(
@@ -376,19 +392,28 @@ fun BoutonMotive(
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
-    Button(
-        onClick = onClick,
-        enabled = motifIndisponible == null,
-        shape = PendulumShapes.button,
-        modifier = modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = c.accent,
-            contentColor = c.onAccent,
-            disabledContainerColor = c.surfaceMuted,
-            disabledContentColor = c.textTertiary,
-        ),
-    ) {
-        Text(motifIndisponible ?: libelle, style = PendulumType.body)
+    Column(modifier.fillMaxWidth()) {
+        Button(
+            onClick = onClick,
+            enabled = motifIndisponible == null,
+            shape = PendulumShapes.button,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = c.accent,
+                contentColor = c.onAccent,
+                disabledContainerColor = c.surfaceMuted,
+                disabledContentColor = c.textTertiary,
+            ),
+        ) {
+            Text(libelle, style = PendulumType.body)
+        }
+        motifIndisponible?.let {
+            Spacer(Modifier.height(Spacing.xs.dp))
+            // `textSecondary` et non `textTertiary` : le motif est la seule chose qui explique un
+            // bouton mort, et `ContrasteTexteTest` ne garantit 4,5:1 pour le tertiaire que sur
+            // les surfaces pleines. Voir la KDoc de `PendulumColors`.
+            Text(it, style = PendulumType.caption, color = c.textSecondary)
+        }
     }
 }
 

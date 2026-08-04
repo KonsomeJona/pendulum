@@ -211,6 +211,39 @@ enum class IssueId {
     PENDING_SYNC,
 }
 
+/**
+ * Ce qui est **casse**, par opposition a ce qui n'est **pas encore fait**.
+ *
+ * Bloquer le demarrage et etre une panne sont deux choses differentes, et la couleur encode la
+ * seconde, pas la premiere. La regle est celle de `PendulumColors` cote telephone : le rouge est
+ * reserve a ce qui est casse ; une situation que l'utilisateur peut lever lui-meme est ambre.
+ *
+ * Le defaut repare ici se voyait en mettant les deux ecrans cote a cote : pour le **meme** fait —
+ * le contexte du soir pas encore scelle — le telephone affichait de l'ambre et la montre du rouge.
+ * Deux appareils, deux verdicts, un seul etat. Le telephone avait raison : remplir un formulaire
+ * qu'on n'a pas encore rempli n'est pas une panne.
+ *
+ * `NO_ACCELEROMETER`, `STORAGE_FULL` et `FGS_REFUSED` restent rouges : l'utilisateur ne peut rien
+ * y faire depuis cet ecran. `BENCH_SCALE_MISMATCH` aussi — une compilation de banc branchee sur le
+ * vrai capteur produirait des mesures fausses, et c'est le pire cas silencieux du projet.
+ */
+val IssueId.estUnePanne: Boolean
+    get() = when (this) {
+        IssueId.NO_ACCELEROMETER,
+        IssueId.STORAGE_FULL,
+        IssueId.FGS_REFUSED,
+        IssueId.BENCH_SCALE_MISMATCH -> true
+
+        IssueId.CONTEXT_NOT_SEALED,
+        IssueId.NOTIFICATIONS_DENIED -> false
+
+        // Les avertissements sont ambre par construction ; la question ne se pose pas pour eux.
+        IssueId.LOW_BATTERY,
+        IssueId.PHONE_UNREACHABLE,
+        IssueId.NO_WAKEUP_SENSOR,
+        IssueId.PENDING_SYNC -> false
+    }
+
 /** Un probleme et ses arguments deja formates. Les libelles vivent dans `strings.xml`. */
 data class Issue(val id: IssueId, val args: List<String> = emptyList())
 
