@@ -38,6 +38,12 @@ object WatchNotifications {
      * geste : le preflight est reevalue a l'ouverture, donc un espace disque devenu insuffisant
      * entre le scellement et le tap est vu avant que la nuit ne commence, pas apres.
      */
+    // `notify` est garde par `peutNotifier` des la premiere ligne, mais lint ne suit pas une garde
+    // a travers un appel de fonction : `PermissionDetector` n'analyse que le corps de la methode
+    // appelante. Inliner le `checkSelfPermission` ici satisferait lint et laisserait la raison de
+    // la garde sans domicile — c'est la KDoc de `peutNotifier` qui la porte, et elle vaut plus que
+    // le warning. Meme forme, meme motif dans `phone/notify/Notifications.kt`.
+    @android.annotation.SuppressLint("MissingPermission")
     fun pretADemarrer(ctx: Context) {
         if (!peutNotifier(ctx)) return
         creerCanal(ctx)

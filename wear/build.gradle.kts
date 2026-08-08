@@ -16,8 +16,12 @@ android {
         applicationId = "com.pendulum"
         minSdk = 33
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Voir le `build.gradle.kts` de la racine : une seule definition pour les deux
+        // applications, injectee depuis le tag Git en publication. Les deux modules doivent porter
+        // la meme valeur — le Data Layer n'echange qu'entre paquets de meme `applicationId`, et une
+        // montre plus recente que son telephone est une situation qu'on veut pouvoir lire.
+        versionCode = rootProject.extra["pendulumVersionCode"] as Int
+        versionName = rootProject.extra["pendulumVersionName"] as String
 
         // Tests instrumentes. Ils n'existaient pas ici, et le banc les ajoutait par un correctif
         // applique a ce fichier au vol — un correctif « a ne pas commiter », donc un correctif

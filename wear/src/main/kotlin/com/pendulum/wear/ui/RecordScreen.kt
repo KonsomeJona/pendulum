@@ -285,8 +285,15 @@ private fun IdleContent(
     onOuvrirLeTelephone: () -> Unit,
     ouverture: OuvertureTelephone,
 ) {
+    // Le titre suit le verdict du preflight. Tant qu'il n'a pas rendu son avis (`null`), on ne
+    // sait pas encore si le depart est possible et on ne prejuge de rien : « Ready » reste, comme
+    // avant. Des qu'un bloqueur est connu, le titre le dit, sinon il contredit la ligne qui le
+    // suit et le bouton grise qui la suit encore.
     Text(
-        text = stringResource(R.string.idle_title),
+        text = stringResource(
+            if (preflight != null && !preflight.canStart) R.string.idle_title_blocked
+            else R.string.idle_title
+        ),
         style = MaterialTheme.typography.title2,
     )
 
