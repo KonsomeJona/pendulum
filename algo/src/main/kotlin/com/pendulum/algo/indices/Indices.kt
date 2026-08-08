@@ -8,7 +8,6 @@ import com.pendulum.algo.model.PiResult
 import com.pendulum.algo.model.PlmSeries
 import com.pendulum.algo.model.PlmiResult
 import com.pendulum.algo.model.PublicationGate
-import com.pendulum.algo.model.RespiratoryConfidence
 import com.pendulum.algo.model.RhythmResult
 import com.pendulum.algo.model.SeriesRule
 import com.pendulum.algo.model.SleepMask
@@ -204,8 +203,6 @@ object Plmi {
      * Ordre des refus, du plus dur au plus doux :
      *  - masque accélérométrique non convergent → aucun PLMI (§3.6.3, couche 2 : une nuit où
      *    mouvement et immobilité ne se séparent pas ne produit pas de chiffre publiable) ;
-     *  - `RespiratoryConfidence.LOW` → aucun PLMI (§3.5 : « non interprétable sans polygraphie
-     *    respiratoire ». Un chiffre faux affiché est pire que pas de chiffre) ;
      *  - moins de [PlmiConfig.minTstAnyMin] de sommeil analysable → aucun PLMI (§3.7.2) ;
      *  - nuit tronquée, ou moins de [PlmiConfig.minTstFullMin] → publié mais **hors tendance**
      *    (le PLMI d'une nuit tronquée est biaisé à la hausse de façon non corrigeable) ;
@@ -217,14 +214,12 @@ object Plmi {
     fun publicationGate(
         mask: SleepMask,
         truncated: Boolean,
-        respiratory: RespiratoryConfidence,
         cfg: PlmiConfig = PlmiConfig(),
     ): PublicationGate {
         // Le point fixe n'existe que pour un masque dérivé de l'accéléromètre ; un masque HC ou
         // journal n'a rien à faire converger et doit rapporter `fixedPointConverged = true`.
         val hasFixedPoint = mask.source == MaskSource.ACCEL_IMMOBILITY || mask.source == MaskSource.FUSED
         if (hasFixedPoint && !mask.fixedPointConverged) return PublicationGate.NO_PLMI
-        if (respiratory == RespiratoryConfidence.LOW) return PublicationGate.NO_PLMI
         if (!(mask.analysableTstMin >= cfg.minTstAnyMin)) return PublicationGate.NO_PLMI
         if (truncated) return PublicationGate.TRUNCATED_NO_TREND
         if (mask.analysableTstMin < cfg.minTstFullMin) return PublicationGate.TRUNCATED_NO_TREND
@@ -253,7 +248,6 @@ object Plmi {
         mask: SleepMask,
         fsHz: Double,
         rule: SeriesRule,
-        respiratory: RespiratoryConfidence,
         pi: PiResult,
         rhythm: RhythmResult,
         floorMode: FloorMode,
@@ -267,6 +261,27 @@ object Plmi {
         val retained = clms.filter { it.isClm }
         val lookup = SleepLookup(mask.windows)
 
+        // Traduction des index de series, faite **ici** et nulle part ailleurs.
+        //
+        // `SeriesBuilder` indexe ses series sur la liste qu'on lui donne, rejets compris — il en a
+        // besoin, un mouvement trop long doit casser la serie a l'endroit ou il tombe. Les comptes
+        // ci-dessous, eux, portent sur les seuls retenus. Les deux bases coincident tant qu'aucun
+        // evenement n'est rejete, et divergent des le premier.
+        //
+        // Ce decalage a produit un defaut couteux : les deux bases sont des `Int`, ni le
+        // compilateur ni la relecture ne voyaient la difference, et la conversion vivait chez
+        // l'appelant — ecrite dans le harnais de test, absente de la production. Les tests
+        // validaient donc un cablage que l'application n'avait pas.
+        //
+        // La corriger chez l'appelant ne suffisait pas : sur trois appelants, deux y pensaient et
+        // le troisieme non. C'est ici qu'elle doit vivre, parce que cette fonction recoit **les
+        // deux** entrees necessaires — la liste complete et les series — et qu'un appelant n'a
+        // donc plus rien a savoir. Il n'y a plus qu'une seule base d'index a l'entree : celle de
+        // `clms`, telle que `SeriesBuilder` la produit.
+        val versRetenus = IntArray(clms.size) { -1 }
+        var rang = 0
+        for (i in clms.indices) if (clms[i].isClm) { versRetenus[i] = rang++ }
+
         // --- Appartenance aux séries -----------------------------------------------------
         val inSeries = BooleanArray(retained.size)
         // Marquage des CLM appartenant a une serie dont l'IMI median tombe dans la bande apneique.
@@ -276,9 +291,12 @@ object Plmi {
             val suspect = medianImi.isFinite() &&
                 medianImi >= cfg.respSuspectImiLowSec && medianImi <= cfg.respSuspectImiHighSec
             for (idx in s.clmIndices) {
-                if (idx < 0 || idx >= retained.size) continue
-                inSeries[idx] = true
-                if (suspect) respSuspect[idx] = true
+                // `-1` = evenement rejete. `SeriesBuilder` n'en met jamais dans une serie, mais on
+                // ne le suppose pas : on l'ignore plutot que d'inventer une correspondance.
+                val k = versRetenus.getOrElse(idx) { -1 }
+                if (k < 0) continue
+                inSeries[k] = true
+                if (suspect) respSuspect[k] = true
             }
         }
 
@@ -384,9 +402,8 @@ object Plmi {
             imiBinEdgesSec = edges,
             truncatedSeriesDropped = truncatedSeriesDropped,
             plmiRespWorstCase = plmiRespWorstCase,
-            respiratoryConfidence = respiratory,
             independence = mask.independence,
-            gate = publicationGate(mask, truncated, respiratory, cfg),
+            gate = publicationGate(mask, truncated, cfg),
             floorMode = floorMode,
             paramsHash = paramsHash,
         )

@@ -117,7 +117,7 @@ object Thresholds {
      * Courbes completes sur toute la nuit.
      *
      * @param gainCalG gain de calibration de la nuit ; `0` ou `NaN` desactive le troisieme terme
-     *   (cas `GainSource.NONE`, ou le rituel manque et ou aucun mouvement corporel grossier n'a
+     *   (cas `GainSource.NONE`, ou aucun mouvement corporel grossier n'a
      *   ete observe). Le seuil se replie alors sur `max(k_on x floor, Theta_abs)`, ce qui reste
      *   correct — mais la nuit n'est plus comparable aux nuits calibrees, et c'est
      *   `NightCalibration.gainSource` qui doit accompagner le resultat publie.

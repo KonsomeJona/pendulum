@@ -12,7 +12,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Paramètres de la fusion (`docs/ALGO-v2.md` §3.6.4, tableau §6.6).
+ * Paramètres de la fusion (`docs/fr/ALGO-v2.md` §3.6.4, tableau §6.6).
  *
  * @param maxLagMs demi-plage de recherche du décalage, ±10 min par défaut (plage 300–900 s).
  * @param lagStepMs pas de la recherche. Vaut la durée d'une époque : chercher plus fin que la
@@ -38,7 +38,7 @@ private const val UNDEFINED: Byte = -1
 
 /**
  * Fusion du masque accélérométrique avec un hypnogramme externe et/ou un journal manuel
- * (`docs/ALGO-v2.md` §3.6.4 et §3.6.5).
+ * (`docs/fr/ALGO-v2.md` §3.6.4 et §3.6.5).
  *
  * **La raison d'être de ce fichier est l'indépendance du dénominateur, pas la précision.**
  * `aPLM-i = numérateur(mouvement) / dénominateur(sommeil déduit de l'absence de mouvement)` : les

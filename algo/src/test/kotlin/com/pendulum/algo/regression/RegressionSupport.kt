@@ -19,7 +19,6 @@ import com.pendulum.algo.model.GainSource
 import com.pendulum.algo.model.NightCalibration
 import com.pendulum.algo.model.PlmiResult
 import com.pendulum.algo.model.PostureChange
-import com.pendulum.algo.model.RespiratoryConfidence
 import com.pendulum.algo.model.SampleBlock
 import com.pendulum.algo.model.SeriesRule
 import com.pendulum.algo.model.SleepMask
@@ -43,7 +42,7 @@ import kotlin.math.exp
 import kotlin.math.ln
 
 /**
- * Outillage commun de la suite de non-regression du tableau `docs/ALGO-v2.md` §5.5.
+ * Outillage commun de la suite de non-regression du tableau `docs/fr/ALGO-v2.md` §5.5.
  *
  * Trois choses y sont fixees une fois pour toutes, parce qu'elles conditionnent la lecture de tous
  * les seuils :
@@ -174,28 +173,27 @@ internal class Analysis(
 
     private fun indexOf(events: List<Clm>, rule: SeriesRule): PlmiResult {
         val cfg = if (rule == SeriesRule.AASM_V3) SeriesConfig.aasmV3() else SeriesConfig.wasm2016()
-        // `SeriesBuilder` recoit TOUS les evenements — il a besoin des `LM_LONG` et des `TRUNCATED`
-        // pour casser les series au bon endroit — mais indexe ses series sur la liste telle que
-        // fournie, tandis que `Plmi.compute` interprete `clmIndices` sur la liste des seuls retenus.
-        // Les deux contrats different : on re-indexe ici plutot que d'affaiblir l'un des deux appels.
         val built = SeriesBuilder.buildDetailed(events, mask, FS, cfg)
-        val toRetained = IntArray(events.size) { -1 }
-        var r = 0
-        for (i in events.indices) if (events[i].isClm) { toRetained[i] = r; r++ }
-        val series = built.series.map { s ->
-            s.copy(clmIndices = s.clmIndices.map { toRetained[it] }.filter { it >= 0 }.toIntArray())
-        }
 
-        val kept = events.filter { it.isClm }
-        val pi = Periodicity.ferriIndex(kept, mask, FS)
-        val rhythm = Rhythm.fromClms(kept, mask)
+        // `events` et non la liste filtree. `clms` est **la liste complete**, celle qu'on vient de
+        // donner a `SeriesBuilder`, et `Plmi.compute` fait lui-meme la traduction vers les retenus.
+        //
+        // Ce harnais passait la liste filtree tout en donnant des series indexees sur la liste
+        // complete : les deux bases ne coincidaient pas, et le decalage etait silencieux. T6 l'a
+        // attrape des le premier essai apres que la traduction soit descendue dans `compute` —
+        // c'est precisement ce que le nouveau contrat rend impossible a ecrire sans le voir.
+        //
+        // `ferriIndex` et `fromClms` filtrent en interne : les deux formes leur sont equivalentes.
+        // On leur passe la meme liste qu'a `compute` pour qu'il n'y ait qu'une seule reponse a la
+        // question « qu'est-ce qu'on passe ici ? ».
+        val pi = Periodicity.ferriIndex(events, mask, FS)
+        val rhythm = Rhythm.fromClms(events, mask)
         return Plmi.compute(
-            clms = kept,
-            series = series,
+            clms = events,
+            series = built.series,
             mask = mask,
             fsHz = FS,
             rule = rule,
-            respiratory = RespiratoryConfidence.HIGH,
             pi = pi,
             rhythm = rhythm,
             floorMode = FloorMode.BILATERAL,
@@ -242,7 +240,7 @@ internal fun analyseBlocks(
         gainCalG = if (calibrated) night.truth.gainCalG else Float.NaN,
         floorCalG = night.truth.floorG.toFloat(),
         snrCal = Float.NaN,
-        gainSource = if (calibrated) GainSource.RITUAL else GainSource.NONE,
+        gainSource = if (calibrated) GainSource.GROSS_BODY else GainSource.NONE,
         outlierVsBaseline = false,
     )
 

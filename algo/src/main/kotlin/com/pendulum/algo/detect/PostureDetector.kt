@@ -7,7 +7,7 @@ import com.pendulum.algo.model.Segment
 import com.pendulum.algo.model.TriAxial
 
 /**
- * Parametres du detecteur de posture (`docs/ALGO-v2.md` §6.4). Aucun n'est marque « fixe ».
+ * Parametres du detecteur de posture (`docs/fr/ALGO-v2.md` §6.4). Aucun n'est marque « fixe ».
  *
  * @param tauSec demi-fenetre de comparaison de `g` (plage 1,0-3,0).
  * @param postureDeg seuil de rotation persistante, en degres (plage 12-30).
@@ -24,7 +24,7 @@ data class PostureConfig(
 )
 
 /**
- * Detection des changements de posture. Transcription de `docs/ALGO-v2.md` §3.1, parametres §6.4.
+ * Detection des changements de posture. Transcription de `docs/fr/ALGO-v2.md` §3.1, parametres §6.4.
  *
  * Pourquoi ce detecteur existe : un retournement change la projection de la gravite d'un axe de
  * jusqu'a **1 g** en 0,5-3 s. Passe dans le passe-haut a 0,5 Hz, cet echelon produit un transitoire

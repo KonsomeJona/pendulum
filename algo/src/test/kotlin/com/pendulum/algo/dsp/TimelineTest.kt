@@ -89,10 +89,14 @@ class TimelineTest {
 
     @Test
     fun `le reechantillonnage d une source a 52 Hz reste fidele a 3 Hz`() {
-        // §2 etape 0 annonce « moins de 0,2 % d'attenuation a 3 Hz » ; l'erreur point a point
-        // d'une interpolation lineaire y est en realite bornee par (pi f T)^2 / 2 = 1,6 %, la
-        // valeur de 0,2 % ne pouvant concerner que l'attenuation moyenne d'enveloppe. On asserte
-        // donc la borne verifiable : erreur instantanee sous 3 %.
+        // §2 etape 0 borne l'attenuation point a point d'une interpolation lineaire a 3 Hz par
+        // (pi f T)^2 / 2, soit au plus 1,8 %. On asserte la borne verifiable : erreur instantanee
+        // sous 3 %.
+        //
+        // Ce commentaire citait « moins de 0,2 % » comme une annonce de la specification, et
+        // proposait de la sauver en la lisant comme une attenuation *moyenne d'enveloppe*. Les
+        // deux sont caduques : la specification a retire ce chiffre le 2026-07-31, et l'encadre
+        // de correction refute nommement l'echappatoire de la moyenne, qui vaut ~1,1 %.
         val fsSrc = 52.0
         val t0 = 1_000_000_000L
         val f = 3.0

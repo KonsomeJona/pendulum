@@ -9,7 +9,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * T6, T7 et T22 du tableau `docs/ALGO-v2.md` §5.5 — la nuit nominale, la nuit negative, et le
+ * T6, T7 et T22 du tableau `docs/fr/ALGO-v2.md` §5.5 — la nuit nominale, la nuit negative, et le
  * sous-comptage que la nuit nominale rend mesurable.
  *
  * **Le point conceptuel de T6 est le denominateur du score, et il a bouge deux fois.**

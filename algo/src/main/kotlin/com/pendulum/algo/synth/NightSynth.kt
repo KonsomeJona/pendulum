@@ -14,7 +14,6 @@ import com.pendulum.algo.model.PlmiResult
 import com.pendulum.algo.model.RhythmResult
 import com.pendulum.algo.model.GapKind
 import com.pendulum.algo.model.MaskSource
-import com.pendulum.algo.model.RespiratoryConfidence
 import com.pendulum.algo.model.SampleBlock
 import com.pendulum.algo.model.SeriesRule
 import com.pendulum.algo.model.SimpleBlock
@@ -31,7 +30,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Generateur de nuits synthetiques a verite terrain injectee. `docs/ALGO-v2.md` §5.
+ * Generateur de nuits synthetiques a verite terrain injectee. `docs/fr/ALGO-v2.md` §5.
  *
  * Deterministe : meme `seed` -> sortie **bit-identique** (test T13). Aucune horloge, aucune source
  * d'alea non grainee, aucun `hashCode` d'objet dans le chemin de generation.
@@ -44,7 +43,7 @@ import kotlin.math.sqrt
  *     validerait le detecteur contre un signal qui n'existe pas.
  *  2. **Les distracteurs sont generes avec le meme soin que le signal utile.** Un generateur docile
  *     produit un detecteur qui ne marche que sur lui — c'est le defaut F-21 de
- *     `docs/REVUE-CRITIQUE.md`, « validation circulaire ». Les douze familles de §5.2 sont donc
+ *     `docs/fr/REVUE-CRITIQUE.md`, « validation circulaire ». Les douze familles de §5.2 sont donc
  *     toutes rendues physiquement, y compris celles qui font mal (posture a 120 degres, sonnerie de
  *     matelas a la limite du seuil de morphologie, saut de gain en cours de nuit).
  */
@@ -704,8 +703,26 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     /**
-     * Rituel de calibration de §3.3 volet B, rendu avec la meme physique : `gainCal` est la crete
-     * d'enveloppe grossiere d'une dorsiflexion volontaire confortable, couplage de la nuit compris.
+     * Gain de calibration de reference : la crete d'enveloppe grossiere d'une dorsiflexion
+     * volontaire confortable, couplage de la nuit compris.
+     *
+     * ### Ecart connu entre ce generateur et la production, a lire avant d'interpreter un seuil
+     *
+     * Ce rendu simule le **rituel guide** — un geste impose, d'amplitude choisie, execute au
+     * coucher. Ce rituel a ete retire de la production le 2026-08-05 (voir `Calibration.kt`) : il
+     * n'avait jamais ete branche. La production derive donc son `gainCal` des **retournements du
+     * corps**, qui sont un geste subi, plus variable et mesure au milieu de la nuit plutot qu'a
+     * son debut.
+     *
+     * Conclusion a garder en tete : toute la suite de non-regression tourne sur un gain de
+     * calibration **plus propre que celui que l'application obtient reellement**. Ce n'est pas
+     * anodin — c'est la meme forme de defaut que celui qui avait fait diverger l'indexation des
+     * series, ou le harnais mesurait un cablage que la production n'avait pas.
+     *
+     * Il n'est pas corrige ici, et volontairement : rebaser le generateur sur les retournements
+     * deplacerait les valeurs de reference de T1 a T22 d'un montant que personne n'a mesure. La
+     * bonne sequence est de mesurer d'abord l'ecart, puis de decider — pas de bouger vingt seuils
+     * pour faire disparaitre un commentaire genant.
      */
     private fun renderRitualGain(): Float {
         val r = spec.ritual
@@ -942,7 +959,6 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             mask = mask,
             fsHz = TARGET_FS_HZ,
             rule = rule,
-            respiratory = RespiratoryConfidence.HIGH,
             pi = pi,
             rhythm = rhythm,
             floorMode = FloorMode.BILATERAL,

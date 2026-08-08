@@ -7,7 +7,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * T5 du tableau `docs/ALGO-v2.md` §5.5 — courbe de sensibilite en amplitude.
+ * T5 du tableau `docs/fr/ALGO-v2.md` §5.5 — courbe de sensibilite en amplitude.
  *
  * **Ce que ce test verifie vraiment, et pourquoi son abscisse est ce qu'elle est.** L'enonce dit
  * « Se dans [0,35 ; 0,65] a 8x le plancher (le seuil, par construction) ». Or le seuil de

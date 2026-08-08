@@ -1,12 +1,12 @@
 package com.pendulum.algo.synth
 
 /**
- * Parametres d'une nuit synthetique. Transcription de `docs/ALGO-v2.md` §5.2, etendue aux douze
+ * Parametres d'une nuit synthetique. Transcription de `docs/fr/ALGO-v2.md` §5.2, etendue aux douze
  * familles de distracteurs du tableau du meme paragraphe.
  *
  * Tout est parametrable et rien n'a de valeur cachee : c'est le generateur qui sert de **reference**
  * a l'ensemble de l'algorithme, et un generateur dont on ne peut pas durcir un distracteur ne
- * prouve rien (defaut F-21 de `docs/REVUE-CRITIQUE.md`, « validation circulaire »).
+ * prouve rien (defaut F-21 de `docs/fr/REVUE-CRITIQUE.md`, « validation circulaire »).
  */
 
 /** Echelle sur laquelle se lit l'amplitude tiree pour un mouvement. */

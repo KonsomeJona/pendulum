@@ -15,7 +15,7 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Paramètres du masque d'immobilité (`docs/ALGO-v2.md` §3.6.2, tableau §6.6).
+ * Paramètres du masque d'immobilité (`docs/fr/ALGO-v2.md` §3.6.2, tableau §6.6).
  *
  * @param epochSec durée d'une époque. **Fixe** dans le tableau §6.6 (van Hees 2015), mais laissé
  *   constructible parce que les tests doivent pouvoir descendre la grille sans réécrire le module.
@@ -68,7 +68,7 @@ data class FixedPointResult(
 
 /**
  * Étape 6 — masque de sommeil accélérométrique, règle d'**inactivité soutenue de type van Hees**
- * (`docs/ALGO-v2.md` §3.6.2), adaptée à la cheville et rendue invariante par orientation.
+ * (`docs/fr/ALGO-v2.md` §3.6.2), adaptée à la cheville et rendue invariante par orientation.
  *
  * **Ce que ce fichier n'implémente pas, et pourquoi.** Cole-Kripke est rejeté (§3.6.1), sans
  * variante ni « adaptation » : il consomme des *activity counts* ActiGraph — une transformation

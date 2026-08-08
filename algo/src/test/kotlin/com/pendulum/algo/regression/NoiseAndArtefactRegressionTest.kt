@@ -10,7 +10,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * T1 a T4 du tableau `docs/ALGO-v2.md` §5.5 — les quatre scenarios **negatifs**.
+ * T1 a T4 du tableau `docs/fr/ALGO-v2.md` §5.5 — les quatre scenarios **negatifs**.
  *
  * Ce sont les tests les plus importants de la suite et les moins spectaculaires : un detecteur qui
  * echoue ici ne mesure pas des mouvements periodiques, il mesure du bruit ambiant. Chacun tourne sur

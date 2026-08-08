@@ -1,7 +1,7 @@
 package com.pendulum.algo.model
 
 /**
- * Types partages du module `algo`. Transcription de `docs/ALGO-v2.md` §4.1.
+ * Types partages du module `algo`. Transcription de `docs/fr/ALGO-v2.md` §4.1.
  *
  * Regles du module :
  *  - fonctions pures, aucune I/O, aucune horloge murale, `fs` toujours explicite ;
@@ -312,7 +312,7 @@ data class SensorCalibration(
     }
 }
 
-enum class GainSource { RITUAL, GROSS_BODY, NONE }
+enum class GainSource { GROSS_BODY, NONE }
 
 data class NightCalibration(
     val sensor: SensorCalibration?,
@@ -325,8 +325,6 @@ data class NightCalibration(
 )
 
 // --- Resultats ---
-
-enum class RespiratoryConfidence { HIGH, MEDIUM, LOW }
 
 enum class FloorMode { BILATERAL, CAUSAL_LAGGED }
 
@@ -412,7 +410,6 @@ data class PlmiResult(
     val imiBinEdgesSec: FloatArray,
     val truncatedSeriesDropped: Int,
     val plmiRespWorstCase: Double,
-    val respiratoryConfidence: RespiratoryConfidence,
     val independence: DenominatorIndependence,
     val gate: PublicationGate,
     val floorMode: FloorMode,

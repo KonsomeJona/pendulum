@@ -5,7 +5,7 @@ import com.pendulum.algo.model.Gap
 import com.pendulum.algo.model.SampleBlock
 import com.pendulum.algo.model.SleepMask
 
-/** Nature d'un evenement injecte. Transcription de `docs/ALGO-v2.md` §5.3. */
+/** Nature d'un evenement injecte. Transcription de `docs/fr/ALGO-v2.md` §5.3. */
 enum class TruthKind {
     PLM_IN_SERIES,
     ISOLATED,
@@ -63,7 +63,7 @@ data class TruthEvent(
  *   sans lui, aucune metrique horaire n'est calculable et le denominateur redeviendrait circulaire.
  * @param floorG plancher d'enveloppe grossiere du bruit injecte seul (sans aucun mouvement). Sert a
  *   normaliser l'axe des abscisses de la courbe de sensibilite.
- * @param gainCalG ce que le rituel de calibration de §3.3 volet B mesurerait cette nuit-la, couplage
+ * @param gainCalG le gain mecanique de reference de cette nuit-la, couplage
  *   mecanique de la nuit compris.
  */
 class GroundTruth(

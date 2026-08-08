@@ -77,7 +77,7 @@ data class SeriesConfig(
 data class SeriesBuildResult(val series: List<PlmSeries>, val truncatedSeriesDropped: Int)
 
 /**
- * Construction des series PLM. `docs/ALGO-v2.md` §2 etape 6, regles §6.5.
+ * Construction des series PLM. `docs/fr/ALGO-v2.md` §2 etape 6, regles §6.5.
  *
  * **Ce que cette classe ne fait pas, et c'est deliberе** : un mouvement manque ne coupe pas une serie.
  * Dans le regime typique (IMI ~21 s), rater un CLM double l'intervalle a ~42 s, ce qui reste dans la

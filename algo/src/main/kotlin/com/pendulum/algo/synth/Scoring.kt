@@ -7,7 +7,7 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Resultat d'un appariement detection / verite terrain (`docs/ALGO-v2.md` §5.4).
+ * Resultat d'un appariement detection / verite terrain (`docs/fr/ALGO-v2.md` §5.4).
  *
  * @param onsetBiasMs biais moyen de datation, **signe** : positif si le detecteur date trop tard.
  *   L'enveloppe grossiere de 0,5 s introduit par construction un biais borne a ~0,25 s.
@@ -36,7 +36,7 @@ class DetectionRun(
 )
 
 /**
- * Appariement et metriques. `docs/ALGO-v2.md` §5.4.
+ * Appariement et metriques. `docs/fr/ALGO-v2.md` §5.4.
  *
  * L'appariement est **glouton et chronologique**, tolerance d'onset 1,0 s. Justification de la
  * tolerance, reprise telle quelle : la granularite clinique la plus fine est la borne basse de

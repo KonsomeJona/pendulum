@@ -16,7 +16,7 @@ import com.pendulum.algo.model.TriAxial
 import kotlin.math.max
 
 /**
- * Seuils de detection vus par le detecteur (`docs/ALGO-v2.md` §2 etape 4, parametres §6.3).
+ * Seuils de detection vus par le detecteur (`docs/fr/ALGO-v2.md` §2 etape 4, parametres §6.3).
  *
  * Jumelle de `com.pendulum.algo.dsp.ThresholdParams`, qui porte les memes quatre valeurs : `dsp` calcule
  * les courbes, `detect` decide. Le detecteur convertit sa configuration en [ThresholdParams] plutot
@@ -100,7 +100,7 @@ data class ClmConfig(
 }
 
 /**
- * Machine d'etats de detection des LM, puis classification en CLM. `docs/ALGO-v2.md` §2 etape 5.
+ * Machine d'etats de detection des LM, puis classification en CLM. `docs/fr/ALGO-v2.md` §2 etape 5.
  *
  * Deroulement, litteral :
  *  1. onset provisoire au franchissement de `Theta_on` sur l'enveloppe **grossiere** ;

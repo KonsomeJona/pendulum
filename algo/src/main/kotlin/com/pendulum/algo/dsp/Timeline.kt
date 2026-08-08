@@ -138,8 +138,15 @@ data class TimelineConfig(
  * `targetFsHz` plutot que d'adapter les coefficients des filtres a un `fs` variable. Adapter les
  * filtres obligerait a recalculer les biquads en cours de session, ce qui produit un transitoire
  * a chaque recalcul — on remplacerait un biais de 5 % par des artefacts localises, c'est-a-dire
- * par des faux positifs. L'interpolation lineaire coute 0,2 % d'attenuation a 3 Hz pour un
- * rapport de reechantillonnage inferieur a 1,06 (test T8) et rend tout le reste exact.
+ * par des faux positifs. L'interpolation lineaire coute **au plus 1,8 %** d'attenuation point a
+ * point a 3 Hz et rend tout le reste exact.
+ *
+ * Ce commentaire a longtemps annonce « 0,2 % pour un rapport de reechantillonnage inferieur a
+ * 1,06 ». La specification a formellement retire cette phrase le 2026-07-31 (`ALGO-v2.md` §2
+ * etape 0, encadre de correction) : ce n'est pas le rapport de reechantillonnage qui gouverne
+ * l'attenuation mais la **periode d'echantillonnage source**, et meme moyennee sur une phase
+ * uniforme — la seule lecture qui aurait pu justifier 0,2 % — elle reste autour de 1,1 %. Le
+ * chiffre etait donc faux d'un ordre de grandeur, et il a survecu ici a sa propre retractation.
  */
 object TimelineBuilder {
 

@@ -7,7 +7,6 @@ import com.pendulum.algo.model.MaskSource
 import com.pendulum.algo.model.PiResult
 import com.pendulum.algo.model.PlmSeries
 import com.pendulum.algo.model.PublicationGate
-import com.pendulum.algo.model.RespiratoryConfidence
 import com.pendulum.algo.model.RhythmResult
 import com.pendulum.algo.model.SeriesRule
 import com.pendulum.algo.model.SleepMask
@@ -28,7 +27,6 @@ class IndicesTest {
         series: List<PlmSeries>,
         mask: SleepMask,
         rule: SeriesRule = SeriesRule.AASM_V3,
-        respiratory: RespiratoryConfidence = RespiratoryConfidence.MEDIUM,
         truncated: Boolean = false,
         truncatedSeriesDropped: Int = 0,
     ) = Plmi.compute(
@@ -37,7 +35,6 @@ class IndicesTest {
         mask = mask,
         fsHz = FS_HZ,
         rule = rule,
-        respiratory = respiratory,
         pi = pi,
         rhythm = rhythm,
         floorMode = FloorMode.BILATERAL,
@@ -209,36 +206,23 @@ class IndicesTest {
         )
 
         assertThat(Plmi.canCarryPrimaryResult(mask)).isFalse()
-        assertThat(Plmi.publicationGate(mask, truncated = false, respiratory = RespiratoryConfidence.MEDIUM))
+        assertThat(Plmi.publicationGate(mask, truncated = false))
             .isEqualTo(PublicationGate.TRUNCATED_NO_TREND)
         assertThat(Plmi.canCarryPrimaryResult(maskOf())).isTrue()
     }
 
     @Test
     fun `la porte de publication suit les seuils en dur du paragraphe 3-7-2`() {
-        val medium = RespiratoryConfidence.MEDIUM
-
-        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 420.0), false, medium))
+        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 420.0), false))
             .isEqualTo(PublicationGate.FULL)
-        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 240.0), false, medium))
+        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 240.0), false))
             .isEqualTo(PublicationGate.FULL)
-        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 200.0), false, medium))
+        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 200.0), false))
             .isEqualTo(PublicationGate.TRUNCATED_NO_TREND)
-        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 420.0), true, medium))
+        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 420.0), true))
             .isEqualTo(PublicationGate.TRUNCATED_NO_TREND)
-        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 179.9), false, medium))
+        assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 179.9), false))
             .isEqualTo(PublicationGate.NO_PLMI)
-    }
-
-    @Test
-    fun `une confiance respiratoire basse interdit tout PLMI`() {
-        val gate = Plmi.publicationGate(
-            maskOf(analysableTstMin = 420.0),
-            truncated = false,
-            respiratory = RespiratoryConfidence.LOW,
-        )
-
-        assertThat(gate).isEqualTo(PublicationGate.NO_PLMI)
     }
 
     @Test
@@ -250,7 +234,7 @@ class IndicesTest {
             fixedPointConverged = false,
         )
 
-        assertThat(Plmi.publicationGate(mask, false, RespiratoryConfidence.MEDIUM))
+        assertThat(Plmi.publicationGate(mask, false))
             .isEqualTo(PublicationGate.NO_PLMI)
     }
 
@@ -293,7 +277,6 @@ class IndicesTest {
         assertThat(r.maskSource).isEqualTo(MaskSource.HEALTH_CONNECT)
         assertThat(r.floorMode).isEqualTo(FloorMode.BILATERAL)
         assertThat(r.paramsHash).isEqualTo("test-hash")
-        assertThat(r.respiratoryConfidence).isEqualTo(RespiratoryConfidence.MEDIUM)
         assertThat(r.pi).isEqualTo(pi)
         assertThat(r.rhythm.valid).isFalse()
     }
