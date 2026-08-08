@@ -1,7 +1,7 @@
 # Validation: how the software is tested, and the honest state of that testing
 
 > **Pendulum** measures periodic limb movements in sleep from a smartwatch worn at the ankle, and
-> tracks the *rhythm* between them rather than their number. It is it measures, it does not
+> tracks the *rhythm* between them rather than their number. It measures; it does not
 > interpret — a real measurement to take to a physician, not a diagnosis and not a medical device — see
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
@@ -195,14 +195,28 @@ comparable with yesterday's. Neither direction is "better", so neither is left u
 ### T11 is inverted, and that is the point
 
 T11 asserts that **without** calibration the spread must **exceed 40 %**. It is not a typo and it is
-not a lower standard: it is a test that the calibration ritual is doing something.
+not a lower standard: it is a test that calibration is doing something.
 
 The reasoning is that a guard rail whose removal changes nothing is not a guard rail. If a mechanical
 gain change of ×0.6 to ×1.8 — a strap moved by one hole — did not move the index by more than 40 %
-with calibration disabled, then the 70-second calibration ritual imposed on the user every night
-would be pure ceremony. **If that assertion ever fails, the ritual must be removed, not the test.**
-The failure mode this defends against is a project that accumulates rituals because each of them
-sounds prudent.
+with calibration disabled, then calibrating would be pure ceremony. The failure mode this defends
+against is a project that accumulates rituals because each of them sounds prudent.
+
+> **What T11 now covers, and what it no longer does.** This paragraph used to end with *"if that
+> assertion ever fails, the ritual must be removed, not the test"*, and referred to a guided 70-second
+> ritual — 30 s still, ten metronome-paced dorsiflexions, 10 s calm — performed on the watch every
+> evening. **That ritual was removed on 2026-08-05**, not because T11 failed but because it had never
+> been wired: the function was written and tested, no production caller ever invoked it, and the watch
+> screen that would have guided the user did not exist.
+>
+> T11 therefore now measures the only calibration that ships: `fromGrossBodyMovements`, which
+> estimates the gain from body turns during the night. That is a **subdued** gesture rather than an
+> imposed one, so it is a weaker standard than the one this test was written against. Two consequences
+> worth stating plainly: inter-night comparability now rests on `GROSS_BODY` plus the instruction
+> *same strap, same hole, same leg* — which v1 of this project called a wish rather than a solution —
+> and the synthetic generator still renders an idealised ritual gain (`NightSynth.renderRitualGain`),
+> so **the whole regression suite runs on a cleaner calibration than the application actually
+> obtains**. Measuring that gap is open work; moving twenty thresholds to make it disappear is not.
 
 Four further assertions were added after the ones above and follow the same numbering: truncated
 nights must produce a rhythm but refuse an hourly index; the circularity test (also inverted, and for
@@ -625,9 +639,18 @@ and both are structural rather than tuned:
 
 - **`Θ_abs` = 20 mg**, which cuts 13.7 % of `accelTruth` on its own and exists to stop the detector
   counting micro-vibration on a very quiet night — T1's whole purpose;
-- **Terrill's 39 %**, the movements that are mechanically invisible to an ankle sensor at any
+- **Terrill's 39 %**, the movements that are mechanically invisible to an accelerometer at any
   threshold. `p_true` can never go below 0.39 by any amount of tuning, and with `Θ_abs` in place the
   measured floor is 0.546.
+
+  > **This 39 % was measured at the great toe, not at the ankle** (Terrill 2013, n = 9, range
+  > 4.8–69.6 % — see `references.md`). The transposition is optimistic, and knowingly so: the toe
+  > has the largest effective radius of the limb about the talocrural joint, an ankle-worn sensor
+  > sits above that axis and has close to none. **The real floor at the ankle is higher than
+  > 0.39**, by an unmeasured amount. The conclusion drawn below — that mechanics impose
+  > `p ≥ 0.39` and leave a margin of 0.39 to 0.50 — therefore rests on a lower bound that is
+  > certainly too low. If the true ankle floor exceeds 0.50, **the margin does not exist and the
+  > deconvolution is never identifiable**. This section is open, not settled.
 
 That is the "conclusion of a different weight": **at the current `Θ_abs`, the miss rate cannot be
 brought into the region where the deconvolution is identifiable.** Getting there means moving

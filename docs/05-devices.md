@@ -1,7 +1,7 @@
 # Choosing the hardware
 
 > **Pendulum** measures periodic limb movements in sleep from a smartwatch worn at the ankle, and
-> tracks the *rhythm* between them rather than their number. It is it measures, it does not
+> tracks the *rhythm* between them rather than their number. It measures; it does not
 > interpret — a real measurement to take to a physician, not a diagnosis and not a medical device — see
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
@@ -153,22 +153,22 @@ plumbing, not sensing.
 
 ## 4. Hypnogram sources compared
 
-Legend: ✅ verified against a primary source · ⚠️ probable but **not verified** · ❌ no / excluded
+Legend: `[v]` verified against a primary source · `[?]` probable, but not verified · `[x]` not supported, or excluded
 
 | Source | Writes to Health Connect? | Stages or duration only? | Sync latency | Price | Subscription required? | Battery life | Published validation |
 |---|---|---|---|---|---|---|---|
-| **Samsung Health / Galaxy Watch 5** | ✅ Yes, since Samsung Health 6.22.5 (Oct 2022) | ⚠️ **Stages** (Awake / Light / REM / Deep) — see note | Watch → phone: governed by the **watch's battery policy** (unspecified). Phone → HC: "as soon as data is created or changed" | Already owned | No | ~2–3 d (GW5) | ✅ GW3: TST +9.5 min, 4-stage accuracy 0.651, kappa 0.34–0.47 |
-| **Sleep as Android** (phone app, optionally with a watch) | ✅ Yes | ✅ **Sleep phases** + resting HR + SpO2 | Written at the end of tracking, on waking (no vendor Bluetooth sync to wait for when tracked by the phone) | Paid after a trial (⚠️ pricing not verified) | ⚠️ not verified | n/a (phone on mains) | ❌ The sonar/microphone-only mode has no known staging validation |
-| **Pixel Watch + Google Health** (formerly Fitbit) | ✅ "third-party connections through Android Health Connect" | ⚠️ Stages **not confirmed** on an official page | ⚠️ not verified | Watch already owned — **but it is on the ankle** | No for basic sleep; Google Health Premium (ex-Fitbit Premium) for advanced analysis | ~24 h (PW3) | Not found |
-| **Garmin (Garmin Connect)** | ✅ Yes, since ~July 2025 · **one-way** (Garmin writes, does not read) | ⚠️ Sleep yes; **stages not confirmed** | ⚠️ not verified | €200–1000 | No (Connect+ optional) | 5–20 d | Not found |
-| **Oura Ring** | ✅ Yes, Android **only**, Gen2/Gen3+ | ⚠️ The support page lists Activity / Body measurements / Vitals — **sleep and stages do not appear explicitly** | ⚠️ Documented trap: "might not import data if both apps were not opened before midnight"; Background App Refresh required | €350+ | ✅ **Yes, active membership required** | ~7 d | Not found |
-| **Whoop** | ✅ Yes (Recovery, Strain, Sleep) | ⚠️ Stages not confirmed | ⚠️ not verified | Hardware included in the subscription | ✅ **Yes, subscription-only model** | ~4–5 d | Not found |
-| **Polar (Polar Flow)** | ✅ Yes | ✅ **"Sleep: start time, end time, stages from Polar sleep phases"** — the only manufacturer to document it in as many words | ⚠️ "continuously while the connection remains active" | €150–500 | **No** | 3–7 d | Not found |
-| **Withings (Health Mate)** — ScanWatch, Sleep Analyzer under-mattress mat | ✅ Yes (a support article exists) | ⚠️ Stages not confirmed; user reports of **incomplete** sleep sync | ⚠️ Sleep Analyzer: mains-powered, Wi-Fi sync → potentially the fastest of the list | ScanWatch ~€250–350 · Sleep Analyzer ~€130 | No | ScanWatch ~30 d · Sleep Analyzer: **mains, unlimited** | Not found |
-| **Xiaomi / Amazfit — Zepp** | ✅ Yes, widened in Jan 2025 to **26 data types**, **one-way** | ⚠️ "sleep stats"; stages not confirmed | ⚠️ not verified | €40–300 | No | 7–20 d | Not found |
-| **Apple Watch** | ❌ **Excluded** — see note | — | — | — | — | — | — |
-| **Sleep Cycle** (phone app only) | ⚠️ **Not confirmed** | Detects stages internally, but Health Connect export not verified | On waking | Freemium | ⚠️ not verified | n/a | Not found |
-| **Google Nest Hub 2 — Sleep Sensing** (Soli radar) | ❌ **No path to Health Connect found** | — | — | ~€100 (⚠️ product status uncertain) | Free to date (the shift to Premium has been postponed repeatedly) | Mains | Not found |
+| **Samsung Health / Galaxy Watch 5** | `[v]` Yes, since Samsung Health 6.22.5 (Oct 2022) | `[?]` **Stages** (Awake / Light / REM / Deep) — see note | Watch → phone: governed by the **watch's battery policy** (unspecified). Phone → HC: "as soon as data is created or changed" | Already owned | No | ~2–3 d (GW5) | `[v]` GW3: TST +9.5 min, 4-stage accuracy 0.651, kappa 0.34–0.47 |
+| **Sleep as Android** (phone app, optionally with a watch) | `[v]` Yes | `[v]` **Sleep phases** + resting HR + SpO2 | Written at the end of tracking, on waking (no vendor Bluetooth sync to wait for when tracked by the phone) | Paid after a trial (unverified pricing not verified) | `[?]` not verified | n/a (phone on mains) | `[x]` The sonar/microphone-only mode has no known staging validation |
+| **Pixel Watch + Google Health** (formerly Fitbit) | `[v]` "third-party connections through Android Health Connect" | `[?]` Stages **not confirmed** on an official page | `[?]` not verified | Watch already owned — **but it is on the ankle** | No for basic sleep; Google Health Premium (ex-Fitbit Premium) for advanced analysis | ~24 h (PW3) | Not found |
+| **Garmin (Garmin Connect)** | `[v]` Yes, since ~July 2025 · **one-way** (Garmin writes, does not read) | `[?]` Sleep yes; **stages not confirmed** | `[?]` not verified | €200–1000 | No (Connect+ optional) | 5–20 d | Not found |
+| **Oura Ring** | `[v]` Yes, Android **only**, Gen2/Gen3+ | `[?]` The support page lists Activity / Body measurements / Vitals — **sleep and stages do not appear explicitly** | `[?]` Documented trap: "might not import data if both apps were not opened before midnight"; Background App Refresh required | €350+ | `[v]` **Yes, active membership required** | ~7 d | Not found |
+| **Whoop** | `[v]` Yes (Recovery, Strain, Sleep) | `[?]` Stages not confirmed | `[?]` not verified | Hardware included in the subscription | `[v]` **Yes, subscription-only model** | ~4–5 d | Not found |
+| **Polar (Polar Flow)** | `[v]` Yes | `[v]` **"Sleep: start time, end time, stages from Polar sleep phases"** — the only manufacturer to document it in as many words | `[?]` "continuously while the connection remains active" | €150–500 | **No** | 3–7 d | Not found |
+| **Withings (Health Mate)** — ScanWatch, Sleep Analyzer under-mattress mat | `[v]` Yes (a support article exists) | `[?]` Stages not confirmed; user reports of **incomplete** sleep sync | `[?]` Sleep Analyzer: mains-powered, Wi-Fi sync → potentially the fastest of the list | ScanWatch ~€250–350 · Sleep Analyzer ~€130 | No | ScanWatch ~30 d · Sleep Analyzer: **mains, unlimited** | Not found |
+| **Xiaomi / Amazfit — Zepp** | `[v]` Yes, widened in Jan 2025 to **26 data types**, **one-way** | `[?]` "sleep stats"; stages not confirmed | `[?]` not verified | €40–300 | No | 7–20 d | Not found |
+| **Apple Watch** | `[x]` **Excluded** — see note | — | — | — | — | — | — |
+| **Sleep Cycle** (phone app only) | `[?]` **Not confirmed** | Detects stages internally, but Health Connect export not verified | On waking | Freemium | `[?]` not verified | n/a | Not found |
+| **Google Nest Hub 2 — Sleep Sensing** (Soli radar) | `[x]` **No path to Health Connect found** | — | — | ~€100 (unverified product status uncertain) | Free to date (the shift to Premium has been postponed repeatedly) | Mains | Not found |
 
 Prices are orders of magnitude recalled from memory and were **not verified** in 2026.
 
@@ -367,12 +367,12 @@ for (r in response.records) {
 
 | Observed | Verdict |
 |---|---|
-| `nStages` in the dozens, `distinctTypes` containing 4, 5, 6 (LIGHT, DEEP, REM) and 1 (AWAKE), coverage ≈ duration | ✅ **A genuine hypnogram.** Green light. |
-| `nStages=0`, or an empty list | ❌ Duration only. |
-| `distinctTypes=[2]` (only `STAGE_TYPE_SLEEPING`) | ❌ Binary in disguise — usable for total sleep time, useless for per-stage plausibility. |
-| `distinctTypes=[0]` (`STAGE_TYPE_UNKNOWN`) | ❌ The source fills the field without populating it. |
-| Several different `packageName`s for the same night | ⚠️ Deduplication is mandatory before any computation — see §7. |
-| `stageCoverage` far below `sessionDuration` | ⚠️ A hypnogram with holes. The API permits holes; you must decide how to treat them. |
+| `nStages` in the dozens, `distinctTypes` containing 4, 5, 6 (LIGHT, DEEP, REM) and 1 (AWAKE), coverage ≈ duration | `[v]` **A genuine hypnogram.** Green light. |
+| `nStages=0`, or an empty list | `[x]` Duration only. |
+| `distinctTypes=[2]` (only `STAGE_TYPE_SLEEPING`) | `[x]` Binary in disguise — usable for total sleep time, useless for per-stage plausibility. |
+| `distinctTypes=[0]` (`STAGE_TYPE_UNKNOWN`) | `[x]` The source fills the field without populating it. |
+| Several different `packageName`s for the same night | `[?]` Deduplication is mandatory before any computation — see §7. |
+| `stageCoverage` far below `sessionDuration` | `[?]` A hypnogram with holes. The API permits holes; you must decide how to treat them. |
 
 **Expected latency after waking:** unknown, and that is the point of step 1. The bottleneck is watch
 → phone, governed by the watch's battery policy with no guaranteed delay; phone → Health Connect is

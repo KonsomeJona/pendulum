@@ -1,7 +1,7 @@
 # Pendulum documentation
 
 > **Pendulum** measures periodic limb movements in sleep from a smartwatch worn at the ankle, and
-> tracks the *rhythm* between them rather than their number. It is it measures, it does not
+> tracks the *rhythm* between them rather than their number. It measures; it does not
 > interpret — a real measurement to take to a physician, not a diagnosis and not a medical device — see
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
@@ -48,9 +48,8 @@ the sources yourself. The sections you want are the ones headed *what is genuine
 ## On the French documents
 
 [`fr/`](fr/) holds the original working documents. They are considerably more detailed than these
-English ones and they remain the authoritative record: they carry the full parameter tables, the
-energy calculations, the arithmetic behind each decision, and the things that were checked and
-turned out to be wrong.
+English ones: they carry the full parameter tables, the energy calculations, the arithmetic behind
+each decision, and the things that were checked and turned out to be wrong.
 
 | French document | English derivative |
 |---|---|
@@ -60,7 +59,23 @@ turned out to be wrong.
 | [`fr/SOURCES-SOMMEIL.md`](fr/SOURCES-SOMMEIL.md) | `05-devices.md` |
 | [`fr/UX.md`](fr/UX.md) | `06-interface.md` |
 | [`fr/REVUE-CRITIQUE.md`](fr/REVUE-CRITIQUE.md) | `07-validation.md` |
+| [`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) | **None.** The bench log: every measurement taken on real hardware, and §14 the screen-by-screen review of both devices. It has no English derivative and it is the most frequently updated document in the repository. |
 | [`fr/SPEC-v1.md`](fr/SPEC-v1.md) | Historical. Superseded by `fr/SPEC-v2.md` wherever the two conflict. |
 
-The English documents are derived from the French ones, not the reverse. Where they disagree, the
-French text is correct and the English one has a bug.
+### Which one is authoritative, by subject
+
+This used to read "where they disagree, the French text is correct and the English one has a bug".
+That rule is no longer true, and the repository says so in three places on its own: `06-interface.md`
+records a substantive change made *after* `fr/UX.md`, `08-screens.md` states that three strings "are
+not in the specification — `fr/UX.md` predates the decision and never wrote the screen", and the
+colour values of `fr/UX.md` §4.4 would fail the contrast test that the English values pass.
+
+Authority is by subject, not by language:
+
+| Subject | Authoritative document | Why |
+|---|---|---|
+| Algorithm parameters, clinical rules, energy budgets | `fr/ALGO-v2.md`, `fr/ARCHI-CAPTURE.md` | The code cites them by name for its parameter tables |
+| Interface, screens, navigation, states | `06-interface.md` (English) | `fr/UX.md` predates the decisions and says so |
+| Scope, guard rails, roadmap, status | `01-overview.md` (English) | `fr/SPEC-v2.md` lacks the rewritten §5 |
+| Bench, real hardware, screen review | `fr/BANC-ESSAI.md` | Only document; no derivative |
+| Bibliography | `references.md` | Single list; `03-algorithm.md` must not keep a parallel one |

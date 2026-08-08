@@ -51,27 +51,13 @@ jobs:
       # C'est cette étape qui décide, et non le code de retour de Gradle. Elle échoue si un test est
       # rouge, et aussi — ce qui compte autant — si Gradle a échoué sans produire de rapport, cas où
       # un `|| true` naïf aurait laissé passer une erreur de compilation pour un succès.
+      #
+      # Le glob est **restreint** ici : `:format` et `:algo` sont des modules Kotlin purs, leur
+      # tâche s'appelle `test` et leurs rapports sortent dans `build/test-results/test/`. Le
+      # nommer explicitement fait de ce job une garde de son propre périmètre : si `:format:test`
+      # cesse de tourner, ce job le dit, au lieu de compter les rapports d'un autre job.
       - name: Check the tests ran, and that all of them passed
-        run: |
-          python3 - <<'PY'
-          import glob, sys, xml.etree.ElementTree as ET
-          echecs = []
-          total = 0
-          for p in glob.glob('*/build/test-results/test/*.xml'):
-              r = ET.parse(p).getroot()
-              total += int(r.get('tests', 0))
-              for tc in r.iter('testcase'):
-                  if tc.find('failure') is not None or tc.find('error') is not None:
-                      echecs.append(tc.get('name', ''))
-          if total == 0:
-              print('No test results at all — the build failed before running tests.')
-              sys.exit(1)
-          print(f'{total} tests, {len(echecs)} failure(s)')
-          for e in echecs:
-              print('  -', e)
-          if echecs:
-              sys.exit(1)
-          PY
+        run: python3 tools/ci/verifier-tests.py '*/build/test-results/test/*.xml'
 
       - name: Upload test reports
         if: always()
@@ -110,38 +96,77 @@ jobs:
       #
       # Meme mecanique que le job JVM : `continue-on-error` pour que l'etape reste rouge a l'oeil
       # sans arreter le job, et une verification qui decide a partir des rapports.
+      #
+      # `:sleepwriter` est ajouté parce que ses 16 tests n'étaient lancés nulle part. C'est un outil
+      # de banc qui n'est jamais publié, mais il partage `:format` avec le produit.
+      #
+      # `testSourceADebugUnitTest` et non `test` : `test` est un agrégat qui dépend de **toutes**
+      # les variantes — deux saveurs × deux types de build — soit quatre compilations et 64
+      # exécutions pour 16 tests qui vivent tous dans le `src/test/` partagé. Les deux saveurs ne
+      # diffèrent que par un `applicationIdSuffix` et deux chaînes ; aucun test ne les distingue.
+      # C'est exactement le raisonnement déjà appliqué à lint plus bas (`lintSourceADebug`).
       - name: Run Android unit tests
         id: android-tests
         continue-on-error: true
-        run: ./gradlew :wear:testDebugUnitTest :phone:testDebugUnitTest --console=plain --continue
-
-      - name: Check the Android tests ran, and that all of them passed
-        shell: python
         run: |
-          import glob, sys, xml.etree.ElementTree as ET
-          total, echecs = 0, []
-          for p in glob.glob('*/build/test-results/testDebugUnitTest/*.xml'):
-              r = ET.parse(p).getroot()
-              total += int(r.get('tests', 0))
-              for tc in r.iter('testcase'):
-                  if tc.find('failure') is not None or tc.find('error') is not None:
-                      echecs.append(f"{tc.get('classname')}.{tc.get('name')}")
-          # Zero rapport ne veut pas dire zero echec : cela veut dire que la compilation a
-          # echoue avant d'arriver aux tests. C'est la garde qui manquait au glob precedent.
-          if total == 0:
-              print('No test results at all - the build failed before running tests.')
-              sys.exit(1)
-          print(f'{total} tests, {len(echecs)} failure(s)')
-          for e in echecs:
-              print(f'  {e}')
-          sys.exit(1 if echecs else 0)
+          ./gradlew --console=plain --continue \
+            :wear:testDebugUnitTest :phone:testDebugUnitTest \
+            :sleepwriter:testSourceADebugUnitTest
+
+      # Les variantes **release** portent `EchelleReleaseTest`, le garde-fou qui assure qu'aucune
+      # compilation de banc — celle où le temps est comprimé d'un facteur 300 — ne parte en
+      # production. Il ne s'exécutait dans aucun pipeline : il vit dans le source set `testRelease`,
+      # que `testDebugUnitTest` ne touche pas. Le seul test qui protège de « la nuit périme au bout
+      # de deux minutes chez l'utilisateur » ne tournait jamais.
+      #
+      # Étape séparée, et filtrée, pour deux raisons :
+      #  - `testReleaseUnitTest` ne compile pas seulement `src/testRelease/`, il rejoue aussi tout
+      #    `src/test/` — soit ~320 tests déjà verts quelques secondes plus tôt en debug — pour en
+      #    gagner 6. Le filtre ne garde que ce que la variante release apporte réellement.
+      #  - un filtre `--tests` s'applique à **toutes** les tâches de test de l'invocation, et Gradle
+      #    échoue si l'une d'elles ne trouve aucune correspondance. Il ne peut donc pas cohabiter
+      #    avec l'invocation debug ci-dessus. Groupé ici parce que `:wear` **et** `:phone` ont bien
+      #    chacun un `src/testRelease/.../EchelleReleaseTest.kt` : si l'un des deux perd ce fichier,
+      #    ce n'est pas le filtre qu'il faut relâcher, c'est le garde-fou qu'il faut remettre.
+      - name: Run the release-variant guard-rail tests
+        continue-on-error: true
+        run: |
+          ./gradlew --console=plain --continue \
+            :wear:testReleaseUnitTest :phone:testReleaseUnitTest \
+            --tests '*EchelleReleaseTest'
+
+      # Glob par défaut : **toutes** les variantes de tâche — `testDebugUnitTest`,
+      # `testReleaseUnitTest`, variantes de saveur. Un glob nommant une seule variante est
+      # exactement ce qui a laissé plus de deux cents tests hors CI sans que rien ne le dise.
+      - name: Check the Android tests ran, and that all of them passed
+        run: python3 tools/ci/verifier-tests.py
+
+      # Lint ne tournait dans **aucun** pipeline. `lintVitalRelease`, que `bundleRelease` déclenche,
+      # ne joue que les règles de sévérité FATAL : la seule erreur réelle que ce projet ait eue de
+      # lint — un appel de notification que lint croyait non gardé — est de sévérité ERROR, et elle
+      # a donc vécu dans l'arbre sans que rien ne puisse la dire.
+      #
+      # `lintDebug` et non `lint` : la tâche `lint` joue toutes les variantes, ce qui double le
+      # temps sans rien apprendre de plus ici. `--continue` pour voir les trois modules d'un coup
+      # plutôt que de s'arrêter au premier, ce qui avait laissé `:phone` non linté pendant que
+      # `:wear` bloquait la chaîne.
+      - name: Lint the three Android modules
+        run: ./gradlew :wear:lintDebug :phone:lintDebug :sleepwriter:lintSourceADebug --console=plain --continue
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: '*/build/reports/lint-results-*.html'
+          retention-days: 14
 
       - name: Upload Android test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-test-reports
-          path: '*/build/reports/tests/testDebugUnitTest'
+          path: '*/build/reports/tests/*'
           retention-days: 14
 
       # 7 jours et non 14 : ces APK pesent ~21 Mo par execution et ne servent qu'a essayer une
@@ -195,4 +220,67 @@ jobs:
         with:
           name: instrumented-reports
           path: phone/build/reports/androidTests
+          retention-days: 14
+
+  wear-instrumented-tests:
+    name: Component permissions on a watch emulator
+    runs-on: ubuntu-latest
+    # **Pas sur les pull requests.** Ce job démarre un émulateur Wear OS — 10 à 15 minutes — pour
+    # exécuter *une* méthode de test. Ce qu'elle observe, un `android:permission` de manifeste,
+    # ne change que par une modification manuelle du manifeste ; il n'existe aucun chemin par
+    # lequel un changement de code Kotlin le fasse apparaître. Payer ce coût à chaque poussée sur
+    # chaque branche revient à re-vérifier, dizaines de fois par jour, un fichier que personne n'a
+    # touché — et c'est le job le plus instable du fichier, donc celui dont l'échec finit par être
+    # ignoré, ce qui vaut moins que pas de test du tout.
+    #
+    # Il reste **automatisé**, et il reste bloquant : sur `push` de `main` — donc sur toute fusion,
+    # avant qu'un tag ne puisse être posé — et à la demande. La fenêtre ouverte est celle d'une
+    # pull request qui casserait le manifeste et serait fusionnée avant que le job ne le dise :
+    # elle est fermée à la fusion, avant publication. Ne pas remettre `pull_request` par réflexe
+    # sans avoir d'abord un défaut réel qu'une pull request aurait introduit.
+    if: github.event_name != 'pull_request'
+    # `PermissionsDesComposantsTest` côté montre vérifie qu'aucun composant n'exige une permission
+    # qu'aucun paquet ne définit. Ce n'est pas une précaution abstraite : les deux
+    # `WearableListenerService` ont porté une telle permission, Android refusait à Play Services de
+    # les démarrer, et **toute l'ingestion était morte** — sans exception, sans message, avec pour
+    # seule trace une ligne `Permission Denial` dans le journal système.
+    #
+    # Le test existait et sa propre KDoc disait qu'il « se lance à la main sur une montre réelle,
+    # faute d'émulateur de montre en CI ». C'est ce job. À surveiller : les images Wear OS sont plus
+    # lentes à démarrer que les images téléphone, et c'est le job le plus susceptible d'être
+    # instable de tout ce fichier.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run watch instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: android-wear
+          arch: x86_64
+          profile: wearos_small_round
+          disable-animations: true
+          script: ./gradlew :wear:connectedDebugAndroidTest --console=plain
+
+      - name: Upload watch instrumented reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wear-instrumented-reports
+          path: wear/build/reports/androidTests
           retention-days: 14

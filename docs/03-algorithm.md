@@ -1,7 +1,7 @@
 # From raw acceleration to numbers
 
 > **Pendulum** measures periodic limb movements in sleep from a smartwatch worn at the ankle, and
-> tracks the *rhythm* between them rather than their number. It is it measures, it does not
+> tracks the *rhythm* between them rather than their number. It measures; it does not
 > interpret — a real measurement to take to a physician, not a diagnosis and not a medical device — see
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
@@ -27,10 +27,16 @@ We do not have EMG. We have one accelerometer on one ankle, at 50 Hz, at ±16 g 
 consumer smartwatch strapped above the talocrural joint. Four consequences shape the entire chain:
 
 1. **The accelerometer does not measure the same physical quantity as EMG.** Terrill et al. (EMBC
-   2013) found that **39.0 %** of movements scored on EMG produce *no* detectable accelerometric
-   movement at all. This is mechanics, not noise: a pure ankle rotation does not translate a sensor
+   2013, n = 9) found that **39.0 %** of movements scored on EMG produce *no* detectable
+   accelerometric movement at all — **measured at the great toe**, with a between-subject range of
+   4.8–69.6 %. This is mechanics, not noise: a pure ankle rotation does not translate a sensor
    mounted above the joint axis. The accelerometric count is therefore on a **different scale**,
    not a noisy estimate of the EMG count. The ICSD-3 threshold of 15/h is not transferable.
+
+   Note that the same mechanical argument makes the transposition to an ankle-worn watch
+   *optimistic*: the toe is the site that moves most about the talocrural joint, the ankle the site
+   that moves least. **A figure of 39 % at the toe implies more than 39 % at the ankle**, by an
+   amount nobody has published. See `references.md` and `07-validation.md` §4.4.
 
 2. **The spectral content of an accelerometric PLMS is sub-6 Hz.** No spectral analysis of
    accelerometric PLMS is published; the physical model in §7 puts the peak of the bipolar
@@ -613,9 +619,13 @@ detector's own error by an order of magnitude.
 What is done instead: `plmiRespWorstCase` removes **all** movements belonging to a series whose
 median interval falls in the apnoeic band 25–45 s. That is not an RRLM exclusion; it is a
 **guaranteed lower bound**. The true value lies between the two, and the width of the bracket is
-itself the uncertainty indicator to display. A `RespiratoryConfidence` of `LOW` (from a STOP-BANG
-questionnaire or a desaturation index, when available) blocks publication of any index at all: a
-wrong number displayed is worse than no number.
+itself the uncertainty indicator to display.
+
+A `RespiratoryConfidence` enum used to sit here, whose `LOW` value blocked publication of any index —
+fed, in theory, by a STOP-BANG questionnaire or a desaturation index. **It was removed on 2026-08-05**,
+along with the database column that stored it. Nothing ever fed it: the value written was `MEDIUM`,
+hard-coded, for every night. Pendulum does not screen for sleep apnoea; the bracket above is a
+reservation on its own figure, not a detector for another condition.
 
 **Direction of the biases, to be restated in every report.** The respiratory bias is **upward**. The
 unilateral-measurement bias and the Terrill bias (39 % of EMG movements mechanically invisible) are
@@ -628,7 +638,6 @@ hardest refusal to softest:
 | Condition | Gate |
 |---|---|
 | accelerometric mask did not converge | `NO_PLMI` |
-| `RespiratoryConfidence == LOW` | `NO_PLMI` |
 | analysable TST < 180 min | `NO_PLMI` |
 | night truncated, or analysable TST < 240 min | `TRUNCATED_NO_TREND` |
 | denominator is `CIRCULAR` | `TRUNCATED_NO_TREND` |
@@ -952,7 +961,7 @@ threshold = 15"**.
 |---|---|
 | Skeba, Hiranniramol, Earley & Allen — *Sleep Med* 2016;17:138-43 · 29 untreated RLS + 22 controls, two consecutive nights | Night-to-night variability, as % of the two-night mean: **mean log inter-movement interval = 3.6 % ± 3.7** against **movements/h = 43.2 % ± 37.1** (p < 0.001). The interval is log-normally distributed. Log-interval variability also beats that of the Periodicity Index |
 | Ferri et al. — *Sleep Med* 2013;14(3):293-6 | The Periodicity Index varies **more than 6.5 times less** than the movement index in RLS (2× in PLMD) |
-| Ferri et al. — *Sleep Med* 2016;17:32-8 · 107 RLS + 48 controls | Optimal diagnostic thresholds: 15-16/h (standard index), ~13/h (alternative index), **~0.5 (Periodicity Index)**, with similar areas under ROC. Periodicity has its own published threshold |
+| Ferri et al. — *Sleep Med* 2016;22:97-99 · 107 RLS + 48 controls | Optimal diagnostic thresholds: 15-16/h (standard index), ~13/h (alternative index), **~0.5 (Periodicity Index)**, with similar areas under ROC. Periodicity has its own published threshold |
 
 Twelve times less night-to-night variability, no denominator at all (so the circularity of §5
 disappears for the tracking metric), and no abusively transposed threshold.
@@ -1489,6 +1498,14 @@ and neither is optional.
 | Severity of the circularity | **High** on the mechanism, **medium** on the magnitude | The arithmetic "13 movements per 5-minute window at a 22 s interval" is certain. How far TST actually collapses depends on the settings and is measurable only by simulation |
 
 ### Principal sources
+
+> **This list is a shortcut, not a bibliography.** The bibliography of the project is
+> [`references.md`](references.md), and it alone carries what matters about a source: whether the
+> full text was read or only the abstract, what the project takes from it, and the caveats attached.
+> Keeping a second list here is how the two came to disagree — the Ferri 2016 thresholds paper was
+> cited as *17:32-8* five hundred lines above while this list and `references.md` both said
+> *22:97-99*. **When adding a source, add it to `references.md`; this list may be pruned to the
+> handful of standards documents that are not research papers.**
 
 - AASM Summary of Updates in Version 3 (2023) — <https://aasm.org/wp-content/uploads/2023/02/Summary-of-Updates-v3.pdf>
 - AASM Sleep ISR, Scoring Limb Movements — <https://isr.aasm.org/helpv5/ScoringLimbMovementsL.html>

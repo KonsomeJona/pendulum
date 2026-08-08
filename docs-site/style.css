@@ -889,3 +889,13 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .faq summary::after { transition: none; }
 }
+
+/* Reserve d'un argument : ce que le chiffre cite ne dit pas de CE logiciel. Discret mais lisible —
+   une reserve en gris pale serait une reserve qu'on n'a pas vraiment publiee. */
+.reason-caveat {
+  margin-top: .75rem;
+  padding-left: .75rem;
+  border-left: 2px solid currentColor;
+  opacity: .85;
+  font-size: .95em;
+}

@@ -1,7 +1,7 @@
 # Installing and releasing
 
 > **Pendulum** measures periodic limb movements in sleep from a smartwatch worn at the ankle, and
-> tracks the *rhythm* between them rather than their number. It is it measures, it does not
+> tracks the *rhythm* between them rather than their number. It measures; it does not
 > interpret — a real measurement to take to a physician, not a diagnosis and not a medical device — see
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 

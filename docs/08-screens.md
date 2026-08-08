@@ -1,13 +1,21 @@
 # The screens
 
 > **Pendulum** measures periodic limb movements in sleep from a smartwatch worn at the ankle, and
-> tracks the *rhythm* between them rather than their number. It is it measures, it does not
+> tracks the *rhythm* between them rather than their number. It measures; it does not
 > interpret — a real measurement to take to a physician, not a diagnosis and not a medical device — see
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
 **These are real screenshots.** They were captured with `adb exec-out screencap` from the application
 running on emulators: an Android 14 phone profile, and a small round Wear OS 5 target for the watch. The interface is in English; the working documents under `docs/fr/` are not, and that is
 deliberate — they are the record of how the decisions were made, not user-facing text.
+
+> **A caution about the French strings quoted further down this file.** Several passages below quote
+> the interface in French — `Réessayer maintenant`, `masque accéléro`, `Hypnogramme indisponible`,
+> *pour le médecin*, and others. **None of these is on screen.** They are quotations from the French
+> working documents that were written before the interface was translated, and they were never
+> updated when it was. Where a sentence below is presented as the words the user reads, take the
+> string from `ui/text/Textes.kt`, which is the only authority on what the application says — and
+> which a test guards against a list of forbidden word stems.
 
 Every number visible on them was produced by the application's own preview
 dataset flowing through the real Compose code, and every chart was drawn by the same `DrawScope`
@@ -39,6 +47,14 @@ drawing cannot expose because the person drawing it lays the text out by hand:
 
 ## The captures
 
+> **The six captures below date from 1 August 2026 and are out of date as a set.** They show a
+> title bar the application does not draw — it came from the framework's default theme and the bug
+> was fixed on 3 August — and a *Trend / Nights / Settings* navigation bar that has since become
+> *Home / Trend / Settings*. They also predate the switch from preview data to the real database,
+> so they show nights that a fresh installation does not have. They are kept until replaced, and
+> should be read as an archive of that date, not as the current interface. The section below them
+> holds captures taken on real hardware on 4 August.
+
 | Screen | What it shows |
 |---|---|
 | ![Waking, provisional](images/screenshots/waking-provisional.png) | **Waking, provisional state.** The normal case, not an error: the hypnogram arrives hours after waking because the vendor's sync follows its own battery policy. The card says so and states that the figure will be recomputed with nothing to do. |
@@ -47,6 +63,29 @@ drawing cannot expose because the person drawing it lays the text out by hand:
 | ![Nights](images/screenshots/nights-list.png) | **The nights.** Each night carries its state and its quality flags. The excluded night keeps its value visible but struck through, with the criterion that excluded it. The card at the bottom explains why there is no button to exclude a night by hand: a night removed after seeing its figure would manufacture the trend. |
 | ![Night detail](images/screenshots/night-detail.png) | **One night.** The envelope on a log₂ axis, the adaptive threshold at ×8, detected events, series bands, and the hypnogram aligned underneath on the same time axis. Below, the counts — including the ones that undermine the headline figure, such as movements discarded for posture. |
 | ![Watch](images/screenshots/watch.png) | **The watch, blocked.** One static screen, no animation. Recording refuses to start until the evening record is sealed on the phone — the guard rail that stops a night being recorded without its context. |
+
+## On real hardware, 4 August 2026
+
+Taken on a Pixel 10 Pro Fold and a Pixel Watch 3 during the screen-by-screen review recorded in
+[`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) §14. These are the current interface. **The database is
+empty**, as it is on a fresh installation — which is why no screen here shows a night, a trend
+chart or a night detail: those five screens have no door on a new install, and the project
+deliberately refuses to inject fake nights in order to photograph them.
+
+| Screen | What it shows |
+|---|---|
+| ![First-run notice, top](images/screens/revue-avertissement-avant.png) | **The first-run notice, before scrolling.** The gate of the whole product. It cannot be swiped past and the button below cannot be reached without reading through. |
+| ![First-run notice, button blocked](images/screens/revue-avertissement-bouton-bloque.png) | **The same notice, button disabled — and saying why.** The rule of the house: never a grey button without its reason next to it. Here the reason is that the four confirmations are not all ticked. |
+| ![First-run notice, confirmed](images/screens/revue-avertissement-confirme.png) | **Four confirmations ticked, button live.** The counter is written on the way *out* of the step, not on the way in, so a half-read notice is not recorded as read. |
+| ![Home](images/screens/revue-accueil.png) | **Home, on an empty database.** Three cards whose order never changes, and two disabled buttons each carrying its own reason. A card with nothing to say is disabled, never removed — a target that moves between 23:00 and 05:00 is worse than a card that admits it has nothing. |
+| ![Evening form](images/screens/revue-formulaire-du-soir.png) | **The evening record, before sealing.** The only door of the product: the watch will not start until this is sealed, and once sealed it cannot be edited. |
+| ![Pairing step](images/screens/revue-assistant-appairage.png) | **Assistant, pairing step.** The sensor check that tells you whether the watch is reachable at all, before the first night rather than after it. |
+| ![Sleep source step](images/screens/revue-assistant-source-sommeil.png) | **Assistant, sleep source.** The second device is not optional: one sensor cannot honestly measure both the movements and the sleep they happen in. |
+| ![Trend refused](images/screens/revue-tendance-refus.png) | **Trend, refused under three nights.** Not a warning over a figure — there is no figure. The refusal is carried by the type, not by the display: no branch of code produces an aggregate below three nights. |
+| ![Settings](images/screens/revue-reglages.png) | **Settings.** Where the counting rule and the parameter profile live, both shown as values rather than as controls, because neither is adjustable yet. |
+| ![P1 report](images/screens/revue-rapport-p1.png) | **The P1 report.** The only blocking milestone of the project, instrumented and not yet passed. Each night gets a verdict on three criteria, and *undetermined* is a verdict like the others. |
+| ![Erase everything](images/screens/revue-effacement.png) | **Erase everything.** Local data, local erasure, and a confirmation that has to be typed. |
+| ![Watch, at rest](images/screens/revue-montre-repos.png) | **The watch, blocked on an unsealed context.** Amber and not red: this is a step the user has not taken yet, not a fault of the device. |
 
 ## What is faithful, and what is not
 
@@ -167,11 +206,11 @@ ordinal, so the three days without a recording leave visible holes. Those holes 
 Two departures from [`06-interface.md`](06-interface.md) are visible here and both are open questions
 rather than oversights, recorded in §4.5 of that document:
 
-- **The Y axis does not start at zero.** The "axis starts at 0" invariant was written for a per-hour
-  count. A rhythm in seconds has no meaningful zero, and anchoring it at zero would compress every
-  night into the top fifth of the plot. The axis instead spans a fixed window around the data, and the
-  caption says so — *pas d'ancrage à zéro : un rythme n'en a pas*. **The convention still needs to be
-  specified properly**; this mock-up shows one plausible answer, not a decided one.
+- **The Y axis starts at zero.** This paragraph used to claim the opposite, and described a
+  convention that was considered for a rhythm in seconds and never built. The code settles it:
+  `TendanceChartSpec.yMin` is `0f`, hard-coded, and `yMax` is
+  `max(20, ceil(1.15 × highest value / 5) × 5)` — see `ui/chart/Specs.kt`. The README and
+  `06-interface.md` P5 both said so; only this file disagreed.
 - **There is no 15/h reference line**, because there is nothing to draw. The 15/h threshold belongs to
   the hourly count and does not transfer to a rhythm, and the published periodicity threshold (≈ 0.5,
   Ferri et al. 2016) is on a different scale. Drawing a line here would be inventing a threshold.

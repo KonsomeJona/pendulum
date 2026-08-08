@@ -14,8 +14,11 @@ fastlane/metadata/android/<locale>/
   images/wearScreenshots/
 ```
 
-Locales: `en-US`, `fr-FR`. The French is written, not translated — the interface is French, and a
-machine-translated listing above a hand-written interface reads exactly like what it is.
+Locales: `en-US`, `fr-FR`. The French is written, not translated. That was originally justified by
+the interface being in French; **the interface is in English now**, and the reason has changed
+rather than disappeared: a machine-translated listing reads exactly like what it is, and a listing
+about a sleep disorder is the last place to sound automated. The French listing therefore stays
+hand-written, and it should say plainly that the application itself is in English.
 
 ## Publishing is not automated, on purpose
 

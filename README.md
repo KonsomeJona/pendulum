@@ -48,9 +48,22 @@ the 3.6 % has since been measured, and the answer is *not closely* — see
 > **So:** take the result to a physician. Do not take a treatment decision from it, and do not let a
 > reassuring number stop you from seeing someone if you have symptoms.
 
-**Status: pre-alpha.** All four modules build. The two pure-JVM modules (binary format, signal
-processing) carry 201 unit tests; the phone and watch applications run on emulators and carry 250
-tests of their own — 244 on the JVM plus 6 instrumented tests of the guard rails. What does not exist
+### Where to go next, depending on who you are
+
+- **Your legs move at night and you want to understand what this does** →
+  the [project site](https://konsomejona.github.io/pendulum/), which is the only page written for a
+  reader who is not an engineer.
+- **You are a physician** → [`docs/02-science.md`](docs/02-science.md), which states what is claimed
+  and what is inferred, then [`docs/07-validation.md`](docs/07-validation.md) for what has and has
+  not been tested.
+- **You want to install it** → [`docs/09-release.md`](docs/09-release.md).
+- **You want to read or change the code** → [`docs/01-overview.md`](docs/01-overview.md), then
+  [`docs/04-architecture.md`](docs/04-architecture.md).
+- **You want to know what it looks like** → [`docs/08-screens.md`](docs/08-screens.md).
+
+**Status: pre-alpha.** All five modules build. The two pure-JVM modules (binary format, signal
+processing) carry 227 unit tests; the phone and watch applications carry 624 more on the JVM, plus
+12 instrumented tests that need a real device or an emulator. What does not exist
 yet is a single night of real data: no accelerometer has been worn at an ankle by this software, and
 nothing has been validated against polysomnography — nor is there a plan that would make that
 possible for an individual. The hardware feasibility gate the roadmap declares blocking has not been
@@ -154,10 +167,13 @@ injected ground truth.
 ### Build
 
 ```bash
-./gradlew :format:test :algo:test          # 201 unit tests, pure JVM
-./gradlew :wear:testDebugUnitTest :phone:testDebugUnitTest   # 244 unit tests
+./gradlew :format:test :algo:test          # 227 unit tests, pure JVM
+./gradlew :wear:testDebugUnitTest :phone:testDebugUnitTest   # 624 unit tests
+./gradlew :wear:testReleaseUnitTest :phone:testReleaseUnitTest  # the release-only guard rails
 ./gradlew :wear:assembleDebug :phone:assembleDebug
-./gradlew :phone:connectedDebugAndroidTest # 6 guard-rail tests, needs a device or emulator
+./gradlew :wear:lintDebug :phone:lintDebug
+./gradlew :phone:connectedDebugAndroidTest # 11 tests, needs a device or emulator
+./gradlew :wear:connectedDebugAndroidTest  # 1 test, needs a watch or a Wear emulator
 ```
 
 Requires JDK 17 and an Android SDK with platform 36. On WSL, if your build directory sits on a `drvfs`/9p Windows mount, Gradle will

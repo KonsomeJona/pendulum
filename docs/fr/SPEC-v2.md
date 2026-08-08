@@ -126,7 +126,7 @@ Les critères de phase de v1 étaient partiellement incohérents (P1 : « ≥ 97
 
 *Ajouté le 29/07/2026 après interrogation directe de PubMed. C'est la décision la plus lourde de ce document et elle arrive après coup — les cinq relectures avaient toutes travaillé en supposant que la métrique était le compte horaire.*
 
-### 6.1 Les trois résultats qui l'imposent
+### 5.1 Les trois résultats qui l'imposent
 
 | Source | Résultat |
 |---|---|
@@ -136,13 +136,13 @@ Les critères de phase de v1 étaient partiellement incohérents (P1 : « ≥ 97
 
 À quoi s'ajoute une revue de 2026 signée Ferri lui-même (*Sleep*, PMID 42213077) dont la thèse est que « périodicité, agrégation en salves, dépendance au stade et couplage autonomique portent plus d'information clinique que les seuls comptes d'événements ».
 
-### 6.2 Pourquoi cela résout trois problèmes d'un coup
+### 5.2 Pourquoi cela résout trois problèmes d'un coup
 
 1. **Douze fois moins de variabilité nuit à nuit.** C'est le problème que `UX.md` traitait en refusant de conclure sous trois nuits — traitement correct pour le compte, mais qui reste un pansement.
 2. **Ni le log IMI ni le Periodicity Index n'ont besoin d'un dénominateur.** Ils se calculent sur les seuls instants d'apparition des mouvements. **La circularité décrite en §2.3 disparaît pour la métrique de suivi**, et Health Connect redevient facultatif pour elle (il reste nécessaire au compte horaire du rapport médical).
 3. **Le seuil de 15/h n'était de toute façon pas transposable** à une mesure accélérométrique (§2.5, Terrill : 39 % des mouvements EMG sont mécaniquement invisibles). Le compte accélérométrique est sur une autre échelle ; la périodicité, elle, est une propriété du rythme, pas de l'amplitude.
 
-### 6.3 Ce qui ne se transpose pas — et qu'il faut coder
+### 5.3 Ce qui ne se transpose pas — et qu'il faut coder
 
 **Un taux de manqués biaise la moyenne du log IMI, fortement.** Si les manqués sont indépendants avec une probabilité `p`, un intervalle observé recouvre `N` intervalles vrais, `N` géométrique, et le biais vaut `E[ln N] = Σ p^(k−1)(1−p)·ln k` :
 
@@ -152,7 +152,7 @@ Les critères de phase de v1 étaient partiellement incohérents (P1 : « ≥ 97
 | 0,30 | +0,255 nats | ×1,29 |
 | **0,39** (Terrill, manqués mécaniques) | **+0,357 nats** | **×1,43** |
 | 0,50 | +0,508 nats | ×1,66 |
-| **0,70** (39 % mécaniques **et** alternance gauche/droite) | **+0,901 nats** | **×2,46** |
+| **0,70** (39 % mécaniques **et** alternance gauche/droite) | **+0,915 nats** | **×2,50** | ← corrigé le 2026-08-05 : +0,901 correspondait à une somme arrêtée vers k = 15, la série converge lentement à p = 0,70
 
 À comparer à la variabilité nuit à nuit publiée : 3,6 % de la moyenne du log IMI, soit ≈ 0,11 nats pour un IMI de 21 s. **Le biais à 39 % vaut 3,3 fois cette variabilité.** La moyenne brute du log IMI est donc inutilisable telle quelle.
 
@@ -167,7 +167,7 @@ Trois bénéfices, dont deux non recherchés :
 
 Réserve honnête, formulée par le second avis et retenue : l'hypothèse d'indépendance des manqués est probablement fausse. L'accéléromètre rate d'abord les mouvements de faible amplitude ; si une salve décroît en amplitude, les manqués s'agglomèrent en fin de série et le pic 2× sera sous-peuplé par rapport au modèle géométrique. À simuler dans le générateur synthétique (`ALGO-v2.md` §5) avant de croire l'estimation de `p`.
 
-### 6.4 Décision d'affichage
+### 5.4 Décision d'affichage
 
 Le compte horaire **reste**, pour une raison qui n'est pas technique : c'est la langue des somnologues, et les seuils internationaux reposent dessus. Mais il change de rôle.
 

@@ -1,7 +1,7 @@
 # The science behind Pendulum
 
 > **Pendulum** measures periodic limb movements in sleep from a smartwatch worn at the ankle, and
-> tracks the *rhythm* between them rather than their number. It is it measures, it does not
+> tracks the *rhythm* between them rather than their number. It measures; it does not
 > interpret — a real measurement to take to a physician, not a diagnosis and not a medical device — see
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
@@ -210,7 +210,13 @@ intervals with `N` geometric, and the bias on the mean log interval is
 | 0.30 | +0.255 nats | ×1.29 |
 | **0.39** (Terrill, mechanical misses) | **+0.357 nats** | **×1.43** |
 | 0.50 | +0.508 nats | ×1.66 |
-| **0.70** (mechanical misses *and* left/right alternation) | **+0.901 nats** | **×2.46** |
+| **0.70** (mechanical misses *and* left/right alternation) | **+0.915 nats** | **×2.50** |
+
+*The last row read +0.901 / ×2.46 until 2026-08-05. It was wrong and `03-algorithm.md` had already
+said so: the series converges slowly at p = 0.70, and 0.901 corresponds to a sum stopped near
+k = 15. The two documents published contradictory values for a year of reading, one of them
+declaring the other false. The other four rows are exact to three decimals, and the function is
+exposed as `rawLogBias(p)` so the correction stays checkable.*
 
 Published night-to-night variability of the mean log IMI is 3.6 %, or about 0.11 nats at a 21 s
 interval. The bias at a 39 % miss rate is **3.3 times that variability**. Taking the raw mean log IMI
@@ -361,8 +367,19 @@ available. The uncertainty introduced by the choice of exclusion window alone ex
 own error by an order of magnitude. Claiming ±10 % on the index of an apnoeic subject would be
 dishonest.
 
-Pendulum therefore gates the report behind an apnoea screen. Where the screen is unfavourable, no index
-is displayed at all — a wrong number shown is worse than no number.
+**Pendulum does not screen for sleep apnoea, and will not.** It measures leg movements, in the
+context of restless legs syndrome, and nothing else. An earlier version of this document said the
+report was gated behind an apnoea screen; that gate existed in the code but was never fed by
+anything — every night was recorded at the same confidence level, and the gate could not close. A
+protection that never fires is worse than an absent one, because it gets documented as a protection.
+Both the gate and the confidence level have been removed.
+
+What remains is a reservation on the figure itself, not a screen: `plmiRespWorstCase` recomputes the
+index while discarding **every** series whose median interval falls in the 25–45 s band, where causes
+other than restless legs are common. It detects nothing and claims nothing. It gives a guaranteed
+lower bound, and the width of the bracket `[plmiRespWorstCase, plmi]` is the uncertainty to read.
+Since this bias runs **upward** and no respiratory channel is recorded, a reader who has reason to
+suspect sleep apnoea should treat these figures as unusable and say so to their physician.
 
 **Unilateral measurement biases the index downward.** The opposite leg is not observed. Combined with
 Terrill's 39 %, the accelerometric index sits structurally below an EMG index. This does **not**
@@ -390,7 +407,18 @@ why Pendulum uses them for the wake/sleep boundary only and never reports an ind
 
 **A single night means nothing.** In confirmed RLS patients the 15/h threshold is exceeded on only
 about **34 %** of individual nights (52 % at 10/h, 70 % at 5/h); across five nights the probability
-of exceeding it at least once rises to 63 %. Within-subject night-to-night variability is of the same
+of exceeding it at least once rises to 63 %.
+
+> **These four figures carry no source, and until one is found they should be read as an
+> illustration rather than as data.** They appear in six places across this repository and the
+> project site, including the structured data a search engine indexes, and no entry in
+> `references.md` supports them. Either the paper they come from is identified and cited here, or
+> the sentence is rewritten to say only what is sourced — that within-subject variability is large
+> enough to make a single night uninformative, which Skeba 2016 does establish. Leaving four precise
+> percentages unsourced in the document written for physicians is the one thing this file exists to
+> avoid.
+
+Within-subject night-to-night variability is of the same
 order as the effect being looked for, before any measurement error is added. Comparing last night to
 last week's night carries no information. The interface refuses to draw a trend below three nights,
 and refuses to fit a trend line below ten comparable nights, by construction rather than by warning.

@@ -128,22 +128,22 @@ Autrement dit : pour la cheville, une Oura Ring avec un capteur excellent est **
 
 ## 3. Tableau comparatif des sources d'hypnogramme (état 2026)
 
-Légende : ✅ vérifié sur source primaire · ⚠️ probable mais **non vérifié** · ❌ non / exclu
+Légende : `[v]` vérifié sur source primaire · `[?]` probable mais **non vérifié** · `[x]` non / exclu
 
 | Source | Écrit dans Health Connect ? | Stades ou durée seule ? | Délai de synchro | Prix | Abonnement obligatoire ? | Autonomie | Validation publiée |
 |---|---|---|---|---|---|---|---|
-| **Samsung Health / Galaxy Watch 5** | ✅ Oui, depuis Samsung Health 6.22.5 (oct. 2022) | ⚠️ **Stades** (Awake / Light / REM / Deep) — voir note | Montre → tél. : géré par la **politique batterie de la montre** (non spécifié). Tél. → HC : « as soon as data is created or changed » | Déjà possédée | Non | ~2-3 j (GW5) | ✅ GW3 : TST +9,5 min, 4 stades 0,651, kappa 0,34-0,47 |
-| **Sleep as Android** (app tél., éventuellement + montre) | ✅ Oui | ✅ **Phases de sommeil** + FC repos + SpO2 | Écrit à la fin du suivi, au réveil (pas de synchro Bluetooth constructeur à attendre si suivi par le téléphone) | App payante après essai (⚠️ tarif non vérifié) | ⚠️ non vérifié | n/a (téléphone sur secteur) | ❌ Le mode sonar/micro seul n'a pas de validation de staging connue |
-| **Pixel Watch + Google Health** (ex-Fitbit) | ✅ « third-party connections through Android Health Connect » | ⚠️ Stades **non confirmés** sur page officielle | ⚠️ non vérifié | Montre déjà possédée — **mais occupée à la cheville** | Non pour le sommeil de base ; Google Health Premium (ex-Fitbit Premium) pour l'analyse avancée | ~24 h (PW3) | Non trouvée |
-| **Garmin (Garmin Connect)** | ✅ Oui, depuis ~juillet 2025 · **sens unique** (Garmin écrit, ne lit pas) | ⚠️ Sommeil oui ; **stades non confirmés** | ⚠️ non vérifié | 200–1000 € | Non (Connect+ optionnel) | 5-20 j | Non trouvée |
-| **Oura Ring** | ✅ Oui, Android **uniquement**, Gen2/Gen3+ | ⚠️ La page support liste Activité / Mensurations / Vitals — **le sommeil et les stades n'y figurent pas explicitement** | ⚠️ Piège documenté : « might not import data if both apps were not opened before midnight », Background App Refresh requis | ~350 € + | ✅ **Oui, membership actif requis** | ~7 j | Non trouvée |
-| **Whoop** | ✅ Oui (Recovery, Strain, Sleep) | ⚠️ Stades non confirmés | ⚠️ non vérifié | Matériel inclus dans l'abo | ✅ **Oui, modèle 100 % abonnement** | ~4-5 j | Non trouvée |
-| **Polar (Polar Flow)** | ✅ Oui | ✅ **« Sleep: start time, end time, stages from Polar sleep phases »** — le seul constructeur à le documenter noir sur blanc | ⚠️ « continuously while the connection remains active » | 150–500 € | **Non** | 3-7 j | Non trouvée |
-| **Withings (Health Mate)** — ScanWatch, Sleep Analyzer sous matelas | ✅ Oui (article support existe) | ⚠️ Stades non confirmés ; remontées d'utilisateurs de synchro sommeil **incomplète** | ⚠️ Sleep Analyzer : sur secteur, synchro Wi-Fi → potentiellement le plus rapide | ScanWatch ~250-350 € · Sleep Analyzer ~130 € | Non | ScanWatch ~30 j · Sleep Analyzer : **secteur, illimité** | Non trouvée |
-| **Xiaomi / Amazfit — Zepp** | ✅ Oui, élargi en janv. 2025 à **26 types**, **sens unique** | ⚠️ « sleep stats » ; stades non confirmés | ⚠️ non vérifié | 40–300 € | Non | 7-20 j | Non trouvée |
-| **Apple Watch** | ❌ **Exclu** | — | — | — | — | — | — |
-| **Sleep Cycle** (app tél. seule) | ⚠️ **Non confirmé** | Détecte les stades en interne, mais export HC non vérifié | Au réveil | Freemium | ⚠️ non vérifié | n/a | Non trouvée |
-| **Google Nest Hub 2 — Sleep Sensing** (radar Soli) | ❌ **Aucun chemin vers Health Connect trouvé** | — | — | ~100 € (⚠️ statut produit incertain) | Gratuit à ce jour (bascule vers Premium repoussée plusieurs fois) | Secteur | Non trouvée |
+| **Samsung Health / Galaxy Watch 5** | `[v]` Oui, depuis Samsung Health 6.22.5 (oct. 2022) | `[?]` **Stades** (Awake / Light / REM / Deep) — voir note | Montre → tél. : géré par la **politique batterie de la montre** (non spécifié). Tél. → HC : « as soon as data is created or changed » | Déjà possédée | Non | ~2-3 j (GW5) | `[v]` GW3 : TST +9,5 min, 4 stades 0,651, kappa 0,34-0,47 |
+| **Sleep as Android** (app tél., éventuellement + montre) | `[v]` Oui | `[v]` **Phases de sommeil** + FC repos + SpO2 | Écrit à la fin du suivi, au réveil (pas de synchro Bluetooth constructeur à attendre si suivi par le téléphone) | App payante après essai (unverified tarif non vérifié) | `[?]` non vérifié | n/a (téléphone sur secteur) | `[x]` Le mode sonar/micro seul n'a pas de validation de staging connue |
+| **Pixel Watch + Google Health** (ex-Fitbit) | `[v]` « third-party connections through Android Health Connect » | `[?]` Stades **non confirmés** sur page officielle | `[?]` non vérifié | Montre déjà possédée — **mais occupée à la cheville** | Non pour le sommeil de base ; Google Health Premium (ex-Fitbit Premium) pour l'analyse avancée | ~24 h (PW3) | Non trouvée |
+| **Garmin (Garmin Connect)** | `[v]` Oui, depuis ~juillet 2025 · **sens unique** (Garmin écrit, ne lit pas) | `[?]` Sommeil oui ; **stades non confirmés** | `[?]` non vérifié | 200–1000 € | Non (Connect+ optionnel) | 5-20 j | Non trouvée |
+| **Oura Ring** | `[v]` Oui, Android **uniquement**, Gen2/Gen3+ | `[?]` La page support liste Activité / Mensurations / Vitals — **le sommeil et les stades n'y figurent pas explicitement** | `[?]` Piège documenté : « might not import data if both apps were not opened before midnight », Background App Refresh requis | ~350 € + | `[v]` **Oui, membership actif requis** | ~7 j | Non trouvée |
+| **Whoop** | `[v]` Oui (Recovery, Strain, Sleep) | `[?]` Stades non confirmés | `[?]` non vérifié | Matériel inclus dans l'abo | `[v]` **Oui, modèle 100 % abonnement** | ~4-5 j | Non trouvée |
+| **Polar (Polar Flow)** | `[v]` Oui | `[v]` **« Sleep: start time, end time, stages from Polar sleep phases »** — le seul constructeur à le documenter noir sur blanc | `[?]` « continuously while the connection remains active » | 150–500 € | **Non** | 3-7 j | Non trouvée |
+| **Withings (Health Mate)** — ScanWatch, Sleep Analyzer sous matelas | `[v]` Oui (article support existe) | `[?]` Stades non confirmés ; remontées d'utilisateurs de synchro sommeil **incomplète** | `[?]` Sleep Analyzer : sur secteur, synchro Wi-Fi → potentiellement le plus rapide | ScanWatch ~250-350 € · Sleep Analyzer ~130 € | Non | ScanWatch ~30 j · Sleep Analyzer : **secteur, illimité** | Non trouvée |
+| **Xiaomi / Amazfit — Zepp** | `[v]` Oui, élargi en janv. 2025 à **26 types**, **sens unique** | `[?]` « sleep stats » ; stades non confirmés | `[?]` non vérifié | 40–300 € | Non | 7-20 j | Non trouvée |
+| **Apple Watch** | `[x]` **Exclu** | — | — | — | — | — | — |
+| **Sleep Cycle** (app tél. seule) | `[?]` **Non confirmé** | Détecte les stades en interne, mais export HC non vérifié | Au réveil | Freemium | `[?]` non vérifié | n/a | Non trouvée |
+| **Google Nest Hub 2 — Sleep Sensing** (radar Soli) | `[x]` **Aucun chemin vers Health Connect trouvé** | — | — | ~100 € (unverified statut produit incertain) | Gratuit à ce jour (bascule vers Premium repoussée plusieurs fois) | Secteur | Non trouvée |
 
 ### Notes et pièges par source
 
@@ -273,12 +273,12 @@ for (r in response.records) {
 
 | Sortie observée | Verdict |
 |---|---|
-| `nbStages` de plusieurs dizaines, `typesDistincts` contenant 4, 5, 6 (LIGHT, DEEP, REM) et 1 (AWAKE), couverture ≈ durée | ✅ **Vrai hypnogramme.** Feu vert. |
-| `nbStages=0` ou liste vide | ❌ Durée seule. |
-| `typesDistincts=[2]` (uniquement `STAGE_TYPE_SLEEPING`) | ❌ Binaire déguisé — utilisable pour le TST, inutile pour la plausibilité par stade. |
-| `typesDistincts=[0]` (`STAGE_TYPE_UNKNOWN`) | ❌ La source remplit le champ sans le renseigner. |
-| Plusieurs `packageName` différents pour la même nuit | ⚠️ Déduplication obligatoire avant tout calcul — voir §6. |
-| `couvertureStages` très inférieure à `dureeSession` | ⚠️ Hypnogramme troué. Les trous sont autorisés par l'API ; à toi de décider comment les traiter dans `mergeMasks()`. |
+| `nbStages` de plusieurs dizaines, `typesDistincts` contenant 4, 5, 6 (LIGHT, DEEP, REM) et 1 (AWAKE), couverture ≈ durée | `[v]` **Vrai hypnogramme.** Feu vert. |
+| `nbStages=0` ou liste vide | `[x]` Durée seule. |
+| `typesDistincts=[2]` (uniquement `STAGE_TYPE_SLEEPING`) | `[x]` Binaire déguisé — utilisable pour le TST, inutile pour la plausibilité par stade. |
+| `typesDistincts=[0]` (`STAGE_TYPE_UNKNOWN`) | `[x]` La source remplit le champ sans le renseigner. |
+| Plusieurs `packageName` différents pour la même nuit | `[?]` Déduplication obligatoire avant tout calcul — voir §6. |
+| `couvertureStages` très inférieure à `dureeSession` | `[?]` Hypnogramme troué. Les trous sont autorisés par l'API ; à toi de décider comment les traiter dans `mergeMasks()`. |
 
 Répète l'étape 3 **trois nuits** avant de trancher. Une nuit réussie peut être un coup de chance de synchro.
 

@@ -1,7 +1,7 @@
 # What Pendulum is, and how a night passes through it
 
 > **Pendulum** measures periodic limb movements in sleep from a smartwatch worn at the ankle, and
-> tracks the *rhythm* between them rather than their number. It is it measures, it does not
+> tracks the *rhythm* between them rather than their number. It measures; it does not
 > interpret — a real measurement to take to a physician, not a diagnosis and not a medical device — see
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
@@ -226,17 +226,17 @@ examination, not to replace one. No dose is adjusted on this number.
 
 ## 5. Status and roadmap
 
-**Today: pre-alpha.** All four modules build, and all four are written. The two pure-JVM modules
-carry **201 unit tests**; the two Android applications run on emulators and carry **250 tests of
-their own** — 244 on the JVM plus 6 instrumented tests of the guard rails. What does not exist is a single
+**Today: pre-alpha.** All five modules build, and all five are written. The two pure-JVM modules
+carry **227 unit tests**; the two Android applications carry **624 more on the JVM**, plus 12
+instrumented tests that need a real device or an emulator. What does not exist is a single
 night of real data — the hardware feasibility gate (P1) has not been passed.
 
 | Module | Language | State |
 |---|---|---|
-| `format` | Kotlin, pure JVM | Implemented and tested. 5 source files, 53 tests. Append-only chunk codec, CRC-protected. |
+| `format` | Kotlin, pure JVM | Implemented and tested. 6 source files, 79 tests. Append-only chunk codec, CRC-protected. |
 | `algo` | Kotlin, pure JVM | Implemented and tested. 25 source files, 148 tests, of which 3 are long-running measurements kept `@Disabled`. Integrity, timeline, DSP, detection, sleep mask, indices, synthetic ground truth. Depends on nothing, not even on `format`. |
-| `wear` | Android | Written. 19 source files, 37 unit tests. Foreground capture service, sensor strategy, gap monitor, stop conditions, watchdog, boot recovery, incremental synchronisation over the data store. |
-| `phone` | Android | Written. 76 source files, 207 unit tests plus 6 instrumented tests of the guard rails. Ingestion, Health Connect, Room storage, background workers, Compose interface, PDF and CSV export. |
+| `wear` | Android | Written. 21 source files, 85 unit test methods. Foreground capture service, sensor strategy, gap monitor, stop conditions, watchdog, boot recovery, incremental synchronisation over the data store. |
+| `phone` | Android | Written. 83 source files, 235 unit test methods plus 11 instrumented tests. Ingestion, Health Connect, Room storage, background workers, Compose interface, PDF and CSV export. |
 
 Nothing has been validated against polysomnography, and there is no plan that would make that
 possible for an individual.

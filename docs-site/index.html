@@ -166,7 +166,7 @@
 
     <p class="status">
       <span class="pill">Pre-alpha</span>
-      <span class="status-txt">All four modules build; 195 unit tests on the two pure-JVM modules.
+      <span class="status-txt">All five modules build; 227 unit tests on the two pure-JVM modules.
       No accelerometer has yet been worn at an ankle by this software.</span>
     </p>
   </div>
@@ -221,8 +221,16 @@
       <div class="reason">
         <p class="reason-tag">Stability</p>
         <p>Night-to-night variability of the hourly count is <strong>43.2 % ± 37.1</strong>; of the
-        mean log inter-movement interval, <strong>3.6 % ± 3.7</strong>. Twelve times less.
-        <span class="cite">Skeba et al., <em>Sleep Med</em> 2016, PMID 26847989</span></p>
+        mean log inter-movement interval, <strong>3.6 % ± 3.7</strong>. Significantly more stable
+        (p &lt; 0.001). Note the spreads: ±37.1 is of the same order as the value it accompanies.
+        <span class="cite">Skeba et al., <em>Sleep Med</em> 2016, PMID 26847989 — measured on
+        untreated RLS patients, by polysomnography</span></p>
+        <p class="reason-caveat"><strong>What this figure is not.</strong> Those 3.6 % are what
+        polysomnography achieves. This application does not: its own estimator carries about
+        <strong>11.3 %</strong>, and it declines to publish a rhythm on 18 simulated nights out of
+        20 rather than publish a fit it does not trust. The stability above is the reason for
+        following the interval rather than the count; it is not a performance this software has
+        demonstrated.</p>
         <div class="varbars">
           <div class="varbar">
             <span class="varbar-lab">Hourly count</span>
