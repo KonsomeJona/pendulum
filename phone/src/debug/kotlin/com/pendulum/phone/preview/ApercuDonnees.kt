@@ -9,6 +9,9 @@ import com.pendulum.phone.ui.home.SessionAccueil
 import com.pendulum.phone.ui.home.SourceAccueil
 import com.pendulum.phone.ui.model.CeSoirUi
 import com.pendulum.phone.ui.model.Drapeau
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
+import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.EtatReveil
 import com.pendulum.phone.ui.model.NuitUi
@@ -33,7 +36,6 @@ import com.pendulum.phone.ui.chart.SegmentStade
 import com.pendulum.phone.ui.chart.StadeUi
 import com.pendulum.phone.ui.chart.BandeMediane
 import com.pendulum.phone.ui.chart.TendanceChartSpec
-import com.pendulum.phone.ui.text.Textes
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.random.Random
@@ -109,7 +111,7 @@ object ApercuDonnees {
         dernierJourMs = BASE_MS,
         zoneId = FUSEAU,
         pivotMs = null,
-        descriptionAccessible = Textes.Graphes.descriptionTendance(
+        descriptionAccessible = descriptionTendance(
             points = 6,
             debut = "6 March",
             fin = "12 March",
@@ -124,8 +126,8 @@ object ApercuDonnees {
         grandeur = Aggregat.Grandeur.COMPTE_HORAIRE,
         points = pointsTendance.map { it.copy(valeur = it.valeur * 1.05f) },
         bandes = listOf(BandeMediane(BASE_MS - 6 * JOUR, BASE_MS, 22f, 14f, 31f, "22/h")),
-        reference = LigneReference(15f, "15/h", Textes.Graphes.LEGENDE_SEUIL_15),
-        descriptionAccessible = Textes.Graphes.descriptionTendance(
+        reference = LigneReference(15f, "15/h", LEGENDE_SEUIL_15),
+        descriptionAccessible = descriptionTendance(
             points = 6,
             debut = "6 March",
             fin = "12 March",
@@ -187,7 +189,8 @@ object ApercuDonnees {
             Intervalle(DEBUT_NUIT + 190 * 60_000L, DEBUT_NUIT + 236 * 60_000L),
         ),
         pic = PicAnnote(61f, "03:12"),
-        descriptionAccessible = Textes.Graphes.descriptionNuit("12 March", 412, "23:12", "06:58"),
+        descriptionAccessible = "Chart of the night of 12 March, 412 movements detected " +
+            "between 23:12 and 06:58. Values button for the table.",
     )
 
     val hypnogramme = HypnogrammeSpec(
@@ -213,7 +216,7 @@ object ApercuDonnees {
             Intervalle(DEBUT_NUIT + 165 * 60_000L, FIN_NUIT - 30 * 60_000L),
         ),
         desaccord = listOf(Intervalle(DEBUT_NUIT + 150 * 60_000L, DEBUT_NUIT + 165 * 60_000L)),
-        texteIndisponible = Textes.Graphes.HYPNO_INDISPONIBLE,
+        texteIndisponible = "Hypnogram unavailable — accelerometer immobility mask used.",
         statistiques = "6 h 58 of sleep · awake 48 min · REM 1 h 24 · N3 1 h 02 · " +
             "source Samsung Health via Health Connect · agreement with the accelerometer mask: κ = 0.71",
     )
@@ -277,11 +280,11 @@ object ApercuDonnees {
         batterie = JaugeBatterie(
             fraction = 0.34f,
             tenue = false,
-            libelle = Textes.Graphes.batterieJaugeProjetee("34%", "12%", 8),
+            libelle = "34% at the end of the night  ·  12% projected at 8 h",
         ),
         points = 468,
-        texteIndisponible = Textes.Graphes.METRO_INDISPONIBLE,
-        descriptionAccessible = Textes.Graphes.descriptionMetrologie(
+        texteIndisponible = "No device telemetry for this night — recorded before the watch sent any.",
+        descriptionAccessible = descriptionMetrologie(
             points = 468,
             gigue = "1.4 ms",
             ecretes = 1_204,
@@ -299,9 +302,9 @@ object ApercuDonnees {
 
     val nuits: List<NuitUi> = listOf(
         NuitUi(
-            "a7", "12 March", "Fri", "23:12", "06:58", "6 h 58 of sleep", "Health Connect",
+            "a7", "12 March", "Fri", "23:12", "06:58", "6 h 58 of sleep", texte(R.string.settings_health_connect),
             EtatNuit.ELIGIBLE, null, 18.7, 24.0,
-            listOf(Drapeau("gap 47 s")), BASE_MS,
+            listOf(Drapeau(texte("gap 47 s"))), BASE_MS,
             // Devoilee : c'est l'etat d'une nuit dont on a demande le resultat.
             devoileeAtMs = BASE_MS + 7 * 3_600_000L,
         ),
@@ -309,14 +312,14 @@ object ApercuDonnees {
         // porte parce que c'est cette ligne-la que la liste affichera le plus souvent, et qu'un
         // jeu d'apercu ou toutes les nuits ont un rythme donne une idee fausse de l'ecran.
         NuitUi(
-            "a6", "11 March", "Thu", "23:41", "07:04", "7 h 02 of sleep", "Health Connect",
+            "a6", "11 March", "Thu", "23:41", "07:04", "7 h 02 of sleep", texte(R.string.settings_health_connect),
             EtatNuit.PROVISOIRE, null, null, 19.0,
-            listOf(Drapeau("accelerometer mask")), BASE_MS - JOUR,
+            listOf(Drapeau(texte("accelerometer mask"))), BASE_MS - JOUR,
         ),
         NuitUi(
-            "a4", "09 March", "Tue", "00:12", "05:22", "2 h 10 of sleep", "accelerometer mask",
-            EtatNuit.ECARTEE, Textes.Nuits.motif("TOO_SHORT"), 28.1, 41.0,
-            listOf(Drapeau("off-body 12%"), Drapeau("battery 8%")), BASE_MS - 3 * JOUR,
+            "a4", "09 March", "Tue", "00:12", "05:22", "2 h 10 of sleep", texte(R.string.settings_accel_mask_only),
+            EtatNuit.ECARTEE, Mapping.motif("TOO_SHORT"), 28.1, 41.0,
+            listOf(Drapeau(texte("off-body 12%")), Drapeau(texte("battery 8%"))), BASE_MS - 3 * JOUR,
         ),
     )
 
@@ -327,8 +330,8 @@ object ApercuDonnees {
         batteriePct = null,
         espaceLibre = null,
         bracelet = "4th hole",
-        jambe = Textes.CeSoir.JAMBE_DROITE,
-        sourceSommeil = "Samsung Health",
+        jambe = texte(R.string.tonight_leg_right),
+        sourceSommeil = texte("Samsung Health"),
         sourceActive = null,
         contexteScelle = true,
     )
@@ -344,7 +347,7 @@ object ApercuDonnees {
             contexteScelle = false,
             jambeScellee = null,
             repereDeSerrage = "4th hole",
-            sourceSommeil = "Samsung Health",
+            sourceSommeil = texte("Samsung Health"),
             nuitsEnregistrees = 7,
             nuitsEligibles = 6,
             derniereNuitAnalysee = nuits.first(),
@@ -363,9 +366,9 @@ object ApercuDonnees {
                 dateLisible = "12 March",
             ),
             contexteScelle = true,
-            jambeScellee = Textes.CeSoir.JAMBE_DROITE,
+            jambeScellee = texte(R.string.tonight_leg_right),
             repereDeSerrage = "4th hole",
-            sourceSommeil = "Samsung Health",
+            sourceSommeil = texte("Samsung Health"),
             nuitsEnregistrees = 7,
             nuitsEligibles = 6,
             derniereNuitAnalysee = nuits.first().copy(devoileeAtMs = null),
@@ -383,13 +386,13 @@ object ApercuDonnees {
         nuitsEnregistrees = 7,
         nuitsEligibles = 6,
         nuitsEcartees = 1,
-        regle = "AASM v3 (5–90 s)",
-        masque = "Health Connect (5/6 nights)",
+        regle = texte("AASM v3 (5–90 s)"),
+        masque = texte("Health Connect (5/6 nights)"),
         plmw = 9.0,
         reveil = EtatReveil.Provisoire("12 March", "07:12", "08:12", "19:04", abandonne = false),
         profilPersonnalise = null,
         hashsMelanges = false,
-        questionnaireEtat = Textes.Questionnaire.NON_REMPLI,
+        questionnaireEtat = texte(R.string.quiz_not_filled),
         exportPossible = true,
     )
 
@@ -469,3 +472,36 @@ object ApercuDonnees {
         )
     }
 }
+
+/**
+ * Les textes que les `Spec` de graphe portent **deja resolus**.
+ *
+ * Ils sont ecrits en clair ici et non lus dans les ressources : un apercu Compose n'a pas de
+ * `Context` d'application, et surtout ce jeu de donnees existe pour montrer l'ecran, pas pour
+ * verifier le cablage — c'est `ui/TextesTest.kt` qui verifie que chaque identifiant a sa chaine.
+ */
+private fun descriptionTendance(
+    points: Int,
+    debut: String,
+    fin: String,
+    mediane: String,
+    minimum: String,
+    maximum: String,
+    unite: String,
+) = "Trend, $points points, from $debut to $fin, median $mediane $unite, values from " +
+    "$minimum to $maximum $unite, points not joined. Values button for the table."
+
+private fun descriptionMetrologie(
+    points: Int,
+    gigue: String,
+    ecretes: Int,
+    gels: Int,
+    batterie: String,
+) = "Device state, $points points, one per minute. Median timing dispersion $gigue. " +
+    "$ecretes samples at the sensor range limit. $gels write freezes longer than one " +
+    "sampling period. Battery: $batterie. These lanes describe the recorder, not the " +
+    "sleeper: none of them caused the movements shown above."
+
+private const val LEGENDE_SEUIL_15 =
+    "15/h — above this, periodic limb movements are usually counted as frequent in " +
+        "polysomnography (ICSD-3). Many physicians are not concerned below it."

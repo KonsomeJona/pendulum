@@ -1,5 +1,6 @@
 package com.pendulum.phone.preview
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.pendulum.phone.data.EtatAppairage
@@ -9,6 +10,7 @@ import com.pendulum.phone.health.SourcesSommeil
 import com.pendulum.phone.ui.EtatSante
 import com.pendulum.phone.ui.onboarding.DisclaimerPage
 import com.pendulum.phone.ui.onboarding.NotificationsPage
+import com.pendulum.phone.ui.onboarding.WearingPage
 import com.pendulum.phone.ui.onboarding.PairingPage
 import com.pendulum.phone.ui.onboarding.RequirementsPage
 import com.pendulum.phone.ui.onboarding.SleepSourcePage
@@ -24,7 +26,9 @@ import com.pendulum.phone.ui.nights.NuitDetailUi
 import com.pendulum.phone.ui.settings.RapportP1Screen
 import com.pendulum.phone.ui.settings.ReglagesUi
 import com.pendulum.phone.ui.settings.SettingsScreen
-import com.pendulum.phone.ui.text.Textes
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.trend.ComparePeriodsScreen
 import com.pendulum.phone.ui.home.HomeScreen
@@ -67,15 +71,15 @@ val apercuNuitDetail = NuitDetailUi(
     series = 31,
     imiMedianSec = 23.4,
     controles = listOf(
-        Controle(Textes.Nuits.Detail.COUVERTURE, "99.2%", "97%", true),
-        Controle(Textes.Nuits.Detail.PLUS_GRAND_TROU, "1.8 s", "5 s", true),
-        Controle(Textes.Nuits.Detail.CUMUL_TROUS, "11 s", "120 s", true),
-        Controle(Textes.Nuits.Detail.FREQUENCE, "50.21 Hz", "50 Hz", true),
-        Controle(Textes.Nuits.Detail.BATTERIE_FIN, "34%", "20%", true),
-        Controle(Textes.Nuits.Detail.PORTE, "96.4%", "90%", true),
-        Controle(Textes.Nuits.Detail.SOMMEIL_TOTAL, "6 h 58", "4 h", true),
+        controle(R.string.night_detail_coverage, "99.2%", "97%"),
+        controle(R.string.night_detail_largest_gap, "1.8 s", "5 s"),
+        controle(R.string.night_detail_total_gaps, "11 s", "120 s"),
+        controle(R.string.night_detail_frequency, "50.21 Hz", "50 Hz"),
+        controle(R.string.night_detail_battery_end, "34%", "20%"),
+        controle(R.string.night_detail_worn, "96.4%", "90%"),
+        controle(R.string.night_detail_total_sleep, "6 h 58", "4 h"),
     ),
-    regleAppliquee = "AASM v3 · algo 1.4.0 · profile “default”",
+    regleAppliquee = texte("AASM v3 · algo 1.4.0 · profile “default”"),
 )
 
 @Preview(name = "Night — detail", widthDp = 411, heightDp = 1600, showBackground = true, backgroundColor = 0xFF0E1116)
@@ -138,14 +142,14 @@ private fun ApercuComparaison() = PendulumTheme {
 @Preview(name = "Comparison — refused, too few nights", widthDp = 411, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
 private fun ApercuComparaisonRefus() = PendulumTheme {
-    ComparePeriodsScreen(null, Textes.Comparaison.PERIODE_A to 3, "1–15 February", "1–15 March")
+    ComparePeriodsScreen(null, texte(R.string.compare_period_a) to 3, "1–15 February", "1–15 March")
 }
 
 // --- issu de ui/trend/TonightCard.kt ----------------------------------------
 @Preview(name = "Tonight — context sealed", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
 private fun ApercuCeSoir() = PendulumTheme {
-    TonightCard(ApercuDonnees.ceSoir, motifIndisponible = Textes.CeSoir.SCELLEMENT_FAIT, onSceller = {})
+    TonightCard(ApercuDonnees.ceSoir, motifIndisponible = stringResource(R.string.tonight_seal_done), onSceller = {})
 }
 
 @Preview(name = "Tonight — to seal, low battery", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
@@ -220,17 +224,17 @@ private fun ApercuTendanceProvisoire() = PendulumTheme {
 private fun ApercuReglages() = PendulumTheme {
     SettingsScreen(
         ReglagesUi(
-            regle = Textes.Reglages.REGLE_AASM,
-            sourcePreferee = "Samsung Health",
-            profil = "default",
-            repereDePort = "4th hole, right leg",
-            arretAutomatique = "On charger",
-            montre = "Pixel Watch 3 · 98% · 1.2 GB",
-            healthConnect = "Sleep read access granted",
-            espaceOccupe = "3.4 GB",
-            versionApp = "0.1.0",
-            versionAlgo = "1.4.0",
-            theme = Textes.Reglages.THEME_SOMBRE,
+            regle = texte(R.string.settings_rule_aasm),
+            sourcePreferee = texte("Samsung Health"),
+            profil = texte("default"),
+            repereDePort = texte("4th hole, right leg"),
+            arretAutomatique = texte("On charger"),
+            montre = texte("Pixel Watch 3 · 98% · 1.2 GB"),
+            healthConnect = texte("Sleep read access granted"),
+            espaceOccupe = texte("3.4 GB"),
+            versionApp = texte("0.1.0"),
+            versionAlgo = texte("1.4.0"),
+            theme = texte(R.string.settings_theme_dark),
         ),
         {}, {}, {}, {},
     )
@@ -317,6 +321,27 @@ private fun ApercuSourceSommeilSansSdk() = PendulumTheme {
     )
 }
 
-@Preview(name = "Onboarding 5/5 — notifications and conditions", widthDp = 411, heightDp = 1200, showBackground = true, backgroundColor = 0xFF0E1116)
+/**
+ * L'etape ou porter la montre. Elle porte un dessin, donc c'est l'apercu le plus utile du
+ * fichier : un schema faux ne se voit qu'a l'oeil, et une capture d'ecran d'appareil coute une
+ * installation complete. `heightDp` est genereux — l'etape defile.
+ */
+@Preview(name = "Onboarding 4/6 — where to wear", widthDp = 411, heightDp = 1400, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
-private fun ApercuNotifications() = PendulumTheme { NotificationsPage("4th hole", {}, {}) }
+private fun ApercuOuPorter() = PendulumTheme { WearingPage("4th hole", {}, {}) }
+
+@Preview(name = "Onboarding 6/6 — notifications", widthDp = 411, heightDp = 900, showBackground = true, backgroundColor = 0xFF0E1116)
+@Composable
+private fun ApercuNotifications() = PendulumTheme { NotificationsPage(onTerminer = {}) }
+
+/**
+ * Un controle d'apercu : le libelle vient des ressources, la valeur et le seuil sont des mesures
+ * mises en forme. Tous les controles de ce jeu sont tenus — l'ecran de detail a son propre apercu
+ * pour le cas contraire.
+ */
+private fun controle(@StringRes libelle: Int, valeur: String, seuil: String) = Controle(
+    libelle = texte(libelle),
+    valeur = texte(valeur),
+    seuil = texte(seuil),
+    ok = true,
+)

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifeste de la variante **debug** de `:phone`. Il n'existait pas : jusqu'ici `src/debug/` ne
+  portait que du code (les apercus `@Preview` et le jumeau `EchelleTemps`), c'est-a-dire rien qui
+  demande une declaration systeme.
+
+  ### Ce qu'il declare, et pourquoi il est ici et pas dans `src/main/`
+
+  Un unique `BroadcastReceiver` : le declencheur d'ensemencement du banc. Il remplit la base avec
+  des nuits synthetiques, et **cela ne doit exister dans aucune version publiable**. Le mettre
+  dans `src/main/` avec un garde `if (BuildConfig.DEBUG)` ne suffirait pas : la classe et son
+  entree de manifeste partiraient quand meme dans l'APK de release, ou n'importe qui peut les
+  lire et les invoquer. Le source set est la seule barriere qui ne repose sur aucune vigilance —
+  la variante release ne compile simplement pas ce repertoire, et `aapt dump xmltree` sur l'APK
+  de release ne trouve pas le receveur.
+
+  C'est le meme raisonnement qui avait fait deplacer `ApercuDonnees` vers `src/debug`, et la
+  meme garantie que `:sleepwriter` obtient en desactivant sa variante release.
+
+  ### `exported="true"`
+
+  Impose par l'usage : c'est `adb shell am broadcast` qui l'atteint, donc un processus exterieur
+  (le shell). Un receveur non exporte serait refuse avec `Permission Denial`, et aucune
+  permission de signature ne repare cela pour le shell. Le risque est nul la ou ce fichier
+  existe — un APK de debug, jamais signe de la cle de publication, jamais distribue.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!--
+          Le nom est **absolu**. Un nom relatif (`.banc.EnsemenceurReceiver`) se resoudrait sur
+          `applicationId` — `com.pendulum` — et non sur le `namespace` `com.pendulum.phone` :
+          c'est la meme regle que le manifeste principal enonce pour toutes ses declarations.
+        -->
+        <receiver
+            android:name="com.pendulum.phone.banc.EnsemenceurReceiver"
+            android:exported="true" />
+
+    </application>
+</manifest>
