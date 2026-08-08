@@ -16,20 +16,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.annotation.StringRes
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
-import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
-/** Les trois issues possibles. Aucune echelle de severite : l'IRLS est sous copyright, exclue. */
-enum class IssueQuestionnaire(val titre: String) {
-    COMPATIBLE(Textes.Questionnaire.ISSUE_COMPATIBLE),
-    NON_COMPATIBLE(Textes.Questionnaire.ISSUE_NON_COMPATIBLE),
-    INCOMPLET(Textes.Questionnaire.ISSUE_INCOMPLET),
+/**
+ * Les trois issues possibles. Aucune echelle de severite : l'IRLS est sous copyright, exclue.
+ *
+ * Le titre est un **identifiant de ressource** et non une chaine : un constructeur d'`enum` n'a pas
+ * de `Context`, et le resoudre ici figerait la langue au chargement de la classe.
+ */
+enum class IssueQuestionnaire(@StringRes val titre: Int) {
+    COMPATIBLE(R.string.quiz_outcome_consistent),
+    NON_COMPATIBLE(R.string.quiz_outcome_not_consistent),
+    INCOMPLET(R.string.quiz_outcome_incomplete),
 }
 
 /**
@@ -59,35 +66,38 @@ fun ScreeningQuizScreen(
         modifier.fillMaxSize().padding(Spacing.screen.dp),
         verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
     ) {
-        Text(Textes.Questionnaire.TITRE, style = PendulumType.titleL, color = c.textPrimary)
+        Text(stringResource(R.string.quiz_title), style = PendulumType.titleL, color = c.textPrimary)
 
         if (issue == null) {
             PendulumCard {
-                Paragraphe(Textes.Questionnaire.ENTETE_DETAILLE)
+                Paragraphe(stringResource(R.string.quiz_header))
                 Spacer(Modifier.height(Spacing.m.dp))
-                Paragraphe(Textes.Questionnaire.QUESTION_UNIQUE, couleur = c.textPrimary)
+                Paragraphe(stringResource(R.string.quiz_single_question), couleur = c.textPrimary)
                 Spacer(Modifier.height(Spacing.m.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm.dp)) {
-                    Button(onClick = onOui, shape = PendulumShapes.button) { Text(Textes.Questionnaire.OUI) }
-                    OutlinedButton(onClick = onNon, shape = PendulumShapes.button) { Text(Textes.Questionnaire.NON) }
+                    Button(onClick = onOui, shape = PendulumShapes.button) { Text(stringResource(R.string.quiz_yes)) }
+                    OutlinedButton(onClick = onNon, shape = PendulumShapes.button) { Text(stringResource(R.string.quiz_no)) }
                 }
             }
         } else {
             PendulumCard {
                 // Titre neutre, aucune couleur alarmante : c'est un depistage, pas un verdict.
-                Text(issue.titre, style = PendulumType.bodyEmph, color = c.textPrimary)
+                Text(stringResource(issue.titre), style = PendulumType.bodyEmph, color = c.textPrimary)
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(
-                    if (issue == IssueQuestionnaire.NON_COMPATIBLE) {
-                        Textes.Questionnaire.REPONSE_NON
-                    } else {
-                        Textes.Questionnaire.ISSUE_CORPS
-                    },
-                )
+                // L'avertissement s'affiche sur les **trois** issues, et la reponse negative s'y
+                // ajoute au lieu de le remplacer. Le remplacement etait le defaut : le seul chemin
+                // ou l'avertissement disparaissait etait le chemin rassurant, c'est-a-dire celui
+                // ou il faut le plus rappeler que ce depistage ne conclut rien et que cinq
+                // criteres cliniques restent a verifier par un medecin.
+                if (issue == IssueQuestionnaire.NON_COMPATIBLE) {
+                    Paragraphe(stringResource(R.string.quiz_answer_no))
+                    Spacer(Modifier.height(Spacing.s.dp))
+                }
+                Paragraphe(stringResource(R.string.quiz_outcome_body))
                 Spacer(Modifier.height(Spacing.s.dp))
-                Text(Textes.Questionnaire.ISSUE_EXPORT, style = PendulumType.caption, color = c.textTertiary)
+                Text(stringResource(R.string.quiz_outcome_export), style = PendulumType.caption, color = c.textTertiary)
                 Spacer(Modifier.height(Spacing.s.dp))
-                TextButton(onClick = onRevoir) { Text(Textes.Questionnaire.REVOIR) }
+                TextButton(onClick = onRevoir) { Text(stringResource(R.string.quiz_review)) }
             }
         }
     }

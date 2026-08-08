@@ -7,9 +7,10 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import com.pendulum.phone.R
 import com.pendulum.phone.ui.MainActivity
 
@@ -39,13 +40,19 @@ object Notifications {
      * a l'instant ou il attend qu'un ecran s'allume. Ce n'est pas une sollicitation, c'est une
      * reponse.
      */
+    // `notify` est garde par `peutNotifier` des la premiere ligne, mais lint ne suit pas une garde
+    // a travers un appel de fonction : `PermissionDetector` n'analyse que le corps de la methode
+    // appelante. Inliner le `checkSelfPermission` ici satisferait lint et laisserait la raison de
+    // la garde sans domicile — c'est la KDoc de `peutNotifier` qui la porte, et elle vaut plus que
+    // le warning. Meme forme, meme motif dans `wear/transfer/WatchNotifications.kt`.
+    @android.annotation.SuppressLint("MissingPermission")
     fun demandeDeContexteDuSoir(ctx: Context) {
         if (!peutNotifier(ctx)) return
         creerCanaux(ctx)
 
         val intent = Intent(
             Intent.ACTION_VIEW,
-            Uri.parse(LIEN_SOIR),
+            LIEN_SOIR.toUri(),
             ctx,
             MainActivity::class.java,
         )
@@ -56,7 +63,7 @@ object Notifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        NotificationManagerCompatOf(ctx).notify(
+        NotificationManagerCompat.from(ctx).notify(
             ID_CONTEXTE_DU_SOIR,
             NotificationCompat.Builder(ctx, CANAL_ACTION)
                 .setSmallIcon(R.drawable.ic_launcher_monochrome)
@@ -76,8 +83,16 @@ object Notifications {
      * ne pas croire qu'on a prevenu quelqu'un.
      */
     private fun peutNotifier(ctx: Context): Boolean =
-        ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
+        // La garde de version n'est pas une precaution de style : sous Android 13 la permission
+        // **n'existe pas**, et `checkSelfPermission` d'une permission qu'aucun paquet ne definit
+        // rend `DENIED`, pas « accordee ». `minSdk` valant 30, ce test a rendu l'application
+        // entierement muette sur Android 11 et 12 — le rappel du soir n'y partait jamais, et le
+        // bouton « autoriser » de l'assistant demandait une permission inconnue, donc refusee sans
+        // meme afficher de dialogue. Le commentaire ci-dessus enoncait le fait ; le code n'en
+        // tirait pas la consequence.
+        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
 
     private fun creerCanaux(ctx: Context) {
         val manager = ctx.getSystemService(NotificationManager::class.java) ?: return
@@ -89,9 +104,6 @@ object Notifications {
             ).apply { description = DESC_CANAL_ACTION },
         )
     }
-
-    private fun NotificationManagerCompatOf(ctx: Context) =
-        androidx.core.app.NotificationManagerCompat.from(ctx)
 
     const val LIEN_SOIR = "pendulum://tonight"
 

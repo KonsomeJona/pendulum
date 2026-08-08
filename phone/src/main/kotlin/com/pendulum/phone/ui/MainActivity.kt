@@ -1,6 +1,7 @@
 package com.pendulum.phone.ui
 
 import android.os.Bundle
+import androidx.annotation.StringRes
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -24,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,9 +36,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.pendulum.phone.R
 import com.pendulum.phone.data.AppairageMontre
 import com.pendulum.phone.export.PorteP1Exporter
 import com.pendulum.phone.health.SleepReader
+import com.pendulum.phone.temps.Durees
 import com.pendulum.phone.ui.export.ExportScreen
 import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.home.HomeScreen
@@ -53,13 +57,15 @@ import com.pendulum.phone.ui.settings.EffacementScreen
 import com.pendulum.phone.ui.settings.RapportP1Screen
 import com.pendulum.phone.ui.settings.SettingsScreen
 import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.NomsDeFichier
+import com.pendulum.phone.ui.text.texte
 import com.pendulum.phone.ui.tonight.EveningContextScreen
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.trend.ComparePeriodsScreen
 import com.pendulum.phone.ui.trend.TrendScreen
 import com.pendulum.phone.work.DeclencheurOpportuniste
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -179,10 +185,10 @@ fun PortailPendulum() {
  * Pas de bouton d'action flottant : il n'existe aucune action de creation sur le telephone.
  * L'enregistrement demarre sur la montre, et la seule porte est le scellement du contexte.
  */
-enum class Destination(val route: String, val libelle: String) {
-    ACCUEIL("home", Textes.EcranAccueil.TITRE),
-    TENDANCE("trend", Textes.Tendance.TITRE),
-    REGLAGES("settings", Textes.Reglages.TITRE),
+enum class Destination(val route: String, @StringRes val libelle: Int) {
+    ACCUEIL("home", R.string.home_title),
+    TENDANCE("trend", R.string.trend_title),
+    REGLAGES("settings", R.string.settings_title),
 }
 
 /** La liste des nuits, atteinte depuis la carte HISTORIQUE. Empilee : c'est une consultation. */
@@ -262,6 +268,7 @@ private fun DrawScope.iconeDestination(d: Destination, couleur: Color) {
 /** `E-HC-02` : la permission de lecture du sommeil a ete retiree. Voir `Situations.sommeil`. */
 private const val CODE_PERMISSION_REVOQUEE = "E-HC-02"
 
+
 /**
  * La nuit dont la bande d'etat parle. Elle vient de l'etat et non d'une seconde lecture : l'action
  * doit porter sur la nuit que l'utilisateur a sous les yeux, pas sur la plus recente au moment ou
@@ -317,7 +324,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                                 val teinte = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
                                 Canvas(Modifier.size(22.dp)) { iconeDestination(d, teinte) }
                             },
-                            label = { Text(d.libelle, style = PendulumType.label) },
+                            label = { Text(stringResource(d.libelle), style = PendulumType.label) },
                         )
                     }
                 }
@@ -332,6 +339,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
             composable(Destination.ACCUEIL.route) {
                 val vm: HomeViewModel = viewModel()
                 val etat by vm.etat.collectAsStateWithLifecycle()
+                val retourDemarrage by vm.demarrage.collectAsStateWithLifecycle()
 
                 // Rien tant que la premiere lecture n'a pas abouti. Pas de squelette anime, pas
                 // de cartes vides : trois cartes qui se remplissent apres coup deplaceraient
@@ -342,6 +350,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                         onSceller = { nav.navigate(ROUTE_SOIR) },
                         onFinDeNuit = { a.sessionAFermer?.let(vm::finDeNuit) },
                         onDemarrer = vm::demarrerSurLaMontre,
+                        retourDemarrage = retourDemarrage,
                         // Un seul geste : la trace est ecrite et l'ecran de detail s'ouvre dans
                         // la foulee. Deux appuis pour un chiffre qu'on a le droit de voir
                         // seraient un peage, pas un ralentisseur.
@@ -351,6 +360,24 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                         },
                         onHistorique = { nav.navigate(ROUTE_NUITS) },
                     )
+
+                    // Le compte rendu du demarrage s'efface tout seul, de deux facons.
+                    //
+                    // Par le temps d'abord : c'est le resultat d'un geste, pas un etat. Une phrase
+                    // qui resterait sous le bouton jusqu'au lendemain finirait par decrire une
+                    // demande qui n'a plus rien a voir avec la nuit en cours.
+                    //
+                    // Par la transition ensuite : des que la phase change — typiquement quand la
+                    // montre ouvre sa session et que l'accueil passe en ENREGISTREMENT — la carte
+                    // dit elle-meme ce qui se passe, et repeter « demande envoyee » sous une carte
+                    // qui affiche « RECORDING » ferait douter de celle des deux qu'il faut croire.
+                    LaunchedEffect(retourDemarrage) {
+                        if (retourDemarrage != null) {
+                            delay(Durees.ACTIVES.retourDemarrageMs)
+                            vm.demarrageConsomme()
+                        }
+                    }
+                    LaunchedEffect(a.phase) { vm.demarrageConsomme() }
                 }
             }
             composable(Destination.TENDANCE.route) {
@@ -448,7 +475,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 rapport?.let {
                     RapportP1Screen(
                         etat = it,
-                        onExporter = { createur.launch(Textes.P1.NOM_FICHIER) },
+                        onExporter = { createur.launch(NomsDeFichier.RAPPORT_P1) },
                     )
                 }
             }
@@ -465,15 +492,25 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
 
                 EveningContextScreen(
                     repereDeSerrage = repere,
+                    resultat = resultat,
                     onSceller = { vm.sceller(it) },
                     onAnnuler = { nav.popBackStack() },
                 )
 
-                // Le retour n'a lieu qu'une fois le scellement acte en base. Fermer l'ecran des
-                // le clic laisserait croire au succes d'une insertion qui peut echouer — sceller
-                // deux fois la meme soiree leve, et c'est voulu.
+                // Le retour n'a lieu que sur `Scelle`, et sur lui seul.
+                //
+                // Les trois issues etaient traitees a l'identique — l'ecran se fermait — et les
+                // deux autres ne sont pas des succes. `PublicationEchouee` est la pire des trois
+                // parce qu'elle est silencieuse et contradictoire : la base a le contexte, donc
+                // l'accueil dit qu'il est scelle, pendant que la montre, qui n'a pas recu le
+                // `DataItem`, continue de reclamer le formulaire du soir. Fermer l'ecran a cet
+                // instant, c'est envoyer chercher pendant dix minutes pourquoi START reste bloque.
+                //
+                // Sur les deux autres, l'ecran reste et dit quoi faire. Le resultat n'est donc pas
+                // consomme : il porte ce que la carte affiche, et l'ecran ne se quitte plus que
+                // par « Not now ».
                 LaunchedEffect(resultat) {
-                    if (resultat != null) {
+                    if (resultat == ResultatScellement.Scelle) {
                         vm.resultatConsomme()
                         nav.popBackStack()
                     }
@@ -483,6 +520,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 val hex = entree.arguments?.getString("hex").orEmpty()
                 val vm: NightDetailViewModel = viewModel()
                 val detail by vm.detail.collectAsStateWithLifecycle()
+                val ecriture by vm.ecriture.collectAsStateWithLifecycle()
                 LaunchedEffect(hex) { vm.charger(hex) }
 
                 // Rien tant que la lecture n'a pas abouti. Pas de squelette anime, pas de valeurs
@@ -492,12 +530,16 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 // `ACTION_CREATE_DOCUMENT`, emplacement choisi par l'utilisateur. L'application
                 // n'ecrit dans aucun repertoire partage de sa propre initiative et ne declare pas
                 // la permission `INTERNET` — le fichier ne peut aller qu'ou il a ete demande.
+                // Le nom propose est retenu jusqu'au retour du selecteur : c'est lui que le compte
+                // rendu affiche ensuite. Meme motif qu'a l'ecran d'export — le recalculer dans le
+                // rappel donnerait un autre nom si le choix de l'emplacement a traverse minuit.
+                var nomPropose by remember { mutableStateOf("") }
                 val createurRapport = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("text/markdown"),
-                ) { uri -> uri?.let { vm.exporterRapport(hex, it) } }
+                ) { uri -> uri?.let { vm.exporterRapport(hex, it, nomPropose) } }
                 val createurPaquet = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
-                ) { uri -> uri?.let { vm.exporterPaquet(hex, it) } }
+                ) { uri -> uri?.let { vm.exporterPaquet(hex, it, nomPropose) } }
 
                 detail?.let { d ->
                     val jour = Mapping.jourIso(
@@ -510,11 +552,14 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                         onAppliquerATout = vm::appliquerATout,
                         onDevoiler = { vm.devoiler(hex) },
                         onExporterRapport = {
-                            createurRapport.launch(Textes.Nuits.Detail.nomRapport(jour))
+                            nomPropose = NomsDeFichier.rapportDeNuit(jour)
+                            createurRapport.launch(nomPropose)
                         },
                         onExporterPaquet = {
-                            createurPaquet.launch(Textes.Nuits.Detail.nomPaquet(jour))
+                            nomPropose = NomsDeFichier.paquetDeNuit(jour)
+                            createurPaquet.launch(nomPropose)
                         },
+                        ecriture = ecriture,
                     )
                 }
             }
@@ -530,7 +575,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
             composable("compare") {
                 ComparePeriodsScreen(
                     resultat = null,
-                    motifIndisponible = Textes.Comparaison.PERIODE_A to Aggregat.MIN_NUITS_COMPARAISON,
+                    motifIndisponible = texte(R.string.compare_period_a) to Aggregat.MIN_NUITS_COMPARAISON,
                     libellePeriodeA = "",
                     libellePeriodeB = "",
                 )

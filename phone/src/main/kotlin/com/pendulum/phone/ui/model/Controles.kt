@@ -4,7 +4,9 @@ import com.pendulum.phone.db.ComparableNight
 import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.db.PlmResultEntity
 import com.pendulum.phone.ui.nights.Controle
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 import java.util.Locale
 
 /**
@@ -142,15 +144,15 @@ object Controles {
         session: NightSessionEntity,
         nuit: ComparableNight,
         resultat: PlmResultEntity?,
-        sourceSommeil: String,
+        sourceSommeil: UiText,
     ): List<Controle> = buildList {
         val couv = couverture(session)
         add(
             Controle(
-                libelle = Textes.Nuits.Detail.COUVERTURE,
-                valeur = couv?.let { pourcent(it) } ?: TIRET,
-                seuil = pourcent(COUVERTURE_MIN),
-                ok = couvertureTenue(couv) == true,
+                libelle = texte(R.string.night_detail_coverage),
+                valeur = texte(couv?.let { pourcent(it) } ?: TIRET),
+                seuil = texte(pourcent(COUVERTURE_MIN)),
+                ok = couvertureTenue(couv),
             )
         )
 
@@ -160,18 +162,20 @@ object Controles {
         // controle n'existe pas, alors qu'il n'est pas encore transmis.
         add(
             Controle(
-                libelle = Textes.Nuits.Detail.PLUS_GRAND_TROU,
-                valeur = TIRET,
-                seuil = "%.0f s".format(Locale.UK, PLUS_GRAND_TROU_MAX_S),
-                ok = true,
+                libelle = texte(R.string.night_detail_largest_gap),
+                valeur = texte(TIRET),
+                seuil = texte("%.0f s".format(Locale.UK, PLUS_GRAND_TROU_MAX_S)),
+                // `null` et non `true` : rien n'a ete mesure ici, donc rien n'est tenu. Un `✓`
+                // sur une valeur absente affirme un controle qui n'a pas eu lieu.
+                ok = null,
             )
         )
         val cumulS = session.gapTotalMs / 1000.0
         add(
             Controle(
-                libelle = Textes.Nuits.Detail.CUMUL_TROUS,
-                valeur = "%.0f s".format(Locale.UK, cumulS),
-                seuil = "%.0f s".format(Locale.UK, CUMUL_TROUS_MAX_S),
+                libelle = texte(R.string.night_detail_total_gaps),
+                valeur = texte("%.0f s".format(Locale.UK, cumulS)),
+                seuil = texte("%.0f s".format(Locale.UK, CUMUL_TROUS_MAX_S)),
                 ok = cumulS <= CUMUL_TROUS_MAX_S,
             )
         )
@@ -179,20 +183,20 @@ object Controles {
         val fs = session.fsMeasuredHz
         add(
             Controle(
-                libelle = Textes.Nuits.Detail.FREQUENCE,
-                valeur = cadenceLisible(fs),
-                seuil = "${session.nominalRateHz} Hz",
-                ok = cadenceTenue(fs, session.nominalRateHz) == true,
+                libelle = texte(R.string.night_detail_frequency),
+                valeur = texte(cadenceLisible(fs)),
+                seuil = texte("${session.nominalRateHz} Hz"),
+                ok = cadenceTenue(fs, session.nominalRateHz),
             )
         )
 
         val batterie = session.batteryPctLast
         add(
             Controle(
-                libelle = Textes.Nuits.Detail.BATTERIE_FIN,
-                valeur = batterie?.let { "$it%" } ?: TIRET,
-                seuil = "$BATTERIE_MIN_PCT%",
-                ok = batterieTenue(batterie) == true,
+                libelle = texte(R.string.night_detail_battery_end),
+                valeur = texte(batterie?.let { "$it%" } ?: TIRET),
+                seuil = texte("$BATTERIE_MIN_PCT%"),
+                ok = batterieTenue(batterie),
             )
         )
 
@@ -200,18 +204,18 @@ object Controles {
         // trouees n'en vaut pas 8, et c'est ce chiffre-la qui sert de denominateur.
         add(
             Controle(
-                libelle = Textes.Nuits.Detail.SOMMEIL_TOTAL,
-                valeur = Mapping.dureeLisible(nuit.analysableTstMin),
-                seuil = "4 h",
+                libelle = texte(R.string.night_detail_total_sleep),
+                valeur = texte(Mapping.dureeLisible(nuit.analysableTstMin)),
+                seuil = texte("4 h"),
                 ok = nuit.analysableTstMin >= MIN_TST_MIN,
             )
         )
 
         add(
             Controle(
-                libelle = Textes.Nuits.Detail.SOURCE_SOMMEIL,
+                libelle = texte(R.string.night_detail_sleep_source),
                 valeur = sourceSommeil,
-                seuil = Textes.Reglages.HEALTH_CONNECT,
+                seuil = texte(R.string.settings_health_connect),
                 // Le denominateur doit venir d'un **autre** capteur que le numerateur. Quand il
                 // vient du meme, le chiffre est circulaire : un traitement qui supprime des
                 // mouvements baisse le numerateur et, du meme geste, monte le denominateur.
@@ -225,9 +229,9 @@ object Controles {
         resultat?.let {
             add(
                 Controle(
-                    libelle = Textes.Nuits.Detail.TAUX_MANQUES,
-                    valeur = pourcent(nuit.missRate),
-                    seuil = pourcent(Mapping.SEUIL_MANQUES_NOTABLE),
+                    libelle = texte(R.string.night_detail_missed_rate),
+                    valeur = texte(pourcent(nuit.missRate)),
+                    seuil = texte(pourcent(Mapping.SEUIL_MANQUES_NOTABLE)),
                     ok = nuit.missRate <= Mapping.SEUIL_MANQUES_NOTABLE,
                 )
             )

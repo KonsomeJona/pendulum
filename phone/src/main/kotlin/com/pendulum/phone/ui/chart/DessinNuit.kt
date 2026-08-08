@@ -32,6 +32,12 @@ fun DrawScope.dessinerGrapheNuit(
     x: XTransform,
     mesureur: TextMeasurer,
     scratch: ChartScratch,
+    /**
+     * L'annotation du pic hors echelle, **deja mise en forme**, ou `null` quand la nuit n'en porte
+     * pas. Meme raison que les libelles de voie : le dessin n'a ni composition ni `Context`, donc
+     * ni ressource ni `Locale` — c'est le composable appelant qui la resout.
+     */
+    libellePic: String? = null,
     curseurMs: Long? = null,
 ) {
     val m = margesDefaut
@@ -91,10 +97,10 @@ fun DrawScope.dessinerGrapheNuit(
 
     // --- pic hors echelle : annote, jamais coupe
     spec.pic?.let { pic ->
-        if (pic.ratio > 32f) {
+        if (pic.ratio > 32f && libellePic != null) {
             texteAxe(
                 mesureur, scratch, t,
-                "peak ×${pic.ratio.roundToInt()} at ${pic.heure}",
+                libellePic,
                 aireSignal.left + dpPx(4f), aireSignal.top + dpPx(2f),
                 couleur = t.annotationText,
             )

@@ -7,7 +7,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.unit.sp
-import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.ChartTokens
 
 /**
@@ -54,12 +53,29 @@ import com.pendulum.phone.ui.theme.ChartTokens
  * proprietaire unique du geste est le graphe de nuit — deux gestionnaires de zoom independants
  * derivent, et une bande decalee d'un pixel fait attribuer un mouvement a la mauvaise minute.
  */
+/**
+ * Les six mots de la marge gauche, **deja resolus**.
+ *
+ * Ils descendent en parametre plutot que d'etre lus ici : un `DrawScope` n'a ni composition ni
+ * `Context`, et les resoudre a chaque trame de dessin serait payer une lecture de ressource pour
+ * six mots qui ne changent pas. `BandeMetrologie` les lit une fois, en composition.
+ */
+data class LibellesBande(
+    val port: String,
+    val sansCapteur: String,
+    val charge: String,
+    val ecretage: String,
+    val gels: String,
+    val batterie: String,
+)
+
 fun DrawScope.dessinerBandeMetrologie(
     spec: MetrologieSpec,
     t: ChartTokens,
     x: XTransform,
     mesureur: TextMeasurer,
     scratch: ChartScratch,
+    libelles: LibellesBande,
     curseurMs: Long? = null,
 ) {
     val gouttiere = dpPx(ChartTokens.GOUTTIERE_DP)
@@ -116,12 +132,12 @@ fun DrawScope.dessinerBandeMetrologie(
     val yJauge = y
 
     // --- voie 1 : le port. Trois etats, et « pas de capteur » n'est pas « porte ».
-    etiquette(mesureur, scratch, t, Textes.Graphes.VOIE_PORT, yPort, hPort)
+    etiquette(mesureur, scratch, t, libelles.port, yPort, hPort)
     when (spec.etatPort) {
         EtatPort.SANS_CAPTEUR -> {
             drawRect(t.mutedBand, Offset(zone.left, yPort), Size(zone.width, hPort))
             texteAxe(
-                mesureur, scratch, t, Textes.Graphes.PORT_SANS_CAPTEUR,
+                mesureur, scratch, t, libelles.sansCapteur,
                 zone.left + dpPx(4f), yPort + hPort / 2f - dpPx(5f),
                 couleur = t.annotationText, taille = (t.axisTextSize * 0.85f).sp,
             )
@@ -139,7 +155,7 @@ fun DrawScope.dessinerBandeMetrologie(
 
     // --- voie 2 : la charge. Aplat plein : celui-la est un fait binaire lu sur l'appareil, et il
     //     est ce qui fait sortir un point de la regression de pente de la batterie.
-    etiquette(mesureur, scratch, t, Textes.Graphes.VOIE_CHARGE, yCharge, hCharge)
+    etiquette(mesureur, scratch, t, libelles.charge, yCharge, hCharge)
     for (iv in spec.charge) {
         val x0 = borne(xDe(iv.debutMs))
         val x1 = borne(xDe(iv.finMs))
@@ -152,14 +168,14 @@ fun DrawScope.dessinerBandeMetrologie(
 
     // --- voies 4 et 5 : les deux rug plots. Tics de meme hauteur : la hauteur serait une echelle,
     //     et il n'y en a pas ici. Le volume se lit dans le panneau « pourquoi ce chiffre ».
-    etiquette(mesureur, scratch, t, Textes.Graphes.VOIE_ECRETAGE, yEcretage, hRug)
+    etiquette(mesureur, scratch, t, libelles.ecretage, yEcretage, hRug)
     dessinerRug(spec.ecretage, t.technicalFail, t.strokeBold, zone, yEcretage, hRug, ::xDe)
 
-    etiquette(mesureur, scratch, t, Textes.Graphes.VOIE_GELS, yGels, hRug)
+    etiquette(mesureur, scratch, t, libelles.gels, yGels, hRug)
     dessinerRug(spec.gels, t.attention, t.strokeNormal, zone, yGels, hRug, ::xDe)
 
     // --- voie 6 : la jauge. Volontairement plus courte que le trace, voir la KDoc.
-    etiquette(mesureur, scratch, t, Textes.Graphes.VOIE_BATTERIE, yJauge, hJauge)
+    etiquette(mesureur, scratch, t, libelles.batterie, yJauge, hJauge)
     spec.batterie?.let { dessinerJauge(it, t, zone, yJauge, hJauge, mesureur, scratch) }
 
     // --- l'axe horaire, regradue sous la bande : c'est lui qui rend l'alignement verifiable.

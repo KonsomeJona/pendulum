@@ -8,7 +8,9 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.annotation.StringRes
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.pendulum.phone.db.PendulumDatabase
 import com.pendulum.phone.db.eraseEverything
 import com.pendulum.phone.preview.ApercuDonnees
@@ -18,7 +20,8 @@ import com.pendulum.phone.ui.model.TendanceUiState
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.onboarding.DisclaimerPage
 import com.pendulum.phone.ui.model.Mapping
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.trend.TrendScreen
 import org.junit.Rule
@@ -73,7 +76,7 @@ class GardeFousTest {
     fun sousTroisNuits_aucunChiffreAgregeNEstAffiche() {
         ecranTendance(ApercuDonnees.tendanceRefus)
 
-        compose.onNodeWithText(Textes.Tendance.REFUS_TITRE, substring = true).assertIsDisplayed()
+        compose.onNodeWithText(texte(R.string.trend_refusal_title), substring = true).assertIsDisplayed()
 
         // Aucune mention propre a l'ecran complet ne doit apparaitre.
         for (interdit in listOf("high periodicity", "low periodicity", "Hourly count")) {
@@ -113,7 +116,7 @@ class GardeFousTest {
     fun ecranComplet_leRythmeEstEnTeteEtLeCompteEnSecondRang() {
         ecranTendance(ApercuDonnees.tendancePrete)
 
-        compose.onNodeWithText(Textes.Tendance.RYTHME_SANS_SEUIL, substring = true)
+        compose.onNodeWithText(texte(R.string.trend_rhythm_no_threshold), substring = true)
             .performScrollTo().assertIsDisplayed()
 
         compose.onNodeWithText("Hourly count", substring = true)
@@ -149,20 +152,26 @@ class GardeFousTest {
 
         // L'accueil : trois cartes, et la carte d'historique dit qu'il n'y a rien — a la fois
         // sur sa ligne d'etat et sur son bouton, qui porte son motif d'indisponibilite.
-        compose.onAllNodesWithText(Textes.EcranAccueil.Historique.VIDE, substring = true)
-            .onFirst().assertIsDisplayed()
+        //
+        // `performScrollTo` et pas seulement `assertIsDisplayed` : l'accueil est un `PendulumScreen`,
+        // donc une colonne defilante, et l'historique est la troisieme carte. Trois cartes ne tiennent
+        // pas forcement dans la hauteur — sur Pixel 10 Pro Fold deplie (551 dp) elles n'y tiennent pas.
+        // L'assertion nue mesurait donc la hauteur de l'appareil autant que le contenu de l'ecran ;
+        // elle n'avait jamais pu le montrer parce qu'Espresso echouait plus tot.
+        compose.onAllNodesWithText(texte(R.string.home_history_empty), substring = true)
+            .onFirst().performScrollTo().assertIsDisplayed()
 
-        compose.onAllNodesWithText(Destination.TENDANCE.libelle, substring = false)
+        compose.onAllNodesWithText(texte(Destination.TENDANCE.libelle), substring = false)
             .onFirst().performClick()
         compose.waitForIdle()
 
         // Le compteur de nuits, et rien d'autre. Aucun agregat n'existe : il n'y a pas de branche
         // de code qui en produise un sous trois nuits.
-        compose.onNodeWithText(Textes.Tendance.REFUS_TITRE, substring = true).assertIsDisplayed()
+        compose.onNodeWithText(texte(R.string.trend_refusal_title), substring = true).assertIsDisplayed()
 
         for (interdit in listOf(
-            Textes.Tendance.RYTHME_LABEL,
-            Textes.Tendance.COMPTE_LABEL,
+            texte(R.string.trend_rhythm_label),
+            texte(R.string.trend_count_label),
         )) {
             compose.onAllNodesWithText(interdit, substring = true).assertCountEquals(0)
         }
@@ -188,9 +197,9 @@ class GardeFousTest {
             }
         }
 
-        compose.onNodeWithText(Textes.EcranAccueil.Resultat.BOUTON, substring = true)
+        compose.onNodeWithText(texte(R.string.home_result_button), substring = true)
             .performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText(Mapping.rythmeLisible(nuit.rythmeSec), substring = true)
+        compose.onAllNodesWithText(resoudre(Mapping.rythmeLisible(nuit.rythmeSec)), substring = true)
             .assertCountEquals(0)
     }
 
@@ -203,9 +212,22 @@ class GardeFousTest {
             }
         }
 
-        compose.onNodeWithText(Textes.Nuits.VALEUR_UNE_NUIT, substring = true)
+        compose.onNodeWithText(texte(R.string.nights_single_value), substring = true)
             .performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText(Textes.EcranAccueil.Resultat.BOUTON, substring = true)
+        compose.onAllNodesWithText(texte(R.string.home_result_button), substring = true)
             .assertCountEquals(0)
     }
+
+    /**
+     * Le texte reellement affiche, lu dans les ressources de l'application sous test.
+     *
+     * Un test instrumente a un `Context` : c'est le seul endroit du projet ou l'on peut verifier
+     * qu'un garde-fou tient **sur la chaine que l'utilisateur voit**, dans la langue de l'appareil,
+     * et non sur l'identifiant qui l'a designee.
+     */
+    private fun texte(@StringRes id: Int): String =
+        InstrumentationRegistry.getInstrumentation().targetContext.getString(id)
+
+    private fun resoudre(t: UiText): String =
+        t.resoudre(InstrumentationRegistry.getInstrumentation().targetContext.resources)
 }

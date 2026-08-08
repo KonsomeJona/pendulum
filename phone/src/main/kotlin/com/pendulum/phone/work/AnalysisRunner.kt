@@ -231,7 +231,6 @@ object AnalysisRunner {
                 rhythmConverged = p.rhythm.converged,
                 rhythmValid = p.rhythm.valid,
                 truncatedSeriesDropped = p.truncatedSeriesDropped,
-                respiratoryConfidence = p.respiratoryConfidence.name,
                 independence = p.independence.name,
                 gate = p.gate.name,
                 floorMode = p.floorMode.name,

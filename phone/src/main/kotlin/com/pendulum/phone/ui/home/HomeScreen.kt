@@ -6,12 +6,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.model.CompteRendu
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
@@ -55,15 +58,24 @@ fun HomeScreen(
     onFinDeNuit: () -> Unit,
     onDevoiler: (String) -> Unit,
     onHistorique: () -> Unit,
+    /**
+     * Ce que la derniere demande de demarrage a donne, ou `null` quand il n'y a rien a dire.
+     *
+     * Il ne fait pas partie d'[AccueilUi] et ce n'est pas un oubli : `AccueilUi` decrit un etat lu
+     * en base, reconstruit a chaque emission du flux, alors que ceci est le resultat d'un geste,
+     * qui appartient a la session d'ecran et non a la nuit.
+     */
+    retourDemarrage: CompteRendu? = null,
     modifier: Modifier = Modifier,
 ) {
     PendulumScreen(modifier) {
         // 1 — Preparer la nuit. Le scellement est la seule porte du produit.
         TonightCard(
             etat = etat.ceSoir,
-            motifIndisponible = etat.motifPreparer,
+            motifIndisponible = etat.motifPreparer?.resoudre(),
             onSceller = onSceller,
             onDemarrer = onDemarrer,
+            retourDemarrage = retourDemarrage,
         )
 
         // 2 — Fin de nuit. Une carte, une action : soit on ferme la nuit, soit on demande le
@@ -87,14 +99,14 @@ private fun CarteFinDeNuit(
     val c = LocalPendulumColors.current
     val aDevoiler = etat.nuitADevoiler
     PendulumCard {
-        SectionHeader(Textes.EcranAccueil.Fin.TITRE)
-        Text(etat.ligneFinDeNuit, style = PendulumType.body, color = c.textPrimary)
+        SectionHeader(stringResource(R.string.home_end_title))
+        Text(etat.ligneFinDeNuit.resoudre(), style = PendulumType.body, color = c.textPrimary)
         Spacer(Modifier.height(Spacing.s.dp))
         Paragraphe(
             if (aDevoiler != null) {
-                Textes.EcranAccueil.Resultat.MASQUE_CORPS
+                stringResource(R.string.home_result_hidden_body)
             } else {
-                Textes.EcranAccueil.Fin.CORPS
+                stringResource(R.string.home_end_body)
             },
         )
         Spacer(Modifier.height(Spacing.sm.dp))
@@ -104,14 +116,14 @@ private fun CarteFinDeNuit(
         // silencieuse.
         if (aDevoiler != null) {
             BoutonMotive(
-                libelle = Textes.EcranAccueil.Resultat.BOUTON,
+                libelle = stringResource(R.string.home_result_button),
                 motifIndisponible = null,
                 onClick = { onDevoiler(aDevoiler) },
             )
         } else {
             BoutonMotive(
-                libelle = Textes.EcranAccueil.Fin.BOUTON,
-                motifIndisponible = etat.motifFinDeNuit,
+                libelle = stringResource(R.string.home_end_button),
+                motifIndisponible = etat.motifFinDeNuit?.resoudre(),
                 onClick = onFinDeNuit,
             )
         }
@@ -122,12 +134,12 @@ private fun CarteFinDeNuit(
 private fun CarteHistorique(etat: AccueilUi, onHistorique: () -> Unit) {
     val c = LocalPendulumColors.current
     PendulumCard {
-        SectionHeader(Textes.EcranAccueil.Historique.TITRE)
-        Text(etat.ligneHistorique, style = PendulumType.bodyNum, color = c.textPrimary)
+        SectionHeader(stringResource(R.string.home_history_title))
+        Text(etat.ligneHistorique.resoudre(), style = PendulumType.bodyNum, color = c.textPrimary)
         Spacer(Modifier.height(Spacing.sm.dp))
         BoutonMotive(
-            libelle = Textes.EcranAccueil.Historique.BOUTON,
-            motifIndisponible = etat.motifHistorique,
+            libelle = stringResource(R.string.home_history_button),
+            motifIndisponible = etat.motifHistorique?.resoudre(),
             onClick = onHistorique,
         )
     }

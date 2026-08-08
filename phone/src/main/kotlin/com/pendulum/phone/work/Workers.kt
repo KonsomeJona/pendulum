@@ -3,8 +3,11 @@ package com.pendulum.phone.work
 import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
+import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.pendulum.format.wire.WirePaths
+import com.pendulum.phone.data.PublicationContexte
 import com.pendulum.phone.db.ChunkEntity
 import com.pendulum.phone.db.HcSnapshotEntity
 import com.pendulum.phone.db.PendulumDatabase
@@ -14,6 +17,7 @@ import com.pendulum.phone.ingest.ChunkStore
 import com.pendulum.phone.ingest.SessionReassembler
 import com.pendulum.format.ChunkReader
 import com.pendulum.phone.temps.Durees
+import java.time.ZoneId
 
 internal const val KEY_SESSION = "sessionHex"
 
@@ -22,6 +26,17 @@ internal const val KEY_SESSION = "sessionHex"
  * premier plan. Elle lit tout de suite, ne replanifie rien, et ne consomme pas l'echelle.
  */
 internal const val KEY_OPPORTUNISTE = "opportuniste"
+
+/** La soiree visee par une republication de contexte, au format de `WirePaths.nightKey`. */
+internal const val KEY_CLE_NUIT = "cleDeNuit"
+
+/**
+ * L'instant du scellement, qui **est** la charge utile de l'item de contexte.
+ *
+ * Il voyage dans les donnees d'entree du worker et n'est jamais relu en base : c'est ce qui rend
+ * le rejeu strictement identique a la tentative en ligne, donc dedoublonnable par le Data Layer.
+ */
+internal const val KEY_SCELLE_A = "scelleAMs"
 
 private const val TAG = "PendulumWork"
 
@@ -364,6 +379,85 @@ class WatchdogWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
             nowMs - startWallMs > ageMaxMs -> "TRUNCATED"
             etat == "OPEN" && lastChunkArrivalMs > 0 && nowMs - lastChunkArrivalMs > staleMs -> "STALE"
             else -> null
+        }
+    }
+}
+
+/**
+ * La republication du contexte du soir — l'outbox de la seule porte du produit.
+ *
+ * ### Ce qu'il repare
+ *
+ * `sceller()` ecrit le contexte en base, **irreversiblement**, puis pose l'item que `Preflight`
+ * attend. Le put echoue quand les services Google Play sont indisponibles, et il n'echoue pas
+ * quand la montre est eteinte ou hors de portee : `putDataItem` ecrit dans le magasin repliquee
+ * local, la synchronisation vient ensuite et toute seule. Il n'y a donc rien a brancher sur la
+ * reconnexion de la montre — ce n'est pas le mode de defaillance.
+ *
+ * Le mode de defaillance reel est celui-ci : une seconde d'indisponibilite, un contexte scelle et
+ * immuable en base, un item qui n'est entre nulle part, et une montre qui refuse d'enregistrer
+ * cette nuit-la pour toujours (`IssueId.CONTEXT_NOT_SEALED` est un blocage dur). Aucun recours
+ * utilisateur : la base refuse de sceller deux fois.
+ *
+ * ### Pourquoi WorkManager plutot qu'une table
+ *
+ * La file **est** l'outbox : elle persiste au redemarrage du telephone et porte deja le repli
+ * exponentiel. Une table Room d'outbox serait de toute facon impossible ici — la table de contexte
+ * est rendue immuable par deux declencheurs SQLite, on ne peut donc pas y marquer un etat de
+ * publication.
+ *
+ * Reposer est sans risque et sans cout : un `putDataItem` de charge utile identique est
+ * dedoublonne par le Data Layer. C'est la meme propriete dont se sert `AckBuilder`.
+ */
+class PublicationContexteWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
+
+    override suspend fun doWork(): Result {
+        val cleDeNuit = inputData.getString(KEY_CLE_NUIT) ?: return Result.failure()
+        val scelleA = inputData.getLong(KEY_SCELLE_A, 0L)
+        return issue(cleDeNuit, System.currentTimeMillis()) {
+            PublicationContexte.poser(applicationContext, cleDeNuit, scelleA)
+        }
+    }
+
+    companion object {
+
+        /**
+         * L'issue d'une tentative de republication, horloge et Data Layer en parametres.
+         *
+         * ### Le garde-fou d'arret
+         *
+         * Une nuit passee ne se rattrape pas. Tant que la soiree visee **est** la soiree courante,
+         * reposer l'item a un sens : la montre attend, et elle interroge activement le magasin.
+         * Des que la cle de nuit a bascule, l'item ne debloquerait plus rien — la montre reclame
+         * celui de la soiree en cours — et un worker qui continue de reessayer ne fait plus que
+         * consommer de la batterie en promettant un rattrapage qui n'aura pas lieu.
+         *
+         * `success` et non `failure` pour cet abandon, comme `FetchSchedule.GiveUp` : le travail a
+         * fait ce qu'il avait a faire, il s'arrete parce que son objet a disparu, et le marquer en
+         * echec ferait remonter une alarme la ou il n'y a rien a alarmer.
+         *
+         * @param cleVisee la soiree pour laquelle le contexte a ete scelle.
+         * @param maintenantMs l'horloge en parametre : c'est elle qui decide entre reposer et
+         *   abandonner, et la lire au fond de la fonction rendait cette bifurcation intestable.
+         * @param zone fuseau explicite, pour la meme raison que dans `WirePaths.nightKey` : la
+         *   bascule a midi est le coeur de ce garde-fou, un fuseau implicite la rendrait
+         *   dependante de la machine qui execute le test.
+         * @param poser la pose de l'item, `true` si elle a abouti.
+         */
+        fun issue(
+            cleVisee: String,
+            maintenantMs: Long,
+            zone: ZoneId = ZoneId.systemDefault(),
+            poser: () -> Boolean,
+        ): ListenableWorker.Result {
+            if (cleVisee != WirePaths.nightKey(maintenantMs, zone)) {
+                Log.i(TAG, "republication de $cleVisee abandonnee : la soiree est passee")
+                return ListenableWorker.Result.success()
+            }
+            // `retry` et non `failure` : le repli exponentiel est tout l'interet de la file, et
+            // `failure` retirerait le travail au premier echec — c'est-a-dire exactement le defaut
+            // qu'on repare.
+            return if (poser()) ListenableWorker.Result.success() else ListenableWorker.Result.retry()
         }
     }
 }

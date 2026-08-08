@@ -5,6 +5,8 @@ import com.pendulum.phone.db.ComparableNight
 import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.Mapping
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -87,7 +89,7 @@ class MappingTest {
     @Test
     @DisplayName("une nuit comparable et publiable est eligible, sans motif")
     fun `nuit eligible`() {
-        val ui = Mapping.nuitUi(nuit("a"), finWallMs = null, sourceSommeil = "Oura")
+        val ui = Mapping.nuitUi(nuit("a"), finWallMs = null, sourceSommeil = texte("Oura"))
 
         assertThat(ui.etat).isEqualTo(EtatNuit.ELIGIBLE)
         assertThat(ui.motif).isNull()
@@ -99,7 +101,7 @@ class MappingTest {
         val ui = Mapping.nuitUi(
             nuit("a", gate = "NO_PLMI"),
             finWallMs = null,
-            sourceSommeil = "Oura",
+            sourceSommeil = texte("Oura"),
         )
 
         // La difference n'est pas cosmetique. Une nuit provisoire a ete mesuree correctement : ce
@@ -116,7 +118,7 @@ class MappingTest {
         val ui = Mapping.nuitUi(
             nuit("a", comparable = false, exclusionReason = ComparabilityRule.TOO_SHORT, plmi = 22.0),
             finWallMs = null,
-            sourceSommeil = "Oura",
+            sourceSommeil = texte("Oura"),
         )
 
         assertThat(ui.etat).isEqualTo(EtatNuit.ECARTEE)
@@ -154,10 +156,12 @@ class MappingTest {
     @DisplayName("un rythme absent ne s'arrondit jamais en 0 s")
     fun `rythme absent`() {
         assertThat(Mapping.rythmeSec(nuit("a", fundamentalSec = Double.NaN))).isNull()
-        assertThat(Mapping.rythmeLisible(null)).doesNotContain("0 s")
+        // Le contenu **et** l'identifiant : « 0 s » est la seule valeur physiquement impossible,
+        // donc c'est le texte rendu qui doit etre verifie, pas seulement la branche choisie.
+        assertThat(Ressources.resoudre(Mapping.rythmeLisible(null))).doesNotContain("0 s")
         assertThat(Mapping.rythmeLisible(null))
-            .isEqualTo(com.pendulum.phone.ui.text.Textes.Nuits.Detail.RYTHME_NON_AJUSTE)
-        assertThat(Mapping.rythmeLisible(21.4)).isEqualTo("21 s")
+            .isEqualTo(texte(R.string.night_detail_rhythm_not_fitted))
+        assertThat(Ressources.resoudre(Mapping.rythmeLisible(21.4))).isEqualTo("21 s")
     }
 
     // -------------------------------------------------------------------------------------
@@ -179,14 +183,16 @@ class MappingTest {
         // denominateur independant du numerateur : elle ne doit jamais etre remplacee par un
         // nom d'application qui laisserait croire a une source tierce.
         assertThat(Mapping.libelleSource(Mapping.MASQUE_ACCELERO, "com.oura.app"))
-            .isEqualTo(com.pendulum.phone.ui.text.Textes.Reglages.MASQUE_ACCELERO_SEUL)
-        assertThat(Mapping.libelleSource("HEALTH_CONNECT", "com.oura.app")).isEqualTo("App")
+            .isEqualTo(texte(R.string.settings_accel_mask_only))
+        // Le nom de l'application vient de Health Connect : il n'est pas traduisible, donc il sort
+        // en `UiText.Brut` et non en ressource.
+        assertThat(Mapping.libelleSource("HEALTH_CONNECT", "com.oura.app")).isEqualTo(texte("App"))
         // Paquet inconnu : ce qui manque est le **nom de l'application**, pas l'origine du
         // denominateur — `maskSource` la porte. Rendre « source non identifiee » ici mettait
         // l'ecran de detail en contradiction avec sa propre ligne de controle qualite, qui
         // ecrivait « Health Connect » pour la meme nuit.
         assertThat(Mapping.libelleSource("HEALTH_CONNECT", null))
-            .isEqualTo(com.pendulum.phone.ui.text.Textes.Reglages.HEALTH_CONNECT)
+            .isEqualTo(texte(R.string.settings_health_connect))
     }
 
     @Test
@@ -201,7 +207,7 @@ class MappingTest {
 
         assertThat(drapeaux).hasSizeGreaterThanOrEqualTo(4)
         assertThat(drapeaux.first().libelle)
-            .isEqualTo(com.pendulum.phone.ui.text.Textes.Nuits.Drapeaux.MASQUE_ACCELERO)
+            .isEqualTo(texte(R.string.nights_flag_accel_mask))
     }
 
     @Test

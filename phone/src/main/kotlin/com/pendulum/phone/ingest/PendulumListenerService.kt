@@ -52,6 +52,9 @@ class PendulumListenerService : WearableListenerService() {
     private val db by lazy { PendulumDatabase.get(this) }
     private val store by lazy { ChunkStore(this) }
 
+    /** Nombre de demandes de reemission deja faites, par `sessionHex#idx`. Voir [peutEncoreDemander]. */
+    private val reemissions = HashMap<String, Int>()
+
     /**
      * Repli de l'ouverture a distance : la montre demande que le telephone s'ouvre.
      *
@@ -71,8 +74,7 @@ class PendulumListenerService : WearableListenerService() {
         // Les sessions touchees pendant cette salve : l'accuse n'est publie qu'une fois par
         // session et par salve, apres avoir tout ecrit. Un accuse par chunk multiplierait par
         // trois les `putDataItem` pour la meme information finale.
-        val touched = LinkedHashSet<String>()
-        var resendRequested = false
+        val touched = LinkedHashMap<String, MutableSet<Int>>()
 
         for (event in events) {
             if (event.type != DataEvent.TYPE_CHANGED) continue
@@ -83,8 +85,10 @@ class PendulumListenerService : WearableListenerService() {
                     path.startsWith(WirePaths.SESSION_PREFIX) -> onSession(payload)
                     path.startsWith(WirePaths.CHUNK_PREFIX) -> {
                         val hex = sessionHexOfChunkPath(path) ?: continue
-                        if (onChunk(hex, payload)) resendRequested = true
-                        touched += hex
+                        val aReemettre = touched.getOrPut(hex) { linkedSetOf() }
+                        onChunk(hex, payload)?.let { idx ->
+                            if (peutEncoreDemander(hex, idx)) aReemettre += idx
+                        }
                     }
                     path.startsWith(WirePaths.LIVE_PREFIX) -> onLive(payload)
                 }
@@ -95,11 +99,36 @@ class PendulumListenerService : WearableListenerService() {
             }
         }
 
-        for (hex in touched) {
-            runCatching { publishAck(hex) }
+        for ((hex, aReemettre) in touched) {
+            runCatching { publishAck(hex, aReemettre.sorted()) }
                 .onFailure { Log.w(TAG, "accuse non publie pour $hex", it) }
         }
-        if (resendRequested) Log.w(TAG, "des chunks ont ete demandes en reemission")
+    }
+
+    /**
+     * **Combien de fois on redemande un chunk avant d'abandonner.**
+     *
+     * La reemission est indispensable — sans elle un chunk refuse est perdu pour toujours **et**
+     * garde une des 24 places en vol jusqu'au matin — mais elle ne peut pas etre inconditionnelle :
+     * un chunk corrompu **sur le disque de la montre** se reemettrait a l'identique a chaque
+     * accuse, et la nuit se passerait a le renvoyer. Une panne de transport merite d'etre retentee,
+     * une panne de stockage merite d'etre abandonnee ; rien ne les distingue vu d'ici, donc on
+     * borne.
+     *
+     * Le compteur vit en memoire, et c'est assume : s'il repart a zero parce que le service a ete
+     * recree, on aura au pire quelques tentatives de plus, ce qui est exactement le comportement
+     * qu'on voudrait apres un redemarrage du telephone. Le persister ajouterait un troisieme etat a
+     * reconcilier pour un benefice nul.
+     */
+    private fun peutEncoreDemander(sessionHex: String, idx: Int): Boolean {
+        val cle = "$sessionHex#$idx"
+        val n = (reemissions[cle] ?: 0) + 1
+        reemissions[cle] = n
+        if (n > MAX_REEMISSIONS) {
+            Log.w(TAG, "chunk $idx de $sessionHex abandonne apres $MAX_REEMISSIONS demandes")
+            return false
+        }
+        return true
     }
 
     // ------------------------------------------------------------------
@@ -124,9 +153,20 @@ class PendulumListenerService : WearableListenerService() {
                 // Le fuseau est celui **annonce par la montre**, pas celui du telephone. Les deux
                 // sont normalement identiques ; quand ils ne le sont pas — un vol pendant la
                 // journee — c'est le fuseau ou la nuit a ete vecue qui definit la soiree.
+                // Le fuseau vient de la montre et il est resolu **ici**, sur le telephone : les
+                // deux appareils n'ont pas forcement la meme base tzdb, et un identifiant que
+                // celle-ci ne connait pas leve. Sans ce repli, l'exception remontait au `catch`
+                // generique de `onDataChanged`, la ligne `night_session` n'etait jamais creee, et
+                // comme les chunks portent une cle etrangere `CASCADE` vers elle, chacun d'eux
+                // violait la contrainte a son tour : la nuit entiere disparaissait sans un mot.
+                // `offsetAt`, quinze lignes plus bas, se protegeait deja — pas celui-ci.
                 nightKey = WirePaths.nightKey(
                     h.startWallMs,
-                    java.time.ZoneId.of(h.zoneId),
+                    runCatching { java.time.ZoneId.of(h.zoneId) }
+                        .getOrElse {
+                            Log.w(TAG, "fuseau inconnu du telephone : ${h.zoneId}", it)
+                            java.time.ZoneId.systemDefault()
+                        },
                 ),
                 startWallMs = h.startWallMs,
                 plannedStopWallMs = h.plannedStopWallMs,
@@ -178,8 +218,8 @@ class PendulumListenerService : WearableListenerService() {
     // /pendulum/chunk
     // ------------------------------------------------------------------
 
-    /** @return vrai si le chunk doit etre reemis (verification echouee). */
-    private fun onChunk(sessionHexFromPath: String, payload: ByteArray): Boolean = runBlocking {
+    /** @return l'index du chunk a reemettre si la verification a echoue, `null` sinon. */
+    private fun onChunk(sessionHexFromPath: String, payload: ByteArray): Int? = runBlocking {
         val (meta, bytes) = ChunkEnvelope.decode(payload)
         when (val verdict = ChunkVerifier.verify(sessionHexFromPath, meta, bytes)) {
             ChunkVerifier.Verdict.OK -> Unit
@@ -188,7 +228,7 @@ class PendulumListenerService : WearableListenerService() {
                 // On ne memorise pas la demande de reemission en base : elle se rededuit de
                 // l'absence de la ligne. Un etat « a reemettre » persistant serait un troisieme
                 // etat a reconcilier, alors que « present ou absent » suffit.
-                return@runBlocking true
+                return@runBlocking meta.idx
             }
         }
 
@@ -237,7 +277,7 @@ class PendulumListenerService : WearableListenerService() {
             )
         )
         db.nightDao().touchChunkArrival(meta.sessionHex, System.currentTimeMillis())
-        false
+        null
     }
 
     // ------------------------------------------------------------------
@@ -265,9 +305,9 @@ class PendulumListenerService : WearableListenerService() {
      * dizaines de lignes, le benefice est qu'aucun etat en memoire ne peut diverger de la
      * verite.
      */
-    private fun publishAck(sessionHex: String) = runBlocking {
+    private fun publishAck(sessionHex: String, needResend: List<Int>) = runBlocking {
         val complete = db.chunkDao().completeIndices(sessionHex)
-        val ack = AckBuilder.build(sessionHex, complete, emptyList(), System.currentTimeMillis())
+        val ack = AckBuilder.build(sessionHex, complete, needResend, System.currentTimeMillis())
         val request = PutDataRequest.create(WirePaths.ack(sessionHex))
             .setData(ack.encode())
             // Sans `setUrgent()`, le systeme peut retarder la synchronisation de 30 minutes.
@@ -285,5 +325,12 @@ class PendulumListenerService : WearableListenerService() {
 
     private companion object {
         const val TAG = "PendulumIngest"
+
+        /**
+         * Trois, parce qu'une panne de transport se resout en une ou deux tentatives et qu'au-dela
+         * c'est le fichier lui-meme qui est en cause. Redemander sans fin couterait la batterie de
+         * la nuit pour un chunk qui ne sera jamais bon.
+         */
+        const val MAX_REEMISSIONS = 3
     }
 }

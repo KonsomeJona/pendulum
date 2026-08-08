@@ -12,10 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.model.ErreurPendulum
 import com.pendulum.phone.ui.model.EtapeAnalyse
 import com.pendulum.phone.ui.model.EtatReveil
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.texte
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumTheme
@@ -34,39 +36,38 @@ import com.pendulum.phone.ui.theme.Spacing
 fun StatusStrip(
     etat: EtatReveil,
     onAction: () -> Unit = {},
-    onDetailTechnique: () -> Unit = {},
 ) {
     when (etat) {
         EtatReveil.Rien -> Unit
 
         is EtatReveil.EnAttenteTransfert -> PendulumCard {
-            Titre(Textes.Reveil.EnAttente.titre(etat.date))
-            Paragraphe(Textes.Reveil.EnAttente.corps(etat.mo, etat.minutes))
+            Titre(stringResource(R.string.waking_pending_title, etat.date))
+            Paragraphe(stringResource(R.string.waking_pending_body, etat.mo, etat.minutes))
             Spacer(Modifier.height(Spacing.sm.dp))
             Button(onClick = onAction, shape = PendulumShapes.button) {
-                Text(Textes.Reveil.EnAttente.ACTION)
+                Text(stringResource(R.string.waking_pending_action))
             }
         }
 
         is EtatReveil.Transfert -> PendulumCard {
-            Titre(Textes.Reveil.Transfert.titre(etat.recuMo, etat.totalMo))
+            Titre(stringResource(R.string.waking_transfer_title, etat.recuMo, etat.totalMo))
             Spacer(Modifier.height(Spacing.s.dp))
             // Le pourcentage ne recule jamais : le transfert reprend ou il s'est arrete, et un
             // compteur qui redescend fait croire a une perte de donnees.
             Progression(etat.fraction)
             Spacer(Modifier.height(Spacing.s.dp))
-            Text(Textes.Reveil.Transfert.chunk(etat.chunk, etat.chunks), style = PendulumType.caption)
-            Paragraphe(Textes.Reveil.Transfert.CORPS)
+            Text(stringResource(R.string.waking_transfer_chunk, etat.chunk, etat.chunks), style = PendulumType.caption)
+            Paragraphe(stringResource(R.string.waking_transfer_body))
         }
 
         is EtatReveil.Analyse -> PendulumCard {
-            Titre(Textes.Reveil.Analyse.titre(etat.date))
+            Titre(stringResource(R.string.waking_analysis_title, etat.date))
             Spacer(Modifier.height(Spacing.s.dp))
             Progression(etat.etape.fraction)
             Spacer(Modifier.height(Spacing.s.dp))
             // Trois libelles d'etape et pas un de plus. Le log technique vit dans Reglages.
-            Text(etat.etape.libelle, style = PendulumType.body)
-            Text(Textes.Reveil.Analyse.reste(etat.secondesRestantes), style = PendulumType.caption)
+            Text(stringResource(etat.etape.libelle), style = PendulumType.body)
+            Text(stringResource(R.string.waking_analysis_remaining, etat.secondesRestantes), style = PendulumType.caption)
         }
 
         // L'etat NORMAL du reveil. Aucune icone d'alerte, aucun rouge, le mot « provisoire » en
@@ -82,40 +83,44 @@ fun StatusStrip(
         // prochaine, et l'echeance datee de l'abandon.
         is EtatReveil.Provisoire -> PendulumCard {
             val c = LocalPendulumColors.current
-            Titre(Textes.Reveil.Provisoire.titre(etat.date))
+            Titre(stringResource(R.string.waking_provisional_title, etat.date))
             Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(Textes.Reveil.Provisoire.CORPS)
+            Paragraphe(stringResource(R.string.waking_provisional_body))
             Spacer(Modifier.height(Spacing.sm.dp))
             Text(
                 when {
-                    etat.abandonne -> Textes.Reveil.Provisoire.ABANDON
+                    etat.abandonne -> stringResource(R.string.waking_provisional_given_up)
                     etat.derniereTentative == null && etat.prochaineTentative != null ->
-                        Textes.Reveil.Provisoire.premiereTentative(etat.prochaineTentative)
+                        stringResource(R.string.waking_provisional_first_attempt, etat.prochaineTentative)
                     etat.prochaineTentative != null ->
-                        Textes.Reveil.Provisoire.tentatives(
+                        stringResource(
+                            R.string.waking_provisional_attempts,
                             etat.derniereTentative.orEmpty(),
                             etat.prochaineTentative,
                         )
-                    else -> Textes.Reveil.Provisoire.ABANDON
+                    else -> stringResource(R.string.waking_provisional_given_up)
                 },
                 style = PendulumType.caption,
                 color = c.textTertiary,
             )
             if (!etat.abandonne) {
                 Text(
-                    Textes.Reveil.Provisoire.abandonPrevu(etat.abandonA),
+                    stringResource(R.string.waking_provisional_give_up_at, etat.abandonA),
                     style = PendulumType.caption,
                     color = c.textTertiary,
                 )
             }
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedButton(onClick = onAction, shape = PendulumShapes.button) {
-                Text(Textes.Reveil.Provisoire.ACTION)
+                Text(stringResource(R.string.waking_provisional_action))
             }
         }
 
+        // Un seul bouton, et il fait quelque chose : la chaine de fin de nuit repart. Le
+        // « See the technical detail » qui l'accompagnait appelait un `{}` — il n'existe aucun
+        // ecran de journal technique dans ce module. Voir la KDoc d'`ErrorCard`.
         is EtatReveil.Echec -> Column(Modifier.fillMaxWidth()) {
-            ErrorCard(etat.erreur, onAction = onAction, onActionSecondaire = onDetailTechnique)
+            ErrorCard(etat.erreur, onAction = onAction)
         }
     }
 }
@@ -168,11 +173,10 @@ private fun ApercuEchec() = PendulumTheme {
             "12 March",
             ErreurPendulum(
                 code = "E-ANA-01",
-                titre = Textes.Erreurs.ANA_01_TITRE,
-                cause = Textes.Erreurs.ANA_01_CAUSE,
-                action = Textes.Erreurs.ANA_01_ACTION,
-                bouton = Textes.Erreurs.ANA_01_BOUTON,
-                boutonSecondaire = Textes.Reveil.Echec.DETAIL_TECHNIQUE,
+                titre = texte(R.string.error_ana_01_title),
+                cause = texte(R.string.error_ana_01_cause),
+                action = texte(R.string.error_ana_01_action),
+                bouton = texte(R.string.error_ana_01_button),
                 technique = true,
             ),
         ),

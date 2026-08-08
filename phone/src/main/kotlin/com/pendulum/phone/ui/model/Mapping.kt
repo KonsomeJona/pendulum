@@ -2,7 +2,9 @@ package com.pendulum.phone.ui.model
 
 import com.pendulum.phone.db.ComparabilityRule
 import com.pendulum.phone.db.ComparableNight
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -39,7 +41,7 @@ object Mapping {
     fun nuitUi(
         n: ComparableNight,
         finWallMs: Long?,
-        sourceSommeil: String,
+        sourceSommeil: UiText,
         drapeaux: List<Drapeau> = emptyList(),
     ): NuitUi {
         val zone = runCatching { ZoneId.of(n.zoneId) }.getOrDefault(ZoneId.of("UTC"))
@@ -63,7 +65,7 @@ object Mapping {
             etat = etat,
             // Non nul si et seulement si l'etat est ECARTEE : le modele l'exige, et afficher un
             // motif a cote d'une nuit retenue serait incomprehensible.
-            motif = if (etat == EtatNuit.ECARTEE) Textes.Nuits.motif(n.exclusionReason) else null,
+            motif = if (etat == EtatNuit.ECARTEE) motif(n.exclusionReason) else null,
             rythmeSec = rythmeSec(n),
             comptePlmi = n.plmi,
             drapeaux = drapeaux,
@@ -93,8 +95,9 @@ object Mapping {
      * le detail et l'export l'ecrivaient chacun a leur facon, et deux d'entre eux arrondissaient un
      * `NaN` en « 0 s » — c'est-a-dire qu'ils annoncaient un rythme nul la ou il n'y en avait aucun.
      */
-    fun rythmeLisible(sec: Double?): String =
-        sec?.let { "${kotlin.math.round(it).toInt()} s" } ?: Textes.Nuits.Detail.RYTHME_NON_AJUSTE
+    fun rythmeLisible(sec: Double?): UiText =
+        sec?.let { texte(R.string.night_detail_rhythm_seconds, kotlin.math.round(it).toInt()) }
+            ?: texte(R.string.night_detail_rhythm_not_fitted)
 
     /** `23:12`, dans le fuseau ou la nuit a ete vecue. */
     fun heureLisible(ms: Long, zoneId: String): String =
@@ -115,10 +118,27 @@ object Mapping {
      * les mouvements alternent, donc une jambe devinee fausserait le critere de comparabilite
      * sans que rien ne le signale. Une valeur inconnue reste inconnue.
      */
-    fun libelleJambe(leg: String?): String? = when (leg) {
-        "LEFT" -> Textes.CeSoir.JAMBE_GAUCHE
-        "RIGHT" -> Textes.CeSoir.JAMBE_DROITE
+    fun libelleJambe(leg: String?): UiText? = when (leg) {
+        "LEFT" -> texte(R.string.tonight_leg_left)
+        "RIGHT" -> texte(R.string.tonight_leg_right)
         else -> null
+    }
+
+    /**
+     * Motifs d'exclusion : traduction des identifiants de `ComparabilityRule`, faite ici et nulle
+     * part ailleurs. Elle etait dans le fichier de textes ; elle est desormais a cote de la regle
+     * qu'elle traduit, ce qui rend visible d'un coup d'oeil qu'aucun code n'est laisse sans phrase.
+     */
+    fun motif(code: String): UiText = when (code) {
+        "NO_CONTEXT" -> texte(R.string.nights_reason_no_context)
+        "LEG_CHANGED" -> texte(R.string.nights_reason_leg_changed)
+        "STRAP_CHANGED" -> texte(R.string.nights_reason_strap_changed)
+        "NOT_ALONE" -> texte(R.string.nights_reason_not_alone)
+        "CAL_GAIN_UNKNOWN" -> texte(R.string.nights_reason_cal_gain_unknown)
+        "CAL_GAIN_OUT_OF_TOLERANCE" -> texte(R.string.nights_reason_cal_gain_out_of_tolerance)
+        "TOO_SHORT" -> texte(R.string.nights_reason_too_short)
+        "DST_NIGHT" -> texte(R.string.nights_reason_dst_night)
+        else -> texte(R.string.nights_reason_default)
     }
 
     private fun zoneDe(zoneId: String): ZoneId =
@@ -137,14 +157,16 @@ object Mapping {
     ): List<Drapeau> = buildList {
         // Le masque accelerometrique en premier : c'est celui qui change la nature du chiffre,
         // puisque le denominateur cesse alors d'etre independant du numerateur.
-        if (n.maskSource == MASQUE_ACCELERO) add(Drapeau(Textes.Nuits.Drapeaux.MASQUE_ACCELERO))
-        if (n.truncated) add(Drapeau(Textes.Nuits.Drapeaux.TRONQUEE))
-        if (gapTotalMs > 0) add(Drapeau(Textes.Nuits.Drapeaux.trous(gapCount, gapTotalMs / 1000)))
+        if (n.maskSource == MASQUE_ACCELERO) add(Drapeau(texte(R.string.nights_flag_accel_mask)))
+        if (n.truncated) add(Drapeau(texte(R.string.nights_flag_truncated)))
+        if (gapTotalMs > 0) {
+            add(Drapeau(texte(R.string.nights_flag_gap, (gapTotalMs / 1000).toInt(), gapCount)))
+        }
         if (batteryPctLast != null && batteryPctLast < SEUIL_BATTERIE_BASSE_PCT) {
-            add(Drapeau(Textes.Nuits.Drapeaux.batterie(batteryPctLast)))
+            add(Drapeau(texte(R.string.nights_flag_battery, batteryPctLast)))
         }
         if (n.missRate > SEUIL_MANQUES_NOTABLE) {
-            add(Drapeau(Textes.Nuits.Drapeaux.manques(n.missRate)))
+            add(Drapeau(texte(R.string.nights_flag_missed, Math.round(n.missRate * 100).toInt())))
         }
     }
 
@@ -210,11 +232,24 @@ object Mapping {
      * Ecrire « source non identifiee » a cote d'un controle qui passe au vert ferait douter du
      * controle. Le nom du paquet reste affiche des qu'il est connu.
      */
-    fun libelleSource(maskSource: String, paquet: String?): String = when {
-        maskSource == MASQUE_ACCELERO -> Textes.Reglages.MASQUE_ACCELERO_SEUL
-        paquet.isNullOrBlank() -> Textes.Reglages.HEALTH_CONNECT
-        else -> paquet.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+    fun libelleSource(maskSource: String, paquet: String?): UiText = when {
+        maskSource == MASQUE_ACCELERO -> texte(R.string.settings_accel_mask_only)
+        paquet.isNullOrBlank() -> texte(R.string.settings_health_connect)
+        else -> texte(nomDApplication(paquet))
     }
+
+    /**
+     * Le nom lisible d'un paquet Android : `com.google.android.apps.fitness` donne `Fitness`.
+     *
+     * Extrait de [libelleSource] pour que les reglages s'en servent aussi. Ils affichaient le
+     * paquet **brut** pendant que la liste des nuits affichait « Fitness » : la meme source portait
+     * deux noms selon l'ecran, et le paquet entier ne tenait pas dans la largeur — il se collait a
+     * son intitule et se coupait au milieu d'un mot.
+     *
+     * Le nom vient de Health Connect : il ne se traduit pas.
+     */
+    fun nomDApplication(paquet: String): String =
+        paquet.substringAfterLast('.').replaceFirstChar { it.uppercase() }
 
     /**
      * `2026-03-12` : le jour d'une nuit, pour un **nom de fichier**.

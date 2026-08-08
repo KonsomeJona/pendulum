@@ -8,7 +8,8 @@ import com.pendulum.phone.ui.model.Controles
 import com.pendulum.phone.ui.model.PenteBatterie
 import com.pendulum.phone.ui.model.PorteP1
 import com.pendulum.phone.ui.model.PorteP1.Conformite
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
@@ -185,13 +186,13 @@ class PorteP1Test {
         val nonAnalysee = PorteP1.de(nuit(couverture = 0.0, analysee = false))
         assertThat(Controles.couverture(nuit(couverture = 0.0, analysee = false))).isNull()
         assertThat(nonAnalysee.couverture.etat).isEqualTo(Conformite.INDETERMINE)
-        assertThat(nonAnalysee.couverture.valeur).isEqualTo("—")
+        assertThat(Ressources.resoudre(nonAnalysee.couverture.valeur)).isEqualTo("—")
         assertThat(nonAnalysee.verdict).isNotEqualTo(Conformite.NON_CONFORME)
 
         // Analysee, et zero echantillon retenu : la couverture est nulle et le verdict tombe.
         val analyseeVide = PorteP1.de(nuit(couverture = 0.0, analysee = true))
         assertThat(analyseeVide.couverture.etat).isEqualTo(Conformite.NON_CONFORME)
-        assertThat(analyseeVide.couverture.valeur).isEqualTo("0.0%")
+        assertThat(Ressources.resoudre(analyseeVide.couverture.valeur)).isEqualTo("0.0%")
     }
 
     /**
@@ -201,10 +202,14 @@ class PorteP1Test {
     @Test
     fun `la ligne de controle rend un tiret sur une nuit non analysee`() {
         val ligne = Controles
-            .de(nuit(couverture = 0.0, analysee = false), nuitComparable(), null, Textes.Reglages.HEALTH_CONNECT)
-            .first { it.libelle == Textes.Nuits.Detail.COUVERTURE }
-        assertThat(ligne.valeur).isEqualTo("—")
-        assertThat(ligne.ok).isFalse()
+            .de(nuit(couverture = 0.0, analysee = false), nuitComparable(), null, texte(R.string.settings_health_connect))
+            .first { it.libelle == texte(R.string.night_detail_coverage) }
+        assertThat(Ressources.resoudre(ligne.valeur)).isEqualTo("—")
+        // `null` et non `false`, sinon les deux ecrans ne lisent plus la meme inconnue : le test
+        // voisin exige `INDETERMINE` et un verdict qui n'est pas `NON_CONFORME` pour cette entree
+        // exacte. Cette ligne assertait l'inverse — valeur « on ne sait pas », etat « non tenu » —
+        // et c'est ce qui rendait `✗` une couverture jamais mesuree.
+        assertThat(ligne.ok).isNull()
     }
 
     @Test
@@ -248,8 +253,8 @@ class PorteP1Test {
     }
 
     private fun ligneBatterie(pct: Int) = Controles
-        .de(nuit(batterie = pct), nuitComparable(), null, Textes.Reglages.HEALTH_CONNECT)
-        .firstOrNull { it.libelle == Textes.Nuits.Detail.BATTERIE_FIN }
+        .de(nuit(batterie = pct), nuitComparable(), null, texte(R.string.settings_health_connect))
+        .firstOrNull { it.libelle == texte(R.string.night_detail_battery_end) }
 
     @Test
     fun `une nuit courte ne dit rien sur huit heures, sauf si elle est deja sous le seuil`() {
@@ -290,7 +295,8 @@ class PorteP1Test {
         // 5 % par heure : 60 % a huit heures.
         val large = PorteP1.de(nuit(heures = 1.0, batterie = 100), telemetrie(60, pctParHeure = 5.0))
         assertThat(large.batterie.etat).isEqualTo(Conformite.CONFORME)
-        assertThat(large.batterie.valeur).contains("60%").contains("8 h").contains("60 points")
+        assertThat(Ressources.resoudre(large.batterie.valeur))
+            .contains("60%").contains("8 h").contains("60 points")
     }
 
     /**
@@ -387,10 +393,10 @@ class PorteP1Test {
         val v = PorteP1.de(nuit(couverture = 0.994))
         assertThat(v.criteres).hasSize(3)
         assertThat(v.criteres).allSatisfy {
-            assertThat(it.valeur).isNotBlank()
-            assertThat(it.seuil).isNotBlank()
+            assertThat(Ressources.resoudre(it.valeur)).isNotBlank()
+            assertThat(Ressources.resoudre(it.seuil)).isNotBlank()
         }
-        assertThat(v.couverture.valeur).isEqualTo("99.4%")
+        assertThat(Ressources.resoudre(v.couverture.valeur)).isEqualTo("99.4%")
     }
 
     // -------------------------------------------------------------------------------------

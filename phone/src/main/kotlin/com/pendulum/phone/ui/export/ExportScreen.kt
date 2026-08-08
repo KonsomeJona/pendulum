@@ -13,6 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.BandeauProfilPersonnalise
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.Paragraphe
@@ -20,7 +22,8 @@ import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.model.CompteRendu
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
@@ -33,8 +36,15 @@ data class ExportUi(
     val nuitsEligibles: Int,
     val periode: String,
     val profilPersonnalise: String?,
-    /** Le nom du fichier ecrit, une fois l'ecriture faite. `null` tant qu'il n'y en a pas. */
-    val ecrit: String? = null,
+    /**
+     * Ce que la derniere ecriture a donne, ou `null` tant qu'il n'y en a pas eu.
+     *
+     * Le champ portait le seul **nom du fichier**, pose inconditionnellement apres un
+     * `runCatching` qui jetait son exception : « Written: … » s'affichait donc aussi quand rien
+     * n'avait ete ecrit. Sur le document qu'on emporte chez le medecin sans le rouvrir, c'est le
+     * pire endroit ou taire un echec.
+     */
+    val ecriture: CompteRendu? = null,
 )
 
 /**
@@ -79,59 +89,72 @@ fun ExportScreen(
 ) {
     val c = LocalPendulumColors.current
     val motif = if (etat.nuitsEligibles < Aggregat.MIN_NUITS_AGREGAT) {
-        Textes.Export.indisponible(Aggregat.MIN_NUITS_AGREGAT)
+        stringResource(R.string.export_unavailable, Aggregat.MIN_NUITS_AGREGAT)
     } else {
         null
     }
 
     PendulumScreen(modifier) {
-        Text(Textes.Export.TITRE, style = PendulumType.titleL, color = c.textPrimary)
+        Text(stringResource(R.string.export_title), style = PendulumType.titleL, color = c.textPrimary)
 
         PendulumCard {
             // Le bandeau qui ouvrira le document, montre ici tel quel : ce que le medecin lira
             // en premier ne doit pas etre une surprise pour celui qui l'imprime.
-            Paragraphe(Textes.Avertissement.BANDEAU_EXPORT, couleur = c.textPrimary)
+            Paragraphe(stringResource(R.string.notice_export_banner), couleur = c.textPrimary)
         }
 
         BandeauProfilPersonnalise(etat.profilPersonnalise)
 
         PendulumCard {
-            SectionHeader("Format")
-            Paragraphe(Textes.Export.FORMAT_NOTE)
+            SectionHeader(stringResource(R.string.export_section_format))
+            Paragraphe(stringResource(R.string.export_format_note))
         }
 
         PendulumCard {
-            SectionHeader("Content")
-            Text("Period: ${etat.periode}", style = PendulumType.body, color = c.textSecondary)
-            Text("${etat.nuitsEligibles} eligible nights", style = PendulumType.bodyNum, color = c.textSecondary)
+            SectionHeader(stringResource(R.string.export_section_content))
+            Text(
+                stringResource(R.string.export_period, etat.periode),
+                style = PendulumType.body,
+                color = c.textSecondary,
+            )
+            Text(
+                stringResource(R.string.export_eligible_nights, etat.nuitsEligibles),
+                style = PendulumType.bodyNum,
+                color = c.textSecondary,
+            )
             Spacer(Modifier.height(Spacing.s.dp))
-            Case(etat.inclureQuestionnaire, Textes.Export.INCLURE_QUESTIONNAIRE, null, onQuestionnaire)
+            Case(etat.inclureQuestionnaire, stringResource(R.string.export_include_questionnaire), null, onQuestionnaire)
             Case(
                 etat.inclureEcartees,
-                Textes.Export.INCLURE_ECARTEES,
-                Textes.Export.INCLURE_ECARTEES_NOTE,
+                stringResource(R.string.export_include_excluded),
+                stringResource(R.string.export_include_excluded_note),
                 onEcartees,
             )
         }
 
         if (motif != null) {
             PendulumCard {
-                Text(Textes.Erreurs.EXP_01_TITRE, style = PendulumType.titleM, color = c.textPrimary)
+                Text(stringResource(R.string.error_exp_01_title), style = PendulumType.titleM, color = c.textPrimary)
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(Textes.Erreurs.EXP_01_CAUSE)
+                Paragraphe(stringResource(R.string.error_exp_01_cause))
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(Textes.Erreurs.EXP_01_ACTION)
+                Paragraphe(stringResource(R.string.error_exp_01_action))
                 Text("E-EXP-01", style = PendulumType.caption, color = c.textTertiary)
             }
         }
 
-        BoutonMotive(Textes.Export.ENREGISTRER, motif, onEnregistrer)
-        Text(Textes.Export.PAS_DE_RESEAU, style = PendulumType.caption, color = c.textTertiary)
-        // Le nom du fichier ecrit, et rien d'autre : le chemin complet d'un `Uri` SAF est un
-        // identifiant de fournisseur illisible, et l'afficher ferait chercher un dossier qui
-        // n'existe pas sous ce nom.
-        etat.ecrit?.let {
-            Text(Textes.Export.ecrit(it), style = PendulumType.caption, color = c.textSecondary)
+        BoutonMotive(stringResource(R.string.export_save), motif, onEnregistrer)
+        Text(stringResource(R.string.export_no_network), style = PendulumType.caption, color = c.textTertiary)
+        // Le compte rendu de l'ecriture, dans les deux cas. En succes, le nom du fichier et rien
+        // d'autre : le chemin complet d'un `Uri` SAF est un identifiant de fournisseur illisible,
+        // et l'afficher ferait chercher un dossier qui n'existe pas sous ce nom. En echec, ce qui
+        // est verifiable — rien n'a ete ecrit — et le geste qui marche.
+        etat.ecriture?.let {
+            Text(
+                it.message.resoudre(),
+                style = PendulumType.caption,
+                color = if (it.echec) c.attention else c.textSecondary,
+            )
         }
         Spacer(Modifier.height(Spacing.l.dp))
     }

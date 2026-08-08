@@ -18,9 +18,10 @@ import com.pendulum.algo.model.GainSource
 import com.pendulum.algo.model.MaskAgreement
 import com.pendulum.algo.model.MaskSource
 import com.pendulum.algo.model.NightCalibration
+import com.pendulum.algo.model.PiResult
 import com.pendulum.algo.model.PlmiResult
 import com.pendulum.algo.model.PostureChange
-import com.pendulum.algo.model.RespiratoryConfidence
+import com.pendulum.algo.model.RhythmResult
 import com.pendulum.algo.model.SampleBlock
 import com.pendulum.algo.model.Segment
 import com.pendulum.algo.model.SeriesRule
@@ -180,8 +181,19 @@ object NightAnalyzer {
         val rules = listOf(SeriesConfig.aasmV3(), SeriesConfig.wasm2016())
         val out = ArrayList<PlmiResult>(rules.size * masks.size)
         for ((source, mask) in masks) {
+            // Ces deux mesures sont **hors de la boucle des regles a dessein**. Ni `ferriIndex` ni
+            // `fromClms` ne prennent la regle en parametre : a masque fixe, AASM et WASM leur
+            // donnent le meme resultat. Les laisser dans la boucle interne les faisait calculer
+            // quatre fois pour deux resultats utiles, et `Rhythm.fromClms` n'est pas gratuit —
+            // `Rhythm.fit` enchaine sept departs EM de jusqu'a 300 iterations pleines de `ln` et
+            // d'`exp`, rejoues sur batterie a chaque re-scoring d'une campagne entiere.
+            val pi = Periodicity.ferriIndex(clms, mask, fsHz, params.periodicity)
+            // `fromClms` et non `fromSeries` : la construction de serie a deja filtre les intervalles
+            // hors [10, 90] s, c'est-a-dire precisement les harmoniques hauts que la deconvolution
+            // cherche a modeliser. Partir des series sous-estimerait mecaniquement le taux de manques.
+            val rhythm = Rhythm.fromClms(clms, mask, params.rhythm)
             for (cfg in rules) {
-                out += computeOne(clms, mask, source, cfg, fsHz, timeline.truncated, params)
+                out += computeOne(clms, mask, source, cfg, fsHz, timeline.truncated, params, pi, rhythm)
             }
         }
 
@@ -205,6 +217,11 @@ object NightAnalyzer {
         )
     }
 
+    /**
+     * @param pi et [rhythm] **mesures par l'appelant, une fois par masque**. Ils ne dependent pas
+     *   de [cfg] : les passer plutot que les recalculer ici est ce qui evite de payer deux fois
+     *   la meme deconvolution pour les deux jeux de regles d'un meme masque.
+     */
     private fun computeOne(
         clms: List<Clm>,
         mask: SleepMask,
@@ -213,13 +230,10 @@ object NightAnalyzer {
         fsHz: Double,
         truncated: Boolean,
         params: AnalysisParams,
+        pi: PiResult,
+        rhythm: RhythmResult,
     ): PlmiResult {
         val built = SeriesBuilder.buildDetailed(clms, mask, fsHz, cfg)
-        val pi = Periodicity.ferriIndex(clms, mask, fsHz, params.periodicity)
-        // `fromClms` et non `fromSeries` : la construction de serie a deja filtre les intervalles
-        // hors [10, 90] s, c'est-a-dire precisement les harmoniques hauts que la deconvolution
-        // cherche a modeliser. Partir des series sous-estimerait mecaniquement le taux de manques.
-        val rhythm = Rhythm.fromClms(clms, mask, params.rhythm)
 
         return Plmi.compute(
             clms = clms,
@@ -227,7 +241,6 @@ object NightAnalyzer {
             mask = mask,
             fsHz = fsHz,
             rule = cfg.rule,
-            respiratory = RESPIRATORY_CONFIDENCE,
             pi = pi,
             rhythm = rhythm,
             floorMode = FloorMode.BILATERAL,
@@ -255,17 +268,6 @@ object NightAnalyzer {
         val totalSec = gridPoints / fsHz
         return if (totalSec <= 0.0) 0.0 else (analysableSec / totalSec).coerceIn(0.0, 1.0)
     }
-
-    /**
-     * Aucune voie respiratoire n'est enregistree, et il n'y en aura pas.
-     *
-     * `HIGH` exigerait une polygraphie ; `LOW` ferme la porte de publication et rendrait toute
-     * nuit inexploitable. `MEDIUM` est donc le seul choix honnete : il laisse `plmiRespWorstCase`
-     * porter l'incertitude — l'index recalcule en supposant que toute serie dont l'IMI median
-     * tombe dans la bande apneique est d'origine respiratoire. L'ecart entre les deux chiffres
-     * est ce qu'il faut lire, pas un drapeau binaire.
-     */
-    val RESPIRATORY_CONFIDENCE = RespiratoryConfidence.MEDIUM
 
     /** Les deux jeux de regles, exposes pour les tests et pour l'affichage. */
     val RULES: List<SeriesRule> = listOf(SeriesRule.AASM_V3, SeriesRule.WASM_2016)

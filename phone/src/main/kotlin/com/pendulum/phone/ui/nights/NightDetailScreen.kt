@@ -13,6 +13,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.chart.BandeMetrologie
 import com.pendulum.phone.ui.chart.GrapheNuit
 import com.pendulum.phone.ui.chart.HypnogrammeSpec
@@ -29,10 +31,12 @@ import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.model.CheminDeCalcul
+import com.pendulum.phone.ui.model.CompteRendu
 import com.pendulum.phone.ui.model.ErreurPendulum
 import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.NuitUi
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.text.UiText
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumTheme
@@ -77,7 +81,7 @@ data class NuitDetailUi(
     val series: Int,
     val imiMedianSec: Double,
     val controles: List<Controle>,
-    val regleAppliquee: String,
+    val regleAppliquee: UiText,
     /**
      * Le chemin de calcul du chiffre — « pourquoi 18,4 /h ». `null` quand la nuit n'a pas encore
      * de resultat, donc rien a expliquer.
@@ -91,7 +95,18 @@ data class NuitDetailUi(
 )
 
 /** Un controle de qualite : sa valeur mesuree, son seuil, son etat. Les trois, toujours. */
-data class Controle(val libelle: String, val valeur: String, val seuil: String, val ok: Boolean)
+/**
+ * Une ligne de la table de qualite.
+ *
+ * [ok] a **trois** etats et non deux, parce que la mesure en a trois. `null` veut dire « on ne
+ * sait pas » — la valeur n'a pas ete mesuree, ou n'a pas ete transmise par la montre — et ce
+ * n'est ni un succes ni un echec. `Controles` documentait deja cette distinction et la porte P1
+ * la rendait (`INDETERMINE`), mais ce type ne portait qu'un booleen : les appelants ecrasaient
+ * donc l'inconnu, trois d'entre eux vers `false` (`== true`) et un vers `true` (le plus grand
+ * trou, jamais transmis, affiche comme tenu). La meme inconnue se lisait `✗` a trois lignes et
+ * `✓` a la quatrieme.
+ */
+data class Controle(val libelle: UiText, val valeur: UiText, val seuil: UiText, val ok: Boolean?)
 
 /**
  * Le detail d'une nuit — cinq sections.
@@ -130,6 +145,14 @@ fun NightDetailScreen(
     onDevoiler: () -> Unit,
     onExporterRapport: () -> Unit,
     onExporterPaquet: () -> Unit,
+    /**
+     * Ce que la derniere des deux sorties a donne, ou `null` quand il n'y en a pas eu.
+     *
+     * Les deux boutons etaient muets : ni succes, ni echec. Le paquet brut est le plus mal place
+     * pour l'etre — c'est la seule copie transportable d'une nuit, et le croire ecrit avant
+     * d'effacer ses donnees perd le brut.
+     */
+    ecriture: CompteRendu? = null,
     modifier: Modifier = Modifier,
 ) {
     val devoile = detail.nuit.devoileeAtMs != null
@@ -150,7 +173,7 @@ fun NightDetailScreen(
     PendulumScreen(modifier) {
         // --- Section 1 : en-tete + valeur de la nuit, fusionnees
         PendulumCard {
-            Text(Textes.Nuits.Detail.titre(detail.nuit.dateLisible), style = PendulumType.titleL, color = c.textPrimary)
+            Text(stringResource(R.string.night_detail_title, detail.nuit.dateLisible), style = PendulumType.titleL, color = c.textPrimary)
             Text(
                 "${detail.nuit.debut} → ${detail.nuit.fin}  ·  ${detail.auLit} in bed  ·  ${detail.nuit.sommeilLisible}",
                 style = PendulumType.bodyNum,
@@ -159,26 +182,31 @@ fun NightDetailScreen(
             Spacer(Modifier.height(Spacing.sm.dp))
             if (devoile) {
                 Text(
-                    "${Mapping.rythmeLisible(detail.nuit.rythmeSec)}  ·  ${Math.round(detail.nuit.comptePlmi)}/h",
+                    "${Mapping.rythmeLisible(detail.nuit.rythmeSec).resoudre()}  ·  " +
+                        "${Math.round(detail.nuit.comptePlmi)}/h",
                     style = PendulumType.metricL,
                     color = c.textSecondary,
                 )
-                Text(Textes.Nuits.VALEUR_UNE_NUIT, style = PendulumType.caption, color = c.textTertiary)
+                Text(
+                    stringResource(R.string.nights_single_value),
+                    style = PendulumType.caption,
+                    color = c.textTertiary,
+                )
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(Textes.Nuits.VALEUR_UNE_NUIT_LONG)
+                Paragraphe(stringResource(R.string.nights_single_value_long))
                 Spacer(Modifier.height(Spacing.s.dp))
-                TextButton(onClick = onVoirTendance) { Text(Textes.Nuits.VOIR_TENDANCE) }
+                TextButton(onClick = onVoirTendance) { Text(stringResource(R.string.nights_see_trend)) }
             } else {
                 Text(
-                    Textes.EcranAccueil.Resultat.enregistree(detail.nuit.dateLisible),
+                    stringResource(R.string.home_result_recorded, detail.nuit.dateLisible),
                     style = PendulumType.bodyEmph,
                     color = c.textPrimary,
                 )
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(Textes.EcranAccueil.Resultat.MASQUE_CORPS)
+                Paragraphe(stringResource(R.string.home_result_hidden_body))
                 Spacer(Modifier.height(Spacing.sm.dp))
                 BoutonMotive(
-                    libelle = Textes.EcranAccueil.Resultat.BOUTON,
+                    libelle = stringResource(R.string.home_result_button),
                     motifIndisponible = null,
                     onClick = onDevoiler,
                 )
@@ -227,7 +255,7 @@ fun NightDetailScreen(
                     // La legende dit ce que la forme dit deja a l'oeil : ces voies decrivent
                     // l'enregistreur, pas le dormeur. Elle est courte et elle est ici, sous la
                     // bande, parce qu'une legende posee ailleurs se lit apres la conclusion.
-                    Paragraphe(Textes.Nuits.Detail.METROLOGIE_NOTE)
+                    Paragraphe(stringResource(R.string.night_detail_metrology_note))
                 }
             }
         }
@@ -238,27 +266,27 @@ fun NightDetailScreen(
         // mouvements n'est pas l'index, mais le laisser visible reviendrait a ne masquer que la
         // division : un garde-fou qu'on contourne en lisant la ligne du dessus n'en est pas un.
         if (devoile) PendulumCard {
-            SectionHeader(Textes.Nuits.Detail.EVENEMENTS)
-            InlineValue(Textes.Nuits.Detail.MOUVEMENTS, detail.mouvements.toString())
-            InlineValue(Textes.Nuits.Detail.DONT_SOMMEIL, detail.plms.toString())
-            InlineValue(Textes.Nuits.Detail.DONT_EVEIL, detail.plmw.toString())
-            InlineValue(Textes.Nuits.Detail.ECARTES_POSTURE, detail.ecartesPosture.toString())
-            InlineValue(Textes.Nuits.Detail.ECARTES_DUREE, detail.ecartesDuree.toString())
+            SectionHeader(stringResource(R.string.night_detail_events))
+            InlineValue(stringResource(R.string.night_detail_movements), detail.mouvements.toString())
+            InlineValue(stringResource(R.string.night_detail_of_which_sleep), detail.plms.toString())
+            InlineValue(stringResource(R.string.night_detail_of_which_awake), detail.plmw.toString())
+            InlineValue(stringResource(R.string.night_detail_excluded_posture), detail.ecartesPosture.toString())
+            InlineValue(stringResource(R.string.night_detail_excluded_duration), detail.ecartesDuree.toString())
             // La couverture des series etait un champ a part de `NuitDetailUi`, alimente par
             // exactement la meme valeur que `nuit.sommeilLisible`, deja porte par le meme objet.
             // Deux champs pour une valeur, c'est deux endroits ou elle peut diverger.
-            InlineValue(Textes.Nuits.Detail.SERIES, "${detail.series}   covering ${detail.nuit.sommeilLisible}")
-            InlineValue(Textes.Nuits.Detail.IMI_MEDIAN, "%.1f s".format(detail.imiMedianSec))
+            InlineValue(stringResource(R.string.night_detail_series), "${detail.series}   covering ${detail.nuit.sommeilLisible}")
+            InlineValue(stringResource(R.string.night_detail_median_ioi), "%.1f s".format(detail.imiMedianSec))
             // La note change avec la valeur : quand l'ajustement a ete refuse, expliquer la
             // deconvolution des harmoniques repondrait a une question que la ligne ne pose plus.
             // Ce qu'il faut dire alors est **pourquoi il n'y a rien**, et que c'est voulu.
             InlineValue(
-                Textes.Nuits.Detail.RYTHME_FONDAMENTAL,
-                Mapping.rythmeLisible(detail.nuit.rythmeSec),
+                stringResource(R.string.night_detail_fundamental_rhythm),
+                Mapping.rythmeLisible(detail.nuit.rythmeSec).resoudre(),
                 note = if (detail.nuit.rythmeSec == null) {
-                    Textes.Nuits.Detail.RYTHME_NON_AJUSTE_NOTE
+                    stringResource(R.string.night_detail_rhythm_not_fitted_note)
                 } else {
-                    Textes.Nuits.Detail.RYTHME_DECONVOLUTION_NOTE
+                    stringResource(R.string.night_detail_rhythm_deconvolution_note)
                 },
             )
         }
@@ -274,10 +302,12 @@ fun NightDetailScreen(
         // l'ecran : un chemin de calcul sans sa phrase de non-causalite ne peut pas exister.
         if (devoile) detail.pourquoi?.let { bloc ->
             PendulumCard {
-                SectionHeader(bloc.titre)
-                bloc.lignes.forEach { InlineValue(it.libelle, it.valeur, note = it.note) }
+                SectionHeader(bloc.titre.resoudre())
+                bloc.lignes.forEach {
+                    InlineValue(it.libelle.resoudre(), it.valeur.resoudre(), note = it.note?.resoudre())
+                }
                 Spacer(Modifier.height(Spacing.sm.dp))
-                Paragraphe(bloc.avertissement, couleur = c.textPrimary)
+                Paragraphe(bloc.avertissement.resoudre(), couleur = c.textPrimary)
             }
         }
 
@@ -286,27 +316,57 @@ fun NightDetailScreen(
         // Ambre pour une nuit courte, une nuit sans hypnogramme, une montre dechargee — ce sont
         // des **situations**. Rouge pour un transfert incomplet, qui est reellement casse. La
         // teinte suit `ErreurPendulum.technique` et non la gravite ressentie.
+        //
+        // Aucune lambda d'action, et c'est exact : les quatre situations que `Situations.nuit`
+        // rend n'ont plus de bouton. La derniere qui en portait un — « Force continuous mode » sur
+        // `E-NIGHT-04` — nommait un reglage qui n'existe pas, et il etait rendu ici, ou l'action
+        // etait le `{}` par defaut d'`ErrorCard`. Une carte muette dit ce qui s'est passe ; un
+        // bouton muet dit que l'application ne repond pas.
         detail.situation?.let { ErrorCard(it) }
 
         // --- Section 4 : qualite de la nuit
         PendulumCard {
-            SectionHeader(Textes.Nuits.Detail.QUALITE)
+            SectionHeader(stringResource(R.string.night_detail_quality))
             detail.controles.forEach {
-                InlineValue(it.libelle, "${it.valeur}   ${if (it.ok) "✓" else "✗"}", note = "threshold ${it.seuil}")
+                // Le signe porte l'etat pour l'oeil ; `descriptionValeur` le porte pour l'oreille.
+                // Sans elle, « 31.1% ✗ » s'annonce « 31,1 pour cent » et l'echec disparait — le
+                // signe etait le seul porteur de la seule information que cette table existe pour
+                // donner.
+                val signe = when (it.ok) {
+                    true -> "✓"
+                    false -> "✗"
+                    null -> Mapping.TIRET
+                }
+                val etat = stringResource(
+                    when (it.ok) {
+                        true -> R.string.night_detail_state_pass
+                        false -> R.string.night_detail_state_fail
+                        null -> R.string.night_detail_state_unknown
+                    }
+                )
+                InlineValue(
+                    it.libelle.resoudre(),
+                    "${it.valeur.resoudre()}   $signe",
+                    note = stringResource(R.string.night_detail_threshold, it.seuil.resoudre()),
+                    descriptionValeur = "${it.valeur.resoudre()}, $etat",
+                )
             }
-            InlineValue(Textes.Nuits.Detail.REGLE_APPLIQUEE, detail.regleAppliquee)
+            InlineValue(
+                stringResource(R.string.night_detail_rule_applied),
+                detail.regleAppliquee.resoudre(),
+            )
         }
 
         // --- Section 5 : parametres
         PendulumCard {
             TextButton(onClick = { paramsOuverts = !paramsOuverts }) {
-                Text(Textes.Nuits.Detail.PARAMS_AVANCES)
+                Text(stringResource(R.string.night_detail_advanced_params))
             }
             if (paramsOuverts) {
-                Paragraphe(Textes.Nuits.Detail.PAS_DE_REGLAGE_PAR_NUIT)
+                Paragraphe(stringResource(R.string.night_detail_no_per_night_setting))
                 Spacer(Modifier.height(Spacing.s.dp))
                 OutlinedButton(onClick = onAppliquerATout, shape = PendulumShapes.button) {
-                    Text(Textes.Nuits.Detail.RECALCULER_TOUTES)
+                    Text(stringResource(R.string.night_detail_recompute_all))
                 }
             }
         }
@@ -317,15 +377,25 @@ fun NightDetailScreen(
         // documents d'une nuit precise, qu'on sort quand cette nuit-la pose question. Le chemin
         // est le meme que partout ailleurs — SAF, emplacement choisi par l'utilisateur.
         PendulumCard {
-            SectionHeader(Textes.Nuits.Detail.EXPORT)
-            Paragraphe(Textes.Nuits.Detail.EXPORTER_RAPPORT_NOTE)
+            SectionHeader(stringResource(R.string.night_detail_export))
+            Paragraphe(stringResource(R.string.night_detail_export_report_note))
             OutlinedButton(onClick = onExporterRapport, shape = PendulumShapes.button) {
-                Text(Textes.Nuits.Detail.EXPORTER_RAPPORT)
+                Text(stringResource(R.string.night_detail_export_report))
             }
             Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(Textes.Nuits.Detail.EXPORTER_PAQUET_NOTE)
+            Paragraphe(stringResource(R.string.night_detail_export_bundle_note))
             OutlinedButton(onClick = onExporterPaquet, shape = PendulumShapes.button) {
-                Text(Textes.Nuits.Detail.EXPORTER_PAQUET)
+                Text(stringResource(R.string.night_detail_export_bundle))
+            }
+            // Un seul compte rendu pour les deux boutons : ils ecrivent l'un apres l'autre, jamais
+            // ensemble, et deux lignes dont une seule est fraiche se lisent de travers.
+            ecriture?.let {
+                Spacer(Modifier.height(Spacing.s.dp))
+                Text(
+                    it.message.resoudre(),
+                    style = PendulumType.caption,
+                    color = if (it.echec) c.attention else c.textSecondary,
+                )
             }
         }
 
@@ -335,7 +405,12 @@ fun NightDetailScreen(
     val graphe = detail.graphe
     if (devoile && valeursOuvertes && graphe != null) {
         DataTableSheet(
-            colonnes = listOf("#", "Start", "Duration", "Ampl."),
+            colonnes = listOf(
+                stringResource(R.string.night_detail_table_index),
+                stringResource(R.string.night_detail_table_start),
+                stringResource(R.string.night_detail_table_duration),
+                stringResource(R.string.night_detail_table_amplitude),
+            ),
             lignes = graphe.marqueurs.take(200).mapIndexed { i, m ->
                 listOf(
                     "${i + 1}",

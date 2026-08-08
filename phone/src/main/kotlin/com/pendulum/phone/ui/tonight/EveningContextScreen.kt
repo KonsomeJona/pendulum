@@ -26,12 +26,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.pendulum.phone.data.SaisieDuSoir
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.ResultatScellement
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumType
@@ -40,7 +42,7 @@ import com.pendulum.phone.ui.theme.Spacing
 /**
  * Le formulaire du soir — l'ecran qui manquait, et la seule porte du produit.
  *
- * `Textes.CeSoir.SCELLEMENT_TITRE` et `SCELLEMENT_CONFIRMATION` etaient ecrits depuis le debut et
+ * `tonight_seal_title` et `tonight_seal_confirmation` etaient ecrits depuis le debut et
  * n'etaient references par aucun composable : la specification decrivait cet ecran, le bouton
  * existait sur la carte « Ce soir », et il appelait un `onSceller = {}`. Pendant ce temps la
  * montre refusait de demarrer en renvoyant ici.
@@ -59,10 +61,31 @@ import com.pendulum.phone.ui.theme.Spacing
  * de frappe — elle sert a ce que l'utilisateur sache **avant** que la jambe et le cran de serrage
  * qu'il vient de saisir ne pourront plus etre corriges. Les corriger au matin, apres avoir vu le
  * chiffre, est precisement ce que le garde-fou empeche.
+ *
+ * ### Les trois issues ne sont pas la meme issue
+ *
+ * [ResultatScellement] en porte trois et l'appelant les traitait de facon identique : l'ecran se
+ * fermait. Une seule des trois est un succes.
+ *
+ * [ResultatScellement.PublicationEchouee] est la plus couteuse parce qu'elle est silencieuse **et**
+ * contradictoire : la base a le contexte, donc l'accueil affiche qu'il est scelle, pendant que la
+ * montre — qui n'a pas recu le `DataItem` — continue d'afficher « remplissez le formulaire du
+ * soir ». Les deux appareils se contredisent et aucun des deux ne se trompe. L'ecran reste donc
+ * ouvert et dit quoi faire : attendre le rejeu, qui est enfile, sans rien resaisir.
+ *
+ * [ResultatScellement.DejaScelle] est un `OnConflictStrategy.ABORT` qui a leve. Ce qu'il faut dire
+ * est que la saisie qui vient d'etre faite **n'a pas ete enregistree** — se fermer sans le dire
+ * laisserait croire qu'elle a remplace la precedente, c'est-a-dire exactement la retouche que le
+ * garde-fou existe pour empecher.
  */
 @Composable
 fun EveningContextScreen(
     repereDeSerrage: String,
+    /**
+     * Le resultat de la derniere tentative, ou `null` tant qu'il n'y en a pas eu. Sur
+     * [ResultatScellement.Scelle] cet ecran n'a rien a afficher : l'appelant le ferme.
+     */
+    resultat: ResultatScellement?,
     onSceller: (SaisieDuSoir) -> Unit,
     onAnnuler: () -> Unit,
     modifier: Modifier = Modifier,
@@ -87,19 +110,19 @@ fun EveningContextScreen(
     val complet = bracelet.isNotBlank()
 
     PendulumScreen(modifier) {
-        Text(Textes.CeSoir.SCELLEMENT_TITRE, style = PendulumType.titleL, color = c.textPrimary)
-        Paragraphe(Textes.CeSoir.SCELLEMENT_CORPS)
+        Text(stringResource(R.string.tonight_seal_title), style = PendulumType.titleL, color = c.textPrimary)
+        Paragraphe(stringResource(R.string.tonight_seal_body))
 
         PendulumCard {
-            SectionHeader(Textes.CeSoir.SECTION_PORT)
+            SectionHeader(stringResource(R.string.tonight_section_wearing))
 
             // Deux boutons plutot qu'une liste deroulante : il n'y a que deux jambes, et une
             // liste deroulante cache la valeur courante derriere un geste.
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s.dp)) {
-                ChoixJambe(Textes.CeSoir.JAMBE_GAUCHE, jambe == SaisieDuSoir.JAMBE_GAUCHE) {
+                ChoixJambe(stringResource(R.string.tonight_leg_left), jambe == SaisieDuSoir.JAMBE_GAUCHE) {
                     jambe = SaisieDuSoir.JAMBE_GAUCHE
                 }
-                ChoixJambe(Textes.CeSoir.JAMBE_DROITE, jambe == SaisieDuSoir.JAMBE_DROITE) {
+                ChoixJambe(stringResource(R.string.tonight_leg_right), jambe == SaisieDuSoir.JAMBE_DROITE) {
                     jambe = SaisieDuSoir.JAMBE_DROITE
                 }
             }
@@ -107,8 +130,8 @@ fun EveningContextScreen(
             OutlinedTextField(
                 value = bracelet,
                 onValueChange = { bracelet = it },
-                label = { Text(Textes.CeSoir.CHAMP_BRACELET) },
-                supportingText = { Text(Textes.CeSoir.CHAMP_BRACELET_AIDE, style = PendulumType.caption) },
+                label = { Text(stringResource(R.string.tonight_field_strap)) },
+                supportingText = { Text(stringResource(R.string.tonight_field_strap_help), style = PendulumType.caption) },
                 singleLine = true,
                 shape = PendulumShapes.field,
                 modifier = Modifier.fillMaxWidth(),
@@ -116,15 +139,15 @@ fun EveningContextScreen(
         }
 
         PendulumCard {
-            SectionHeader(Textes.CeSoir.SECTION_CONTEXTE)
-            Interrupteur(Textes.CeSoir.CHAMP_SEUL, Textes.CeSoir.CHAMP_SEUL_AIDE, seul) { seul = it }
-            Interrupteur(Textes.CeSoir.CHAMP_CAFE, null, cafe) { cafe = it }
-            Interrupteur(Textes.CeSoir.CHAMP_EXERCICE, null, exercice) { exercice = it }
+            SectionHeader(stringResource(R.string.tonight_section_evening))
+            Interrupteur(stringResource(R.string.tonight_field_alone), stringResource(R.string.tonight_field_alone_help), seul) { seul = it }
+            Interrupteur(stringResource(R.string.tonight_field_coffee), null, cafe) { cafe = it }
+            Interrupteur(stringResource(R.string.tonight_field_exercise), null, exercice) { exercice = it }
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedTextField(
                 value = alcool,
                 onValueChange = { alcool = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                label = { Text(Textes.CeSoir.CHAMP_ALCOOL) },
+                label = { Text(stringResource(R.string.tonight_field_alcohol)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 shape = PendulumShapes.field,
@@ -133,13 +156,13 @@ fun EveningContextScreen(
         }
 
         PendulumCard {
-            SectionHeader(Textes.CeSoir.SECTION_DOSE)
-            Paragraphe(Textes.CeSoir.CHAMP_DOSE_AIDE)
+            SectionHeader(stringResource(R.string.tonight_section_dose))
+            Paragraphe(stringResource(R.string.tonight_field_dose_help))
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedTextField(
                 value = medicaments,
                 onValueChange = { medicaments = it },
-                label = { Text(Textes.CeSoir.CHAMP_DOSE) },
+                label = { Text(stringResource(R.string.tonight_field_dose)) },
                 shape = PendulumShapes.field,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -147,21 +170,65 @@ fun EveningContextScreen(
             OutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
-                label = { Text(Textes.CeSoir.CHAMP_NOTES) },
+                label = { Text(stringResource(R.string.tonight_field_notes)) },
                 shape = PendulumShapes.field,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
 
+        // Ce que le scellement a donne, quand ce n'est pas un succes. La carte est au-dessus du
+        // bouton et non sous lui : elle explique pourquoi il vient de se griser, et un motif place
+        // apres l'element qu'il motive se lit apres coup.
+        //
+        // Ambre et non rouge dans les deux cas. Rien n'est casse : dans le premier, la base a le
+        // contexte et le rejeu est enfile ; dans le second, le refus du doublon est le
+        // comportement voulu. Le rouge reste reserve a ce qui est reellement casse.
+        val bloque = resultat == ResultatScellement.PublicationEchouee ||
+            resultat == ResultatScellement.DejaScelle
+        if (bloque) {
+            PendulumCard {
+                Text(
+                    stringResource(
+                        if (resultat == ResultatScellement.PublicationEchouee) {
+                            R.string.tonight_seal_unpublished_title
+                        } else {
+                            R.string.tonight_seal_already_title
+                        },
+                    ),
+                    style = PendulumType.titleM,
+                    color = c.attention,
+                )
+                Spacer(Modifier.height(Spacing.s.dp))
+                Paragraphe(
+                    stringResource(
+                        if (resultat == ResultatScellement.PublicationEchouee) {
+                            R.string.tonight_seal_unpublished_body
+                        } else {
+                            R.string.tonight_seal_already_body
+                        },
+                    ),
+                    couleur = c.textPrimary,
+                )
+            }
+        }
+
         // Meme regle qu'a l'avertissement : le libelle de l'etat desactive porte le motif, donc
         // il doit se lire. Les teintes desactivees par defaut de Material tombent a 3,02:1.
+        //
+        // Une soiree ne se scelle qu'une fois : apres l'une ou l'autre des deux issues bloquantes,
+        // rejouer le geste ne peut que relever `DejaScelle`. Le bouton est donc grise avec son
+        // motif, plutot que laisse actif pour echouer a nouveau.
         BoutonMotive(
-            libelle = Textes.CeSoir.SCELLEMENT_BOUTON,
-            motifIndisponible = Textes.CeSoir.CHAMP_BRACELET_MANQUANT.takeIf { !complet },
+            libelle = stringResource(R.string.tonight_seal_button),
+            motifIndisponible = when {
+                bloque -> stringResource(R.string.tonight_seal_locked)
+                !complet -> stringResource(R.string.tonight_field_strap_missing)
+                else -> null
+            },
             onClick = { confirmation = true },
         )
         TextButton(onClick = onAnnuler, modifier = Modifier.fillMaxWidth()) {
-            Text(Textes.CeSoir.ANNULER)
+            Text(stringResource(R.string.tonight_cancel))
         }
         Spacer(Modifier.height(Spacing.l.dp))
     }
@@ -169,8 +236,8 @@ fun EveningContextScreen(
     if (confirmation) {
         AlertDialog(
             onDismissRequest = { confirmation = false },
-            title = { Text(Textes.CeSoir.SCELLEMENT_TITRE, style = PendulumType.titleM) },
-            text = { Paragraphe(Textes.CeSoir.SCELLEMENT_CONFIRMATION) },
+            title = { Text(stringResource(R.string.tonight_seal_title), style = PendulumType.titleM) },
+            text = { Paragraphe(stringResource(R.string.tonight_seal_confirmation)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmation = false
@@ -190,10 +257,10 @@ fun EveningContextScreen(
                             notes = notes.trim().takeIf { it.isNotBlank() },
                         )
                     )
-                }) { Text(Textes.CeSoir.SCELLEMENT_BOUTON) }
+                }) { Text(stringResource(R.string.tonight_seal_button)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmation = false }) { Text(Textes.CeSoir.RELIRE) }
+                TextButton(onClick = { confirmation = false }) { Text(stringResource(R.string.tonight_read_again)) }
             },
         )
     }

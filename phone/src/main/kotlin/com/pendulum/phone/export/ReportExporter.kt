@@ -1,12 +1,14 @@
 package com.pendulum.phone.export
 
 import android.content.Context
+import android.content.res.Resources
 import com.pendulum.phone.data.EtatTendance
 import com.pendulum.phone.db.PlmResultEntity
 import com.pendulum.phone.db.PendulumDatabase
 import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.NuitUi
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.work.WorkScheduler
 import java.io.OutputStream
 import java.time.Instant
@@ -95,6 +97,9 @@ object ReportExporter {
     ) {
         val db = PendulumDatabase.get(context)
         val params = WorkScheduler.activeParams(context)
+        // Le rapport lit exactement les memes chaines que l'ecran : une seconde mise en forme
+        // quelque part serait une seconde verite sur le meme chiffre.
+        val res = context.resources
         val zone = runCatching { ZoneId.of(etat.zoneId) }.getOrDefault(ZoneId.systemDefault())
         val nuits = etat.nuits.sortedBy { it.startWallMs }
         val questionnaires = if (inclureQuestionnaire) db.questionnaireDao().all() else emptyList()
@@ -164,7 +169,8 @@ object ReportExporter {
                 appendLine()
                 // La phrase de position est celle de l'ecran, mot pour mot. Il n'en existe que
                 // cinq dans toute l'application, et aucune ne dit une direction.
-                appendLine(Aggregat.position(compte.ciBas, compte.ciHaut, compte.nuits).texte())
+                Aggregat.position(compte.ciBas, compte.ciHaut, compte.nuits).phrase()
+                    ?.let { appendLine(it.resoudre(res)) }
             }
             appendLine()
 
@@ -181,7 +187,7 @@ object ReportExporter {
             appendLine("| Date | From → to | Analysable sleep | Sleep source | Rhythm (s) | aPLM-i (/h) | State | Reason |")
             appendLine("|---|---|---|---|---|---|---|---|")
             val retenues = if (inclureEcartees) nuits else nuits.filter { it.etat != EtatNuit.ECARTEE }
-            for (n in retenues) appendLine(ligneNuit(n))
+            for (n in retenues) appendLine(ligneNuit(n, res))
             appendLine()
             if (!inclureEcartees && etat.nuitsEcartees > 0) {
                 appendLine(
@@ -229,6 +235,9 @@ object ReportExporter {
     suspend fun exportNight(context: Context, sessionHex: String, out: OutputStream) {
         val db = PendulumDatabase.get(context)
         val params = WorkScheduler.activeParams(context)
+        // Le rapport lit exactement les memes chaines que l'ecran : une seconde mise en forme
+        // quelque part serait une seconde verite sur le meme chiffre.
+        val res = context.resources
         val session = db.nightDao().find(sessionHex) ?: error("session inconnue : $sessionHex")
         val results = db.derivedDao().resultsOf(sessionHex, params.paramsHash)
         val nightContext = db.contextDao().findForSession(sessionHex)
@@ -357,11 +366,11 @@ object ReportExporter {
         "| ${r.rule} | ${r.maskSource} | ${r.plmsCount} | ${fmt(r.analysableTstMin)} min | " +
             "${fmt(r.plmi)} /h | ${fmt(r.plmiRespWorstCase)} /h | ${r.gate} |"
 
-    private fun ligneNuit(n: NuitUi): String = listOf(
+    private fun ligneNuit(n: NuitUi, res: Resources): String = listOf(
         n.dateLisible,
         "${n.debut} → ${n.fin}",
         n.sommeilLisible,
-        n.sourceSommeil,
+        n.sourceSommeil.resoudre(res),
         n.rythmeSec?.let { fmt(it) } ?: "—",
         fmt(n.comptePlmi),
         when (n.etat) {
@@ -369,7 +378,7 @@ object ReportExporter {
             EtatNuit.PROVISOIRE -> "provisional"
             EtatNuit.ECARTEE -> "excluded"
         },
-        n.motif ?: "",
+        n.motif?.resoudre(res) ?: "",
     ).joinToString(" | ", prefix = "| ", postfix = " |")
 
     /**
@@ -425,6 +434,13 @@ object ReportExporter {
         dorsiflexion does not displace a sensor sitting above the joint axis). The accelerometric
         count is therefore on a **different scale** from the polysomnographic count, and the
         published threshold of 15/h does not transpose onto it.
+
+        That 39 % comes from Terrill et al. (2013), on nine subjects, with a between-subject range
+        of 4.8 to 69.6 %, and it was **measured at the great toe**. An ankle-worn sensor sits above
+        the joint axis and moves less than the toe does, so the proportion of movements it misses
+        is higher than 39 % — by an amount that has not, to this project's knowledge, been
+        published. The figures in this report are therefore an underestimate of unknown size, and
+        that is on top of the threshold policy described above.
     """.trimIndent()
 
     /**

@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
@@ -22,9 +21,56 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * transforme cette campagne en rien, silencieusement, a la premiere installation d'une version
  * dont le numero de schema a bouge.
  *
- * En pratique : toute evolution passe par une [Migration] explicite ajoutee a [Migrations.ALL],
- * et le schema est exporte dans `phone/schemas/` (`room.schemaLocation`) pour que la migration
- * soit verifiable plutot que crue sur parole.
+ * En pratique : toute evolution passe par une `Migration` explicite passee a `addMigrations`, et
+ * le schema est exporte dans `phone/schemas/` (`room.schemaLocation`) pour que la migration soit
+ * verifiable plutot que crue sur parole. `exportSchema = true` reste vrai **meme maintenant que
+ * la base est en v1 et qu'il n'y a plus une seule migration** : c'est l'export d'aujourd'hui qui
+ * rendra verifiable la migration de demain, et il ne se retrouve pas apres coup.
+ *
+ * ### La version est repartie a 1 le 7 aout 2026, et les quatre migrations ont ete retirees
+ *
+ * La base portait `version = 5` et quatre migrations (1→2, 2→3, 3→4, 4→5). Aucune n'a jamais
+ * tourne ailleurs que sur l'appareil de developpement : **l'application n'a ete installee chez
+ * personne**, il n'existe aucune base a migrer, nulle part. Quatre migrations qui racontent les
+ * hesitations du schema se paient a chaque relecture et surtout a chaque migration suivante —
+ * chacune est un chemin de plus a tenir juste — sans proteger la moindre donnee. La premiere
+ * installation reelle creera donc une base v1, qui est la forme d'aujourd'hui.
+ *
+ * Ce qui a ete retire, resume ici pour qu'on n'ait pas a fouiller l'historique :
+ *
+ *  - **v1 → v2** : `night_context` cesse d'etre cle par `sessionHex` et l'est par la cle de nuit
+ *    (`AAAA-MM-JJ`, bascule a midi) ; `night_session` gagne la meme colonne et son index. Le
+ *    defaut corrige : le scellement **precede** la nuit, donc au moment du formulaire du soir il
+ *    n'existait aucun `sessionHex` a ecrire, et le garde-fou 1 etait litteralement impossible a
+ *    satisfaire. La forme corrigee est celle du schema actuel.
+ *  - **v2 → v3** : la vue `comparable_night` expose `rhythmValid`. L'interface affichait
+ *    `fundamentalSec` sans savoir que `:algo` avait refuse l'ajustement — un refus rend un nombre
+ *    fini, donc indiscernable d'un resultat accepte.
+ *  - **v3 → v4** : creation de `telemetry_point`. La telemetrie arrivait dans le bloc `TLM!` des
+ *    chunks et l'ingestion la jetait apres verification du CRC.
+ *  - **v4 → v5** : retrait de `respiratoryConfidence` de `plm_result`. La colonne portait un enum
+ *    a trois valeurs dont une fermait la porte de publication, et rien ne l'alimentait : la valeur
+ *    ecrite etait `MEDIUM`, en dur, pour toutes les nuits. Une porte qui ne s'est jamais fermee
+ *    est pire qu'une porte absente — elle se documente comme une protection.
+ *
+ * Deux regles nees de ces migrations **survivent a leur retrait**, parce qu'elles vaudront le jour
+ * de la premiere vraie migration :
+ *
+ *  1. **Une migration ne perd jamais une colonne du brut.** Renommer, oui ; recopier dans une
+ *     table neuve, oui ; supprimer une colonne de `chunk`, de `telemetry_point` ou de
+ *     `night_context`, non — ce sont les seules donnees que rien ne permet de reconstituer.
+ *  2. **On ne recree une vue que si on la change**, et quand on la recree on la construit depuis
+ *     [ComparableNightSql.SQL] avec `trim()`. Room ne compare pas une vue champ par champ : il
+ *     compare son **texte** a celui, normalise, qu'a genere son processeur d'annotations. Le
+ *     litteral commence par un saut de ligne et douze espaces d'indentation, et ces treize
+ *     caracteres ont suffi, le 3 aout 2026, a rendre inouvrable toute base deja installee —
+ *     `fallbackToDestructiveMigration` etant absent, l'exception remontait jusqu'au premier ecran
+ *     qui lisait quelque chose. Le banc sur materiel reel l'a vu ; la suite de tests, non.
+ *
+ * `MigrationTest` disparait avec les migrations : il n'avait plus d'objet. Ce qui le remplace est
+ * `ImmuabiliteTest`, qui couvre un trou bien plus grave et que rien ne couvrait — les declencheurs
+ * ci-dessous. Les schemas exportes `2.json`, `3.json` et `4.json` sont supprimes ; `1.json` est
+ * regenere par la compilation.
  *
  * ### Les declencheurs
  *
@@ -64,7 +110,7 @@ abstract class PendulumDatabase : RoomDatabase() {
     abstract fun maintenanceDao(): MaintenanceDao
 
     companion object {
-        const val VERSION = 4
+        const val VERSION = 1
         const val NAME = "pendulum.db"
 
         @Volatile
@@ -80,7 +126,8 @@ abstract class PendulumDatabase : RoomDatabase() {
                 // ligne, `onDelete = CASCADE` est decoratif et supprimer une nuit laisserait
                 // ses chunks et ses resultats en base, rattaches a rien.
                 .addCallback(Callback)
-                .addMigrations(*Migrations.ALL)
+                // Aucun `.addMigrations(...)` : la base est en v1 et aucune version anterieure
+                // n'existe sur aucun appareil. La ligne reviendra avec la premiere migration.
                 // Volontairement absent : .fallbackToDestructiveMigration()
                 .build()
 
@@ -114,6 +161,11 @@ abstract class PendulumDatabase : RoomDatabase() {
  * C'est la traduction en SQL du garde-fou 1 : la dose et le contexte sont scelles **avant** que
  * la montre n'accepte de demarrer, et le mode de defaillance a empecher n'est pas la fraude,
  * c'est la retouche de bonne foi au reveil, apres avoir vu le chiffre.
+ *
+ * Rien de tout cela n'est verifie par Room, dont la validation de schema ignore entierement les
+ * declencheurs : c'est `ImmuabiliteTest` (test instrumente) qui pose la question, en tentant les
+ * ecritures interdites sur la vraie base et en verifiant qu'apres une ouverture normale les trois
+ * declencheurs sont bien dans `sqlite_master`.
  */
 private fun createTriggers(db: SupportSQLiteDatabase) {
     db.execSQL(
@@ -143,230 +195,6 @@ private fun createTriggers(db: SupportSQLiteDatabase) {
         END
         """.trimIndent()
     )
-}
-
-/**
- * Les migrations.
- *
- * Regle a tenir : **une migration ne perd jamais une colonne du brut.** Renommer, oui ;
- * recopier dans une table neuve, oui ; supprimer une colonne de `chunk`, de `telemetry_point` ou
- * de `night_context`, non — ce sont les seules donnees que rien ne permet de reconstituer.
- *
- * Seconde regle, tiree du defaut du 3 aout 2026 : **on ne recree une vue que si on la change**, et
- * quand on la recree, on la construit depuis [ComparableNightSql.SQL] avec `trim()`. Room ne
- * compare pas une vue champ par champ, il compare son **texte** a celui, normalise, que son
- * processeur d'annotations a genere ; un saut de ligne et douze espaces d'indentation suffisent a
- * rendre toute base deja installee inouvrable, et `fallbackToDestructiveMigration` est
- * volontairement absent pour ne pas transformer cet echec en effacement.
- */
-object Migrations {
-
-    /**
-     * v1 → v2 : le contexte du soir cesse d'etre cle par la session.
-     *
-     * ### Le defaut corrige
-     *
-     * En v1, `night_context` avait `sessionHex` en cle primaire. Or **le scellement precede la
-     * nuit** : quand l'utilisateur remplit le formulaire du soir, la montre n'a rien annonce et
-     * il n'existe aucun `sessionHex` a ecrire. Les declencheurs interdisant tout `UPDATE`, on ne
-     * pouvait pas davantage le renseigner ensuite. Le garde-fou 1 etait donc, litteralement,
-     * impossible a satisfaire — et son seul symptome visible etait une montre qui refusait de
-     * demarrer en renvoyant vers un formulaire qui n'existait pas.
-     *
-     * La cle devient la **cle de nuit** (`AAAA-MM-JJ`, bascule a midi), exactement la chaine que
-     * porte le chemin du `DataItem` publie vers la montre. `night_session` gagne la meme colonne,
-     * et c'est par elle que la vue `comparable_night` rattache une nuit a son contexte.
-     *
-     * ### Ce qui est recopie, et ce qui ne peut pas l'etre
-     *
-     * Les lignes de `night_context` existantes sont conservees : leur `sessionHex` sert a
-     * retrouver la `startWallMs` de la session correspondante, dont on derive la cle de nuit avec
-     * la meme bascule a midi que `WirePaths.nightKey`. Une ligne dont la session a disparu garde
-     * son ancien `sessionHex` comme cle — elle ne se rattachera a rien, mais elle n'est pas
-     * perdue, et c'est la regle ci-dessus.
-     *
-     * En pratique aucune base ne contient de telles lignes : le scellement n'a jamais pu
-     * reussir. La migration est ecrite comme si elles existaient parce qu'une migration qu'on
-     * ecrit en supposant la table vide est une migration qu'on ne peut pas relire.
-     *
-     * SQLite ne sait pas changer une cle primaire : il faut recreer la table et recopier. Les
-     * declencheurs disparaissent avec l'ancienne table, ce que `Callback.onOpen` repose a chaque
-     * ouverture — c'est precisement le cas que ce doublon `onCreate`/`onOpen` existe pour couvrir.
-     */
-    val MIGRATION_1_2 = object : Migration(1, 2) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            // La bascule a midi, en SQL. `startWallMs` est en millisecondes UTC et la cle de nuit
-            // est une date **locale** : `'unixepoch'` puis `'localtime'`, dans cet ordre, puis on
-            // retire douze heures pour que tout ce qui precede midi retombe sur la veille.
-            db.execSQL(
-                """
-                ALTER TABLE night_session ADD COLUMN nightKey TEXT NOT NULL DEFAULT ''
-                """.trimIndent()
-            )
-            db.execSQL(
-                """
-                UPDATE night_session
-                SET nightKey = date((startWallMs / 1000) - 43200, 'unixepoch', 'localtime')
-                """.trimIndent()
-            )
-            db.execSQL("CREATE INDEX IF NOT EXISTS index_night_session_nightKey ON night_session (nightKey)")
-
-            db.execSQL("DROP TRIGGER IF EXISTS night_context_no_update")
-            db.execSQL("DROP TRIGGER IF EXISTS night_context_no_delete")
-
-            db.execSQL(
-                """
-                CREATE TABLE night_context_v2 (
-                    nightKey TEXT NOT NULL PRIMARY KEY,
-                    sealedAtMs INTEGER NOT NULL,
-                    leg TEXT NOT NULL,
-                    strapId TEXT NOT NULL,
-                    aloneInBed INTEGER NOT NULL,
-                    bedTimeLocalMs INTEGER,
-                    riseTimeLocalMs INTEGER,
-                    medicationJson TEXT NOT NULL,
-                    caffeineAfter16h INTEGER NOT NULL,
-                    alcoholUnits REAL NOT NULL,
-                    unusualExercise INTEGER NOT NULL,
-                    notes TEXT
-                )
-                """.trimIndent()
-            )
-            db.execSQL(
-                """
-                INSERT OR IGNORE INTO night_context_v2
-                SELECT COALESCE(s.nightKey, c.sessionHex), c.sealedAtMs, c.leg, c.strapId,
-                       c.aloneInBed, c.bedTimeLocalMs, c.riseTimeLocalMs, c.medicationJson,
-                       c.caffeineAfter16h, c.alcoholUnits, c.unusualExercise, c.notes
-                FROM night_context c
-                LEFT JOIN night_session s ON s.sessionHex = c.sessionHex
-                """.trimIndent()
-            )
-            db.execSQL("DROP TABLE night_context")
-            db.execSQL("ALTER TABLE night_context_v2 RENAME TO night_context")
-
-            // Les declencheurs sont reposes ici **et** a chaque ouverture. Ici parce qu'une
-            // migration doit laisser la base dans un etat correct sans dependre de ce qui suit ;
-            // a l'ouverture parce que ce genre de ligne s'oublie dans la prochaine migration.
-            createTriggers(db)
-        }
-    }
-
-    /**
-     * v2 → v3 : la vue expose `rhythmValid`.
-     *
-     * Aucune table ne change et aucune donnee n'est touchee — `plm_result.rhythmValid` est ecrit
-     * depuis le debut et n'etait simplement pas remonte. Ce qui change est ce que l'interface a
-     * le droit de lire : jusqu'ici elle affichait `fundamentalSec` sans savoir que `:algo` avait
-     * refuse l'ajustement dans la majorite des cas, et un refus assorti d'un `MISS_RATE_SATURATED`
-     * rend un nombre **fini**, donc indiscernable d'un resultat accepte.
-     *
-     * Une vue n'est pas recreee toute seule par Room a la migration : la validation de schema la
-     * relit telle qu'elle est en base, donc il faut la reposer ici. C'est aussi la raison pour
-     * laquelle le `CREATE VIEW` reutilise [ComparableNightSql.SQL] au lieu d'en recopier le texte —
-     * deux redactions de la meme vue divergeraient a la migration suivante, et la divergence ne se
-     * verrait que sur un appareil deja installe.
-     *
-     * ### Le `trim()`, qui n'est pas une coquetterie
-     *
-     * Room ne compare pas les vues champ par champ comme les tables : il compare **le texte** de
-     * `sqlite_master` a celui que son processeur d'annotations a genere, et ce dernier est
-     * normalise. [ComparableNightSql.SQL] est un litteral triple-guillemets qui commence par un
-     * saut de ligne et douze espaces d'indentation ; sans `trim()`, la vue ecrite ici differe de
-     * treize caracteres de celle qu'on attend, la validation echoue, et — `fallbackToDestructive`
-     * etant volontairement absent — **aucun appareil deja installe ne peut plus ouvrir sa base**.
-     * Une installation neuve, elle, marche : la vue y est creee par Room lui-meme.
-     *
-     * Le defaut a ete trouve le 3 aout 2026 par le banc sur materiel reel, sur un telephone
-     * portant une base en v1, et non par la suite de tests, qui ne comportait alors aucun test de
-     * migration. `MigrationTest` couvre desormais les chemins v1 → v4, v2 → v4 et v3 → v4.
-     */
-    val MIGRATION_2_3 = object : Migration(2, 3) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL("DROP VIEW IF EXISTS comparable_night")
-            db.execSQL("CREATE VIEW `comparable_night` AS ${ComparableNightSql.SQL.trim()}")
-        }
-    }
-
-    /**
-     * v3 → v4 : la telemetrie de nuit entre en base.
-     *
-     * Elle arrivait deja dans les chunks depuis le bloc `TLM!`, et l'ingestion la jetait : le
-     * telephone lisait les points pour verifier le CRC du bloc et n'en gardait rien. La table
-     * `telemetry_point` est l'extraction, faite une fois a la reception.
-     *
-     * ### Purement additive, et c'est ce qui la rend sure
-     *
-     * Aucune table existante n'est touchee, aucune colonne n'est deplacee, aucune donnee n'est
-     * recopiee. Une base v3 monte en v4 en creant une table vide : les nuits deja enregistrees
-     * n'ont pas de telemetrie et n'en auront jamais — leurs chunks sont en v1 du format et ne
-     * portent aucun bloc `TLM!`. C'est la verite, et l'ecran la dit par l'absence de la bande
-     * plutot qu'en dessinant une bande vide.
-     *
-     * ### Le seul chemin qui compte est v3 → v4, et c'est dit ici plutot que taise
-     *
-     * `MIGRATION_1_2` et `MIGRATION_2_3` restent en place et restent testees — elles ne coutent
-     * rien et les retirer serait perdre de la couverture deja acquise — mais **aucune base n'a
-     * jamais emprunte les chemins anterieurs a la v3 en dehors du developpement**. L'application
-     * est privee : un seul appareil porte des donnees, et sa base est passee en v3 le 3 aout 2026,
-     * a la correction du `trim()` de `MIGRATION_2_3`. Un lecteur qui trouverait dans six mois que
-     * v1 → v4 n'a pas ete pense pour le terrain aurait raison, et c'est deliberé.
-     *
-     * Ce qui rend v3 → v4 non negociable est la suite : P1 demande trois nuits consecutives, et
-     * cette base portera alors des chunks bruts qui ne se reconstituent pas. Une migration fausse
-     * le jour ou deux nuits sont deja enregistrees coute la campagne — c'est exactement le cas
-     * pour lequel `fallbackToDestructiveMigration` est interdit dans ce depot, et il le reste.
-     *
-     * ### Ce que la vue devient, c'est-a-dire rien
-     *
-     * `comparable_night` n'est **pas** recreee ici. C'est deliberé, et c'est l'inverse de ce que
-     * fait `MIGRATION_2_3` : cette migration-la la reecrivait parce qu'elle en changeait les
-     * colonnes. Celle-ci n'y touche pas, donc la reposer serait une occasion de plus de se
-     * tromper de treize caracteres — le defaut trouve le 3 aout 2026 sur le Pixel 10 Pro Fold,
-     * qui empechait **toute** mise a jour d'un appareil deja installe. La regle qui en sort : on
-     * ne recree une vue que si l'on en change, et si on la recree, on la construit depuis
-     * [ComparableNightSql.SQL] avec `trim()`, jamais depuis une seconde redaction.
-     *
-     * Le DDL ci-dessous est celui que Room genere pour [TelemetryPointEntity] — quotes obliques
-     * comprises. Il n'est pas recopie a la main sur la foi d'une relecture : `MigrationTest`
-     * ouvre une base v1, v2 et v3 par Room apres migration, et la validation de schema compare
-     * colonne par colonne et index par index.
-     */
-    val MIGRATION_3_4 = object : Migration(3, 4) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL(
-                "CREATE TABLE IF NOT EXISTS `telemetry_point` (" +
-                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
-                    "`sessionHex` TEXT NOT NULL, " +
-                    "`elapsedRealtimeNs` INTEGER NOT NULL, " +
-                    "`sensorTsNs` INTEGER NOT NULL, " +
-                    "`batteryChargeUah` INTEGER NOT NULL, " +
-                    "`maxIntervalUs` INTEGER NOT NULL, " +
-                    "`fsyncTotalUs` INTEGER NOT NULL, " +
-                    "`fsyncMaxUs` INTEGER NOT NULL, " +
-                    "`temperatureDeciC` INTEGER NOT NULL, " +
-                    "`measuredRateCentiHz` INTEGER NOT NULL, " +
-                    "`jitterStdUs` INTEGER NOT NULL, " +
-                    "`clippedSamples` INTEGER NOT NULL, " +
-                    "`fsyncCount` INTEGER NOT NULL, " +
-                    "`batteryPct` INTEGER NOT NULL, " +
-                    "`offBody` INTEGER NOT NULL, " +
-                    "`charging` INTEGER NOT NULL, " +
-                    "FOREIGN KEY(`sessionHex`) REFERENCES `night_session`(`sessionHex`) " +
-                    "ON UPDATE NO ACTION ON DELETE CASCADE )"
-            )
-            db.execSQL(
-                "CREATE UNIQUE INDEX IF NOT EXISTS `index_telemetry_point_sessionHex_elapsedRealtimeNs` " +
-                    "ON `telemetry_point` (`sessionHex`, `elapsedRealtimeNs`)"
-            )
-            db.execSQL(
-                "CREATE INDEX IF NOT EXISTS `index_telemetry_point_sessionHex_sensorTsNs` " +
-                    "ON `telemetry_point` (`sessionHex`, `sensorTsNs`)"
-            )
-        }
-    }
-
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 }
 
 /**

@@ -1,15 +1,1697 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Les textes affiches par l'application.
+
+  ### Pourquoi ce fichier existe, alors qu'un objet Kotlin les portait
+
+  Pour que l'interface puisse etre traduite. Un `object Textes` en anglais dur ne se localise pas :
+  il n'y a ni jeu de valeurs par langue, ni pluriels, ni bascule automatique. Tout ce qui est
+  affiche a un utilisateur vit donc ici, et un `values-fr/strings.xml` suffira le jour venu.
+
+  ### Ce qui reste dans `ui/text/Textes.kt`, et pourquoi
+
+  Une partie des textes est produite par la couche de modele — `ui/model/`, `data/`,
+  `ViewModels.kt` — qui n'a pas de `Context` et dont les tests JVM comparent les chaines
+  caractere par caractere. Ces textes-la sont restes dans `Textes.kt`, avec leur KDoc et une liste
+  nominative des raisons. Le garde-fou ci-dessous couvre **les deux** fichiers, pas seulement
+  celui-ci : un verbe d'evolution deplace de l'un vers l'autre ne doit pas echapper au test.
+
+  ### La regle que ce fichier existe pour tenir
+
+  Cette application ne dit jamais qu'un chiffre a bouge dans un sens ou dans l'autre. Elle dit
+  qu'un ecart est, ou n'est pas, distinguable de la variabilite d'une nuit a l'autre. La nuance
+  n'est pas cosmetique : sous le seuil de plus petite variation detectable, affirmer une direction
+  est une affirmation sans donnee, et c'est precisement le chiffre sur lequel quelqu'un serait
+  tente d'ajuster une dose. `ui/TextesTest.kt` lit ce fichier et fait echouer le build si l'une des
+  racines proscrites y apparait — dans une chaine **ou dans un commentaire**, parce qu'un
+  commentaire fautif finit toujours par etre recopie dans une chaine.
+
+  ### Convention de nommage
+
+  `<section>_<sous_section>_<nom>`, en anglais, en minuscules, derive un pour un de la hierarchie
+  d'origine : `Textes.Tendance.SOUS_SEUIL` donnerait `trend_below_threshold`. Les prefixes sont
+  fixes, un par objet d'origine, et le seul qui ne vienne pas de cette hierarchie est `dialog_` —
+  un composant partage n'appartient a aucun ecran, et lui donner le prefixe d'un ecran ferait
+  croire qu'il n'y sert que la :
+
+  | objet d'origine              | prefixe            |
+  |==============================|====================|
+  | `Avertissement`              | `notice_`          |
+  | `Avertissement.Confirmations`| `notice_confirm_`  |
+  | `Accueil`                    | `onboarding_`      |
+  | `Accueil.Besoins`            | `onboarding_needs_`|
+  | `Accueil.Appairage`          | `onboarding_pairing_` |
+  | `Accueil.SourceSommeil`      | `onboarding_sleep_`|
+  | `Accueil.Notifications`      | `onboarding_notif_`|
+  | `EcranAccueil`               | `home_`            |
+  | `EcranAccueil.Preparer`      | `home_prepare_`    |
+  | `EcranAccueil.Fin`           | `home_end_`        |
+  | `EcranAccueil.Historique`    | `home_history_`    |
+  | `EcranAccueil.Resultat`      | `home_result_`     |
+  | `CeSoir`                     | `tonight_`         |
+  | `Reveil`                     | `waking_`          |
+  | `Tendance`                   | `trend_`           |
+  | `Comparaison`                | `compare_`         |
+  | `Nuits`                      | `nights_`          |
+  | `Nuits.Detail`               | `night_detail_`    |
+  | `Questionnaire`              | `quiz_`            |
+  | `Reglages`                   | `settings_`        |
+  | `Export`                     | `export_`          |
+  | `P1`                         | `p1_`              |
+  | `Erreurs`                    | `error_`           |
+  | `Graphes`                    | `chart_`           |
+  | `ui/common/` (partages)      | `dialog_`          |
+
+  Les arguments sont **toujours positionnels** (`%1$s`, `%2$d`). Une langue qui reordonne la
+  phrase — et elles le font toutes — casse silencieusement des arguments non positionnels.
+-->
 <resources>
-    <!--
-      Le seul texte de l'application qui vive dans une ressource Android.
 
-      Tout le reste est dans `ui/text/Textes.kt`, et ce n'est pas un oubli : un objet Kotlin se
-      teste. `ui/TextesTest.kt` s'execute sur le fichier de textes lui-meme et fait echouer la
-      compilation si un verbe d'evolution — « ameliore », « aggrave » — y apparait, ce qu'aucun
-      `strings.xml` ne permettrait de verifier.
-
-      `android:label` fait exception parce que le lanceur le lit avant que le moindre code de
-      l'application ne tourne.
-    -->
+    <!-- `android:label` : le lanceur le lit avant que le moindre code de l'application ne tourne. -->
     <string name="app_name">Pendulum</string>
+
+    <!--
+      Le bouton de renoncement de `ConfirmDialog`, valeur par defaut du composant partage.
+
+      Il portait « Annuler » en dur — du francais dans une interface entierement anglaise, et la
+      demonstration de ce que coute une valeur par defaut ecrite dans une signature : elle
+      n'apparait dans aucun ecran, donc elle echappe a toute relecture d'ecran.
+
+      « Cancel » et non « Not now » : `tonight_cancel` dit « Not now » parce que le geste du soir
+      peut se reprendre plus tard, ce qui n'est pas vrai d'une confirmation en general.
+    -->
+    <string name="dialog_cancel">Cancel</string>
+
+    <!-- =====================================================================================
+         Avertissement permanent
+         ===================================================================================== -->
+
+    <!--
+      L'avertissement, en toutes lettres.
+
+      Il apparait au premier lancement en defilement bloquant, reste accessible en permanence dans
+      Reglages > A propos, et figure en tete de tout export.
+
+      Ecrit pour etre compris a 7 h du matin : phrases courtes, aucun terme juridique, aucun « le
+      cas echeant ». Les quatre limites sont enoncees en clair parce qu'elles ne disparaitront
+      jamais, quelle que soit la qualite des nuits enregistrees — ce ne sont pas des defauts de
+      version, ce sont les bornes de la methode.
+    -->
+    <string name="notice_title">What Pendulum cannot do</string>
+    <string name="notice_body">Pendulum estimates leg movements during sleep from the accelerometer of a watch worn at the ankle.\n\nThis is not an official health application. This is not a medical device. Pendulum makes no diagnosis, and no treatment decision should rest on what it displays. If a figure in this application worries or reassures you, the only useful next step is to discuss it with a sleep physician.\n\nFour limits that will never go away, whatever the quality of your nights:\n\n• Pendulum cannot diagnose restless legs syndrome. That diagnosis is clinical: it rests on the symptoms you feel while awake, not on a sensor. Movements during sleep are only a supporting criterion.\n\n• Pendulum does not measure your breathing. It therefore cannot tell a periodic movement apart from one caused by an apnoea. If you have sleep apnoea, the figure is overstated, and the gap can reach several tens of movements per hour.\n\n• Pendulum measures one leg only. Movements of the other leg are missed. This bias pulls the figure downwards. It does not offset the previous one: the two errors do not cancel out, they add to the uncertainty.\n\n• The American Academy of Sleep Medicine explicitly recommends against replacing electromyography with actigraphy to diagnose periodic limb movement disorder.\n\nWhat Pendulum does usefully: follow a rhythm across several nights, under stable conditions, and produce a document you can take to a sleep physician.</string>
+    <string name="notice_button">I have read and understood</string>
+    <string name="notice_button_scroll_first">Scroll to the bottom</string>
+    <string name="notice_button_confirm_first">Confirm the four limits above</string>
+    <string name="notice_reminder">This notice stays available in Settings › About.</string>
+
+    <!--
+      Quatre confirmations actives, une par limite, **en plus** du defilement bloquant.
+
+      ### Pourquoi le defilement seul ne suffit pas
+
+      L'etude de reference sur la lecture des politiques de confidentialite (Obar &amp;
+      Oeldorf-Hirsch, 543 participants) mesure une duree de lecture mediane de 73 secondes la ou 29
+      a 32 minutes seraient necessaires pour lire le texte. Le geste observe n'est pas la lecture,
+      c'est le defilement au pouce. Un bouton qui s'active au bas du scroll atteste donc d'un
+      mouvement de doigt, pas d'une comprehension.
+
+      ### Le pattern qui a des preuves
+
+      Le *teach-back* de l'eConsent en recherche clinique — le module de consentement de Sage
+      Bionetworks, base de celui de ResearchKit — fait re-enoncer chaque point plutot que de le
+      faire signer en bloc. Un essai randomise de 2026 lui donne une comprehension non inferieure
+      au consentement recueilli en face a face. Quatre tapes deliberees, une par limite, valent
+      donc mieux qu'un defilement, et constituent en prime une trace de consentement d'une autre
+      nature — on sait ce qui a ete acquitte, pas seulement que l'ecran a ete parcouru.
+
+      Les quatre phrases reprennent mot pour mot les quatre limites de `notice_body`. Ce n'est pas
+      de la redite : ce sont ces phrases-la que l'utilisateur acquitte, et elles doivent donc dire
+      exactement la meme chose que celles qu'il vient de lire.
+    -->
+    <string name="notice_confirm_title">Confirm each limit</string>
+    <string name="notice_confirm_diagnosis">I understand that Pendulum cannot diagnose restless legs syndrome.</string>
+    <string name="notice_confirm_breathing">I understand that Pendulum does not measure breathing, and that with sleep apnoea the figure is overstated.</string>
+    <string name="notice_confirm_one_leg">I understand that Pendulum observes one leg only, which pulls the figure down, and that the two biases do not cancel out.</string>
+    <string name="notice_confirm_actigraphy">I understand that the American Academy of Sleep Medicine recommends against actigraphy in place of electromyography.</string>
+    <!-- %1$d confirmations acquittees sur %2$d. -->
+    <string name="notice_confirm_count">%1$d of %2$d confirmed</string>
+
+    <!-- Version condensee, en tete de chaque export. Meme fond, un seul paragraphe. -->
+    <string name="notice_export_banner">Personal measurement by ankle accelerometer. This is not a medical examination, this is not a medical device, and it makes no diagnosis. No treatment decision should rest on this document.</string>
+
+    <!-- =====================================================================================
+         Premier lancement
+         ===================================================================================== -->
+
+    <!-- %1$d : le rang de l'etape courante, de 1 a 5. -->
+    <string name="onboarding_step">Step %1$d of 5</string>
+
+    <string name="onboarding_needs_title">What Pendulum needs</string>
+    <string name="onboarding_needs_watch_title">A Wear OS watch at the ankle</string>
+    <!-- formatted="false" : les deux pourcentages litteraux ne sont pas des substitutions. -->
+    <string name="onboarding_needs_watch_body" formatted="false">It records the accelerometer all night at 50 Hz. It is the watch that measures the movements. It must be charged to 100% at bedtime: one night draws between 40 and 70% of the battery.</string>
+    <string name="onboarding_needs_sleep_title">A source of sleep stages</string>
+    <string name="onboarding_needs_sleep_body">A second watch on the wrist (Samsung Health), or Sleep as Android, writing the hypnogram into Health Connect. Without one, Pendulum knows when you move but not when you sleep: it then falls back on its own immobility mask, which is less reliable, and flags this on every night concerned.</string>
+    <string name="onboarding_needs_nights_title">Three nights minimum, five to seven preferably</string>
+    <string name="onboarding_needs_nights_body">Pendulum refuses to compute a trend below three nights. This is not decorative caution: on a single night, the result is dominated by chance.</string>
+    <string name="onboarding_needs_button">Continue</string>
+
+    <!--
+      L'appairage, et les **trois** etats qu'il faut distinguer.
+
+      Les confondre est l'erreur classique de cet ecran : « aucune montre appairee » et « montre
+      appairee, application absente » se reparent a deux endroits differents, et envoyer quelqu'un
+      au Play Store alors qu'aucune montre n'est appairee au telephone ne peut rien produire
+      d'autre qu'une installation qui ne se voit nulle part.
+    -->
+    <string name="onboarding_pairing_title">Watch pairing</string>
+
+    <!-- Etat 1 : aucun noeud connecte. -->
+    <string name="onboarding_pairing_no_watch_title">No watch is paired with this phone</string>
+    <string name="onboarding_pairing_no_watch_body">Pendulum sees no watch at all, so there is nothing to install onto yet. Pair the watch first, in the companion application that came with it — Pixel Watch, Galaxy Wearable, or your manufacturer\'s equivalent.</string>
+    <string name="onboarding_pairing_open_companion">Open the watch companion app</string>
+    <string name="onboarding_pairing_companion_not_found">No companion application was found on this phone. Open the one supplied with your watch, pair it, then come back to this screen.</string>
+
+    <!-- Etat 2 : montre appairee, capacite absente. -->
+    <string name="onboarding_pairing_app_missing_title">Watch paired, Pendulum not answering on it</string>
+    <string name="onboarding_pairing_app_missing_body">The watch is known to this phone, but the Pendulum watch application is not answering. Either it is not installed, or the watch is out of Bluetooth range right now.</string>
+    <string name="onboarding_pairing_install_on_watch">Install on the watch</string>
+    <string name="onboarding_pairing_install_opened">The store page was opened on the watch. Finish the installation there.</string>
+    <string name="onboarding_pairing_install_failed">The store page could not be opened on the watch. Open the Play Store on the watch and search for Pendulum.</string>
+    <string name="onboarding_pairing_auto_wait">This screen ticks itself as soon as the watch application answers. Nothing to press, and no need to stay on it.</string>
+
+    <!-- Etat 3 : capacite trouvee. -->
+    <string name="onboarding_pairing_found_title">Watch found</string>
+
+    <!--
+      La ligne de verification du capteur. C'est un **controle**, pas de la decoration : si la
+      montre annonce autre chose que 50 Hz, ou un FIFO plus court que prevu, tout le budget
+      d'erreur de la campagne change.
+
+      Elle n'est pas encore alimentee : la montre ne publie aucun `DataItem` decrivant son capteur,
+      donc l'ecran affiche des tirets plutot qu'une ligne muette. La forme que la ligne prendra le
+      jour ou la montre l'enverra est restee dans `Textes.Accueil.Appairage.verification`.
+    -->
+    <string name="onboarding_pairing_sensor_check_missing">Accelerometer: — · FIFO: — · wake-up sensor: —</string>
+    <string name="onboarding_pairing_sensor_check_note">The watch does not report its sensor configuration yet. Rather than print figures nobody measured, this line stays empty.</string>
+
+    <string name="onboarding_pairing_skip">Continue without a watch for now</string>
+    <string name="onboarding_pairing_button">Continue</string>
+
+    <!--
+      La source de sommeil, et la question la plus deroutante du produit : « pourquoi mon
+      application de sommeil ne suffit-elle pas ? ».
+
+      La reponse qui passe est une reponse de **role**, pas de plomberie : la montre a la cheville
+      mesure les jambes, elle ne sait pas quand on dort ; un deuxieme appareil sert de juge
+      independant du sommeil. La justification complete — la circularite entre ce qu'on compte et
+      ce par quoi on divise — tient derriere un « en savoir plus », parce qu'elle est vraie mais
+      qu'elle ne se lit pas debout, un telephone a la main.
+    -->
+    <string name="onboarding_sleep_title">Where do your sleep stages come from?</string>
+    <string name="onboarding_sleep_allow">Allow Health Connect</string>
+    <string name="onboarding_sleep_sources_detected">Sources detected</string>
+    <string name="onboarding_sleep_preferred">preferred source</string>
+    <string name="onboarding_sleep_choose">Use this source</string>
+    <string name="onboarding_sleep_no_stages">This source does not provide detailed stages. Pendulum will be able to compute total sleep time, but not to break movements down by stage.</string>
+    <string name="onboarding_sleep_skip">Continue without a hypnogram</string>
+    <string name="onboarding_sleep_button_blocked">Allow Health Connect first</string>
+
+    <!-- Le role du deuxieme appareil. -->
+    <string name="onboarding_sleep_role_title">Why a second device</string>
+    <string name="onboarding_sleep_role_body">The watch at your ankle measures your legs. It does not know when you are asleep. A second device — a wrist wearable, a ring, a mattress sensor — acts as an independent judge of sleep, and writes that judgement into Health Connect.</string>
+    <string name="onboarding_sleep_role_more">Why can it not be the same device?</string>
+    <string name="onboarding_sleep_role_more_body">The clinical index is movements per hour of sleep: the movements are the numerator, sleep time is the denominator. Both read from the same accelerometer would make the figure circular — the signal processing that drops a movement lowers the numerator and, in the same gesture, raises the denominator, because fewer movements look like more sleep. A treatment doing nothing at all could then display as a large drop. Two devices, two chains, and only one of them depends on both.</string>
+
+    <!-- Health Connect indisponible. -->
+    <string name="onboarding_sleep_sdk_missing_title">Health Connect is not on this phone</string>
+    <string name="onboarding_sleep_sdk_missing_body">On Android 13 and earlier, Health Connect is an application from the Play Store, not a part of the system. Install it, open your sleep application once so that it writes into it, then come back here.</string>
+    <string name="onboarding_sleep_install_hc">Install Health Connect</string>
+    <string name="onboarding_sleep_update_title">Health Connect needs updating</string>
+    <string name="onboarding_sleep_update_body">The version installed on this phone is older than what Pendulum reads. Update it from the Play Store, then come back here.</string>
+    <string name="onboarding_sleep_update_button">Update Health Connect</string>
+    <string name="onboarding_sleep_background_title">Background reading unavailable</string>
+    <string name="onboarding_sleep_background_body">This phone\'s Health Connect cannot serve reads while Pendulum is closed. The sleep session will only be read when you open the application, so end your night from the home screen.</string>
+
+    <!-- Aucune source detectee. -->
+    <string name="onboarding_sleep_none_title">No sleep session found over the last 7 days</string>
+    <string name="onboarding_sleep_none_body">Nothing wrote a sleep session into Health Connect. That is not a Pendulum failure, and it is not permanent: it means no application has published one yet. Two things to check — that a sleep application is installed and worn at night, and that it is allowed to write sleep into Health Connect.</string>
+    <string name="onboarding_sleep_known_apps_title">Applications known to write sleep sessions</string>
+    <string name="onboarding_sleep_known_apps_body">  • Samsung Health, with a Galaxy Watch;\n  • Google Fit / Fitbit, with a Pixel Watch or a Fitbit band;\n  • Sleep as Android, with a phone or a watch;\n  • Withings Health Mate, with a Sleep Analyzer under the mattress;\n  • Garmin Connect and Oura, through their Health Connect option.\n\nAny application publishing a sleep session works. Pendulum reads the session, never the vendor score.</string>
+
+    <!--
+      La couverture d'une source : %1$d nuits vues sur %2$d observees, puis ce qu'elle publie.
+      Le second membre est une chaine a part et non un booleen interpole : une langue peut avoir
+      besoin de l'accorder avec ce qui precede.
+    -->
+    <string name="onboarding_sleep_coverage">%1$d nights out of %2$d · %3$s</string>
+    <string name="onboarding_sleep_coverage_staged">detailed stages (REM, light, deep)</string>
+    <string name="onboarding_sleep_coverage_total">total duration only</string>
+
+    <string name="onboarding_notif_title">Notifications and measurement conditions</string>
+    <string name="onboarding_notif_allow">Allow notifications</string>
+    <string name="onboarding_notif_reason">One notification per night, on waking, when the analysis is ready. No others.</string>
+    <!--
+      **Aucun appelant** : l'etape 4 de l'assistant a repris ce contenu, en le montrant.
+
+      Ces deux chaines etaient la consigne de constance, en texte, sur l'ecran des notifications.
+      Elles ont ete remplacees par `WearingPage` et le schema de port (`res/values/strings_wearing.xml`),
+      qui disent la meme chose avec un dessin : ou poser la montre est une information de position,
+      et une liste a puces demande au lecteur de reconstruire mentalement ce qu'un schema montre.
+
+      Elles restent en place, comme les autres chaines sans appelant de ce fichier, parce que la
+      liste dit quelque chose que le schema ne dit pas — le matelas, et la note du trou de bracelet
+      — et que ce sont les deux conditions dont on se souvient le moins bien. Le jour ou une carte
+      d'aide les redonne en texte, elles sont ecrites.
+    -->
+    <string name="onboarding_notif_conditions_title">Conditions to keep identical from one night to the next</string>
+    <string name="onboarding_notif_conditions_body">The detection threshold adapts to the background noise of each night. If the mechanical conditions change, the nights are no longer comparable with one another.\n\nKeep these identical:\n  • the same strap, at the same strap hole;\n  • the same leg;\n  • the watch on the front of the shin, just above the malleolus;\n  • the same mattress.\n\nNote down the strap hole you use: Pendulum will remind you of it at bedtime.</string>
+    <string name="onboarding_notif_strap_field">Strap setting (e.g. “4th hole”)</string>
+    <string name="onboarding_notif_button">Finish</string>
+
+    <!-- =====================================================================================
+         L'accueil : trois cartes fixes
+         =====================================================================================
+
+         Les trois cartes sont d'ordre et de position invariants. L'accueil melangeait deux regimes
+         cognitifs incompatibles : le geste quotidien, rapide et memorise, et la lecture d'un
+         resultat, lente et chargee. La carte « Ce soir » devait de surcroit apparaitre entre 20 h
+         et 4 h, donc deplacer verticalement tout le contenu deux fois par jour. Une cible qui se
+         deplace se cherche a nouveau a chaque fois.
+
+         Une carte sans objet n'est jamais retiree : elle est desactivee, et **elle porte son
+         motif**, parce qu'un bouton grise sans explication apprend a se mefier de tous les
+         boutons. Les motifs eux-memes sont calcules par `MachineAccueil` et sont donc restes dans
+         `Textes.EcranAccueil`.
+    -->
+
+    <string name="home_prepare_title">Prepare the night</string>
+
+    <string name="home_end_title">End of night</string>
+    <!--
+      Ce que le bouton fait, en une phrase. Il ne se contente pas de « rafraichir » : il demande a
+      la montre de pousser ce qu'elle detient encore, puis lit la session de sommeil, puis score la
+      nuit. Dire « synchroniser » cacherait qu'un geste de dix secondes en declenche trois.
+    -->
+    <string name="home_end_body">Asks the watch to push everything it still holds, reads the sleep session, then scores the night. Nothing is deleted on the watch before receipt is confirmed.</string>
+    <string name="home_end_button">End the night and collect the data</string>
+
+    <string name="home_history_title">History</string>
+    <string name="home_history_button">Open the list</string>
+
+    <!--
+      Garde-fou 2 : le resultat est masque par defaut au reveil, et le devoiler laisse une trace
+      horodatee qui part dans l'export.
+
+      Un bouton, pas de modale de confirmation, pas d'avertissement a accepter. La justification est
+      mesuree : sur environ 8 000 reponses de patients recevant leurs resultats de laboratoire avant
+      relecture medicale, 95,7 % veulent les recevoir immediatement et 7,5 % seulement rapportent
+      une inquietude accrue. Vouloir son chiffre au reveil est donc la norme, pas l'exception ; la
+      friction doit ralentir le geste, pas le taxer.
+
+      Ce qui reste non negociable est la **trace**, et elle est silencieuse : lire son chiffre dans
+      l'etat ou l'on est le moins capable de le juger est un choix legitime ; le faire sans que cela
+      figure dans le document remis au medecin ne l'est pas.
+    -->
+    <string name="home_result_hidden_line">result not shown</string>
+    <string name="home_result_hidden_body">Pendulum does not put the figure of a single night in front of you at waking. The night was recorded and its quality was checked; that is what this screen says. When you show the figure, the time at which you did is written down and appears in the report for the physician.</string>
+
+    <!-- =====================================================================================
+         Ce soir / scellement du contexte
+         ===================================================================================== -->
+
+    <string name="tonight_recording">RECORDING</string>
+    <string name="tonight_start_instruction">Press START on the watch.</string>
+
+    <!--
+      Le second chemin de demarrage. Il double le geste physique, il ne le remplace pas :
+      `tonight_start_instruction` reste affichee au-dessus.
+
+      La raison est dans la mesure elle-meme. Au coucher, la montre est deja a la cheville et sous
+      la couette ; se pencher pour la reveiller produit exactement le mouvement de jambe que la
+      nuit va enregistrer, dans les premieres minutes ou l'on cherche justement a savoir si le
+      dormeur est immobile.
+    -->
+    <string name="tonight_start_on_watch">Start recording on the watch</string>
+    <string name="tonight_stop_instruction">Stopping is done on the watch, or automatically as soon as it is on its charger.</string>
+
+    <string name="tonight_row_watch">Watch</string>
+    <string name="tonight_row_strap">Strap</string>
+    <string name="tonight_row_sleep">Sleep</string>
+
+    <!--
+      Les trois lignes de la carte pendant l'enregistrement. Meme grammaire que les trois
+      ci-dessus : un nom a gauche, une valeur a droite, jamais une phrase.
+
+      La valeur est une chaine a part et non une concatenation dans le code, parce que le
+      separateur et l'ordre des deux membres appartiennent a la langue : `%1$d  ·  %2$s Hz` peut
+      avoir besoin d'etre renverse, et une concatenation Kotlin ne le permet pas.
+    -->
+    <string name="tonight_row_since">Since %1$s</string>
+    <string name="tonight_row_samples">Samples</string>
+    <string name="tonight_row_samples_value">%1$d  ·  %2$s Hz</string>
+    <string name="tonight_row_battery">Watch battery</string>
+    <!-- `%%` : un pourcentage litteral, car cette chaine porte aussi des substitutions. -->
+    <string name="tonight_row_battery_value">%1$d%%  ·  %2$d gaps</string>
+
+    <!-- formatted="false" : trois pourcentages litteraux, aucune substitution. -->
+    <string name="tonight_low_battery" formatted="false">98% recommended — one night draws 40 to 70%.</string>
+
+    <!--
+      Le contexte du soir est la seule vraie porte du produit : la montre refuse de demarrer tant
+      qu'il n'est pas scelle. Le texte doit dire pourquoi, sinon la porte passe pour une lourdeur
+      administrative.
+    -->
+    <string name="tonight_seal_title">Context for the night</string>
+    <string name="tonight_seal_body">Evening dose, leg, strap, alcohol, coffee after 16:00, alone in bed. This information is recorded before the night and cannot be changed afterwards: entered after the fact, it would be swayed by the result.</string>
+
+    <!--
+      Le formulaire du soir. Les champs sont exactement les colonnes de `NightContextEntity`.
+      Chaque libelle dit ce que la donnee sert a decider, parce qu'un formulaire de sante qu'on
+      remplit sans savoir pourquoi se remplit mal.
+    -->
+    <string name="tonight_section_wearing">How the watch is worn</string>
+    <string name="tonight_section_evening">The evening</string>
+    <string name="tonight_section_dose">Medication</string>
+
+    <string name="tonight_field_strap">Strap and hole</string>
+    <string name="tonight_field_strap_help">The same strap at the same hole every night. Play in the strap changes the recorded amplitude by a factor of 2 to 3, which makes two nights incomparable without anything else showing it.</string>
+    <string name="tonight_field_strap_missing">Strap and hole required</string>
+
+    <string name="tonight_field_alone">Alone in bed</string>
+    <string name="tonight_field_alone_help">A bed partner transmits their own movements through the mattress.</string>
+    <string name="tonight_field_coffee">Coffee after 16:00</string>
+    <string name="tonight_field_exercise">Unusual exercise today</string>
+    <string name="tonight_field_alcohol">Alcohol, units</string>
+
+    <string name="tonight_field_dose">Dose taken this evening</string>
+    <string name="tonight_field_dose_help">Free text, kept as typed. A structured field would need the list of molecules, their units and their equivalences; a structured field that is half right is worth less than a line a physician reads for themselves.</string>
+    <string name="tonight_field_notes">Anything else worth noting</string>
+
+    <string name="tonight_cancel">Not now</string>
+    <string name="tonight_read_again">Read it again</string>
+
+    <string name="tonight_seal_button">Seal the context for tonight</string>
+    <string name="tonight_seal_missing">Context not sealed — the watch cannot start recording.</string>
+    <string name="tonight_seal_confirmation">Once sealed, this context can no longer be changed. Check the leg and the strap hole.</string>
+
+    <!--
+      Les deux issues du scellement qui ne sont pas un succes, et que l'ecran traitait comme le
+      succes : il se fermait dans les trois cas.
+
+      La premiere est la plus couteuse parce qu'elle est **silencieuse et contradictoire**. La base
+      a le contexte, donc l'accueil affiche que le contexte est scelle ; le `DataItem` n'est pas
+      parti, donc la montre continue d'afficher « remplissez le formulaire du soir ». Les deux
+      appareils se contredisent et aucun des deux ne se trompe. Sans cet ecran, on cherche pendant
+      dix minutes pourquoi START reste bloque, a l'heure ou l'on veut se coucher.
+
+      Le corps dit quoi faire et ne demande pas de refaire le formulaire. Il disait que le Data
+      Layer reprendrait de lui-meme a la reconnexion, et c'etait faux dans ce cas precis : le Data
+      Layer ne transmet que ce qui est **entre dans le magasin**, et ici le `putDataItem` a echoue,
+      donc rien n'y est entre. C'est `PublicationContexteWorker` qui repose l'item, en tache de
+      fond, avec un repli exponentiel, jusqu'a ce que la soiree soit passee. Le texte le dit sans
+      nommer le mecanisme, et il donne le geste qui reste utile — ouvrir Pendulum sur la montre,
+      qui interroge le magasin a ce moment-la.
+    -->
+    <string name="tonight_seal_unpublished_title">Sealed here, not received by the watch</string>
+    <string name="tonight_seal_unpublished_body">The context is recorded on this phone and can no longer be changed: that part is done. The watch has not been told, so it will keep refusing to start. This phone sends the message again on its own, in the background, and keeps trying until the evening is over — nothing to fill in a second time. When you go to bed, open Pendulum on the watch with the phone next to it: that is when the watch looks for the message again.</string>
+
+    <!--
+      La seconde : `OnConflictStrategy.ABORT` a leve, une soiree ne se scelle qu'une fois. Le texte
+      dit que la saisie qui vient d'etre faite n'a **pas** ete enregistree — c'est la seule chose
+      qui compte ici, et un ecran qui se ferme sans le dire laisse croire qu'elle a remplace la
+      precedente, c'est-a-dire exactement ce que le garde-fou interdit.
+    -->
+    <string name="tonight_seal_already_title">Already sealed for tonight</string>
+    <string name="tonight_seal_already_body">A context was sealed for this evening, and it cannot be replaced — that is what sealing means. What you have just typed was not recorded and does not enter the database. Go back: the home screen shows the context in force for tonight.</string>
+
+    <!-- Le motif du bouton grise apres l'une ou l'autre des deux issues. Une soiree, un contexte. -->
+    <string name="tonight_seal_locked">This evening\'s context is already in the database — it cannot be sealed twice.</string>
+
+    <!-- =====================================================================================
+         Reveil : les cinq etats
+         ===================================================================================== -->
+
+    <!-- %1$s : la date lisible de la nuit. -->
+    <string name="waking_pending_title">Night of %1$s recorded on the watch</string>
+    <!-- %1$s : megaoctets a transferer. %2$d : minutes a prevoir. -->
+    <string name="waking_pending_body">%1$s MB to transfer. The transfer starts when the watch is on its charger and within Bluetooth range. Allow %2$d minutes.</string>
+    <string name="waking_pending_action">Transfer now</string>
+
+    <!-- %1$s recus sur %2$s au total, en megaoctets. -->
+    <string name="waking_transfer_title">Transferring — %1$s MB of %2$s MB</string>
+    <string name="waking_transfer_chunk">chunk %1$d/%2$d</string>
+    <string name="waking_transfer_body">You can close the app.</string>
+
+    <string name="waking_analysis_title">Analysis of the night of %1$s</string>
+    <string name="waking_analysis_remaining">About %1$d seconds.</string>
+
+    <!--
+      Etat 4 : le **cas normal** au reveil, et le texte doit le dire.
+
+      La synchronisation montre-de-poignet vers Health Connect obeit a la politique batterie du
+      fabricant, sans delai garanti — souvent plusieurs heures. Si l'interface presente
+      l'hypnogramme manquant comme une anomalie, l'utilisateur croit a une panne **tous les
+      matins**, et une application qui semble cassee chaque matin finit desinstallee. D'ou : pas de
+      rouge, pas d'icone d'alerte, le mot « provisoire » et l'explication du delai.
+    -->
+    <string name="waking_provisional_title">Night of %1$s — provisional result</string>
+    <string name="waking_provisional_body">The movements have been detected. The sleep stages from your wrist watch have not reached Health Connect yet: synchronisation often happens several hours after waking.\n\nIn the meantime, Pendulum uses its own immobility mask. The figure will be recomputed automatically, with nothing to do on your part.</string>
+    <!-- %1$s : derniere tentative. %2$s : prochaine. -->
+    <string name="waking_provisional_attempts">Last attempt: %1$s · next: %2$s</string>
+    <!--
+      La premiere tentative n'a pas encore eu lieu. Ecrire « last attempt: — » ferait lire un echec
+      la ou il n'y a qu'une attente qui commence.
+    -->
+    <string name="waking_provisional_first_attempt">First attempt at %1$s</string>
+    <!--
+      L'abandon, **date**, et affiche des l'entree dans l'etat.
+
+      C'est ce qui remplace l'indicateur d'avancement indetermine. Material 3 calibre son *loading
+      indicator* pour des attentes de moins de cinq secondes ; un cercle qui tourne pendant six
+      heures dit « panne », quel que soit le texte a cote. Une echeance datee dit la meme chose —
+      l'application travaille encore — sans la promesse d'un resultat imminent qu'elle ne peut pas
+      tenir.
+    -->
+    <string name="waking_provisional_give_up_at">If nothing has arrived by %1$s, Pendulum stops looking and the night keeps its “accelerometer mask” flag.</string>
+    <string name="waking_provisional_action">Try again now</string>
+    <string name="waking_provisional_given_up">Pendulum stopped looking for the hypnogram after 36 h. The night remains eligible and keeps the “accelerometer mask” flag for good.</string>
+
+    <!-- %1$d enregistrees, %2$d eligibles, %3$d ecartees. -->
+    <string name="waking_counter">%1$d nights recorded · %2$d eligible · %3$d excluded (see Nights)</string>
+
+    <!-- =====================================================================================
+         Tendance
+         ===================================================================================== -->
+
+    <!--
+      Le bloc de refus d'agreger — ses deux motifs, leurs compteurs, leurs listes — n'est **pas**
+      ici. Il est reste entier dans `Textes.Tendance`, et c'est un choix plutot qu'un oubli : dans
+      `TrendScreen.RefusCard`, chaque libelle est le resultat d'un ternaire `if (rythme) … else …`
+      dont l'une des deux branches est epinglee par un test hors de ce module
+      (`androidTest/GardeFousTest.kt` cherche le titre du refus a l'ecran, `ui/ReglesAffichageTest.kt`
+      lit le corps du refus de rythme). Migrer une branche sur deux ferait lire, dans la meme
+      expression, une ressource et une constante — et personne ne devinerait la regle.
+    -->
+
+    <!--
+      Le compte horaire au second rang. Il reste parce que c'est la langue des somnologues et que
+      les seuils publies reposent dessus, mais il n'est plus la grandeur suivie.
+
+      %1$d : la valeur. %2$d et %3$d : les bornes. %4$d : le nombre de nuits. Le signe pour cent est
+      double parce que la chaine passe par `String.format`.
+    -->
+    <string name="trend_count_second_rank">Hourly count: %1$d/h · 95%% CI %2$d–%3$d · %4$d nights</string>
+    <string name="trend_count_note">The hourly count appears here and in the report for the physician, because that is what a sleep specialist reads. It is not the quantity Pendulum follows from one night to the next: it varies twelve times as much.</string>
+
+    <!--
+      La periodicite ne s'affiche jamais nue entre 0 et 1. Un intervalle en secondes s'imagine, un
+      indice sans dimension ne veut rien dire pour personne — ni pour l'utilisateur, ni pour le
+      medecin qui recoit la feuille. Les deux qualificatifs eux-memes sont produits par `Aggregat`
+      et sont restes dans `Textes.Tendance`.
+    -->
+    <string name="trend_periodicity_note">Periodicity measures the proportion of movements that occur at regular intervals. It is described here in plain words rather than by its index: an index between 0 and 1 compares to nothing you can picture.</string>
+
+    <!-- %1$s : l'ecart. %2$s : son unite. -->
+    <string name="trend_dispersion">Your nights vary by ±%1$s %2$s around their median.</string>
+
+    <!-- Reglages actifs affiches sur l'ecran. -->
+    <string name="trend_counting_rule">Counting rule</string>
+    <string name="trend_sleep_mask">Sleep mask</string>
+    <string name="trend_movements_awake">Movements while awake</string>
+    <string name="trend_periodicity">Periodicity</string>
+    <string name="trend_missed_rate">Estimated missed rate</string>
+    <!--
+      La note du taux de manques. Elle dit d'ou vient le chiffre — un modele de melange sur les
+      harmoniques, donc une estimation et non un comptage — et ce qu'un saut d'une nuit a l'autre
+      signale : deux nuits qui ne se comparent pas, jamais un resultat qui aurait bouge.
+    -->
+    <string name="trend_missed_rate_note">Estimated by the mixture model on the harmonics. A rate that jumps from one night to the next signals nights that are not comparable.</string>
+
+    <string name="trend_rules_snackbar">WASM 2016 requires at least 10 s between movements; AASM v3 accepts 5 s. The figures are not comparable between the two rules.</string>
+
+    <string name="trend_compare">Compare two periods</string>
+    <string name="trend_compare_subtitle">Before / after a change of treatment</string>
+    <string name="trend_questionnaire">Screening questionnaire</string>
+    <string name="trend_report">Prepare a report for the physician</string>
+
+    <!--
+      Deux hashs de parametres en base = un rescore inacheve. La tendance refuse alors de melanger,
+      et le dit, au lieu d'afficher une courbe amputee sans prevenir.
+    -->
+    <string name="trend_mixed_hashes">Some nights in this period were computed with different parameters. The recomputation of every night is not finished; the trend does not mix two sets of parameters.</string>
+
+    <!-- %1$s : le nom du profil de parametres actif. -->
+    <string name="trend_custom_params">Custom parameters active (profile “%1$s”). These values are not comparable to the reference values.</string>
+
+    <!-- =====================================================================================
+         Comparaison de deux periodes
+         ===================================================================================== -->
+
+    <string name="compare_unavailable_title">Comparison unavailable</string>
+    <!-- %1$s : le nom de la periode. %2$d : ses nuits eligibles. -->
+    <string name="compare_unavailable_body">%1$s: %2$d eligible nights. At least 5 are needed in each period.\nWith fewer nights, the measured difference would be dominated by the ordinary variability from one night to the next, and not by a real effect.</string>
+
+    <!-- %1$d : ordre de grandeur des nuits qu'il faudrait par periode. -->
+    <string name="compare_nights_needed">To settle it, about %1$d nights per period would be needed.</string>
+    <string name="compare_out_of_reach">With variability this large, an effect of this size is not measurable by this method.</string>
+
+    <!-- Meme quand l'ecart est distinguable, l'application ne revendique aucune cause. -->
+    <string name="compare_no_cause">This difference exceeds the usual night-to-night variability. Pendulum cannot say what caused it: a change of treatment, of sleep, of alcohol, of iron, of bedding or of watch position would produce the same effect on screen.</string>
+
+    <string name="compare_difference">Difference</string>
+
+    <!--
+      La ligne d'estimation d'une periode : `21 s  (95% CI 18 – 24)  9 nights`.
+
+      Elle est **une seule chaine** et non trois morceaux assembles dans le code : l'ordre des
+      membres appartient a la langue autant que les mots, et une concatenation Kotlin fige les deux.
+      %1$s la mediane mise en forme, %2$s son unite, %3$s et %4$s les bornes, %5$d les nuits.
+      `%%` : le pourcentage de « 95% CI » est litteral.
+    -->
+    <string name="compare_estimate_line">%1$s %2$s  (95%% CI %3$s – %4$s)  %5$d nights</string>
+
+    <!-- =====================================================================================
+         Liste et detail des nuits
+         ===================================================================================== -->
+
+    <string name="nights_filter_all">All</string>
+    <string name="nights_filter_eligible">Eligible</string>
+    <string name="nights_filter_excluded">Excluded</string>
+
+    <string name="nights_state_eligible">eligible</string>
+    <string name="nights_state_provisional">provisional</string>
+    <string name="nights_state_excluded">excluded</string>
+
+    <string name="nights_single_value_long">A single night supports no conclusion. This figure exists to check the measurement, not to read anything into it. See the trend.</string>
+    <string name="nights_see_trend">See the trend</string>
+
+    <!--
+      Il n'y a pas de bouton « exclure cette nuit ». C'est le garde-fou 4, et l'absence est aussi
+      importante que ce qui est present : une exclusion decidee apres avoir vu le chiffre est un
+      mecanisme d'auto-tromperie complet a lui seul.
+    -->
+    <string name="nights_no_exclude_button">Nights are excluded by criteria set before the computation: same leg, same strap, alone in bed, stable calibration, and at least 4 h of analysable data. Pendulum offers no way to exclude a night manually — removing a night after seeing its figure would skew the trend.</string>
+
+    <!-- %1$s : la date lisible de la nuit. -->
+    <string name="night_detail_title">Night of %1$s</string>
+    <string name="night_detail_events">Events detected</string>
+    <string name="night_detail_movements">Movements detected</string>
+    <string name="night_detail_of_which_sleep">of which in sleep (PLMS)</string>
+    <string name="night_detail_of_which_awake">of which awake (PLMW)</string>
+    <string name="night_detail_excluded_posture">excluded — posture</string>
+    <string name="night_detail_excluded_duration">excluded — duration outside 0.5–10 s</string>
+    <string name="night_detail_series">Series (≥ 4 movements)</string>
+    <string name="night_detail_median_ioi">Median onset-to-onset interval</string>
+    <string name="night_detail_fundamental_rhythm">Estimated fundamental rhythm</string>
+
+    <!-- La note quand il y a bien un rythme : d'ou il sort, et ce qu'il faut en craindre. -->
+    <string name="night_detail_rhythm_deconvolution_note">Estimated by deconvolution of the harmonics: a sensor on a single leg sees a doubled interval when movements alternate left/right.</string>
+    <!--
+      La note qui accompagne le refus d'ajustement au detail de nuit, une nuit a la fois. Un tiret
+      dirait « pas encore calcule » ; ici le calcul a eu lieu et s'est conclu par un refus, ce qui
+      n'est pas la meme information.
+    -->
+    <string name="night_detail_rhythm_not_fitted_note">The intervals of this night did not identify a period. Pendulum reports nothing rather than a figure fitted on too little — the movement count below stands on its own.</string>
+
+    <string name="night_detail_quality">Quality of the night</string>
+    <string name="night_detail_rule_applied">Rule applied</string>
+    <!-- La note sous chaque controle qualite : la valeur a laquelle il se compare. %1$s : le seuil. -->
+    <!--
+         Les trois etats d'une ligne de qualite, en mots.
+
+         Ils ne sont **pas** affiches : la table montre `✓`, `✗` ou `—`, et le signe suffit a
+         l'oeil. Ils servent de `contentDescription` a la valeur, parce qu'un lecteur d'ecran ne
+         dit rien d'un signe — ou en dit le nom Unicode, ce qui n'aide pas davantage. L'etat etait
+         seule information que cette table existe pour donner, et la seule qu'un utilisateur
+         aveugle n'obtenait pas.
+
+         « not measured » et non « unknown » : la nuance porte la raison. Le plus grand trou n'est
+         pas indechiffrable, il n'a simplement jamais ete transmis par la montre.
+    -->
+    <string name="night_detail_state_pass">threshold met</string>
+    <string name="night_detail_state_fail">threshold not met</string>
+    <string name="night_detail_state_unknown">not measured</string>
+
+    <string name="night_detail_threshold">threshold %1$s</string>
+
+    <!--
+      La legende de la bande d'etat de l'appareil, sous elle.
+
+      Elle dit en mots ce que la forme dit deja a l'oeil — gouttiere, blocs, absence de courbe : ces
+      voies decrivent l'enregistreur, pas le dormeur. La phrase existe parce que la forme seule ne
+      protege pas un lecteur presse, et parce que rien ne dit a quelqu'un qui n'a pas vu la bande
+      qu'aucune de ces voies n'a de lien de cause avec les mouvements traces au-dessus.
+    -->
+    <string name="night_detail_metrology_note">Device state, on the same time axis. These lanes describe the recorder, not the sleeper: they say when the sampling was coarse, when the sensor hit its range limit, and whether the watch lasted the night. None of them caused the movements above.</string>
+
+    <string name="night_detail_advanced_params">Advanced parameters</string>
+    <string name="night_detail_recompute_all">Apply to every night</string>
+    <!--
+      Il n'existe pas de bouton « recalculer cette nuit ». Un reglage par nuit permet de choisir le
+      seuil qui donne le chiffre attendu, nuit par nuit : le graphe mesure alors le reglage, pas le
+      dormeur.
+    -->
+    <string name="night_detail_no_per_night_setting">A parameter is not set night by night. Changing it recomputes every night from the raw signal, so that the trend stays comparable with itself.</string>
+
+    <!--
+      Les deux sorties d'une nuit, et elles ne servent pas au meme lecteur.
+
+      Le rapport est un document : il se lit, il s'imprime, il se pose sur un bureau. Le paquet est
+      le signal brut avec son contexte scelle : il ne se lit pas, il se reimporte — c'est ce qui
+      permet de rejouer une nuit apres un changement de parametres, ou sur un autre telephone. Les
+      nommer separement evite qu'on emporte chez le medecin quatre-vingt-dix megaoctets
+      d'accelerometrie.
+
+      Les **noms de fichier** correspondants ne sont pas ici : un nom de fichier n'est pas un texte
+      d'interface et ne se traduit pas. Ils sont restes dans `Textes.Nuits.Detail`.
+    -->
+    <string name="night_detail_export">Export this night</string>
+    <string name="night_detail_export_report">Report for the physician</string>
+    <string name="night_detail_export_report_note">One night, in text. A few kilobytes.</string>
+    <string name="night_detail_export_bundle">Raw bundle</string>
+    <string name="night_detail_export_bundle_note">The raw signal, the sealed context and the hypnogram, so that this night can be recomputed later or on another phone. Tens of megabytes.</string>
+
+    <!-- =====================================================================================
+         Questionnaire
+         ===================================================================================== -->
+
+    <string name="quiz_title">Screening questionnaire</string>
+    <string name="quiz_single_question">When you try to relax in the evening or to sleep, do you sometimes feel an irresistible urge to move your legs, or unpleasant sensations in your legs, that are relieved when you move?</string>
+    <string name="quiz_yes">Yes</string>
+    <string name="quiz_no">No</string>
+
+    <!--
+      « Rules out » etait une conclusion clinique, dans un produit qui promet de mesurer sans
+      interpreter. Trois defauts tenaient dans deux phrases. Le verbe d'abord : ecarter un
+      diagnostic est un acte medical, et une question unique ne l'autorise pas — au mieux elle rend
+      le syndrome moins probable. La destination ensuite : le « questionnaire detaille » n'existe
+      pas, il n'y a ni ecran ni route, et le texte promettait donc une porte de sortie imaginaire a
+      celui qui doutait de sa reponse. Le placement enfin, corrige dans `ScreeningQuizScreen` :
+      cette phrase **remplacait** l'avertissement au lieu de s'y ajouter, si bien que le seul chemin
+      ou l'avertissement disparaissait etait le chemin rassurant. Celui qui en avait le plus besoin
+      ne le recevait pas.
+    -->
+    <string name="quiz_answer_no">A negative answer makes restless legs syndrome less likely, but it does not rule it out: the diagnosis is clinical, and it rests on five criteria that only a physician can check.</string>
+    <string name="quiz_header">This questionnaire is about what you feel while awake. It is independent of the measurement made by the watch: the two go together, neither replaces the other.</string>
+
+    <string name="quiz_outcome_consistent">Answers consistent with restless legs syndrome</string>
+    <string name="quiz_outcome_not_consistent">Answers not consistent with restless legs syndrome</string>
+    <string name="quiz_outcome_incomplete">Questionnaire incomplete</string>
+    <string name="quiz_outcome_body">This questionnaire is a screening tool. It makes no diagnosis: the five diagnostic criteria must be checked by a physician, in particular to rule out the conditions that mimic RLS (cramps, neuropathy, positional discomfort, drug-induced akathisia).</string>
+    <string name="quiz_outcome_export">Your answers are included in the exportable report.</string>
+    <string name="quiz_review">Review my answers</string>
+
+    <!-- =====================================================================================
+         Reglages
+         ===================================================================================== -->
+
+    <string name="settings_measurement">Measurement</string>
+    <string name="settings_preferred_source">Preferred sleep source</string>
+    <string name="settings_param_profile">Parameter profile</string>
+    <string name="settings_wearing_reference">Wearing reference</string>
+
+    <string name="settings_devices">Devices</string>
+    <string name="settings_watch">Watch</string>
+
+    <string name="settings_data">Data</string>
+    <string name="settings_space_used">Space used</string>
+
+    <!--
+      Le reimport d'un paquet de nuit. Il vit dans « Donnees » et non dans l'export, parce que c'est
+      la meme operation vue de l'autre cote : un paquet ecrit par l'export revient ici, avec ses
+      octets bruts, son contexte scelle et son hypnogramme retenu.
+    -->
+    <string name="settings_import">Import a night bundle</string>
+    <string name="settings_import_note">A bundle written by Pendulum, from this phone or another one.</string>
+
+    <string name="settings_erase">Erase all data</string>
+    <string name="settings_erase_confirmation">Type ERASE to confirm.</string>
+
+    <!--
+      Ce que l'effacement detruit, nomme piece par piece.
+
+      Un texte du type « toutes vos donnees » laisse chacun s'imaginer ce qu'il veut, et l'operation
+      est irreversible : les nuits ne se reconstituent pas, ni depuis la montre (elle n'archive
+      rien) ni depuis Health Connect (qui ne detient que l'hypnogramme). La liste est donc
+      explicite, et le mot a taper est ce qui separe la lecture du geste.
+    -->
+    <string name="settings_erase_body">This erases, on this phone and for good:\n\n• the raw accelerometer signal of every night, the largest part of the space used;\n• every night, its results, its charts and its quality checks;\n• every sealed evening context — leg, strap, medication, alcohol, notes;\n• every questionnaire answer;\n• the sleep stages read from Health Connect and kept alongside each night.\n\nNothing rebuilds them. The watch keeps no archive, and Health Connect holds only the sleep stages, never the movements. Export first if you want to keep a copy.</string>
+    <!--
+      Le mot a taper. Il est ici et pas en dur dans l'ecran : le jour ou l'interface est traduite,
+      c'est la traduction de ce mot qu'il faudra taper, et `settings_erase_confirmation` doit citer
+      exactement la meme chaine.
+    -->
+    <string name="settings_erase_word">ERASE</string>
+    <string name="settings_erase_field">Confirmation</string>
+    <string name="settings_erase_button">Erase everything</string>
+    <string name="settings_erase_done">Everything has been erased.</string>
+
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+
+    <string name="settings_about">About</string>
+    <string name="settings_app_version">Application version</string>
+    <string name="settings_algo_version">Algorithm version</string>
+    <string name="settings_read_notice_again">Read the notice again</string>
+
+    <string name="settings_accel_mask_forbidden">The accelerometer mask alone cannot carry the main result: the denominator would be computed from the same signal as the numerator. It is still computed and shown as a second arm, never as the result.</string>
+
+    <!-- =====================================================================================
+         Export
+         ===================================================================================== -->
+
+    <string name="export_title">Report for the physician</string>
+
+    <!--
+      Les deux titres de section de l'ecran. Ils ressemblent a des mots internationaux, et c'est
+      exactement pour cela qu'ils etaient restes en dur : « Format » se traduit quand meme, et
+      « Content » devient « Contenu ».
+    -->
+    <string name="export_section_format">Format</string>
+    <string name="export_section_content">Content</string>
+
+    <!--
+      Ce que le document couvrira. %1$s : la periode telle qu'elle est deja mise en forme.
+      %1$d : les nuits eligibles — le meme decompte que `trend_interval_and_n`, sans son intervalle.
+    -->
+    <string name="export_period">Period: %1$s</string>
+    <string name="export_eligible_nights">%1$d eligible nights</string>
+
+    <!--
+      Le format ecrit, annonce tel qu'il est.
+
+      Cette carte proposait un « PDF report (1 to 2 pages) » et un « CSV data — three zipped files » ;
+      ni l'un ni l'autre n'existait, et les deux cases ne changeaient rien. Ce qui existe est un
+      document texte structure, qu'un telephone imprime et qu'un cabinet ouvre sans logiciel
+      particulier. Annoncer le format reellement ecrit vaut mieux que proposer un choix entre deux
+      formats dont aucun n'est produit.
+    -->
+    <string name="export_format_note">One Markdown text file. It prints from the phone, opens in any text editor, and carries its own limits so that it can be read away from this application.</string>
+
+    <string name="export_include_questionnaire">Include the questionnaire</string>
+    <string name="export_include_excluded">Include the excluded nights, with their reason</string>
+    <string name="export_include_excluded_note">On by default: hiding failed nights from a physician is misleading.</string>
+
+    <!--
+      Le libelle disait « Share », et il n'y a rien a partager : l'application ne declare ni
+      `INTERNET` ni `FileProvider`, donc aucun `ACTION_SEND`. Ce que le bouton fait est ecrire un
+      fichier a l'endroit que l'utilisateur designe, geste par geste. Le partage qui suit appartient
+      au gestionnaire de fichiers, et le dire evite de promettre une surface d'envoi que ce
+      manifeste refuse.
+    -->
+    <string name="export_save">Save the report</string>
+    <string name="export_no_network">The file is written where you choose it, and nowhere else. Pendulum declares no network access permission.</string>
+
+    <!-- %1$s : le nom du fichier ecrit. Le nom lui-meme est construit hors ressources. -->
+    <string name="export_written">Written: %1$s</string>
+
+    <!--
+      L'echec d'ecriture, qui n'avait aucune facon de se dire.
+
+      L'ecriture etait enveloppee dans un `runCatching` dont l'exception etait jetee, et le nom du
+      fichier s'affichait ensuite quoi qu'il arrive : « Written: pendulum-report-2026-03-15.md »
+      pouvait donc s'ecrire alors que rien n'avait ete ecrit. C'est le document destine au medecin,
+      celui qu'on emporte en consultation sans le rouvrir.
+
+      Le texte ne nomme pas de cause parce que l'application n'en connait aucune de fiable : un
+      `Uri` SAF revoque, une carte retiree, un fournisseur tiers qui refuse le flux rendent la meme
+      exception. Ce qu'il dit est ce qui est verifiable — rien n'a ete ecrit — et le geste qui
+      marche a coup sur, choisir un autre emplacement.
+    -->
+    <string name="export_failed">Nothing was written. The chosen location refused the file. Try again and pick another folder, on this phone rather than in a cloud folder.</string>
+    <!-- %1$d : le minimum de nuits eligibles. -->
+    <string name="export_unavailable">Export unavailable — %1$d nights minimum</string>
+
+    <!-- =====================================================================================
+         Porte P1 — le rapport de faisabilite materielle
+         =====================================================================================
+
+         Le registre est celui du reste du produit : une valeur mesuree, son seuil, et rien qui
+         qualifie l'ensemble d'un mot. L'ecran ne felicite pas et ne s'alarme pas — il dit combien
+         de nuits d'affilee ont tenu les trois criteres, et laisse la decision qui suit reposer sur
+         ce chiffre.
+
+         Les libelles de seuil (`at least 99.0%`, `above 20% at 8 h`…) sont produits par
+         `ui/model/PorteP1.kt` et sont restes dans `Textes.P1`.
+    -->
+
+    <string name="p1_title">P1 — hardware feasibility</string>
+    <string name="p1_subtitle">Sensor coverage, battery, sampling rate</string>
+    <string name="p1_intro">P1 is the blocking gate of the project: no line of algorithm is meant to be written until a watch has held three consecutive nights within the three criteria below. Coverage is counted on the differences between sensor timestamps, never on the time samples reached the phone — with FIFO batching, an arrival-time rule fires on every single night and measures nothing.</string>
+
+    <string name="p1_nights">Nights</string>
+    <string name="p1_campaign">Campaign</string>
+
+    <string name="p1_meets">meets P1</string>
+    <string name="p1_outside">outside P1</string>
+    <string name="p1_undecidable">not decidable</string>
+
+    <!-- %1$d nuits d'affilee atteintes sur %2$d requises. -->
+    <string name="p1_run">Longest run of consecutive nights inside the three criteria: %1$d of %2$d</string>
+    <!-- %1$s : premiere nuit de la serie. %2$s : derniere. -->
+    <string name="p1_run_range">%1$s → %2$s</string>
+    <!-- %1$d conformes sur %2$d examinees. -->
+    <string name="p1_counts">%1$d of %2$d nights inside P1</string>
+
+    <string name="p1_gate_passed">Gate passed.</string>
+    <string name="p1_gate_not_passed">Gate not passed.</string>
+
+    <string name="p1_no_night">No night recorded yet. The gate stays closed: it is answered by measurements, not by the absence of them.</string>
+
+    <!--
+      La phrase qui dit a quoi sert le fichier. Elle est ici et pas seulement dans la documentation,
+      parce qu'un rapport circule sans son contexte — et celui-ci porte le choix de materiel.
+    -->
+    <string name="p1_why">This report decides whether the project carries on with a Wear OS watch or moves to a dedicated logger such as an Axivity AX3. That decision should rest on a file, not on a memory.</string>
+
+    <!--
+      Ce que le telephone ne peut pas afficher est dit, pas passe sous silence. Une ligne absente
+      laisse croire que le controle n'existe pas ; un tiret explique dit qu'il n'est pas transmis.
+    -->
+    <string name="p1_not_transmitted">One figure is still missing and is shown as a dash: the largest single gap is measured on the watch, but only the total reaches the phone.</string>
+
+    <!--
+      Ce que le chiffre de batterie suppose, ecrit a cote de lui.
+
+      Un pourcentage extrapole ressemble a un pourcentage mesure. La phrase dit donc les trois
+      hypotheses que `PenteBatterie` porte dans sa KDoc — droite ajustee sur le compteur en
+      micro-amperes-heures, points sous charge retires, capacite pleine estimee sur la nuit
+      elle-meme — et le fait qu'en dessous d'une demi-heure de decharge la ligne rend un tiret
+      plutot qu'une droite tracee sur trop peu.
+    -->
+    <string name="p1_battery_extrapolation">When the night carries device telemetry, the battery criterion is answered by fitting a line to the coulomb counter in microampere-hours, not by reading the last percentage: a percentage does not move over a short night. Points recorded while the watch was on its charger are removed, and full capacity is estimated from the night itself. Below half an hour of continuous discharge the line is refused and the criterion reads “not decidable” — a slope over three points is not a slope. Nights recorded before telemetry existed still answer with the level at the end of the night alone.</string>
+
+    <string name="p1_export">Export as CSV</string>
+
+    <!-- =====================================================================================
+         Erreurs — titre neutre, une phrase de cause, une phrase d'action
+         =====================================================================================
+
+         Aucun de ces messages n'emploie le mot « erreur » quand rien n'est casse. Une nuit sans
+         hypnogramme, une nuit courte, une montre restee sur la table sont des **situations**. Elles
+         s'affichent en ambre. Le rouge est reserve a ce qui est reellement casse : transfert,
+         permission, integrite de fichier, stockage.
+
+         Seule la famille `E-EXP-01` est ici : toutes les autres sont assemblees par
+         `ui/model/Situations.kt` et `ui/model/MachineReveil.kt`, qui n'ont pas de `Context`.
+    -->
+
+    <string name="error_exp_01_title">Export unavailable — 3 nights minimum</string>
+    <string name="error_exp_01_cause">The selected period holds fewer than three eligible nights.</string>
+    <string name="error_exp_01_action">A report built on fewer than three nights would mislead the physician who reads it. Widen the period or record one more night.</string>
+
+    <!-- =====================================================================================
+         Graphes
+         =====================================================================================
+
+         Les noms de voie de la bande d'etat sont dessines par une extension de `DrawScope`, hors de
+         toute portee composable, et sont restes dans `Textes.Graphes`.
+    -->
+
+    <string name="chart_values">Values</string>
+    <string name="chart_values_note">The same content as a table.</string>
+
+    <!-- =====================================================================================
+         Second lot : ce que la couche de modele assemble
+         =====================================================================================
+
+         Les chaines ci-dessous ne sont pas resolues par un ecran mais par des fonctions pures de
+         `ui/model/`, `ui/home/AccueilModel.kt`, `ui/ViewModels.kt` et `data/PendulumRepository.kt`.
+         Elles n'ont pas de `Context` : elles construisent un `UiText.Res(R.string.…, args)` que la
+         couche Compose resout au dernier moment, ce qui les laisse pures et testables en JVM.
+    -->
+
+    <!-- === premier lancement : etats de recherche, jamais rendus a ce jour ================ -->
+
+    <!--
+      L'etat intermediaire de l'appairage. `PairingPage` n'a que trois etats — aucune montre,
+      application absente, montre prete — parce que la carte bascule d'elle-meme sur un
+      `CapabilityClient.addListener`. Ces deux chaines restent parce que `08-screens.md` decrit
+      l'etat de recherche ; aucun ecran ne les affiche encore.
+    -->
+    <string name="onboarding_pairing_searching">Looking for the watch…</string>
+    <string name="onboarding_pairing_searching_subtitle">Open Pendulum on your watch. Both devices must be paired in the Watch app.</string>
+
+    <!--
+      La ligne de verification du capteur, telle qu'elle s'ecrira le jour ou la montre publiera un
+      `DataItem` decrivant son capteur. C'est un **controle** : si la montre annonce autre chose que
+      50 Hz, ou un FIFO plus court que prevu, tout le budget d'erreur de la campagne change. Aucun
+      appelant a ce jour — l'ecran affiche `onboarding_pairing_sensor_check_missing`.
+
+      %1$d Hz demandes, %2$s evenements de FIFO, %3$s pour le capteur de reveil.
+    -->
+    <string name="onboarding_pairing_sensor_check">Accelerometer: %1$d Hz requested · FIFO %2$s events · wake-up sensor: %3$s</string>
+    <string name="onboarding_pairing_sensor_wakeup_yes">yes</string>
+    <string name="onboarding_pairing_sensor_wakeup_no">no</string>
+
+    <!-- **Aucun appelant** : la carte d'aide ne propose pas encore ce raccourci. -->
+    <string name="onboarding_sleep_open_hc">Open Health Connect</string>
+
+    <!-- === l'accueil : ce que `MachineAccueil` assemble ================================== -->
+
+    <!-- Le libelle de l'onglet, lu par l'`enum Destination`. -->
+    <string name="home_title">Home</string>
+
+    <!-- Motif du bouton desactive quand la montre enregistre deja. -->
+    <string name="home_prepare_busy">The watch is recording — nothing to prepare</string>
+
+    <string name="home_end_no_session">No recording open</string>
+    <!-- %1$s : l'heure d'ouverture de la session. -->
+    <string name="home_end_open_since">Recording open since %1$s</string>
+    <string name="home_end_recording_since">The watch has been recording since %1$s</string>
+    <!-- %1$s : la date lisible de la nuit. -->
+    <string name="home_end_analysed">Night of %1$s analysed</string>
+
+    <string name="home_history_empty">No night recorded yet</string>
+    <!-- %1$d nuits enregistrees, %2$d eligibles. -->
+    <string name="home_history_count">%1$d nights · %2$d eligible</string>
+
+    <!--
+      Le bouton de devoilement. `androidTest/GardeFousTest.kt` le cherche a l'ecran : c'est le test
+      instrumente qui atteste que le chiffre reste masque tant qu'il n'a pas ete presse.
+    -->
+    <string name="home_result_button">Show the result</string>
+    <!-- %1$s : la date lisible de la nuit. -->
+    <string name="home_result_recorded">Night of %1$s recorded · quality acceptable</string>
+    <!-- **Aucun appelant** : l'horodatage du devoilement ne sort que dans l'export. -->
+    <string name="home_result_shown_at">Result shown on %1$s</string>
+
+    <!-- === ce soir ====================================================================== -->
+
+    <!-- **Aucun appelant** : l'ecran du soir porte son titre depuis `tonight_seal_title`. -->
+    <string name="tonight_title">TONIGHT</string>
+
+    <!-- Les deux retours de la commande de demarrage, emis apres l'appel au Data Layer. -->
+    <string name="tonight_start_requested">Request sent. The watch starts, or asks you to tap.</string>
+    <string name="tonight_start_unreachable">Watch not reachable. Press START on it directly — nothing was started.</string>
+
+    <!--
+      Les deux jambes. Elles sont traduites depuis `"LEFT"` / `"RIGHT"` venus de la base : il n'y a
+      pas de valeur par defaut, parce qu'un capteur unilateral voit un intervalle double quand les
+      mouvements alternent, donc une jambe devinee fausserait le critere de comparabilite sans que
+      rien ne le signale. Une valeur inconnue reste inconnue.
+    -->
+    <string name="tonight_leg_left">Left leg</string>
+    <string name="tonight_leg_right">Right leg</string>
+
+    <!--
+      Le motif du bouton de scellement grise, a l'accueil.
+
+      Il disait « Context sealed — the watch can start recording. » et le telephone n'en sait rien.
+      Ce qu'il sait est ce que la base porte : le contexte est scelle **ici**. Que la montre l'ait
+      recu depend d'une publication qui peut avoir echoue, et dont le resultat n'est persiste nulle
+      part — voir `EveningContextSealer.publier`. Affirmer le deblocage de la montre depuis un fait
+      qui ne le prouve pas est la moitie telephone de la contradiction que l'ecran du soir repare :
+      l'accueil annoncait le depart pendant que la montre reclamait le formulaire.
+
+      La formulation dit donc le fait, et laisse la consigne « Press START on the watch » — affichee
+      juste au-dessus dans la meme carte — porter la suite. Si la montre refuse, c'est elle qui le
+      dit, et le compte rendu du bouton de demarrage le dit aussi.
+    -->
+    <string name="tonight_seal_done">Context sealed on this phone.</string>
+
+    <!-- === reveil ======================================================================= -->
+
+    <!-- **Aucun appelant** : `notify/Notifications.kt` compose son propre libelle. -->
+    <string name="waking_notification">Pendulum — Night of %1$s analysed. %2$d nights available.</string>
+
+    <!--
+      Les trois etapes d'analyse. Elles sont portees par l'`enum EtapeAnalyse`, qui associe a chacune
+      sa fraction d'avancement : un constructeur d'`enum` n'a pas de `Context`, donc il porte
+      l'identifiant de ressource et non la chaine.
+    -->
+    <string name="waking_analysis_step_assembly">assembling the signal</string>
+    <string name="waking_analysis_step_detection">detecting movements</string>
+    <string name="waking_analysis_step_crossref">cross-referencing with sleep</string>
+
+    <!-- **Aucun appelant** : le recalcul est silencieux, il ne s'annonce pas. -->
+    <string name="waking_provisional_recomputed">Night of %1$s recomputed with the hypnogram.</string>
+
+    <!-- **Aucun appelant** : le titre de l'echec vient de la situation elle-meme. -->
+    <string name="waking_failure_title">Night of %1$s — analysis not possible</string>
+
+    <!--
+      **Aucun appelant**, et c'est une suppression volontaire du bouton qui la portait.
+
+      Elle etait le `boutonSecondaire` de `E-ANA-01` et de `E-NIGHT-07`. Le second bouton d'une
+      `ErrorCard` appelait un `{}` par defaut, et aucun ecran ne lui donnait mieux : il n'y a dans
+      ce module ni journal technique, ni table, ni fichier ou l'ecrire — la ligne « Technical log »
+      des reglages avait deja ete retiree pour cette raison. Un bouton grise dit au moins pourquoi
+      il l'est ; un bouton qui n'echoue meme pas apprend que l'application ne repond pas.
+    -->
+    <string name="waking_failure_technical_detail">See the technical detail</string>
+
+    <!-- === tendance ===================================================================== -->
+
+    <!-- Le libelle de l'onglet, lu par l'`enum Destination`. -->
+    <string name="trend_title">Trend</string>
+
+    <!--
+      Le bloc de refus d'agreger, dans ses deux motifs.
+
+      Le second n'a rien a voir avec le premier. Le compter avec les nuits manquantes ferait
+      annoncer « 2 nuits sur 3 » a quelqu'un qui en a neuf, ce qui envoie chercher un defaut de
+      mesure la ou il n'y en a pas.
+    -->
+    <string name="trend_nights_counter">%1$d nights out of %2$d</string>
+    <string name="trend_refusal_title">Pendulum computes no result before three nights.</string>
+    <string name="trend_refusal_body">The number of movements varies considerably from one night to the next, including in people whose disorder is confirmed: the threshold of 15 movements per hour is passed on about one night in three. A result shown now would mislead you, one way or the other.</string>
+    <string name="trend_refusal_action">Record one more night.</string>
+    <string name="trend_refusal_list">Nights recorded</string>
+
+    <!-- `2 nights with an identified rhythm out of 3`. Jamais le compte des nuits tout court. -->
+    <string name="trend_rhythm_counter">%1$d nights with an identified rhythm out of %2$d</string>
+    <string name="trend_rhythm_refusal_title">Pendulum has no rhythm to report yet.</string>
+    <!--
+      Le texte qui presente le refus pour ce qu'il est : une propriete du produit, pas une panne. Le
+      chiffre cite est mesure — `RhythmMeasurementTest`, 2 ajustements acceptes sur 20 nuits
+      nominales — et il est ecrit parce qu'un refus sans ordre de grandeur se lit comme un incident
+      isole. `ui/ReglesAffichageTest.kt` verifie qu'il cite sa mesure et qu'il n'emploie ni
+      « error », ni « failed », ni « broken ».
+    -->
+    <string name="trend_rhythm_refusal_body">Your nights were recorded and analysed. What is missing is the rhythm itself: the model that reads the interval between movements refuses to publish a period when the intervals it received do not identify one, and it refuses far more often than it accepts — on simulated nights, 2 fits out of 20 are accepted.\n\nThat refusal is the safeguard doing its job, not a fault of the watch or of your night. A period fitted on too few intervals would carry a number and no meaning, and it would sit on this screen looking exactly like a measured one.</string>
+    <string name="trend_rhythm_refusal_action">Keep recording. Each night is kept, and the rhythm appears once enough of them carry an interval train the model can identify.</string>
+    <string name="trend_rhythm_refusal_list">Nights recorded — each one keeps its own detail</string>
+
+    <!--
+      La grandeur suivie, et le compte horaire au second rang. `androidTest/GardeFousTest.kt`
+      cherche les deux libelles a l'ecran pour verifier cet ordre.
+    -->
+    <string name="trend_rhythm_label">Fundamental rhythm between movements, median across nights</string>
+    <string name="trend_count_label">Ankle periodic movement index, estimated, unvalidated</string>
+
+    <!-- Les unites, portees par l'`enum Aggregat.Grandeur`. -->
+    <string name="trend_unit_seconds">s</string>
+    <string name="trend_unit_per_hour">/h</string>
+    <!-- Une valeur et son unite, dans cet ordre. %1$s la valeur, %2$s l'unite. -->
+    <string name="trend_value_with_unit">%1$s %2$s</string>
+
+    <!-- Ligne canonique : la valeur, son intervalle et son n, dans la meme phrase (P2). -->
+    <string name="trend_interval_and_n">95%% CI: %1$s – %2$s   ·   %3$d eligible nights</string>
+    <!--
+      La meme ligne quand l'intervalle **n'en est pas un a 95 %**, et qu'on refuse de l'etiqueter
+      ainsi. `ui/SeuilsTest.kt` verifie que la forme canonique « 95% CI » n'apparait qu'au-dessus de
+      six nuits.
+    -->
+    <string name="trend_interval_uncalibrated">Interval %1$s – %2$s   ·   %3$d eligible nights   ·   not a calibrated 95%% interval</string>
+    <string name="trend_interval_uncalibrated_note" formatted="false">Below six nights this interval is not a 95% interval, and Pendulum does not label it as one. Simulated on 10,000 draws, it holds the true value 75% of the time on three nights and 88% on four, where the label promises 95%.\n\nThe cause is arithmetic rather than a fault. The interval is built by resampling the nights you recorded, so it can never reach past your lowest and your highest night; with three nights, those two bounds fall on either side of the true value only three times in four. No variant of the method escapes that, so Pendulum names the interval for what it is instead of widening it by an invented amount.</string>
+
+    <!--
+      Les deux qualificatifs de periodicite. Ils sont rendus par `Aggregat.qualifierPeriodicite`,
+      une fonction pure dont `ui/ReglesAffichageTest.kt` compare la sortie a ces identifiants.
+    -->
+    <string name="trend_periodicity_high">high periodicity</string>
+    <string name="trend_periodicity_low">low periodicity</string>
+
+    <!-- Les cinq phrases de position, rendues par `Aggregat.Position.texte()`. %1$d : les nuits. -->
+    <string name="trend_position_provisional">Provisional result over %1$d nights. No category is offered before five nights.</string>
+
+    <!--
+      **La phrase la plus dangereuse du produit, et pourquoi elle porte deux avertissements.**
+
+      Elle etait nue : « en dessous du seuil », rien d'autre. Deux choses manquaient, et les deux
+      allaient dans le sens de rassurer.
+
+      La premiere est que cette branche est l'issue **quasi certaine pour tout le monde**. La chaine
+      de seuils ne recupere qu'environ 6 % de l'indice vrai — c'est le projet qui le mesure et le
+      teste : c'est la constante `INDEX_RATIO` d'`:algo`, verrouillee sur la nuit nominale. Donc
+      quelqu'un reellement a 40/h s'affiche vers 2,4/h. Le rapport destine au medecin le disait deja ;
+      l'ecran, lui, ne le disait nulle part. Le seul endroit ou la phrase etait ecrite etait celui que
+      l'utilisateur ne lit pas.
+
+      La seconde est l'asymetrie : la phrase du dessus du seuil renvoyait au medecin, celle-ci non.
+      Le produit etait donc plus prudent quand il alertait que quand il rassurait — exactement le
+      defaut que `Aggregat.nuitsRequises` avait deja corrige sur le **nombre de nuits** et qu'on
+      avait laisse dans le **texte**. Le risque principal d'un outil comme celui-ci n'est pas la
+      fausse alarme, c'est le chiffre bas qui dissuade de consulter.
+    -->
+    <string name="trend_below_threshold">Below the threshold of 15/h used in clinical practice, including at the upper bound of the interval. A low figure here cannot be read as \"few movements\": this chain recovers only a small fraction of the movements a sleep laboratory would score, so a figure below the threshold is its expected behaviour, including when movements are numerous. If you have symptoms during the day, that is the reason to see a sleep physician, whatever this figure says.</string>
+    <string name="trend_above_threshold">Above the threshold of 15/h used in clinical practice, including at the lower bound of the interval. To be discussed with a sleep physician.</string>
+    <string name="trend_spans_threshold">The interval spans the threshold of 15/h: with these nights, Pendulum cannot say whether you are above or below it. Recording more nights will narrow the interval.</string>
+
+    <!--
+      Le rythme fondamental n'a **pas** de phrase de position equivalente, et on ne la fabrique pas.
+      Le seuil publie sur la periodicite (≈ 0,5, Ferri 2016) est sur une autre echelle, avec
+      d'autres preuves derriere lui, et il ne se transpose pas mecaniquement. Dire qu'on ne sait pas
+      est plus honnete qu'inventer une cinquieme phrase. `androidTest/GardeFousTest.kt` cherche
+      cette phrase a l'ecran.
+    -->
+    <string name="trend_rhythm_no_threshold">There is no published threshold that applies to the rhythm measured at the ankle. Pendulum shows the measured interval and its spread, without placing it against a reference value.</string>
+
+    <!--
+      Le bandeau « resultat provisoire », et le nombre de nuits qu'il faudrait. Ce nombre **depend de
+      la position de l'intervalle**, ce qui est le seul endroit du produit ou une regle ajoute de la
+      severite plutot qu'en retirer : la fiabilite nuit a nuit s'effondre sous le seuil, donc
+      l'application etait jusqu'ici plus assuree quand elle rassurait que quand elle alertait.
+
+      %1$d nuits acquises sur %2$d demandees.
+    -->
+    <string name="trend_provisional_banner">Provisional result — %1$d of %2$d nights. The interval below will stay wide until you have more of them.</string>
+
+    <!--
+      Les trois motifs du nombre de nuits demande. `ui/SeuilsTest.kt` verifie que celui du regime bas
+      cite « 26 nights » et nomme le compromis.
+    -->
+    <string name="trend_nights_required_high">Three nights are enough here. Above 15/h, the index agrees with itself from one night to the next at an intraclass correlation of 0.90 from three nights (Aritake-Okada 2014, ankle actigraph against polysomnography, 41 participants).</string>
+    <string name="trend_nights_required_low">Fourteen nights are asked for here, and that figure is a compromise Pendulum does not hide. Below 15/h the same study measures far weaker night-to-night agreement: 26 nights would be needed to reach the intraclass correlation of 0.90 that three nights give above the threshold. Twenty-six is what the measurement says. Fourteen is what this application asks for, and nothing published supports that number — asking for 26 would make the screen unusable, asking for 3 would make it confident exactly where it has the least reason to be.</string>
+    <string name="trend_nights_required_straddling">Seven nights are asked for here. The interval spans 15/h, so it has to narrow before it can fall on one side or the other.</string>
+
+    <!-- **Aucun appelant** : le selecteur de periode n'existe pas encore. -->
+    <string name="trend_period_7">Last 7 nights</string>
+    <string name="trend_period_14">Last 14 nights</string>
+    <string name="trend_period_30">Last 30 nights</string>
+    <string name="trend_period_all">All</string>
+    <string name="trend_period_custom">Custom period…</string>
+
+    <!--
+      Les en-tetes de la feuille de valeurs de la tendance, dans l'ordre des colonnes.
+    -->
+    <string name="trend_table_date">Date</string>
+    <string name="trend_table_rhythm">Rhythm</string>
+    <string name="trend_table_state">State</string>
+
+    <!--
+      Les trois valeurs de la colonne « State ». Elles etaient rendues par le nom de la constante
+      Kotlin mis en minuscules, ce qui peignait `masque_accelero` et `ecartee` — deux mots francais
+      dans une interface anglaise, et trois chaines hors de portee d'un `values-fr/`.
+
+      « accelerometer mask » plutot que le nom brut : la colonne dit sur quel masque la nuit a ete
+      comptee, ce qui est la difference entre une nuit avec hypnogramme et une nuit sans.
+    -->
+    <string name="trend_table_state_eligible">eligible</string>
+    <string name="trend_table_state_accel_mask">accelerometer mask</string>
+    <string name="trend_table_state_excluded">excluded</string>
+
+    <!-- === comparaison ================================================================== -->
+
+    <!-- **Aucun appelant** : l'ecran porte son titre depuis la barre de navigation. -->
+    <string name="compare_title">Compare two periods</string>
+    <string name="compare_period_a">Period A</string>
+    <string name="compare_period_b">Period B</string>
+    <!-- **Aucun appelant** : le pivot avant/apres n'a pas de selecteur. -->
+    <string name="compare_pivot">Before / after a change of treatment</string>
+
+    <!--
+      Premiere ligne, toujours, avant tout chiffre (P3). L'ordre de composition est le message : un
+      lecteur presse lit la premiere ligne et s'arrete, donc c'est la premiere ligne qui doit porter
+      la reserve, pas une note en bas. Les quatre chaines sont rendues par `Aggregat.Comparaison`.
+    -->
+    <string name="compare_inconclusive">Inconclusive</string>
+    <string name="compare_distinguishable">Difference larger than the night-to-night variability</string>
+    <string name="compare_zero_in_interval">The interval of the difference contains zero: with these data, a real change cannot be told apart from ordinary fluctuation between nights.</string>
+    <string name="compare_below_mdc">The difference is smaller than the smallest change this method can detect on your nights. It is not distinguishable from measurement noise.</string>
+
+    <!-- === liste et detail des nuits ===================================================== -->
+
+    <!-- **Aucun appelant** : la liste porte son titre depuis la barre de navigation. -->
+    <string name="nights_title">Nights</string>
+
+    <!--
+      La mention qui accompagne le chiffre d'une seule nuit. `androidTest/GardeFousTest.kt` la
+      cherche a l'ecran : c'est ce test qui atteste que le chiffre d'une nuit n'est jamais presente
+      comme un resultat.
+    -->
+    <string name="nights_single_value">single-night value</string>
+
+    <!-- Motifs d'exclusion : traduction des identifiants de `ComparabilityRule`. -->
+    <string name="nights_reason_no_context">context for the evening not sealed</string>
+    <string name="nights_reason_leg_changed">leg other than the reference night</string>
+    <string name="nights_reason_strap_changed">different strap or different strap hole</string>
+    <string name="nights_reason_not_alone">not alone in bed</string>
+    <string name="nights_reason_cal_gain_unknown">gain calibration unknown</string>
+    <string name="nights_reason_cal_gain_out_of_tolerance">gain calibration out of tolerance</string>
+    <string name="nights_reason_too_short">under 4 h analysable</string>
+    <string name="nights_reason_dst_night">clock change during the night</string>
+    <string name="nights_reason_default">not comparable</string>
+
+    <!--
+      Les puces de qualite d'une nuit. Courtes par necessite — au plus trois tiennent sur une ligne
+      de liste — et **factuelles** : chacune porte la valeur mesuree, pas un jugement. « gap 47 s »
+      se verifie ; « signal de mauvaise qualite » ne se verifie pas.
+
+      Ce ne sont pas des erreurs. Une nuit avec trois puces reste une nuit exploitable ; les puces
+      disent dans quelles conditions son chiffre a ete obtenu, ce qui est exactement ce qu'il faut
+      pour decider si deux nuits se comparent.
+    -->
+    <string name="nights_flag_accel_mask">accel mask</string>
+    <string name="nights_flag_truncated">truncated</string>
+    <!-- %1$d secondes de trou, %2$d fois. -->
+    <string name="nights_flag_gap">gap %1$ds ×%2$d</string>
+    <string name="nights_flag_battery">battery %1$d%%</string>
+    <!--
+      Le taux de manques vient de la deconvolution harmonique, qui le mesure au lieu de le supposer.
+      Il est affiche parce qu'il est le critere de comparabilite entre deux nuits : deux nuits dont
+      les taux de manques different beaucoup ne mesurent pas tout a fait la meme chose.
+    -->
+    <string name="nights_flag_missed">missed %1$d%%</string>
+
+    <!--
+      Ce qui s'affiche a la place du rythme quand l'ajustement a ete refuse — c'est-a-dire le plus
+      souvent. Un tiret dirait « pas encore calcule » ; ici le calcul a eu lieu et s'est conclu par un
+      refus, ce qui n'est pas la meme information. `ui/MappingTest.kt` compare la sortie de
+      `Mapping.rythmeLisible` a cet identifiant.
+    -->
+    <string name="night_detail_rhythm_not_fitted">no identified rhythm</string>
+    <!-- `21 s` : un rythme mis en forme. %1$d secondes, arrondies. -->
+    <string name="night_detail_rhythm_seconds">%1$d s</string>
+
+    <!-- **Aucun appelant** : la feuille de valeurs porte ses propres en-tetes. -->
+    <string name="night_detail_all_events">All events</string>
+
+    <!--
+      Les en-tetes de la feuille de valeurs de la nuit, dans l'ordre des colonnes.
+
+      `#` a sa propre entree bien que ce soit un symbole : le symbole du numero d'ordre change de
+      langue en langue — `n°` en francais, `Nr.` en allemand — et le laisser dans le code le rendrait
+      seul intraduisible de la rangee. `Ampl.` est une abreviation : elle tient dans une colonne
+      etroite, et une langue qui abrege autrement doit pouvoir le dire.
+
+      Le contenu des cellules, lui, reste dans le code : ce sont des nombres suivis de `s` et de
+      `×`, des symboles d'unite et d'operation qui ne se traduisent pas.
+    -->
+    <string name="night_detail_table_index">#</string>
+    <string name="night_detail_table_start">Start</string>
+    <string name="night_detail_table_duration">Duration</string>
+    <string name="night_detail_table_amplitude">Ampl.</string>
+
+    <!--
+      Les libelles de controle qualite. `ui/PorteP1Test.kt` retrouve les lignes du rapport P1 par
+      leur libelle, donc par ces identifiants.
+    -->
+    <string name="night_detail_coverage">Signal coverage</string>
+    <string name="night_detail_largest_gap">Largest gap</string>
+    <string name="night_detail_total_gaps">Gaps in total</string>
+    <string name="night_detail_frequency">Measured frequency</string>
+    <string name="night_detail_battery_end">Battery at end of night</string>
+    <string name="night_detail_worn">Worn (off-body)</string>
+    <string name="night_detail_total_sleep">Total sleep</string>
+    <string name="night_detail_sleep_source">Sleep source</string>
+    <!--
+      Le taux de manques estime par la deconvolution harmonique. Il est **mesure** et non suppose :
+      un mouvement manque fusionne deux intervalles de 21 s en un de 42 s, et le modele de melange
+      qui separe ces harmoniques rend le taux au passage.
+    -->
+    <string name="night_detail_missed_rate">Estimated missed movements</string>
+
+    <!-- **Aucun appelant** : le recalcul global n'ouvre pas encore de dialogue. -->
+    <string name="night_detail_recompute_confirmation">Every night will be recomputed with these parameters. The previous results are kept in the log. Nights computed with different parameters are not comparable with one another.</string>
+
+    <!--
+      « Pourquoi ce chiffre » — et le seul « pourquoi » qui soit legitime ici.
+
+      ### Generatif, jamais attributif
+
+      Ce bloc montre **le chemin de calcul** : ce qui a ete mesure, ce qui a ete retenu, par quoi on
+      a divise. Il ne classe pas des facteurs par importance et n'affirme jamais qu'un trou de
+      signal ou une dose « explique » la valeur.
+
+      Ce n'est pas de la prudence de facade. Les methodes d'attribution par contribution — Shapley
+      et ses derives — ne distinguent pas correlation et causalite, et sur-attribuent des que les
+      variables sont correlees entre elles, ce qui est exactement le cas ici : la duree de sommeil,
+      le nombre de mouvements et le taux de manques bougent ensemble. Un classement de facteurs
+      affiche sous un chiffre de sante se lit comme une cause, et c'est le mode de defaillance
+      identifie comme critique dans ce domaine.
+
+      D'ou la derniere ligne, `night_why_disclaimer`, qui fait tout le travail de ce bloc : *ce
+      tableau montre comment le chiffre est obtenu, il n'indique pas ce qui a cause ces mouvements*.
+      Elle n'est pas optionnelle : elle est la valeur par defaut d'un champ du type `Bloc`.
+
+      `ui/SeuilsTest.kt` compare l'ordre des lignes a ces identifiants.
+    -->
+    <string name="night_why_title">Why %1$s</string>
+    <string name="night_why_analysable_sleep">Analysable sleep</string>
+    <string name="night_why_movements_counted">Movements counted</string>
+    <string name="night_why_rule">Counting rule</string>
+    <string name="night_why_mask">Sleep mask</string>
+    <string name="night_why_denominator">Denominator</string>
+    <string name="night_why_missed_rate">Estimated missed rate</string>
+    <string name="night_why_resp_bracket">Respiratory bracket</string>
+    <!-- %1$s : la duree enregistree, mise en forme. -->
+    <string name="night_why_of_recorded">of %1$s recorded</string>
+    <string name="night_why_mask_hypnogram">full hypnogram</string>
+    <string name="night_why_mask_accel">accelerometer immobility</string>
+    <!-- %1$s : le libelle de la source. %2$s : le type de masque. -->
+    <string name="night_why_mask_value">%1$s, %2$s</string>
+    <string name="night_why_denominator_independent">independent of the numerator</string>
+    <string name="night_why_denominator_circular">same sensor as the numerator</string>
+    <!-- `-2.1 /h at worst` : la borne basse si tous les mouvements suspects sortaient. -->
+    <string name="night_why_worst_bound">%1$s%2$s at worst</string>
+    <string name="night_why_resp_bracket_note">Pendulum does not measure breathing. This line is the value the index would take if every movement that could belong to a respiratory event were removed. The true figure lies between the two.</string>
+
+    <!--
+      Trois grandeurs, trois conditions de mesure. Elles ne sont pas comparees entre elles, elles ne
+      portent pas de part, et le bloc ne les classe pas : ce sont des etapes du chemin de calcul, pas
+      des facteurs contributifs.
+    -->
+    <string name="night_why_clipping">Sensor range limit</string>
+    <string name="night_why_timing">Sample timing</string>
+    <string name="night_why_freezes">Write freezes</string>
+    <!-- La valeur quand il n'y a rien a signaler. Un tiret dirait « non mesure ». -->
+    <string name="night_why_none">none</string>
+
+    <!-- `1,204 samples over 7 minutes`. %1$s echantillons, %2$d minutes. -->
+    <string name="night_why_clipping_value">%1$s samples over %2$d minutes</string>
+    <string name="night_why_clipping_note">Samples that reached the physical range of the sensor — 4 g or 8 g depending on the watch, not the 16 g the file format can hold. Above that rail the envelope is artificially flat at the top: it looks like a plateau, and it understates the amplitude. Amplitude is what the detection threshold reads, so a movement kept or dropped over these minutes was decided on the clipping, not on the signal.</string>
+
+    <!-- `±1.4 ms typical · worst gap 41 ms`. %1$s la dispersion, %2$s le maximum. -->
+    <string name="night_why_timing_value">±%1$s typical  ·  worst gap %2$s</string>
+    <string name="night_why_timing_note">The file format writes no timestamp per sample: it interpolates between the two ends of each block. What that costs is set by the dispersion of the intervals, not by their mean — a mean of exactly 50 Hz obtained by alternating 10 ms and 30 ms dates every sample to within 10 ms. The worst gap is the bound on that error.</string>
+
+    <!-- `4 longer than one sampling period · worst 38 ms`. %1$d gels, %2$s le plus long. -->
+    <string name="night_why_freezes_value">%1$d longer than one sampling period  ·  worst %2$s</string>
+    <string name="night_why_freezes_note">Moments when writing to disk froze the processor for longer than the time between two samples, which is long enough for a sensor interrupt to have been missed. The worst freeze is what explains a missed interrupt at a precise instant; the total only gives the budget.</string>
+
+    <string name="night_why_disclaimer">This table shows how the figure is obtained. It does not indicate what caused these movements.</string>
+
+    <!-- === questionnaire ================================================================ -->
+
+    <string name="quiz_not_filled">not filled in</string>
+    <!-- **Aucun appelant** : la relance a six mois n'est pas cablee. %1$d mois. -->
+    <string name="quiz_filled_months_ago">filled in %1$d months ago — due again</string>
+
+    <!-- === reglages ===================================================================== -->
+
+    <!-- Le libelle de l'onglet, lu par l'`enum Destination`. -->
+    <string name="settings_title">Settings</string>
+
+    <!--
+      Les deux regles de comptage. `ui/SeuilsTest.kt` compare la regle appliquee a cet identifiant.
+    -->
+    <string name="settings_rule_aasm">AASM v3 (5–90 s)</string>
+    <!-- **Aucun appelant** : la bascule de regle n'a pas de commande. -->
+    <string name="settings_rule_wasm">WASM 2016 (10–90 s)</string>
+    <!-- La regle et la version d'algorithme qui l'a appliquee. %1$s la regle, %2$s la version. -->
+    <string name="settings_rule_with_version">%1$s · %2$s</string>
+
+    <string name="settings_accel_mask_only">Accelerometer mask alone</string>
+
+    <!--
+      Aucune source n'a encore ete identifiee — a distinguer de « pas de source » : on n'a pas
+      cherche, ou la lecture n'a rien rendu, ce qui n'est pas la meme chose que savoir qu'il n'y en
+      a pas.
+    -->
+    <string name="settings_source_unknown">sleep source not identified</string>
+
+    <string name="settings_auto_stop">Automatic stop</string>
+
+    <!--
+      La **valeur** de la ligne « Automatic stop », qui repetait mot pour mot son intitule : la
+      ligne se lisait « Automatic stop : Automatic stop » et n'apprenait rien.
+
+      Elle enonce les trois conditions que `StopConditions.evaluate` fait passer en premier et que
+      l'utilisateur peut reconnaitre depuis son lit — poser la montre sur son chargeur, se lever,
+      ou une nuit qui dure. Les trois autres (batterie sous 5 %, disque plein, heure butoir) sont
+      des garde-fous : les enumerer ici ferait une phrase que personne ne lit, et chacune se dit
+      deja d'elle-meme quand elle arrete la nuit, par `stopReasonText` sur la montre.
+
+      « on the charger » et non « when charging » : la montre demande soixante secondes de charge
+      soutenue, parce qu'un chargeur magnetique produit de faux contacts brefs.
+    -->
+    <string name="settings_auto_stop_value">on the charger, on waking, or after 10 h</string>
+    <!-- **Aucun appelant** : la synchronisation manuelle n'a pas de bouton dans les reglages. -->
+    <string name="settings_sync_now">Synchronise now</string>
+
+    <!--
+      Le nom de la source de sommeil quand elle vient de Health Connect. Il est a la fois un libelle
+      de ligne et une **valeur** : la source d'une nuit et le seuil d'un controle. `ui/MappingTest.kt`
+      et `ui/PorteP1Test.kt` le comparent tel quel.
+    -->
+    <string name="settings_health_connect">Health Connect</string>
+    <!-- **Aucun appelant** : le raccourci vers Health Connect n'est pas dans les reglages. -->
+    <string name="settings_manage_hc">Manage in Health Connect</string>
+
+    <!-- Les deux comptes rendus de reimport. %1$s : la date de la nuit importee. -->
+    <string name="settings_imported">Night of %1$s imported.</string>
+    <string name="settings_import_refused">This file is not a Pendulum night bundle.</string>
+
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_light">Light</string>
+
+    <!-- === export ======================================================================= -->
+
+    <!-- **Aucun appelant** : les deux sections du rapport sont titrees par `ReportExporter`. -->
+    <string name="export_method">Method</string>
+    <string name="export_limits">Limits</string>
+
+    <!-- === porte P1 : les seuils, assembles par `ui/model/PorteP1.kt` ==================== -->
+
+    <!-- `at least 99.0%` — le seuil, ecrit a cote de la valeur et jamais ailleurs. -->
+    <string name="p1_at_least">at least %1$s</string>
+    <!--
+      `above 20% at 8 h` — et non « at least ». La couverture se lit « at or above », la batterie
+      « above » : `01-overview.md` §5 distingue les deux, le code aussi, et le libelle affiche a cote
+      de la valeur doit dire lequel des deux s'applique. %1$d pour cent, %2$d heures.
+    -->
+    <string name="p1_battery_threshold">above %1$d%% at %2$d h</string>
+    <!--
+      La valeur du critere batterie quand elle vient de la pente du compteur coulombmetrique et non
+      du dernier pourcentage. Elle porte les trois choses ensemble — le niveau extrapole, la
+      consommation moyenne, et **sur combien de points** la droite a ete ajustee — parce qu'un
+      chiffre extrapole sans son support se lit comme un chiffre mesure. Trente points et quatre
+      cents points donnent la meme phrase si on ne l'ecrit pas.
+
+      %1$s le niveau, %2$d heures, %3$s par heure, %4$d points.
+    -->
+    <string name="p1_battery_extrapolated">%1$s at %2$d h, extrapolated  ·  %3$s per hour over %4$d points</string>
+    <!-- %1$d Hz nominaux, %2$s de tolerance. -->
+    <string name="p1_frequency_threshold">%1$d Hz ± %2$s</string>
+
+    <!-- === erreurs assemblees par `Situations` et `MachineReveil` ======================== -->
+
+    <string name="error_night_01_title">no sleep stages</string>
+    <string name="error_night_01_cause">No sleep session covering this night was found in Health Connect, even 36 h after waking. Your wrist watch may not have recorded it, or not synchronised it.</string>
+    <string name="error_night_01_action">Pendulum used its own immobility mask. The result is kept and counts towards the trend, but it is marked “accelerometer mask”: sleep time is then estimated, not measured.</string>
+
+    <string name="error_night_02_title">excluded, night too short</string>
+    <string name="error_night_02_cause">Computing the number of movements per hour requires at least 4 h of sleep: over a shorter span, a handful of clustered movements is enough to inflate the figure out of all proportion.</string>
+    <string name="error_night_02_action">This night stays open to view in detail, but it does not enter the trend. No action needed.</string>
+
+    <string name="error_night_03_title">recording interrupted</string>
+    <string name="error_night_03_cause">The watch stopped for want of battery before the end of the night.</string>
+    <string name="error_night_03_action" formatted="false">As movements tend to cluster in the second half of the night, the figure is probably underestimated. Charge the watch to 100% before bedtime.</string>
+
+    <string name="error_night_04_title">signal interrupted</string>
+    <string name="error_night_04_cause">The sensor stopped sending data for several minutes. This happens when the system suspends the watch more deeply than expected.</string>
+    <!--
+      La phrase disait « force continuous mode in Settings › Measurement », et ce reglage n'existe
+      nulle part : ni preference cote telephone, ni commande vers la montre, ni lecture cote montre.
+      Elle envoyait donc chercher un ecran introuvable, et le bouton qui la doublait appelait un
+      `{}` au detail de nuit. Ce qui la remplace est ce que la mesure permet de dire — ou passent
+      les mouvements tombes dans les trous, et qui decide de la suspension.
+    -->
+    <string name="error_night_04_action">Movements that fall inside the gaps are not counted, so the figure for this night is probably underestimated. Pendulum has no setting for this: it is the watch that decides when it suspends the sensor.</string>
+
+    <!--
+      **Aucun appelant** : il n'existe pas de mode continu a forcer. La chaine reste en place pour
+      le jour ou la montre en portera un ; la rebrancher avant lui remettrait un bouton qui ne fait
+      rien.
+    -->
+    <string name="error_night_04_button">Force continuous mode</string>
+
+    <!-- **Aucun appelant** : la nuit sur la table de chevet n'est pas encore detectee. -->
+    <string name="error_night_05_title">the watch does not appear to have been worn</string>
+    <string name="error_night_05_cause">The off-body sensor reports “not worn” over most of the night, and the signal stayed flat, with a noise floor far under that of your other nights.</string>
+    <string name="error_night_05_action">This night is excluded. A recording made on a bedside table produces a figure close to zero that would distort your trend. Check that the watch is firmly tightened at the ankle before starting.</string>
+    <string name="error_night_05_button">Keep it anyway as a control</string>
+    <string name="error_night_05_note">A night on the table is exactly the negative control the validation protocol calls for: if kept, it is labelled “negative control” and stays out of the trend.</string>
+
+    <!-- **Aucun appelant** : le controle d'amplitude anormale n'est pas cable. -->
+    <string name="error_night_06_title">abnormally high amplitudes</string>
+    <string name="error_night_06_cause">The noise floor is several times that of your other nights. A loose strap or a different tightening point produces exactly this signature.</string>
+    <string name="error_night_06_action">The night is excluded. The detection threshold adapts to noise, but not to a change of mechanics. Go back to the usual setting.</string>
+
+    <string name="error_night_07_title">incomplete transfer</string>
+    <string name="error_night_07_cause">Some of the files were not received. The missing files are still on the watch: they are deleted only once receipt is confirmed.</string>
+    <string name="error_night_07_action">Bring the phone closer to the watch and start it again.</string>
+    <string name="error_night_07_button">Resume the transfer</string>
+
+    <!-- **Aucun appelant** : la derive d'horloge montre/telephone n'est pas encore remontee. -->
+    <string name="error_night_08_title">offset between the watch and the phone</string>
+    <string name="error_night_08_cause">The timestamps from the watch drift against the phone. Cross-referencing with the hypnogram would be offset by the same amount, which would move movements from one sleep stage to another.</string>
+    <string name="error_night_08_action">Movements are counted as usual; the breakdown by stage is hidden for this night. Restart the watch to resynchronise its clock.</string>
+
+    <!-- **Aucun appelant** : l'assistant d'appairage porte ses propres textes. -->
+    <string name="error_pair_01_title">Watch not found</string>
+    <string name="error_pair_01_cause">No Wear OS device running Pendulum answered within 30 seconds.</string>
+    <string name="error_pair_01_action">Check that the watch is paired in the Watch app, that Bluetooth is on, and that Pendulum is installed on the watch.</string>
+    <string name="error_pair_01_button">Search again</string>
+
+    <string name="error_hc_01_title">No sleep source found</string>
+    <string name="error_hc_01_cause">Health Connect holds no sleep session over the last 7 days. No app writes your nights to it, or the permission is denied.</string>
+    <string name="error_hc_01_action">You can carry on: Pendulum will estimate sleep from the immobility measured at the ankle. The result will be less precise and every night concerned will be marked.</string>
+    <string name="error_hc_01_button">Open Health Connect</string>
+
+    <string name="error_hc_02_title">Sleep access revoked</string>
+    <string name="error_hc_02_cause">The permission to read sleep has been withdrawn from Pendulum.</string>
+    <string name="error_hc_02_action">The nights already analysed are kept; new ones will use the accelerometer mask.</string>
+    <string name="error_hc_02_button">Restore the permission</string>
+
+    <string name="error_hc_03_title">Two sleep sources for this night</string>
+    <string name="error_hc_03_cause">Two applications report different durations. Pendulum cannot combine them without risking counting the same minutes twice.</string>
+    <!--
+      « The preferred source was used » ne disait pas laquelle, et le bouton qui suivait — « Change
+      the preferred source » — ouvrait les reglages de Health Connect, ou la preference de Pendulum
+      ne se change pas. La phrase dit desormais ou la source retenue se lit : c'est verifiable en
+      deux gestes, et c'est tout ce que l'application sait offrir tant que le choix ne se refait
+      qu'a l'assistant de premier lancement.
+    -->
+    <string name="error_hc_03_action">The preferred source was used; its name is on the Settings screen, under Measurement. Pendulum never merges two sources and never picks between them on its own.</string>
+
+    <!--
+      **Aucun appelant** : le choix de la source ne se fait qu'a l'etape 4 de l'assistant de premier
+      lancement, qui ne se rouvre pas. La chaine attend l'ecran de choix qui la rendra vraie.
+    -->
+    <string name="error_hc_03_button">Change the preferred source</string>
+
+    <string name="error_ana_01_title">Analysis not possible</string>
+    <string name="error_ana_01_cause">The signal for the night could not be reconstructed: some files failed their integrity check.</string>
+    <!--
+      La phrase finissait par « export the technical log ». Ce journal n'existe pas : la ligne
+      « Technical log » des reglages a ete retiree faute de table, de fichier et de fonction, et
+      c'est le meme vide qui a fait sauter le bouton « See the technical detail ». Ce qui la
+      remplace mene a une sortie qui existe reellement — le paquet brut, au bas du detail de la
+      nuit, et c'est precisement ce qu'il faut pour faire examiner un signal non assemblable.
+    -->
+    <string name="error_ana_01_action">The raw data is kept, so the analysis can be run again. If it fails once more, the raw bundle for this night can be exported from its detail screen.</string>
+    <string name="error_ana_01_button">Run the analysis again</string>
+
+    <!-- **Aucun appelant** : le controle d'espace libre avant analyse n'est pas cable. -->
+    <string name="error_sto_01_title">Not enough space</string>
+    <string name="error_sto_01_cause">One night takes about 300 MB during the analysis.</string>
+    <string name="error_sto_01_action">Purge the old raw signals: the results and the charts are kept, only the raw signal is deleted.</string>
+
+    <!-- === graphes ====================================================================== -->
+
+    <!-- **Aucun appelant** : les deux graphes n'affichent pas encore leurs libelles d'axe. -->
+    <string name="chart_axis_y_night">amplitude ÷ noise floor (log₂ scale)</string>
+    <string name="chart_axis_y_trend_rhythm">fundamental rhythm (seconds)</string>
+    <string name="chart_axis_y_trend_count">movements per hour of sleep</string>
+
+    <!--
+      Le seuil de 15/h, **etiquete**, et pas pose nu.
+
+      ### Pourquoi l'etiquette change quelque chose de mesurable
+
+      Sur 1 618 adultes a qui l'on montrait un resultat de laboratoire a peine hors norme, ajouter
+      une mention du type « beaucoup de medecins ne s'inquietent pas avant cette valeur » fait tomber
+      la demande de contact urgent de 55,8 % a 34,7 % sur l'ALT et de 56,7 % a 35,2 % sur la
+      creatinine, p &lt; .001 (Zikmund-Fisher et al., JMIR 2018). Une ligne nue a 15 sur un graphe est
+      exactement le meme dispositif qu'une borne de reference nue sur un compte rendu de biologie.
+
+      ### Et pourquoi le second membre existe
+
+      `Aggregat.SEUIL_CLINIQUE_PAR_HEURE` transpose un seuil de polysomnographie sur un
+      accelerometre de cheville, ce qui n'est pas la meme mesure. La validation du PAM-RL —
+      actimetre de cheville, le meme montage que celui de Pendulum — contre la PSG donne un
+      equivalent actimetrique de 16,0/h pour le 15/h polysomnographique (Aritake-Okada et al.,
+      *Sleep Medicine* 2014, n = 41). Un seul article, une seule cohorte : on **documente** l'ecart,
+      on ne substitue pas la valeur.
+
+      `ui/SeuilsTest.kt` verifie mot pour mot que le repere de nuisance et l'ecart actimetrique y
+      sont : ce sont des assertions de contenu.
+    -->
+    <string name="chart_threshold_15_legend">15/h — above this, periodic limb movements are usually counted as frequent in polysomnography (ICSD-3). Many physicians are not concerned below it. Measured at the ankle by actigraphy, which is what Pendulum does, the matching threshold is closer to 16/h (Aritake-Okada 2014, ankle actigraph against polysomnography, 41 participants). Pendulum keeps 15/h and states the gap rather than swapping in a figure that rests on one cohort.</string>
+
+    <string name="chart_hypnogram_unavailable">Hypnogram unavailable — accelerometer immobility mask used.</string>
+
+    <!--
+      Les six mots ecrits dans la marge gauche de l'hypnogramme : la voie du masque accelero, puis
+      les cinq niveaux de stade de haut en bas.
+
+      `immobile` est en minuscule et les stades en capitale initiale : la voie du masque nomme un
+      **etat mesure**, les cinq autres nomment les niveaux d'une echelle de laboratoire, qui
+      s'ecrivent comme dans un compte rendu de polysomnographie. `REM`, `N1`, `N2` et `N3` sont les
+      sigles de l'AASM ; ils ont chacun leur entree parce qu'une langue peut les rendre autrement
+      (le francais ecrit couramment « SP » pour le sommeil paradoxal), et qu'un sigle laisse dans un
+      constructeur d'enum Kotlin serait le seul mot de l'ecran qu'aucun traducteur ne pourrait
+      atteindre.
+
+      Comme les noms de voie de la bande d'etat, ils sont resolus par le composable et passes au
+      dessin, qui n'a pas de `Context`.
+    -->
+    <string name="chart_lane_immobile">immobile</string>
+    <string name="chart_stage_awake">Awake</string>
+    <string name="chart_stage_rem">REM</string>
+    <string name="chart_stage_n1">N1</string>
+    <string name="chart_stage_n2">N2</string>
+    <string name="chart_stage_n3">N3</string>
+
+    <!--
+      L'annotation du pic hors echelle du graphe de nuit : `peak ×48 at 03:12`.
+
+      Elle n'apparait que lorsque le pic depasse le haut de l'axe. Le dire en toutes lettres plutot
+      que de tronquer la courbe : un sommet coupe se lit comme un plateau, et un plateau se lit
+      comme une saturation du capteur, qui est une tout autre panne. %1$d le rapport au plancher de
+      bruit, %2$s l'heure locale.
+    -->
+    <string name="chart_night_peak">peak ×%1$d at %2$s</string>
+
+    <!-- **Aucun appelant** : l'hypnogramme ne dessine pas encore sa legende. -->
+    <string name="chart_lane_mask">Accelerometer mask</string>
+    <string name="chart_lane_hypnogram">Hypnogram</string>
+    <string name="chart_lane_disagreement">Disagreement</string>
+
+    <!--
+      Les noms de voie de la bande d'etat de l'appareil. Volontairement courts et nominaux : ils
+      tiennent dans la marge gauche, ils ne portent aucune unite, et aucun d'eux ne se lit comme une
+      grandeur. C'est ce qui distingue une echelle nominale d'un axe gradue.
+
+      Ils sont ecrits par une extension de `DrawScope`, qui n'a pas de `Context` : le composable qui
+      appelle le dessin les resout et les lui passe.
+    -->
+    <string name="chart_lane_worn">worn</string>
+    <string name="chart_lane_charger">charger</string>
+    <string name="chart_lane_clip">clip</string>
+    <string name="chart_lane_freeze">freeze</string>
+    <string name="chart_lane_battery">battery</string>
+
+    <!-- Trois etats, et celui-ci n'est pas « porte ». Voir `EtatPort`. -->
+    <string name="chart_no_offbody_sensor">no off-body sensor on this watch</string>
+
+    <string name="chart_metrology_unavailable">No device telemetry for this night — recorded before the watch sent any.</string>
+
+    <!-- `62% left at the end of the night`. Un fait, pas une extrapolation. -->
+    <string name="chart_battery_gauge">%1$s left at the end of the night</string>
+    <!--
+      Le fait et la projection, cote a cote, et etiquetes comme tels. Le premier est mesure, le second
+      est ajuste sur le compteur coulombmetrique : les confondre serait lire une extrapolation comme
+      une mesure. %1$s en fin de nuit, %2$s projete a %3$d heures.
+    -->
+    <string name="chart_battery_gauge_projected">%1$s at the end of the night  ·  %2$s projected at %3$d h</string>
+
+    <!--
+      Le resume lu par TalkBack pour la bande d'etat de l'appareil.
+
+      Il finit par la phrase de non-causalite. Elle n'est pas une precaution de style : la separation
+      graphique — gouttiere, blocs, absence de courbe — dit a l'oeil que ces voies ne se correlent pas
+      avec les mouvements du dessus, et un lecteur qui ne voit pas la bande n'a que cette phrase pour
+      l'apprendre.
+
+      %1$d points, %2$s de gigue mediane, %3$d echantillons ecretes, %4$d gels, %5$s pour la batterie.
+    -->
+    <string name="chart_metrology_description">Device state, %1$d points, one per minute. Median timing dispersion %2$s. %3$d samples at the sensor range limit. %4$d write freezes longer than one sampling period. Battery: %5$s. These lanes describe the recorder, not the sleeper: none of them caused the movements shown above.</string>
+
+    <!-- %1$s la date, %2$d mouvements, entre %3$s et %4$s. -->
+    <string name="chart_night_description">Chart of the night of %1$s, %2$d movements detected between %3$s and %4$s. Values button for the table.</string>
+
+    <!--
+      Le resume lu par TalkBack, et non une etiquette de bloc.
+
+      Un `contentDescription` global du type « graphe de tendance sur 9 nuits » annonce l'existence
+      d'un objet et rien de son contenu : le lecteur d'ecran atteint le graphe, apprend qu'il y a un
+      graphe, et repart. Le resume ci-dessous rend les grandeurs qui font la lecture — combien de
+      points, sur quelle periode, la mediane, l'etendue — plus le fait que **les points ne sont pas
+      relies**, qui est une decision de conception et pas un detail de rendu.
+
+      Le tableau de `DataTableSheet` reste le chemin principal : aucun resume ne remplace des
+      donnees. Il est le premier element focalisable apres le graphe, et c'est le bon ordre.
+
+      %1$d points, de %2$s a %3$s, mediane %4$s, de %5$s a %6$s, unite %7$s.
+    -->
+    <string name="chart_trend_description">Trend, %1$d points, from %2$s to %3$s, median %4$s %7$s, values from %5$s to %6$s %7$s, points not joined. Values button for the table.</string>
+    <!-- Le meme graphe quand aucun point n'est tracable. Un resume vide serait un mensonge. -->
+    <string name="chart_trend_description_empty">Trend, no point to plot.</string>
+
 </resources>

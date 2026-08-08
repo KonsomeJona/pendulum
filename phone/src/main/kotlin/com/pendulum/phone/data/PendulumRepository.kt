@@ -20,7 +20,8 @@ import com.pendulum.phone.ui.model.PorteP1
 import com.pendulum.phone.ui.model.Situations
 import com.pendulum.phone.ui.nights.NuitDetailUi
 import com.pendulum.phone.ui.settings.RapportP1Ui
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 import com.pendulum.phone.work.AnalysisParams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -350,6 +351,7 @@ class PendulumRepository(context: Context) {
                 // L'origine de la base de temps capteur : le `tFirstNs` du premier chunk. C'est
                 // sur elle que la telemetrie s'aligne, et c'est la seule qui date les mouvements.
                 t0Ns = db.chunkDao().ofSession(sessionHex).minOfOrNull { it.tFirstNs },
+                res = app.resources,
             )
         }
 
@@ -370,7 +372,11 @@ class PendulumRepository(context: Context) {
             series = evenements.count { it.inSeriesAasm },
             imiMedianSec = intervalleMedianSec(evenements.map { it.onsetMsRel }),
             controles = Controles.de(session, nuit, resultat, sourceSommeil),
-            regleAppliquee = "${Textes.Reglages.REGLE_AASM} · ${session.algoVersion.orEmpty()}",
+            regleAppliquee = texte(
+                R.string.settings_rule_with_version,
+                texte(R.string.settings_rule_aasm),
+                session.algoVersion.orEmpty(),
+            ),
             // Le taux de manques et l'encadrement respiratoire etaient calcules par `:algo` et
             // persistes dans `plm_result` depuis le debut, et affiches nulle part. Le bloc ne
             // calcule rien de neuf : il met en forme le chemin qui mene au chiffre.
@@ -379,7 +385,7 @@ class PendulumRepository(context: Context) {
                 resultat = resultat,
                 dureeEnregistreeMin = dureeEnregistreeMin(session),
                 mouvementsRetenus = (resultat?.plmsCount ?: 0) + (resultat?.plmwCount ?: 0),
-                regle = Textes.Reglages.REGLE_AASM,
+                regle = texte(R.string.settings_rule_aasm),
                 sourceSommeil = sourceSommeil,
                 // Ce qui explique une decision de detection : l'ecretage du capteur, la gigue et
                 // sa consequence sur la datation, les gels d'ecriture. Trois grandeurs mesurees

@@ -100,7 +100,7 @@ class PendulumPreferences(private val context: Context) {
     }
 
     companion object {
-        const val ETAPES_ASSISTANT = 5
+        const val ETAPES_ASSISTANT = 6
 
         const val THEME_SYSTEME = "SYSTEME"
         const val THEME_SOMBRE = "SOMBRE"

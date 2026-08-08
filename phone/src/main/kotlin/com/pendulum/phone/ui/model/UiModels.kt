@@ -2,7 +2,10 @@ package com.pendulum.phone.ui.model
 
 import androidx.compose.runtime.Immutable
 import com.pendulum.phone.ui.chart.TendanceChartSpec
-import com.pendulum.phone.ui.text.Textes
+import androidx.annotation.StringRes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 
 /**
  * Les modeles que les ecrans consomment.
@@ -21,7 +24,7 @@ enum class EtatNuit { ELIGIBLE, PROVISOIRE, ECARTEE }
  * affichee pour que l'utilisateur sache dans quelles conditions son chiffre a ete obtenu.
  */
 @Immutable
-data class Drapeau(val libelle: String)
+data class Drapeau(val libelle: UiText)
 
 @Immutable
 data class NuitUi(
@@ -31,10 +34,10 @@ data class NuitUi(
     val debut: String,
     val fin: String,
     val sommeilLisible: String,
-    val sourceSommeil: String,
+    val sourceSommeil: UiText,
     val etat: EtatNuit,
-    /** Motif d'exclusion deja traduit. Non nul si et seulement si [etat] vaut ECARTEE. */
-    val motif: String?,
+    /** Motif d'exclusion, resolu a l'affichage. Non nul si et seulement si [etat] vaut ECARTEE. */
+    val motif: UiText?,
     /**
      * Rythme fondamental de cette nuit, en secondes, ou `null` quand `:algo` a refuse
      * l'ajustement — voir [Mapping.rythmeSec], qui explique pourquoi c'est le cas frequent.
@@ -96,11 +99,16 @@ sealed interface EtatReveil {
     data class Echec(val date: String, val erreur: ErreurPendulum) : EtatReveil
 }
 
-/** Trois libelles d'etape, et pas un de plus. Le log technique vit dans Reglages › Journal. */
-enum class EtapeAnalyse(val libelle: String, val fraction: Float) {
-    ASSEMBLAGE(Textes.Reveil.Analyse.ETAPE_ASSEMBLAGE, 0.25f),
-    DETECTION(Textes.Reveil.Analyse.ETAPE_DETECTION, 0.6f),
-    CROISEMENT(Textes.Reveil.Analyse.ETAPE_CROISEMENT, 0.9f),
+/**
+ * Trois libelles d'etape, et pas un de plus. Le log technique vit dans Reglages › Journal.
+ *
+ * Le libelle est un **identifiant de ressource** : un constructeur d'`enum` n'a pas de `Context`,
+ * et resoudre la chaine ici la figerait a la langue en vigueur au chargement de la classe.
+ */
+enum class EtapeAnalyse(@StringRes val libelle: Int, val fraction: Float) {
+    ASSEMBLAGE(R.string.waking_analysis_step_assembly, 0.25f),
+    DETECTION(R.string.waking_analysis_step_detection, 0.6f),
+    CROISEMENT(R.string.waking_analysis_step_crossref, 0.9f),
 }
 
 /**
@@ -115,13 +123,30 @@ enum class EtapeAnalyse(val libelle: String, val fraction: Float) {
 @Immutable
 data class ErreurPendulum(
     val code: String,
-    val titre: String,
-    val cause: String,
-    val action: String,
-    val bouton: String? = null,
-    val boutonSecondaire: String? = null,
+    val titre: UiText,
+    val cause: UiText,
+    val action: UiText,
+    val bouton: UiText? = null,
     val technique: Boolean = false,
 )
+
+/**
+ * Le compte rendu d'un geste ponctuel : ce qu'il faut en dire, et s'il a echoue.
+ *
+ * Il existe parce que trois actions de ce produit **partent vers ailleurs et peuvent ne pas
+ * arriver** — la demande de demarrage vers la montre, l'ecriture d'un rapport dans un `Uri` SAF,
+ * l'ecriture d'un paquet de nuit. Aucune des trois ne change l'etat affiche par l'ecran : au
+ * retour, la carte a exactement la meme forme qu'elle ait marche ou non. Sans un compte rendu
+ * explicite, « la montre enregistre » et « la montre n'a rien recu » sont visuellement identiques,
+ * et celui qui se couche en croyant le premier perd sa nuit.
+ *
+ * [echec] porte la **teinte**, jamais le texte : le message dit deja ce qui s'est passe, et
+ * derouler la couleur depuis le contenu de la phrase obligerait a comparer des chaines. Ambre et
+ * non rouge — une montre hors de portee ou un fournisseur SAF qui refuse un flux ne sont pas des
+ * pannes de Pendulum, ce sont des situations, et le rouge reste reserve a ce qui est casse.
+ */
+@Immutable
+data class CompteRendu(val message: UiText, val echec: Boolean)
 
 /**
  * Ce que la carte « Preparer la nuit » affiche.
@@ -151,8 +176,8 @@ data class CeSoirUi(
     val espaceLibre: String?,
     val bracelet: String,
     /** Cote portant, connu seulement une fois le contexte scelle. */
-    val jambe: String?,
-    val sourceSommeil: String,
+    val jambe: UiText?,
+    val sourceSommeil: UiText,
     /** `null` tant que l'activite de la source n'est pas verifiable. */
     val sourceActive: Boolean?,
     val contexteScelle: Boolean,
@@ -263,19 +288,19 @@ sealed interface TendanceUiState {
         /** Le compte horaire, au second rang. Present pour le medecin, pas pour le suivi. */
         val compte: Aggregat.Resultat,
         val position: Aggregat.Position,
-        val periodiciteQualifiee: String?,
+        val periodiciteQualifiee: UiText?,
         val tauxManques: Double,
         val graphe: TendanceChartSpec,
         val nuitsEnregistrees: Int,
         val nuitsEligibles: Int,
         val nuitsEcartees: Int,
-        val regle: String,
-        val masque: String,
+        val regle: UiText,
+        val masque: UiText,
         val plmw: Double,
         val reveil: EtatReveil,
         val profilPersonnalise: String?,
         val hashsMelanges: Boolean,
-        val questionnaireEtat: String,
+        val questionnaireEtat: UiText,
         val exportPossible: Boolean,
         val situationSommeil: ErreurPendulum? = null,
         /** La nuit dont la bande d'etat parle. Voir [Refus.sessionReveil]. */
@@ -293,13 +318,13 @@ sealed interface TendanceUiState {
         val nuitsRequises: Int get() = Aggregat.nuitsRequises(compte.ciBas, compte.ciHaut)
 
         /** Le motif du nombre ci-dessus, en toutes lettres. Un chiffre nu ne se discute pas. */
-        val motifNuitsRequises: String
+        val motifNuitsRequises: UiText
             get() = Aggregat.motifNuitsRequises(compte.ciBas, compte.ciHaut)
 
         /** Bandeau « resultat provisoire », tant que [nuitsRequises] n'est pas atteint. */
-        val bandeauProvisoire: String?
+        val bandeauProvisoire: UiText?
             get() = if (rythme.nuits < nuitsRequises) {
-                Textes.Tendance.bandeauProvisoire(rythme.nuits, nuitsRequises)
+                texte(R.string.trend_provisional_banner, rythme.nuits, nuitsRequises)
             } else {
                 null
             }

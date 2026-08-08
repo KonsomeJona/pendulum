@@ -8,6 +8,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.BlockingState
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraphe
@@ -15,7 +17,9 @@ import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.formaterValeur
 import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
@@ -46,7 +50,7 @@ import com.pendulum.phone.ui.theme.Spacing
 @Composable
 fun ComparePeriodsScreen(
     resultat: Aggregat.Comparaison?,
-    motifIndisponible: Pair<String, Int>?,
+    motifIndisponible: Pair<UiText, Int>?,
     libellePeriodeA: String,
     libellePeriodeB: String,
     modifier: Modifier = Modifier,
@@ -54,27 +58,27 @@ fun ComparePeriodsScreen(
     val c = LocalPendulumColors.current
     PendulumScreen(modifier) {
         if (motifIndisponible != null || resultat == null) {
-            val (periode, nuits) = motifIndisponible ?: (Textes.Comparaison.PERIODE_A to 0)
+            val (periode, nuits) = motifIndisponible ?: (texte(R.string.compare_period_a) to 0)
             BlockingState(
-                titre = Textes.Comparaison.INDISPONIBLE_TITRE,
-                corps = Textes.Comparaison.indisponibleCorps(periode, nuits),
+                titre = stringResource(R.string.compare_unavailable_title),
+                corps = stringResource(R.string.compare_unavailable_body, periode.resoudre(), nuits),
             )
             return@PendulumScreen
         }
 
         PendulumCard {
             // 1. Le verdict, en premier, en gras, sans chiffre.
-            Text(resultat.verdict, style = PendulumType.bodyEmph, color = c.textPrimary)
+            Text(resultat.verdict.resoudre(), style = PendulumType.bodyEmph, color = c.textPrimary)
             Spacer(Modifier.height(Spacing.sm.dp))
 
             // 2. Les deux estimations, chacune avec son intervalle et son n (P2).
             InlineValue(
-                Textes.Comparaison.PERIODE_A,
+                stringResource(R.string.compare_period_a),
                 ligneEstimation(resultat.a),
                 note = libellePeriodeA,
             )
             InlineValue(
-                Textes.Comparaison.PERIODE_B,
+                stringResource(R.string.compare_period_b),
                 ligneEstimation(resultat.b),
                 note = libellePeriodeB,
             )
@@ -82,23 +86,24 @@ fun ComparePeriodsScreen(
             // 3. La difference, avec son intervalle. Jamais dessinee comme une fleche : une
             // fleche vers le bas se lit « ca va dans le bon sens ».
             InlineValue(
-                Textes.Comparaison.DIFFERENCE,
+                stringResource(R.string.compare_difference),
                 "${signe(resultat.difference)}${formaterValeur(kotlin.math.abs(resultat.difference), resultat.a.grandeur)} " +
-                    "${resultat.a.grandeur.unite}  (95% CI " +
+                    "${stringResource(resultat.a.grandeur.unite)}  (95% CI " +
                     "${signe(resultat.diffCiBas)}${formaterValeur(kotlin.math.abs(resultat.diffCiBas), resultat.a.grandeur)} to " +
                     "${signe(resultat.diffCiHaut)}${formaterValeur(kotlin.math.abs(resultat.diffCiHaut), resultat.a.grandeur)})",
             )
 
             Spacer(Modifier.height(Spacing.sm.dp))
-            resultat.motifNonConcluant?.let { Paragraphe(it) }
-            if (resultat.distinguable) Paragraphe(Textes.Comparaison.AUCUNE_CAUSE)
+            resultat.motifNonConcluant?.let { Paragraphe(it.resoudre()) }
+            if (resultat.distinguable) Paragraphe(stringResource(R.string.compare_no_cause))
 
             Spacer(Modifier.height(Spacing.s.dp))
             // 4. L'etalon du bruit : la dispersion des nuits de l'utilisateur lui-meme.
             Text(
-                Textes.Tendance.dispersion(
+                stringResource(
+                    R.string.trend_dispersion,
                     formaterValeur(resultat.dispersion, resultat.a.grandeur),
-                    resultat.a.grandeur.unite,
+                    stringResource(resultat.a.grandeur.unite),
                 ),
                 style = PendulumType.caption,
                 color = c.textTertiary,
@@ -108,17 +113,30 @@ fun ComparePeriodsScreen(
             // 5. Le nombre de nuits necessaires — un ordre de grandeur, et le texte le dit.
             Paragraphe(
                 resultat.nuitsNecessaires
-                    ?.let { Textes.Comparaison.nuitsNecessaires(it) }
-                    ?: Textes.Comparaison.HORS_DE_PORTEE,
+                    ?.let { stringResource(R.string.compare_nights_needed, it) }
+                    ?: stringResource(R.string.compare_out_of_reach),
             )
         }
     }
 }
 
-private fun ligneEstimation(r: Aggregat.Resultat): String =
-    "${formaterValeur(r.mediane, r.grandeur)} ${r.grandeur.unite}  " +
-        "(95% CI ${formaterValeur(r.ciBas, r.grandeur)} – ${formaterValeur(r.ciHaut, r.grandeur)})  " +
-        "${r.nuits} nights"
+/**
+ * La ligne d'estimation d'une periode : la mediane, son intervalle, le nombre de nuits.
+ *
+ * Elle etait assemblee ici a coups de concatenation, ce qui figeait a la fois « CI » et « nights »
+ * en anglais **et l'ordre des trois membres** : une langue qui place le nombre de nuits en tete
+ * n'avait aucun moyen de le dire. La phrase entiere est donc une seule ressource, a arguments
+ * positionnels, et le code ne fournit plus que les valeurs.
+ */
+@Composable
+private fun ligneEstimation(r: Aggregat.Resultat): String = stringResource(
+    R.string.compare_estimate_line,
+    formaterValeur(r.mediane, r.grandeur),
+    stringResource(r.grandeur.unite),
+    formaterValeur(r.ciBas, r.grandeur),
+    formaterValeur(r.ciHaut, r.grandeur),
+    r.nuits,
+)
 
 private fun signe(v: Double): String = if (v < 0) "−" else "+"
 

@@ -34,12 +34,37 @@ import com.pendulum.phone.ui.theme.ChartTokens
  * geste est le graphe de nuit. Deux gestionnaires de zoom independants derivent, et un
  * hypnogramme decale d'un pixel fait lire un mouvement dans le mauvais stade.
  */
+/**
+ * Les six mots de la marge gauche, **deja resolus**.
+ *
+ * Meme raison que [LibellesBande] : un `DrawScope` n'a ni composition ni `Context`, et les cinq
+ * noms de stade ne peuvent donc pas vivre dans le constructeur de [StadeUi] — une chaine ecrite la
+ * ne serait jamais atteinte par un `values-fr/`. `Hypnogramme` les lit une fois, en composition.
+ */
+data class LibellesHypnogramme(
+    val immobile: String,
+    val eveil: String,
+    val rem: String,
+    val n1: String,
+    val n2: String,
+    val n3: String,
+) {
+    fun de(s: StadeUi): String = when (s) {
+        StadeUi.EVEIL -> eveil
+        StadeUi.REM -> rem
+        StadeUi.N1 -> n1
+        StadeUi.N2 -> n2
+        StadeUi.N3 -> n3
+    }
+}
+
 fun DrawScope.dessinerHypnogramme(
     spec: HypnogrammeSpec,
     t: ChartTokens,
     x: XTransform,
     mesureur: TextMeasurer,
     scratch: ChartScratch,
+    libelles: LibellesHypnogramme,
     curseurMs: Long? = null,
 ) {
     val m = margesDefaut
@@ -65,7 +90,7 @@ fun DrawScope.dessinerHypnogramme(
         if (x1 <= x0) continue
         drawRect(t.structural, Offset(x0, yMasque), Size(x1 - x0, hMasque), alpha = t.maskLaneAlpha)
     }
-    texteAxe(mesureur, scratch, t, "immobile", dpPx(2f), yMasque - dpPx(1f))
+    texteAxe(mesureur, scratch, t, libelles.immobile, dpPx(2f), yMasque - dpPx(1f))
 
     // --- voie 2 : hypnogramme, ou son absence
     if (spec.stades == null) {
@@ -78,7 +103,7 @@ fun DrawScope.dessinerHypnogramme(
             couleur = t.annotationText, centre = true,
         )
     } else {
-        dessinerEscalier(spec.stades, t, zone, yStades, hStades, mesureur, scratch, ::xDe)
+        dessinerEscalier(spec.stades, t, zone, yStades, hStades, mesureur, scratch, libelles, ::xDe)
 
         // --- voie 3 : desaccord entre les deux masques. Elle n'existe que si les deux existent.
         for (iv in spec.desaccord) {
@@ -114,6 +139,7 @@ private fun DrawScope.dessinerEscalier(
     hauteur: Float,
     mesureur: TextMeasurer,
     scratch: ChartScratch,
+    libelles: LibellesHypnogramme,
     xDe: (Long) -> Float,
 ) {
     val hauteurNiveau = hauteur / StadeUi.NIVEAUX
@@ -121,7 +147,7 @@ private fun DrawScope.dessinerEscalier(
 
     // Libelles de niveau : la position verticale est le porteur principal de l'information.
     for (s in StadeUi.entries) {
-        texteAxe(mesureur, scratch, t, s.libelle, dpPx(2f), yDe(s) - dpPx(6f))
+        texteAxe(mesureur, scratch, t, libelles.de(s), dpPx(2f), yDe(s) - dpPx(6f))
     }
 
     val chemin = Path()

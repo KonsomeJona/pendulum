@@ -9,7 +9,10 @@ import com.pendulum.phone.ui.chart.JaugeBatterie
 import com.pendulum.phone.ui.chart.MetrologieSpec
 import com.pendulum.phone.ui.chart.NiveauDatation
 import com.pendulum.phone.ui.chart.PalierDatation
-import com.pendulum.phone.ui.text.Textes
+import android.content.res.Resources
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.text.texte
 import java.util.Locale
 
 /**
@@ -117,6 +120,13 @@ object Metrologie {
      * @param t0Ns `tFirstNs` du premier bloc de la nuit : l'origine de la base de temps capteur.
      *   `null` quand aucun chunk n'est en base, auquel cas rien ne peut etre place et la bande rend
      *   sa phrase d'indisponibilite.
+     * @param res les ressources, parce que la spec porte des chaines **deja resolues**.
+     *
+     * C'est la seule fonction de ce fichier qui ne soit pas pure, et la raison est en aval : la
+     * bande est peinte par une extension de `DrawScope`, qui n'a ni composition ni `Context`. Faire
+     * porter a la spec un `UiText` obligerait le dessin a resoudre au milieu d'un `Canvas`. Tout ce
+     * qui **decide** — [resume], [etatPort], les paliers, la jauge — reste pur et testable ; seule
+     * la mise en mots passe par ici.
      */
     fun spec(
         session: NightSessionEntity,
@@ -124,8 +134,9 @@ object Metrologie {
         debutMs: Long,
         finMs: Long,
         t0Ns: Long?,
+        res: Resources,
     ): MetrologieSpec {
-        val jauge = jauge(points)
+        val jauge = jauge(points, res)
         val places = if (t0Ns == null) emptyList() else points
             .filter { it.sensorTsNs > 0L }
             .sortedBy { it.sensorTsNs }
@@ -153,8 +164,8 @@ object Metrologie {
             gels = intervalles.filter { it.first.fsyncMaxUs >= seuilGel }.map { it.second.finMs },
             batterie = jauge,
             points = points.size,
-            texteIndisponible = Textes.Graphes.METRO_INDISPONIBLE,
-            descriptionAccessible = description(points, jauge, session.nominalRateHz),
+            texteIndisponible = res.getString(R.string.chart_metrology_unavailable),
+            descriptionAccessible = description(res, points, jauge, session.nominalRateHz),
         )
     }
 
@@ -223,7 +234,7 @@ object Metrologie {
      * et [PorteP1]. Deux lectures du meme seuil finissent par diverger, et celle-ci serait la
      * troisieme.
      */
-    private fun jauge(points: List<TelemetryPointEntity>): JaugeBatterie? {
+    private fun jauge(points: List<TelemetryPointEntity>, res: Resources): JaugeBatterie? {
         val dernier = points
             .filter { it.batteryPct in 0..100 }
             .maxByOrNull { it.elapsedRealtimeNs }
@@ -239,13 +250,14 @@ object Metrologie {
             fraction = dernier.batteryPct / 100f,
             tenue = tenue,
             libelle = if (pente != null) {
-                Textes.Graphes.batterieJaugeProjetee(
+                texte(
+                    R.string.chart_battery_gauge_projected,
                     pctFin,
                     "%.0f%%".format(Locale.UK, pente.pctA8h),
                     PorteP1.DUREE_CIBLE_H.toInt(),
-                )
+                ).resoudre(res)
             } else {
-                Textes.Graphes.batterieJauge(pctFin)
+                texte(R.string.chart_battery_gauge, pctFin).resoudre(res)
             },
         )
     }
@@ -257,18 +269,20 @@ object Metrologie {
      * autrement a qui ne voit pas la bande.
      */
     private fun description(
+        res: Resources,
         points: List<TelemetryPointEntity>,
         jauge: JaugeBatterie?,
         nominalRateHz: Int,
     ): String {
-        if (points.isEmpty()) return Textes.Graphes.METRO_INDISPONIBLE
+        if (points.isEmpty()) return res.getString(R.string.chart_metrology_unavailable)
         val r = resume(points, nominalRateHz)!!
-        return Textes.Graphes.descriptionMetrologie(
-            points = r.points,
-            gigue = "%.1f ms".format(Locale.UK, r.gigueMedianeUs / 1000.0),
-            ecretes = r.echantillonsEcretes,
-            gels = r.gels,
-            batterie = jauge?.libelle ?: Mapping.TIRET,
+        return res.getString(
+            R.string.chart_metrology_description,
+            r.points,
+            "%.1f ms".format(Locale.UK, r.gigueMedianeUs / 1000.0),
+            r.echantillonsEcretes,
+            r.gels,
+            jauge?.libelle ?: Mapping.TIRET,
         )
     }
 

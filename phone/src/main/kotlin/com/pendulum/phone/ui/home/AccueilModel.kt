@@ -3,7 +3,9 @@ package com.pendulum.phone.ui.home
 import androidx.compose.runtime.Immutable
 import com.pendulum.phone.ui.model.CeSoirUi
 import com.pendulum.phone.ui.model.NuitUi
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 
 /**
  * L'accueil : sa machine a etats, et rien d'autre.
@@ -81,9 +83,9 @@ data class SourceAccueil(
     val sessionRecente: SessionAccueil?,
     val contexteScelle: Boolean,
     /** Cote portant du contexte scelle. `null` tant qu'il n'est pas scelle : jamais devine. */
-    val jambeScellee: String?,
+    val jambeScellee: UiText?,
     val repereDeSerrage: String,
-    val sourceSommeil: String?,
+    val sourceSommeil: UiText?,
     val nuitsEnregistrees: Int,
     val nuitsEligibles: Int,
     /**
@@ -108,10 +110,10 @@ data class AccueilUi(
     val phase: PhaseAccueil,
     val ceSoir: CeSoirUi,
     /** Motif d'indisponibilite du scellement, ou `null` s'il est possible maintenant. */
-    val motifPreparer: String?,
+    val motifPreparer: UiText?,
     /** Ligne d'etat de la carte « fin de nuit ». Toujours presente, meme quand il n'y a rien. */
-    val ligneFinDeNuit: String,
-    val motifFinDeNuit: String?,
+    val ligneFinDeNuit: UiText,
+    val motifFinDeNuit: UiText?,
     /** La session que le bouton de fin de nuit fermerait, ou `null`. */
     val sessionAFermer: String?,
     /**
@@ -121,8 +123,8 @@ data class AccueilUi(
      * matin, d'une main, un choix multiple est un choix qu'on ne fait pas.
      */
     val nuitADevoiler: String?,
-    val ligneHistorique: String,
-    val motifHistorique: String?,
+    val ligneHistorique: UiText,
+    val motifHistorique: UiText?,
 )
 
 /**
@@ -185,38 +187,48 @@ object MachineAccueil {
                 espaceLibre = null,
                 bracelet = source.repereDeSerrage,
                 jambe = source.jambeScellee,
-                sourceSommeil = source.sourceSommeil ?: Textes.Reglages.SOURCE_INCONNUE,
+                sourceSommeil = source.sourceSommeil ?: texte(R.string.settings_source_unknown),
                 sourceActive = null,
                 contexteScelle = source.contexteScelle,
             ),
             motifPreparer = when {
-                phase == PhaseAccueil.ENREGISTREMENT -> Textes.EcranAccueil.Preparer.OCCUPE
+                phase == PhaseAccueil.ENREGISTREMENT -> texte(R.string.home_prepare_busy)
                 // Le contexte est append-only : le sceller deux fois leve. Le bouton doit donc
-                // etre grise, et son motif est la bonne nouvelle — la montre peut partir.
-                source.contexteScelle -> Textes.CeSoir.SCELLEMENT_FAIT
+                // etre grise, et son motif enonce le fait — le contexte est scelle **ici**.
+                //
+                // Il disait « la montre peut demarrer », et le telephone n'en sait rien : la
+                // publication du `DataItem` vers la montre peut avoir echoue, et son resultat n'est
+                // persiste nulle part. Cette carte affichait donc le depart pendant que la montre
+                // reclamait encore le formulaire du soir — deux ecrans qui se contredisent, aucun
+                // des deux en tort. Ce que la base prouve est le scellement, et rien de plus.
+                source.contexteScelle -> texte(R.string.tonight_seal_done)
                 else -> null
             },
             ligneFinDeNuit = when {
-                devoilementPropose -> Textes.EcranAccueil.Resultat.enregistree(aDevoiler!!.dateLisible)
-                s == null -> Textes.EcranAccueil.Fin.AUCUNE_SESSION
-                s.etat == OUVERTE -> Textes.EcranAccueil.Fin.enCoursDepuis(s.debutLisible)
-                fermable -> Textes.EcranAccueil.Fin.ouverteDepuis(s.debutLisible)
-                else -> Textes.EcranAccueil.Fin.analysee(s.dateLisible)
+                devoilementPropose -> texte(R.string.home_result_recorded, aDevoiler!!.dateLisible)
+                s == null -> texte(R.string.home_end_no_session)
+                s.etat == OUVERTE -> texte(R.string.home_end_recording_since, s.debutLisible)
+                fermable -> texte(R.string.home_end_open_since, s.debutLisible)
+                else -> texte(R.string.home_end_analysed, s.dateLisible)
             },
             motifFinDeNuit = when {
                 devoilementPropose -> null
                 fermable -> null
-                else -> Textes.EcranAccueil.Fin.AUCUNE_SESSION
+                else -> texte(R.string.home_end_no_session)
             },
             sessionAFermer = if (fermable) s!!.sessionHex else null,
             nuitADevoiler = if (devoilementPropose) aDevoiler!!.sessionHex else null,
             ligneHistorique = if (source.nuitsEnregistrees == 0) {
-                Textes.EcranAccueil.Historique.VIDE
+                texte(R.string.home_history_empty)
             } else {
-                Textes.EcranAccueil.Historique.compte(source.nuitsEnregistrees, source.nuitsEligibles)
+                texte(
+                    R.string.home_history_count,
+                    source.nuitsEnregistrees,
+                    source.nuitsEligibles,
+                )
             },
             motifHistorique = if (source.nuitsEnregistrees == 0) {
-                Textes.EcranAccueil.Historique.VIDE
+                texte(R.string.home_history_empty)
             } else {
                 null
             },

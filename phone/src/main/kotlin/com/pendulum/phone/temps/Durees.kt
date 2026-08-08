@@ -62,11 +62,40 @@ class Durees(diviseur: Long) {
      */
     val periodeWatchdogMs: Long = Temps.ms(TimeUnit.MINUTES.toMillis(30), diviseur)
 
+    /**
+     * Premier palier du repli exponentiel de la republication du contexte du soir.
+     *
+     * Meme reserve que sur [periodeWatchdogMs], et pour la meme raison : WorkManager ramene tout
+     * repli sous dix secondes a dix secondes, donc a l'echelle 600 cette valeur ne se comprime
+     * plus. Elle exprime l'intention — reessayer vite, parce que la panne visee est une
+     * indisponibilite passagere des services Google Play et que la montre attend, ce soir.
+     *
+     * Trente secondes et non cinq minutes : l'utilisateur vient de sceller son contexte et
+     * s'appreterait a se coucher. Un premier rejeu a cinq minutes rendrait le rattrapage
+     * inutilisable dans le seul cas ou il compte.
+     */
+    val delaiRepublicationContexteMs: Long = Temps.ms(TimeUnit.SECONDS.toMillis(30), diviseur)
+
     /** Silence au-dela duquel une session ouverte passe `STALE` : la montre reviendra peut-etre. */
     val silenceAvantStaleMs: Long = Temps.ms(TimeUnit.MINUTES.toMillis(45), diviseur)
 
     /** Age au-dela duquel une nuit est declaree `TRUNCATED` et analysee telle quelle. */
     val ageMaxNuitMs: Long = Temps.ms(TimeUnit.HOURS.toMillis(14), diviseur)
+
+    /**
+     * Combien de temps le compte rendu du bouton « demarrer sur la montre » reste sous le bouton.
+     *
+     * Six secondes et non deux : la phrase d'echec est longue — elle nomme le geste de secours,
+     * appuyer sur START sur la montre — et elle se lit au coucher, lumiere basse, une main. Deux
+     * secondes la feraient disparaitre avant la fin de la ligne.
+     *
+     * Elle est **ici** et non dans l'ecran, contrairement aux cinq secondes de
+     * `SharingStarted.WhileSubscribed` : celles-la reglent un cout de recomposition que personne
+     * n'observe, celle-ci est une duree d'affichage que le banc doit traverser a sa propre vitesse.
+     * Un banc a l'echelle 600 qui attendrait six secondes reelles sous chaque demarrage passerait
+     * l'essentiel de sa nuit simulee a regarder une phrase.
+     */
+    val retourDemarrageMs: Long = Temps.ms(TimeUnit.SECONDS.toMillis(6), diviseur)
 
     companion object {
 

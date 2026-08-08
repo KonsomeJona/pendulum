@@ -8,7 +8,8 @@ import com.pendulum.phone.ui.home.SourceAccueil
 import com.pendulum.phone.ui.model.Drapeau
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.NuitUi
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -40,12 +41,12 @@ class MachineAccueilTest {
         debut = "23:12",
         fin = "06:58",
         sommeilLisible = "6 h 58",
-        sourceSommeil = "Health Connect",
+        sourceSommeil = texte("Health Connect"),
         etat = EtatNuit.ELIGIBLE,
         motif = null,
         rythmeSec = 18.7,
         comptePlmi = 24.0,
-        drapeaux = listOf(Drapeau("gap 47 s")),
+        drapeaux = listOf(Drapeau(texte("gap 47 s"))),
         startWallMs = 0L,
         devoileeAtMs = devoileeAtMs,
     )
@@ -67,9 +68,9 @@ class MachineAccueilTest {
     ) = SourceAccueil(
         sessionRecente = session,
         contexteScelle = contexteScelle,
-        jambeScellee = if (contexteScelle) Textes.CeSoir.JAMBE_DROITE else null,
+        jambeScellee = if (contexteScelle) texte(R.string.tonight_leg_right) else null,
         repereDeSerrage = "4th hole",
-        sourceSommeil = "Samsung Health",
+        sourceSommeil = texte("Samsung Health"),
         nuitsEnregistrees = nuitsEnregistrees,
         nuitsEligibles = nuitsEligibles,
         derniereNuitAnalysee = derniereNuit,
@@ -156,14 +157,14 @@ class MachineAccueilTest {
     @Test
     fun `sceller est impossible pendant un enregistrement, et le motif le dit`() {
         val ui = ui(source(session(MachineAccueil.OUVERTE, analysee = false)), heure = 23)
-        assertThat(ui.motifPreparer).isEqualTo(Textes.EcranAccueil.Preparer.OCCUPE)
+        assertThat(ui.motifPreparer).isEqualTo(texte(R.string.home_prepare_busy))
     }
 
     /** Le contexte est append-only : le sceller deux fois leve. Le bouton porte donc son motif. */
     @Test
     fun `sceller est impossible une fois le contexte scelle, et le motif est la bonne nouvelle`() {
         val ui = ui(source(contexteScelle = true), heure = 22)
-        assertThat(ui.motifPreparer).isEqualTo(Textes.CeSoir.SCELLEMENT_FAIT)
+        assertThat(ui.motifPreparer).isEqualTo(texte(R.string.tonight_seal_done))
     }
 
     @Test
@@ -174,7 +175,7 @@ class MachineAccueilTest {
     @Test
     fun `sans session, la carte de fin de nuit est grisee avec son motif`() {
         val ui = ui(source(), heure = 21)
-        assertThat(ui.motifFinDeNuit).isEqualTo(Textes.EcranAccueil.Fin.AUCUNE_SESSION)
+        assertThat(ui.motifFinDeNuit).isEqualTo(texte(R.string.home_end_no_session))
         assertThat(ui.sessionAFermer).isNull()
         assertThat(ui.nuitADevoiler).isNull()
     }
@@ -204,7 +205,7 @@ class MachineAccueilTest {
             heure = 8,
         )
         assertThat(finie.nuitADevoiler).isEqualTo("a7")
-        assertThat(finie.ligneFinDeNuit).isEqualTo(Textes.EcranAccueil.Resultat.enregistree("12 March"))
+        assertThat(finie.ligneFinDeNuit).isEqualTo(texte(R.string.home_result_recorded, "12 March"))
     }
 
     /** Garde-fou 2 : une fois devoilee, la nuit ne redemande plus rien. */
@@ -215,17 +216,17 @@ class MachineAccueilTest {
             heure = 8,
         )
         assertThat(ui.nuitADevoiler).isNull()
-        assertThat(ui.ligneFinDeNuit).isEqualTo(Textes.EcranAccueil.Fin.analysee("12 March"))
+        assertThat(ui.ligneFinDeNuit).isEqualTo(texte(R.string.home_end_analysed, "12 March"))
     }
 
     @Test
     fun `l'historique compte les nuits et les eligibles, et se grise a zero`() {
         val vide = ui(source(), heure = 12)
-        assertThat(vide.ligneHistorique).isEqualTo(Textes.EcranAccueil.Historique.VIDE)
-        assertThat(vide.motifHistorique).isEqualTo(Textes.EcranAccueil.Historique.VIDE)
+        assertThat(vide.ligneHistorique).isEqualTo(texte(R.string.home_history_empty))
+        assertThat(vide.motifHistorique).isEqualTo(texte(R.string.home_history_empty))
 
         val garni = ui(source(nuitsEnregistrees = 7, nuitsEligibles = 5), heure = 12)
-        assertThat(garni.ligneHistorique).isEqualTo("7 nights · 5 eligible")
+        assertThat(Ressources.resoudre(garni.ligneHistorique)).isEqualTo("7 nights · 5 eligible")
         assertThat(garni.motifHistorique).isNull()
     }
 
@@ -252,6 +253,6 @@ class MachineAccueilTest {
     fun `la jambe reste inconnue tant que le contexte n'est pas scelle`() {
         assertThat(ui(source(contexteScelle = false), heure = 21).ceSoir.jambe).isNull()
         assertThat(ui(source(contexteScelle = true), heure = 21).ceSoir.jambe)
-            .isEqualTo(Textes.CeSoir.JAMBE_DROITE)
+            .isEqualTo(texte(R.string.tonight_leg_right))
     }
 }

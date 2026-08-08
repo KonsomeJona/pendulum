@@ -110,9 +110,16 @@ object SessionReassembler {
         //  - un chunk n'a pas son marqueur de fin       -> il etait en cours d'ecriture ;
         //  - moins de chunks recus que declares         -> la fin du transfert n'est pas arrivee ;
         //  - une desynchronisation ailleurs qu'en queue -> corruption, pas simple troncature.
+        // Le cinquieme signal manquait a l'expression. Il etait calcule, recopie dans `Night`, et
+        // jamais lu par personne : une nuit corrompue en plein milieu, resynchronisee ensuite et
+        // close proprement, ressortait `closedCleanly = true` et entrait dans la tendance comme une
+        // nuit intacte. Le commentaire ci-dessus disait deja ce qu'il fallait faire — c'est le code
+        // qui ne le faisait pas.
+        val desynchronised = scans.any { it.second.desynchronised }
         val closedCleanly = sessionStateClosed &&
             missing.isEmpty() &&
             incomplete.isEmpty() &&
+            !desynchronised &&
             (declaredChunks == null || received.size >= declaredChunks)
 
         return Night(
@@ -127,7 +134,7 @@ object SessionReassembler {
             corruptBlocks = scans.sumOf { it.second.corruptBlocks },
             resyncSkippedBytes = scans.sumOf { it.second.resyncSkippedBytes },
             truncatedTail = scans.any { it.second.truncatedTail },
-            desynchronised = scans.any { it.second.desynchronised },
+            desynchronised = desynchronised,
             anchor = anchor,
         )
     }

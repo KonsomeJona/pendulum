@@ -1,5 +1,6 @@
 package com.pendulum.phone.ui.trend
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.chart.EtatPoint
 import com.pendulum.phone.ui.chart.GrapheTendance
 import com.pendulum.phone.ui.common.BandeauProfilPersonnalise
 import com.pendulum.phone.ui.common.BlockingState
@@ -37,7 +41,7 @@ import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.model.MotifRefus
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.model.TendanceUiState
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
@@ -106,11 +110,11 @@ fun TrendScreen(
                 // et le rapport est precisement l'endroit ou ce refus doit etre ecrit : le
                 // desactiver ici priverait le medecin du document qui l'explique.
                 BoutonMotive(
-                    libelle = Textes.Tendance.RAPPORT,
+                    libelle = stringResource(R.string.trend_report),
                     motifIndisponible = if (etat.motif == MotifRefus.RYTHME_NON_AJUSTE) {
                         null
                     } else {
-                        Textes.Export.indisponible(Aggregat.MIN_NUITS_AGREGAT)
+                        stringResource(R.string.export_unavailable, Aggregat.MIN_NUITS_AGREGAT)
                     },
                     onClick = onExport,
                 )
@@ -123,17 +127,17 @@ fun TrendScreen(
 
                 BandeauProfilPersonnalise(etat.profilPersonnalise)
                 if (etat.hashsMelanges) {
-                    PendulumCard { Paragraphe(Textes.Tendance.HASHS_MELANGES, couleur = c.attention) }
+                    PendulumCard { Paragraphe(stringResource(R.string.trend_mixed_hashes), couleur = c.attention) }
                 }
 
                 PendulumCard {
                     etat.bandeauProvisoire?.let {
-                        Paragraphe(it, couleur = c.attention)
+                        Paragraphe(it.resoudre(), couleur = c.attention)
                         // Le nombre de nuits demande depend de la position de l'intervalle, et un
                         // nombre nu ne se discute pas : son motif est chiffre et sourcé, y compris
                         // quand la source manque — le regime bas dit que 14 est un compromis.
                         Text(
-                            etat.motifNuitsRequises,
+                            etat.motifNuitsRequises.resoudre(),
                             style = PendulumType.caption,
                             color = c.textTertiary,
                         )
@@ -144,7 +148,7 @@ fun TrendScreen(
                     // intervalle, son n. Seul site d'usage de metricXL dans l'application.
                     MetricHeadline(
                         resultat = etat.rythme,
-                        libelle = Textes.Tendance.RYTHME_LABEL,
+                        libelle = stringResource(R.string.trend_rhythm_label),
                         qualificatif = etat.periodiciteQualifiee,
                     )
 
@@ -153,18 +157,19 @@ fun TrendScreen(
                         // dit. Un intervalle mal calibre affiche sans reserve serait le defaut le
                         // plus embarrassant de ce produit — c'est l'intervalle qui porte tout.
                         Spacer(Modifier.height(Spacing.s.dp))
-                        Paragraphe(Textes.Tendance.INTERVALLE_NON_CALIBRE, couleur = c.textTertiary)
+                        Paragraphe(stringResource(R.string.trend_interval_uncalibrated_note), couleur = c.textTertiary)
                     }
 
                     Spacer(Modifier.height(Spacing.sm.dp))
-                    Paragraphe(Textes.Tendance.RYTHME_SANS_SEUIL)
+                    Paragraphe(stringResource(R.string.trend_rhythm_no_threshold))
 
                     Spacer(Modifier.height(Spacing.m.dp))
 
                     // Second rang : le compte horaire. Meme regle P2 — valeur, intervalle et n
                     // dans la meme ligne — mais a la taille du corps de texte.
                     Text(
-                        Textes.Tendance.compteSecondRang(
+                        stringResource(
+                            R.string.trend_count_second_rank,
                             Math.round(etat.compte.mediane).toInt(),
                             Math.round(etat.compte.ciBas).toInt(),
                             Math.round(etat.compte.ciHaut).toInt(),
@@ -173,13 +178,13 @@ fun TrendScreen(
                         style = PendulumType.bodyNum,
                         color = c.textSecondary,
                     )
-                    Text(Textes.Tendance.COMPTE_LABEL, style = PendulumType.caption, color = c.textTertiary)
+                    Text(stringResource(R.string.trend_count_label), style = PendulumType.caption, color = c.textTertiary)
                     Spacer(Modifier.height(Spacing.s.dp))
-                    Paragraphe(Textes.Tendance.COMPTE_NOTE)
+                    Paragraphe(stringResource(R.string.trend_count_note))
 
                     Spacer(Modifier.height(Spacing.sm.dp))
                     // La phrase de position, cadre neutre dans les cinq cas.
-                    PositionBox(etat.position.texte())
+                    etat.position.phrase()?.let { PositionBox(it.resoudre()) }
 
                     // **Le seuil de 15/h, etiquete, juste sous la phrase qui l'invoque.**
                     //
@@ -191,13 +196,14 @@ fun TrendScreen(
                     // exactement le meme dispositif qu'une borne nue sur un compte rendu de
                     // biologie. La legende porte en plus l'ecart PSG / actimetrie de cheville.
                     Spacer(Modifier.height(Spacing.s.dp))
-                    Paragraphe(Textes.Graphes.LEGENDE_SEUIL_15, couleur = c.textTertiary)
+                    Paragraphe(stringResource(R.string.chart_threshold_15_legend), couleur = c.textTertiary)
 
                     Spacer(Modifier.height(Spacing.s.dp))
                     Text(
-                        Textes.Tendance.dispersion(
+                        stringResource(
+                            R.string.trend_dispersion,
                             formaterValeur(etat.rythme.dispersion, etat.rythme.grandeur),
-                            etat.rythme.grandeur.unite,
+                            stringResource(etat.rythme.grandeur.unite),
                         ),
                         style = PendulumType.caption,
                         color = c.textTertiary,
@@ -213,24 +219,27 @@ fun TrendScreen(
                 }
 
                 PendulumCard {
-                    LigneAction(Textes.Tendance.COMPARER, Textes.Tendance.COMPARER_SOUS_TITRE, onComparer)
+                    LigneAction(
+                        stringResource(R.string.trend_compare),
+                        stringResource(R.string.trend_compare_subtitle),
+                        onComparer,
+                    )
                 }
 
                 PendulumCard {
-                    InlineValue(Textes.Tendance.REGLE_COMPTAGE, etat.regle)
-                    InlineValue(Textes.Tendance.MASQUE_SOMMEIL, etat.masque)
-                    InlineValue(Textes.Tendance.MOUVEMENTS_EVEIL, "${Math.round(etat.plmw)}/h")
+                    InlineValue(stringResource(R.string.trend_counting_rule), etat.regle.resoudre())
+                    InlineValue(stringResource(R.string.trend_sleep_mask), etat.masque.resoudre())
+                    InlineValue(stringResource(R.string.trend_movements_awake), "${Math.round(etat.plmw)}/h")
                     InlineValue(
-                        Textes.Tendance.PERIODICITE,
+                        stringResource(R.string.trend_periodicity),
                         // Jamais l'indice nu : un qualificatif, ou rien.
-                        etat.periodiciteQualifiee ?: "—",
-                        note = Textes.Tendance.PERIODICITE_NOTE,
+                        etat.periodiciteQualifiee?.resoudre() ?: "—",
+                        note = stringResource(R.string.trend_periodicity_note),
                     )
                     InlineValue(
-                        Textes.Tendance.TAUX_MANQUES,
+                        stringResource(R.string.trend_missed_rate),
                         "${Math.round(etat.tauxManques * 100)}%",
-                        note = "Estimated by the mixture model on the harmonics. " +
-                            "A rate that jumps from one night to the next signals nights that are not comparable.",
+                        note = stringResource(R.string.trend_missed_rate_note),
                     )
                 }
 
@@ -239,16 +248,25 @@ fun TrendScreen(
                     // rien faire. Une ligne qui annonce ou aller et qui n'y va pas apprend a ne
                     // plus essayer les autres.
                     LigneAction(
-                        Textes.Reveil.compteur(etat.nuitsEnregistrees, etat.nuitsEligibles, etat.nuitsEcartees),
+                        stringResource(
+                            R.string.waking_counter,
+                            etat.nuitsEnregistrees,
+                            etat.nuitsEligibles,
+                            etat.nuitsEcartees,
+                        ),
                         null,
                         onNuits,
                     )
-                    LigneAction(Textes.Tendance.QUESTIONNAIRE, etat.questionnaireEtat, onQuestionnaire)
+                    LigneAction(
+                        stringResource(R.string.trend_questionnaire),
+                        etat.questionnaireEtat.resoudre(),
+                        onQuestionnaire,
+                    )
                 }
 
                 BoutonMotive(
-                    libelle = Textes.Tendance.RAPPORT,
-                    motifIndisponible = if (etat.exportPossible) null else Textes.Export.indisponible(Aggregat.MIN_NUITS_AGREGAT),
+                    libelle = stringResource(R.string.trend_report),
+                    motifIndisponible = if (etat.exportPossible) null else stringResource(R.string.export_unavailable, Aggregat.MIN_NUITS_AGREGAT),
                     onClick = onExport,
                 )
 
@@ -259,12 +277,16 @@ fun TrendScreen(
 
     if (valeursOuvertes && etat is TendanceUiState.Pret) {
         DataTableSheet(
-            colonnes = listOf("Date", "Rhythm", "State"),
+            colonnes = listOf(
+                stringResource(R.string.trend_table_date),
+                stringResource(R.string.trend_table_rhythm),
+                stringResource(R.string.trend_table_state),
+            ),
             lignes = etat.graphe.points.map {
                 listOf(
                     formaterJourCourt(it.dateMs),
                     "${Math.round(it.valeur)} s",
-                    it.etat.name.lowercase(),
+                    stringResource(etatLisible(it.etat)),
                 )
             },
             onFermer = { valeursOuvertes = false },
@@ -293,20 +315,26 @@ private fun RefusCard(etat: TendanceUiState.Refus, onNuit: (String) -> Unit) {
     val c = LocalPendulumColors.current
     val rythme = etat.motif == MotifRefus.RYTHME_NON_AJUSTE
     BlockingState(
-        titre = if (rythme) Textes.Tendance.REFUS_RYTHME_TITRE else Textes.Tendance.REFUS_TITRE,
-        corps = if (rythme) Textes.Tendance.REFUS_RYTHME_CORPS else Textes.Tendance.REFUS_CORPS,
-        action = if (rythme) Textes.Tendance.REFUS_RYTHME_ACTION else Textes.Tendance.REFUS_ACTION,
+        titre = stringResource(
+            if (rythme) R.string.trend_rhythm_refusal_title else R.string.trend_refusal_title,
+        ),
+        corps = stringResource(
+            if (rythme) R.string.trend_rhythm_refusal_body else R.string.trend_refusal_body,
+        ),
+        action = stringResource(
+            if (rythme) R.string.trend_rhythm_refusal_action else R.string.trend_refusal_action,
+        ),
         entete = {
             Column(
                 Modifier.fillMaxWidth().padding(bottom = Spacing.m.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    if (rythme) {
-                        Textes.Tendance.compteurRythme(etat.nuitsAcquises, etat.nuitsRequises)
-                    } else {
-                        Textes.Tendance.compteurNuits(etat.nuitsAcquises, etat.nuitsRequises)
-                    },
+                    stringResource(
+                        if (rythme) R.string.trend_rhythm_counter else R.string.trend_nights_counter,
+                        etat.nuitsAcquises,
+                        etat.nuitsRequises,
+                    ),
                     style = PendulumType.titleL,
                     color = c.textPrimary,
                 )
@@ -316,7 +344,9 @@ private fun RefusCard(etat: TendanceUiState.Refus, onNuit: (String) -> Unit) {
         },
         pied = {
             Text(
-                if (rythme) Textes.Tendance.REFUS_RYTHME_LISTE else Textes.Tendance.REFUS_LISTE,
+                stringResource(
+                    if (rythme) R.string.trend_rhythm_refusal_list else R.string.trend_refusal_list,
+                ),
                 style = PendulumType.label,
                 color = c.textTertiary,
             )
@@ -352,6 +382,20 @@ private fun LigneAction(titre: String, sousTitre: String?, onClick: () -> Unit) 
         Text(titre, style = PendulumType.body, color = c.textPrimary)
         sousTitre?.let { Text(it, style = PendulumType.caption, color = c.textTertiary) }
     }
+}
+
+/**
+ * L'etat d'une nuit dans la colonne « State » de la feuille de valeurs.
+ *
+ * Il s'ecrivait `it.etat.name.lowercase()`, ce qui peignait a l'ecran le nom de la constante
+ * Kotlin — donc `masque_accelero` et `ecartee`, deux mots francais dans une interface anglaise, et
+ * trois chaines qu'aucun `values-fr/` n'aurait pu atteindre.
+ */
+@StringRes
+private fun etatLisible(etat: EtatPoint): Int = when (etat) {
+    EtatPoint.ELIGIBLE -> R.string.trend_table_state_eligible
+    EtatPoint.MASQUE_ACCELERO -> R.string.trend_table_state_accel_mask
+    EtatPoint.ECARTEE -> R.string.trend_table_state_excluded
 }
 
 private fun formaterJourCourt(ms: Long): String {

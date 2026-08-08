@@ -8,6 +8,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraphe
@@ -15,7 +17,7 @@ import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.model.PorteP1
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
@@ -58,13 +60,13 @@ fun RapportP1Screen(
     val c = LocalPendulumColors.current
 
     PendulumScreen(modifier) {
-        Text(Textes.P1.TITRE, style = PendulumType.titleL, color = c.textPrimary)
-        Text(Textes.P1.SOUS_TITRE, style = PendulumType.caption, color = c.textTertiary)
+        Text(stringResource(R.string.p1_title), style = PendulumType.titleL, color = c.textPrimary)
+        Text(stringResource(R.string.p1_subtitle), style = PendulumType.caption, color = c.textTertiary)
 
         PendulumCard {
-            SectionHeader(Textes.P1.CONCLUSION)
+            SectionHeader(stringResource(R.string.p1_campaign))
             Text(
-                Textes.P1.serie(etat.campagne.serieMax, PorteP1.NUITS_CONSECUTIVES),
+                stringResource(R.string.p1_run, etat.campagne.serieMax, PorteP1.NUITS_CONSECUTIVES),
                 style = PendulumType.bodyEmph,
                 color = c.textPrimary,
             )
@@ -72,13 +74,17 @@ fun RapportP1Screen(
             val fin = etat.campagne.finSerie
             if (debut != null && fin != null) {
                 Text(
-                    Textes.P1.etendueSerie(debut, fin),
+                    stringResource(R.string.p1_run_range, debut, fin),
                     style = PendulumType.bodyNum,
                     color = c.textSecondary,
                 )
             }
             Text(
-                Textes.P1.comptes(etat.campagne.nuitsConformes, etat.campagne.nuitsExaminees),
+                stringResource(
+                    R.string.p1_counts,
+                    etat.campagne.nuitsConformes,
+                    etat.campagne.nuitsExaminees,
+                ),
                 style = PendulumType.bodyNum,
                 color = c.textSecondary,
             )
@@ -86,40 +92,43 @@ fun RapportP1Screen(
             // Le verdict est une phrase et pas une pastille : « Gate not passed » se recopie dans
             // un message, une pastille orange ne se recopie nulle part.
             Text(
-                if (etat.campagne.franchie) Textes.P1.FRANCHIE else Textes.P1.NON_FRANCHIE,
+                stringResource(
+                    if (etat.campagne.franchie) R.string.p1_gate_passed
+                    else R.string.p1_gate_not_passed,
+                ),
                 style = PendulumType.bodyEmph,
                 color = c.textPrimary,
             )
         }
 
         PendulumCard {
-            SectionHeader(Textes.P1.NUITS)
+            SectionHeader(stringResource(R.string.p1_nights))
             if (etat.nuits.isEmpty()) {
-                Paragraphe(Textes.P1.AUCUNE_NUIT)
+                Paragraphe(stringResource(R.string.p1_no_night))
             } else {
                 etat.nuits.forEach { LigneNuit(it) }
             }
         }
 
         PendulumCard {
-            Paragraphe(Textes.P1.INTRO)
+            Paragraphe(stringResource(R.string.p1_intro))
             Spacer(Modifier.height(Spacing.s.dp))
             // Le chiffre de batterie est extrapole quand la nuit porte de la telemetrie. Un
             // pourcentage extrapole ressemble a un pourcentage mesure : ce qu'il suppose est ecrit
             // a cote de lui, sur le meme ecran, et pas seulement dans une KDoc.
-            Paragraphe(Textes.P1.BATTERIE_EXTRAPOLATION)
+            Paragraphe(stringResource(R.string.p1_battery_extrapolation))
             Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(Textes.P1.NON_TRANSMIS)
+            Paragraphe(stringResource(R.string.p1_not_transmitted))
         }
 
         PendulumCard {
-            Paragraphe(Textes.P1.POURQUOI, couleur = c.textPrimary)
+            Paragraphe(stringResource(R.string.p1_why), couleur = c.textPrimary)
             Spacer(Modifier.height(Spacing.sm.dp))
             // Le meme chemin SAF que l'export d'une nuit : l'application n'ecrit jamais dans un
             // repertoire partage de sa propre initiative, l'emplacement est choisi geste par geste.
-            BoutonMotive(Textes.P1.EXPORTER, null, onExporter)
+            BoutonMotive(stringResource(R.string.p1_export), null, onExporter)
             Spacer(Modifier.height(Spacing.s.dp))
-            Text(Textes.Export.PAS_DE_RESEAU, style = PendulumType.caption, color = c.textTertiary)
+            Text(stringResource(R.string.export_no_network), style = PendulumType.caption, color = c.textTertiary)
         }
 
         Spacer(Modifier.height(Spacing.l.dp))
@@ -136,7 +145,11 @@ private fun LigneNuit(v: PorteP1.VerdictNuit) {
             color = c.textPrimary,
         )
         v.criteres.forEach {
-            InlineValue(it.libelle, "${it.valeur}   ${signe(it.etat)}", note = it.seuil)
+            InlineValue(
+                it.libelle.resoudre(),
+                "${it.valeur.resoudre()}   ${signe(it.etat)}",
+                note = it.seuil.resoudre(),
+            )
         }
     }
 }
@@ -148,8 +161,14 @@ private fun signe(e: PorteP1.Conformite): String = when (e) {
     PorteP1.Conformite.INDETERMINE -> "—"
 }
 
+/**
+ * Le mot du verdict. `@Composable` parce qu'il resout une ressource : la fonction est appelee dans
+ * l'interpolation de [LigneNuit], donc en composition, et la garder pure obligerait a passer un
+ * `Context` a la main.
+ */
+@Composable
 private fun libelle(e: PorteP1.Conformite): String = when (e) {
-    PorteP1.Conformite.CONFORME -> Textes.P1.CONFORME
-    PorteP1.Conformite.NON_CONFORME -> Textes.P1.NON_CONFORME
-    PorteP1.Conformite.INDETERMINE -> Textes.P1.INDETERMINE
+    PorteP1.Conformite.CONFORME -> stringResource(R.string.p1_meets)
+    PorteP1.Conformite.NON_CONFORME -> stringResource(R.string.p1_outside)
+    PorteP1.Conformite.INDETERMINE -> stringResource(R.string.p1_undecidable)
 }

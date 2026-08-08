@@ -18,7 +18,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.pendulum.phone.ui.text.Textes
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumType
@@ -54,8 +55,8 @@ fun DataTableSheet(
         containerColor = c.surfaceElevated,
     ) {
         Column(Modifier.padding(horizontal = Spacing.m.dp).padding(bottom = Spacing.l.dp)) {
-            Text(Textes.Graphes.VALEURS, style = PendulumType.titleM, color = c.textPrimary)
-            Text(Textes.Graphes.VALEURS_NOTE, style = PendulumType.caption, color = c.textTertiary)
+            Text(stringResource(R.string.chart_values), style = PendulumType.titleM, color = c.textPrimary)
+            Text(stringResource(R.string.chart_values_note), style = PendulumType.caption, color = c.textTertiary)
             Spacer(Modifier.height(Spacing.sm.dp))
 
             val scroll = rememberScrollState()

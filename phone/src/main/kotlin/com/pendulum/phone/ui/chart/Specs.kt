@@ -193,13 +193,17 @@ data class SegmentStade(val debutMs: Long, val finMs: Long, val stade: StadeUi)
  * Ordre conventionnel des laboratoires de sommeil : eveil en haut, sommeil profond en bas.
  * La position verticale est le porteur principal de l'information ; la couleur ne fait que
  * confirmer.
+ *
+ * Le rang est la seule chose que cet enum porte : les cinq mots ecrits en marge vivent dans
+ * `strings.xml` et descendent jusqu'au dessin par [LibellesHypnogramme]. Un libelle dans un
+ * constructeur d'enum est une chaine anglaise qu'aucun `values-fr/` ne peut atteindre.
  */
-enum class StadeUi(val rang: Int, val libelle: String) {
-    EVEIL(0, "Awake"),
-    REM(1, "REM"),
-    N1(2, "N1"),
-    N2(3, "N2"),
-    N3(4, "N3"),
+enum class StadeUi(val rang: Int) {
+    EVEIL(0),
+    REM(1),
+    N1(2),
+    N2(3),
+    N3(4),
     ;
 
     companion object {

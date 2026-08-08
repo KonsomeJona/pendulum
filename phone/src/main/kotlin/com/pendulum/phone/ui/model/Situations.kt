@@ -4,7 +4,8 @@ import com.pendulum.phone.db.ComparabilityRule
 import com.pendulum.phone.db.ComparableNight
 import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.health.SleepReader
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 
 /**
  * Le cablage des messages d'erreur : deux fonctions pures, un seul gabarit.
@@ -61,10 +62,10 @@ object Situations {
         // reellement quelque chose, et la seule qui se repare en un geste.
         disponibilite == SleepReader.Availability.PERMISSIONS_MISSING -> ErreurPendulum(
             code = "E-HC-02",
-            titre = Textes.Erreurs.HC_02_TITRE,
-            cause = Textes.Erreurs.HC_02_CAUSE,
-            action = Textes.Erreurs.HC_02_ACTION,
-            bouton = Textes.Erreurs.HC_02_BOUTON,
+            titre = texte(R.string.error_hc_02_title),
+            cause = texte(R.string.error_hc_02_cause),
+            action = texte(R.string.error_hc_02_action),
+            bouton = texte(R.string.error_hc_02_button),
             technique = true,
         )
 
@@ -77,20 +78,25 @@ object Situations {
         // masque, et chaque nuit concernee le porte. Ce n'est pas une panne de Pendulum.
         sourcesRecentes == 0 -> ErreurPendulum(
             code = "E-HC-01",
-            titre = Textes.Erreurs.HC_01_TITRE,
-            cause = Textes.Erreurs.HC_01_CAUSE,
-            action = Textes.Erreurs.HC_01_ACTION,
-            bouton = Textes.Erreurs.HC_01_BOUTON,
+            titre = texte(R.string.error_hc_01_title),
+            cause = texte(R.string.error_hc_01_cause),
+            action = texte(R.string.error_hc_01_action),
+            bouton = texte(R.string.error_hc_01_button),
             technique = false,
         )
 
         // Deux sources contradictoires : on ne fusionne jamais, on choisit et on le dit.
+        //
+        // Aucun bouton. Il en portait un — « Change the preferred source » — et le seul endroit ou
+        // la source preferee s'ecrit est l'etape 4 de l'assistant de premier lancement, qui ne se
+        // rouvre pas. Le bouton menait donc aux reglages de Health Connect, ou rien ne change la
+        // preference de Pendulum : il avait l'air de reparer et ne reparait rien. La phrase
+        // d'action dit maintenant ou la source retenue se lit, ce qui est verifiable.
         originesDerniereNuit >= 2 -> ErreurPendulum(
             code = "E-HC-03",
-            titre = Textes.Erreurs.HC_03_TITRE,
-            cause = Textes.Erreurs.HC_03_CAUSE,
-            action = Textes.Erreurs.HC_03_ACTION,
-            bouton = Textes.Erreurs.HC_03_BOUTON,
+            titre = texte(R.string.error_hc_03_title),
+            cause = texte(R.string.error_hc_03_cause),
+            action = texte(R.string.error_hc_03_action),
             technique = false,
         )
 
@@ -129,9 +135,9 @@ object Situations {
         if (n.exclusionReason == ComparabilityRule.TOO_SHORT) {
             return ErreurPendulum(
                 code = "E-NIGHT-02",
-                titre = Textes.Erreurs.NIGHT_02_TITRE,
-                cause = Textes.Erreurs.NIGHT_02_CAUSE,
-                action = Textes.Erreurs.NIGHT_02_ACTION,
+                titre = texte(R.string.error_night_02_title),
+                cause = texte(R.string.error_night_02_cause),
+                action = texte(R.string.error_night_02_action),
                 technique = false,
             )
         }
@@ -142,23 +148,29 @@ object Situations {
         if (batterie != null && batterie < Mapping.SEUIL_BATTERIE_BASSE_PCT) {
             return ErreurPendulum(
                 code = "E-NIGHT-03",
-                titre = Textes.Erreurs.NIGHT_03_TITRE,
-                cause = Textes.Erreurs.NIGHT_03_CAUSE,
-                action = Textes.Erreurs.NIGHT_03_ACTION,
+                titre = texte(R.string.error_night_03_title),
+                cause = texte(R.string.error_night_03_cause),
+                action = texte(R.string.error_night_03_action),
                 technique = false,
             )
         }
 
-        // 3. Trous de signal au-dela du cumul tolerable. Une action existe, et elle a un cout —
-        //    le mode continu vide la batterie plus vite — donc elle est proposee, pas appliquee.
+        // 3. Trous de signal au-dela du cumul tolerable. Ambre, et **sans bouton**.
+        //
+        //    Il en portait un — « Force continuous mode » — et sa phrase d'action renvoyait a
+        //    « Settings › Measurement ». Ce reglage n'existe nulle part : ni preference cote
+        //    telephone, ni commande vers la montre, ni lecture cote montre. Le bouton etait affiche
+        //    par `ErrorCard` au detail de nuit, ou les deux lambdas d'action sont a `{}` — il ne
+        //    faisait donc rien, et la phrase envoyait chercher un ecran introuvable. Ce qui reste
+        //    est ce que la mesure permet de dire : les mouvements tombes dans les trous ne sont pas
+        //    comptes. Le bouton reviendra avec le mode qu'il commande.
         val cumulS = (session?.gapTotalMs ?: 0L) / 1000.0
         if (cumulS > Controles.CUMUL_TROUS_MAX_S) {
             return ErreurPendulum(
                 code = "E-NIGHT-04",
-                titre = Textes.Erreurs.NIGHT_04_TITRE,
-                cause = Textes.Erreurs.NIGHT_04_CAUSE,
-                action = Textes.Erreurs.NIGHT_04_ACTION,
-                bouton = Textes.Erreurs.NIGHT_04_BOUTON,
+                titre = texte(R.string.error_night_04_title),
+                cause = texte(R.string.error_night_04_cause),
+                action = texte(R.string.error_night_04_action),
                 technique = false,
             )
         }
@@ -168,9 +180,9 @@ object Situations {
         if (n.maskSource == Mapping.MASQUE_ACCELERO) {
             return ErreurPendulum(
                 code = "E-NIGHT-01",
-                titre = Textes.Erreurs.NIGHT_01_TITRE,
-                cause = Textes.Erreurs.NIGHT_01_CAUSE,
-                action = Textes.Erreurs.NIGHT_01_ACTION,
+                titre = texte(R.string.error_night_01_title),
+                cause = texte(R.string.error_night_01_cause),
+                action = texte(R.string.error_night_01_action),
                 technique = false,
             )
         }

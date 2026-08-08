@@ -17,8 +17,14 @@ import androidx.room.PrimaryKey
  * (`sleep_window`, `clm_event`, `plm_result`). Tout le derive porte un `paramsHash` et peut etre
  * efface et reconstruit ; rien du recu ne le peut.
  *
- * Consequence directe sur les migrations : voir [Migrations]. `fallbackToDestructiveMigration`
- * est interdit, parce qu'il detruirait justement la moitie qui ne se reconstruit pas.
+ * Consequence directe sur les migrations : voir la KDoc de [PendulumDatabase], qui porte les deux
+ * regles a tenir — une migration ne perd jamais une colonne du brut, et on ne recree une vue que
+ * si on la change. `fallbackToDestructiveMigration` est interdit, parce qu'il detruirait justement
+ * la moitie qui ne se reconstruit pas.
+ *
+ * La base est en **v1** et ne porte aucune migration : les quatre qui existaient ont ete retirees
+ * le 7 aout 2026, l'application n'ayant jamais ete installee nulle part. Le detail de ce qu'elles
+ * faisaient est conserve dans la KDoc de [PendulumDatabase].
  */
 
 /**
@@ -359,7 +365,6 @@ data class PlmResultEntity(
     val rhythmValid: Boolean,
 
     val truncatedSeriesDropped: Int,
-    val respiratoryConfidence: String,
     val independence: String,
     val gate: String,
     val floorMode: String,

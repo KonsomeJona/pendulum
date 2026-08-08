@@ -1,6 +1,7 @@
 package com.pendulum.phone.ui.model
 
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 import com.pendulum.phone.work.FetchSchedule
 
 /**
@@ -175,11 +176,10 @@ object MachineReveil {
         if (faits.integriteRejetee > INTEGRITE_REJETEE_MAX) {
             return ErreurPendulum(
                 code = "E-ANA-01",
-                titre = Textes.Erreurs.ANA_01_TITRE,
-                cause = Textes.Erreurs.ANA_01_CAUSE,
-                action = Textes.Erreurs.ANA_01_ACTION,
-                bouton = Textes.Erreurs.ANA_01_BOUTON,
-                boutonSecondaire = Textes.Reveil.Echec.DETAIL_TECHNIQUE,
+                titre = texte(R.string.error_ana_01_title),
+                cause = texte(R.string.error_ana_01_cause),
+                action = texte(R.string.error_ana_01_action),
+                bouton = texte(R.string.error_ana_01_button),
                 technique = true,
             )
         }
@@ -187,11 +187,10 @@ object MachineReveil {
         if (faits.etatSession == TRONQUEE && total != null && faits.chunksRecus < total) {
             return ErreurPendulum(
                 code = "E-NIGHT-07",
-                titre = Textes.Erreurs.NIGHT_07_TITRE,
-                cause = Textes.Erreurs.NIGHT_07_CAUSE,
-                action = Textes.Erreurs.NIGHT_07_ACTION,
-                bouton = Textes.Erreurs.NIGHT_07_BOUTON,
-                boutonSecondaire = Textes.Reveil.Echec.DETAIL_TECHNIQUE,
+                titre = texte(R.string.error_night_07_title),
+                cause = texte(R.string.error_night_07_cause),
+                action = texte(R.string.error_night_07_action),
+                bouton = texte(R.string.error_night_07_button),
                 technique = true,
             )
         }

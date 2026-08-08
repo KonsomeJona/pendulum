@@ -1,6 +1,7 @@
 package com.pendulum.phone.work
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -45,6 +46,7 @@ object WorkScheduler {
     private const val RESCORE = "pendulum-rescore"
     private const val RESCORE_ALL = "pendulum-rescore-all"
     private const val WATCHDOG = "pendulum-watchdog"
+    private const val PUBLICATION_CONTEXTE = "pendulum-context-publish"
 
     /**
      * Contraintes communes. `setRequiresBatteryNotLow(false)` est explicite : une nuit deja
@@ -173,6 +175,38 @@ object WorkScheduler {
             .build()
         WorkManager.getInstance(context)
             .enqueueUniqueWork(RESCORE_ALL, ExistingWorkPolicy.REPLACE, request)
+    }
+
+    /**
+     * L'outbox du contexte du soir : a n'enfiler que lorsque la pose en ligne a echoue.
+     *
+     * `enqueueUniqueWork` avec la cle de nuit dans le nom, et `KEEP` : une soiree n'a qu'un
+     * contexte, donc qu'un rejeu en vol. `REPLACE` remettrait le repli exponentiel a son premier
+     * palier a chaque nouvelle tentative de scellement — sauf qu'il ne peut pas y en avoir, la
+     * base refusant le doublon. `KEEP` dit la meme chose et ne se trompe pas si cela change.
+     *
+     * Aucune contrainte de reseau, comme partout ailleurs ici : l'application ne declare pas la
+     * permission `INTERNET` et le Data Layer passe par Bluetooth. Une contrainte de reseau
+     * produirait un travail qui n'est jamais eligible, donc un rattrapage qui n'a jamais lieu.
+     *
+     * @param scelleAMs l'instant du scellement, qui est la charge utile de l'item. Le rejeu doit
+     *   reposer **exactement** la meme, faute de quoi le dedoublonnage du Data Layer ne joue plus.
+     */
+    fun enqueuePublicationContexte(context: Context, cleDeNuit: String, scelleAMs: Long) {
+        val request = OneTimeWorkRequestBuilder<PublicationContexteWorker>()
+            .setInputData(workDataOf(KEY_CLE_NUIT to cleDeNuit, KEY_SCELLE_A to scelleAMs))
+            .setConstraints(constraints)
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                Durees.ACTIVES.delaiRepublicationContexteMs,
+                TimeUnit.MILLISECONDS,
+            )
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "$PUBLICATION_CONTEXTE-$cleDeNuit",
+            ExistingWorkPolicy.KEEP,
+            request,
+        )
     }
 
     /**

@@ -7,10 +7,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
-import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
@@ -35,11 +36,11 @@ import com.pendulum.phone.ui.theme.Spacing
 fun AvertissementScreen(modifier: Modifier = Modifier) {
     val c = LocalPendulumColors.current
     PendulumScreen(modifier) {
-        Text(Textes.Avertissement.TITRE, style = PendulumType.titleL, color = c.textPrimary)
+        Text(stringResource(R.string.notice_title), style = PendulumType.titleL, color = c.textPrimary)
         PendulumCard {
-            Paragraphe(Textes.Avertissement.CORPS, couleur = c.textPrimary)
+            Paragraphe(stringResource(R.string.notice_body), couleur = c.textPrimary)
         }
-        Text(Textes.Avertissement.RAPPEL, style = PendulumType.caption, color = c.textTertiary)
+        Text(stringResource(R.string.notice_reminder), style = PendulumType.caption, color = c.textTertiary)
         Spacer(Modifier.height(Spacing.l.dp))
     }
 }

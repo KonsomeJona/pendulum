@@ -26,6 +26,7 @@ import com.pendulum.phone.ui.chart.TendanceChartSpec
 import com.pendulum.phone.ui.home.AccueilUi
 import com.pendulum.phone.ui.home.MachineAccueil
 import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.CompteRendu
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.MachineReveil
 import com.pendulum.phone.ui.model.Mapping
@@ -40,7 +41,10 @@ import com.pendulum.phone.ui.export.ExportUi
 import com.pendulum.phone.ui.quiz.IssueQuestionnaire
 import com.pendulum.phone.ui.settings.RapportP1Ui
 import com.pendulum.phone.ui.settings.ReglagesUi
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.NomsDeFichier
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 import com.pendulum.phone.work.WorkScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -162,14 +166,14 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             nuitsEnregistrees = nuitsEnregistrees,
             nuitsEligibles = nuitsEligibles,
             nuitsEcartees = nuitsEcartees,
-            regle = Textes.Reglages.REGLE_AASM,
-            masque = Textes.Reglages.HEALTH_CONNECT,
+            regle = texte(R.string.settings_rule_aasm),
+            masque = texte(R.string.settings_health_connect),
             plmw = nuitsAgregeables.map { it.plmiSpt }.average().takeIf { !it.isNaN() } ?: 0.0,
             reveil = reveil,
             sessionReveil = faitsReveil?.sessionHex,
             profilPersonnalise = profilPersonnalise,
             hashsMelanges = hashsMelanges,
-            questionnaireEtat = Textes.Questionnaire.NON_REMPLI,
+            questionnaireEtat = texte(R.string.quiz_not_filled),
             exportPossible = nuitsEligibles >= Aggregat.MIN_NUITS_AGREGAT,
             situationSommeil = situation,
         )
@@ -266,19 +270,20 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
         points: List<PointNuit>,
         r: Aggregat.Resultat,
     ): String {
-        if (points.isEmpty()) return Textes.Graphes.DESCRIPTION_TENDANCE_VIDE
+        val res = getApplication<Application>().resources
+        if (points.isEmpty()) return res.getString(R.string.chart_trend_description_empty)
         val parHex = nuits.associateBy { it.sessionHex }
-        val unite = Aggregat.Grandeur.RYTHME_SECONDES.unite
         fun date(p: PointNuit) = parHex[p.sessionHex]?.dateLisible.orEmpty()
         fun valeur(v: Float) = Math.round(v).toString()
-        return Textes.Graphes.descriptionTendance(
-            points = points.size,
-            debut = date(points.first()),
-            fin = date(points.last()),
-            mediane = Math.round(r.mediane).toString(),
-            minimum = valeur(points.minOf { it.valeur }),
-            maximum = valeur(points.maxOf { it.valeur }),
-            unite = unite,
+        return res.getString(
+            R.string.chart_trend_description,
+            points.size,
+            date(points.first()),
+            date(points.last()),
+            Math.round(r.mediane).toString(),
+            valeur(points.minOf { it.valeur }),
+            valeur(points.maxOf { it.valeur }),
+            res.getString(Aggregat.Grandeur.RYTHME_SECONDES.unite),
         )
     }
 }
@@ -340,17 +345,27 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     fun demarrerSurLaMontre() {
         viewModelScope.launch {
             _demarrage.value = if (WatchCommands.demanderLeDemarrage(getApplication())) {
-                Textes.CeSoir.DEMARRAGE_DEMANDE
+                CompteRendu(texte(R.string.tonight_start_requested), echec = false)
             } else {
-                Textes.CeSoir.DEMARRAGE_INJOIGNABLE
+                CompteRendu(texte(R.string.tonight_start_unreachable), echec = true)
             }
         }
     }
 
-    private val _demarrage = MutableStateFlow<String?>(null)
+    private val _demarrage = MutableStateFlow<CompteRendu?>(null)
 
-    /** Message a afficher une fois, puis consomme. `null` quand il n'y a rien a dire. */
-    val demarrage: StateFlow<String?> = _demarrage
+    /**
+     * Le compte rendu de la derniere demande de demarrage, ou `null` quand il n'y a rien a dire.
+     *
+     * Il etait publie et **aucun composable ne le collectait** : les deux issues de la commande
+     * produisaient donc exactement le meme ecran. C'est le seul geste de l'application dont
+     * l'echec ne se constate qu'au matin, quand il n'y a plus rien a rattraper.
+     *
+     * L'ecran le consomme — voir [demarrageConsomme] — parce que c'est le resultat d'un geste et
+     * non un etat : une phrase qui resterait sous le bouton jusqu'au lendemain finirait par
+     * decrire une demande qui n'a plus rien a voir avec la nuit en cours.
+     */
+    val demarrage: StateFlow<CompteRendu?> = _demarrage
 
     fun demarrageConsomme() {
         _demarrage.value = null
@@ -398,9 +413,11 @@ class EveningViewModel(app: Application) : AndroidViewModel(app) {
      * Resultat du scellement, consomme une fois par l'ecran puis remis a `null`.
      *
      * [ResultatScellement.PublicationEchouee] n'est pas une erreur au sens habituel : le contexte
-     * **est** scelle, ce qui est l'essentiel et ce qui est irreversible. Seule la montre ne le
-     * sait pas encore, et le Data Layer la rattrapera a la reconnexion. L'ecran doit le dire —
-     * annoncer un succes complet ferait chercher pendant dix minutes pourquoi START reste bloque.
+     * **est** scelle, ce qui est l'essentiel et ce qui est irreversible. Seule la montre ne le sait
+     * pas encore, et c'est `PublicationContexteWorker` qui la rattrapera — pas le Data Layer. Ce
+     * dernier ne rattrape que ce qui est **entre dans le magasin** ; un put qui a echoue n'y est
+     * jamais entre. L'ecran doit le dire quand meme — annoncer un succes complet ferait chercher
+     * pendant dix minutes pourquoi START reste bloque, alors que le rejeu n'est pas instantane.
      */
     private val _resultat = MutableStateFlow<ResultatScellement?>(null)
     val resultat: StateFlow<ResultatScellement?> = _resultat
@@ -494,24 +511,52 @@ class NightDetailViewModel(app: Application) : AndroidViewModel(app) {
      * repertoire partage de sa propre initiative, et ne declare pas `INTERNET`. Voir la KDoc de
      * [com.pendulum.phone.export.NightExporter].
      */
-    fun exporterRapport(sessionHex: String, uri: android.net.Uri) {
+    fun exporterRapport(sessionHex: String, uri: android.net.Uri, nom: String) {
         viewModelScope.launch {
-            ecrire(uri) { ReportExporter.exportNight(getApplication(), sessionHex, it) }
+            ecrire(uri, nom) { ReportExporter.exportNight(getApplication(), sessionHex, it) }
         }
     }
 
     /** Le paquet brut d'une nuit, meme chemin SAF. Voir [exporterRapport]. */
-    fun exporterPaquet(sessionHex: String, uri: android.net.Uri) {
+    fun exporterPaquet(sessionHex: String, uri: android.net.Uri, nom: String) {
         viewModelScope.launch {
-            ecrire(uri) { NightExporter.exportBundle(getApplication(), sessionHex, it) }
+            ecrire(uri, nom) { NightExporter.exportBundle(getApplication(), sessionHex, it) }
         }
     }
 
-    private suspend fun ecrire(uri: android.net.Uri, bloc: suspend (java.io.OutputStream) -> Unit) {
-        withContext(Dispatchers.IO) {
+    /**
+     * Ce que la derniere des deux sorties a donne. Consomme par l'ecran, pas efface.
+     *
+     * Les deux exports etaient parfaitement muets : ni succes, ni echec, ni trace. Le paquet brut
+     * est particulierement mal place pour l'etre — c'est la seule copie transportable d'une nuit,
+     * et un utilisateur qui croit l'avoir sortie avant d'effacer ses donnees perd le brut.
+     */
+    private val _ecriture = MutableStateFlow<CompteRendu?>(null)
+    val ecriture: StateFlow<CompteRendu?> = _ecriture
+
+    /**
+     * L'ecriture, et les deux facons dont elle echouait en silence.
+     *
+     * Le `runCatching` **jetait** son exception, et le `?.` avalait un flux nul : un `Uri` que le
+     * fournisseur refuse d'ouvrir rendait exactement le meme resultat qu'une ecriture reussie,
+     * c'est-a-dire rien. Le flux nul est donc converti en exception, et le `isSuccess` decide.
+     */
+    private suspend fun ecrire(
+        uri: android.net.Uri,
+        nom: String,
+        bloc: suspend (java.io.OutputStream) -> Unit,
+    ) {
+        val ecrit = withContext(Dispatchers.IO) {
             runCatching {
-                getApplication<Application>().contentResolver.openOutputStream(uri)?.use { bloc(it) }
-            }
+                val flux = getApplication<Application>().contentResolver.openOutputStream(uri)
+                    ?: error("le fournisseur n'a pas ouvert de flux pour $uri")
+                flux.use { bloc(it) }
+            }.isSuccess
+        }
+        _ecriture.value = if (ecrit) {
+            CompteRendu(texte(R.string.export_written, nom), echec = false)
+        } else {
+            CompteRendu(texte(R.string.export_failed), echec = true)
         }
     }
 }
@@ -690,7 +735,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val _espace = MutableStateFlow(NON_RENSEIGNE)
 
     /** Compte rendu du dernier reimport de paquet. Nul tant qu'il n'y en a pas eu. */
-    private val _import = MutableStateFlow<String?>(null)
+    private val _import = MutableStateFlow<UiText?>(null)
 
     init {
         relireLEspace()
@@ -711,16 +756,20 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         _import,
     ) { source, repere, theme, espace, importe ->
         ReglagesUi(
-            regle = Textes.Reglages.REGLE_AASM,
-            sourcePreferee = source ?: Textes.Reglages.SOURCE_INCONNUE,
-            profil = PROFIL_DEFAUT,
-            repereDePort = repere.ifBlank { NON_RENSEIGNE },
-            arretAutomatique = Textes.Reglages.ARRET_AUTO,
-            montre = NON_RENSEIGNE,
-            healthConnect = NON_RENSEIGNE,
-            espaceOccupe = espace,
-            versionApp = com.pendulum.phone.BuildConfig.VERSION_NAME,
-            versionAlgo = NON_RENSEIGNE,
+            regle = texte(R.string.settings_rule_aasm),
+            sourcePreferee = source?.let { texte(Mapping.nomDApplication(it)) }
+                ?: texte(R.string.settings_source_unknown),
+            profil = texte(PROFIL_DEFAUT),
+            repereDePort = texte(repere.ifBlank { NON_RENSEIGNE }),
+            // La valeur disait le mot de l'intitule — « Automatic stop : Automatic stop ».
+            // Elle dit maintenant **quand** la montre s'arrete, ce que `StopConditions`
+            // decide : charge, reveil, ou duree maximale.
+            arretAutomatique = texte(R.string.settings_auto_stop_value),
+            montre = texte(NON_RENSEIGNE),
+            healthConnect = texte(NON_RENSEIGNE),
+            espaceOccupe = texte(espace),
+            versionApp = texte(com.pendulum.phone.BuildConfig.VERSION_NAME),
+            versionAlgo = texte(NON_RENSEIGNE),
             theme = libelleTheme(theme),
             dernierImport = importe,
         )
@@ -749,7 +798,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 }.getOrNull()
             }
             _import.value = if (resultat == null) {
-                Textes.Reglages.IMPORT_REFUSE
+                texte(R.string.settings_import_refused)
             } else {
                 // La nuit importee est nommee par sa date : « import reussi » ne permet pas de
                 // verifier qu'on a repris le bon fichier. La date vient de la session ecrite par
@@ -763,8 +812,9 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 // recalcule par une version ulterieure. Une nuit importee doit donc etre
                 // **analysee**, sans quoi elle entre en base et n'apparait nulle part.
                 WorkScheduler.enqueueNightChain(getApplication(), resultat)
-                Textes.Reglages.importee(
-                    session?.let { Mapping.dateLisible(it.startWallMs, it.zoneId) } ?: resultat
+                texte(
+                    R.string.settings_imported,
+                    session?.let { Mapping.dateLisible(it.startWallMs, it.zoneId) } ?: resultat,
                 )
             }
             relireLEspace()
@@ -780,17 +830,17 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         const val NON_RENSEIGNE = "—"
 
         val REGLAGES_VIDES = ReglagesUi(
-            regle = Textes.Reglages.REGLE_AASM,
-            sourcePreferee = NON_RENSEIGNE,
-            profil = PROFIL_DEFAUT,
-            repereDePort = NON_RENSEIGNE,
-            arretAutomatique = NON_RENSEIGNE,
-            montre = NON_RENSEIGNE,
-            healthConnect = NON_RENSEIGNE,
-            espaceOccupe = NON_RENSEIGNE,
-            versionApp = NON_RENSEIGNE,
-            versionAlgo = NON_RENSEIGNE,
-            theme = Textes.Reglages.THEME_SOMBRE,
+            regle = texte(R.string.settings_rule_aasm),
+            sourcePreferee = texte(NON_RENSEIGNE),
+            profil = texte(PROFIL_DEFAUT),
+            repereDePort = texte(NON_RENSEIGNE),
+            arretAutomatique = texte(NON_RENSEIGNE),
+            montre = texte(NON_RENSEIGNE),
+            healthConnect = texte(NON_RENSEIGNE),
+            espaceOccupe = texte(NON_RENSEIGNE),
+            versionApp = texte(NON_RENSEIGNE),
+            versionAlgo = texte(NON_RENSEIGNE),
+            theme = texte(R.string.settings_theme_dark),
         )
 
         /**
@@ -799,14 +849,14 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
          * `PendulumPreferences` ecrit `SOMBRE`, `CLAIR`, `SYSTEME` — des jetons de stockage, en
          * francais parce que la langue de travail du projet l'est. L'ecran affichait ce jeton tel
          * quel : « Theme  SOMBRE » au milieu d'une interface anglaise, alors que les trois
-         * libelles anglais existaient dans `Textes.Reglages` et n'avaient aucun appelant. Un
+         * libelles anglais existaient dans le fichier de textes et n'avaient aucun appelant. Un
          * jeton de stockage n'est pas un texte d'interface, et il ne le devient pas parce qu'il
          * se lit.
          */
-        fun libelleTheme(jeton: String): String = when (jeton) {
-            PendulumPreferences.THEME_SYSTEME -> Textes.Reglages.THEME_SYSTEME
-            PendulumPreferences.THEME_CLAIR -> Textes.Reglages.THEME_CLAIR
-            else -> Textes.Reglages.THEME_SOMBRE
+        fun libelleTheme(jeton: String): UiText = when (jeton) {
+            PendulumPreferences.THEME_SYSTEME -> texte(R.string.settings_theme_system)
+            PendulumPreferences.THEME_CLAIR -> texte(R.string.settings_theme_light)
+            else -> texte(R.string.settings_theme_dark)
         }
     }
 }
@@ -836,15 +886,22 @@ class ExportViewModel(app: Application) : AndroidViewModel(app) {
     /** Par defaut **oui** : masquer les nuits ratees a un medecin est trompeur. */
     private val _ecartees = MutableStateFlow(true)
 
-    /** Le nom du fichier ecrit, une fois l'ecriture faite. Consomme par l'ecran, pas efface. */
-    private val _ecrit = MutableStateFlow<String?>(null)
+    /**
+     * Ce que la derniere ecriture a donne. Affiche par l'ecran, pas efface.
+     *
+     * Il portait le seul nom du fichier, et il etait pose **apres** un `runCatching` dont
+     * l'exception etait jetee : « Written: pendulum-report-2026-03-15.md » pouvait donc s'ecrire
+     * alors que rien n'avait ete ecrit. Sur le document destine au medecin, c'est le mensonge le
+     * plus cher du produit — on l'emporte en consultation sans le rouvrir.
+     */
+    private val _ecriture = MutableStateFlow<CompteRendu?>(null)
 
     val etat: StateFlow<ExportUi?> = combine(
         repo.observerTendance(),
         _questionnaire,
         _ecartees,
-        _ecrit,
-    ) { tendance, questionnaire, ecartees, ecrit ->
+        _ecriture,
+    ) { tendance, questionnaire, ecartees, ecriture ->
         val nuits = tendance.nuits.sortedBy { it.startWallMs }
         ExportUi(
             inclureQuestionnaire = questionnaire,
@@ -856,7 +913,7 @@ class ExportViewModel(app: Application) : AndroidViewModel(app) {
                 else -> "${nuits.first().dateLisible} – ${nuits.last().dateLisible}"
             },
             profilPersonnalise = tendance.profilPersonnalise,
-            ecrit = ecrit,
+            ecriture = ecriture,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -870,7 +927,9 @@ class ExportViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Le nom propose dans le selecteur SAF. Le jour de la generation, pas celui d'une nuit. */
     fun nomFichier(): String =
-        Textes.Export.nomFichier(Mapping.jourIso(System.currentTimeMillis(), java.time.ZoneId.systemDefault().id))
+        NomsDeFichier.rapportDeCampagne(
+            Mapping.jourIso(System.currentTimeMillis(), java.time.ZoneId.systemDefault().id),
+        )
 
     /**
      * L'ecriture, dans l'`Uri` que l'utilisateur vient de designer, et nulle part ailleurs.
@@ -878,13 +937,25 @@ class ExportViewModel(app: Application) : AndroidViewModel(app) {
      * L'etat de la tendance est relu au moment de l'ecriture plutot que capture a l'affichage :
      * entre l'ouverture de l'ecran et le choix de l'emplacement, un rescore a pu se terminer, et
      * un document qui porterait les chiffres d'avant sans le dire serait un document faux.
+     *
+     * ### Les deux facons d'echouer en silence, et ce qui les remplace
+     *
+     * Le `runCatching` **jetait** son exception, et le `?.` avalait un flux nul — un fournisseur
+     * SAF qui refuse d'ouvrir l'`Uri` rendait donc exactement le meme resultat qu'une ecriture
+     * reussie. Le nom du fichier etait pose ensuite, inconditionnellement. Un rapport destine a un
+     * medecin pouvait ainsi ne pas etre ecrit sans que rien ne le dise.
+     *
+     * Les deux cas sont desormais un echec : le flux nul est converti en exception, et le
+     * `isSuccess` du `runCatching` decide de ce que l'ecran affiche.
      */
     fun enregistrer(uri: android.net.Uri, nom: String) {
         viewModelScope.launch {
             val tendance = repo.observerTendance().first()
-            withContext(Dispatchers.IO) {
+            val ecrit = withContext(Dispatchers.IO) {
                 runCatching {
-                    getApplication<Application>().contentResolver.openOutputStream(uri)?.use {
+                    val flux = getApplication<Application>().contentResolver.openOutputStream(uri)
+                        ?: error("le fournisseur n'a pas ouvert de flux pour $uri")
+                    flux.use {
                         RapportExporteur.exportCampagne(
                             context = getApplication(),
                             etat = tendance,
@@ -893,9 +964,13 @@ class ExportViewModel(app: Application) : AndroidViewModel(app) {
                             out = it,
                         )
                     }
-                }
+                }.isSuccess
             }
-            _ecrit.value = nom
+            _ecriture.value = if (ecrit) {
+                CompteRendu(texte(R.string.export_written, nom), echec = false)
+            } else {
+                CompteRendu(texte(R.string.export_failed), echec = true)
+            }
         }
     }
 }

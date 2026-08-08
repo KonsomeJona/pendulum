@@ -11,12 +11,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.text.UiText
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
@@ -24,23 +27,23 @@ import com.pendulum.phone.ui.theme.Spacing
 
 /** Ce que l'ecran de reglages affiche. Tout est deja resolu par le ViewModel. */
 data class ReglagesUi(
-    val regle: String,
-    val sourcePreferee: String,
-    val profil: String,
-    val repereDePort: String,
-    val arretAutomatique: String,
-    val montre: String,
-    val healthConnect: String,
-    val espaceOccupe: String,
-    val versionApp: String,
-    val versionAlgo: String,
-    val theme: String,
+    val regle: UiText,
+    val sourcePreferee: UiText,
+    val profil: UiText,
+    val repereDePort: UiText,
+    val arretAutomatique: UiText,
+    val montre: UiText,
+    val healthConnect: UiText,
+    val espaceOccupe: UiText,
+    val versionApp: UiText,
+    val versionAlgo: UiText,
+    val theme: UiText,
     /**
      * Le compte rendu du dernier reimport de paquet, ou `null` quand il n'y en a pas eu dans
      * cette session. Il est ici et pas dans une bulle : un import qui a echoue doit rester lisible
      * apres coup, et un import reussi doit dire quelle nuit est entree.
      */
-    val dernierImport: String? = null,
+    val dernierImport: UiText? = null,
 )
 
 /**
@@ -68,26 +71,26 @@ fun SettingsScreen(
     val c = LocalPendulumColors.current
     PendulumScreen(modifier) {
         PendulumCard {
-            SectionHeader(Textes.Reglages.MESURE)
-            InlineValue(Textes.Tendance.REGLE_COMPTAGE, etat.regle)
-            InlineValue(Textes.Reglages.SOURCE_PREFEREE, etat.sourcePreferee)
-            InlineValue(Textes.Reglages.PROFIL_PARAMS, etat.profil)
-            InlineValue(Textes.Reglages.REPERE_PORT, etat.repereDePort)
-            InlineValue(Textes.Reglages.ARRET_AUTO, etat.arretAutomatique)
+            SectionHeader(stringResource(R.string.settings_measurement))
+            InlineValue(stringResource(R.string.trend_counting_rule), etat.regle.resoudre())
+            InlineValue(stringResource(R.string.settings_preferred_source), etat.sourcePreferee.resoudre())
+            InlineValue(stringResource(R.string.settings_param_profile), etat.profil.resoudre())
+            InlineValue(stringResource(R.string.settings_wearing_reference), etat.repereDePort.resoudre())
+            InlineValue(stringResource(R.string.settings_auto_stop), etat.arretAutomatique.resoudre())
             // Le rapport P1 est ici et pas dans « A propos » : il porte sur ce que le capteur a
             // reellement delivre, ce qui est le sujet de cette carte. C'est aussi le seul ecran
             // de l'application qui parle du materiel plutot que du dormeur.
-            Ligne(Textes.P1.TITRE, Textes.P1.SOUS_TITRE, onRapportP1)
+            Ligne(stringResource(R.string.p1_title), stringResource(R.string.p1_subtitle), onRapportP1)
             Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(Textes.Reglages.MASQUE_ACCELERO_INTERDIT)
+            Paragraphe(stringResource(R.string.settings_accel_mask_forbidden))
             Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(Textes.Tendance.SNACKBAR_REGLES)
+            Paragraphe(stringResource(R.string.trend_rules_snackbar))
         }
 
         PendulumCard {
-            SectionHeader(Textes.Reglages.APPAREILS)
-            InlineValue(Textes.Reglages.MONTRE, etat.montre)
-            InlineValue(Textes.Reglages.HEALTH_CONNECT, etat.healthConnect)
+            SectionHeader(stringResource(R.string.settings_devices))
+            InlineValue(stringResource(R.string.settings_watch), etat.montre.resoudre())
+            InlineValue(stringResource(R.string.settings_health_connect), etat.healthConnect.resoudre())
         }
 
         // Trois lignes ont disparu de cette carte et de la suivante, et c'est deliberement une
@@ -99,30 +102,34 @@ fun SettingsScreen(
         // annonce une purge automatique que rien n'execute est une affirmation fausse sur le
         // traitement de donnees de sante. Elles reviendront avec leur implementation.
         PendulumCard {
-            SectionHeader(Textes.Reglages.DONNEES)
-            InlineValue(Textes.Reglages.ESPACE_OCCUPE, etat.espaceOccupe)
-            Ligne(Textes.Reglages.IMPORTER, Textes.Reglages.IMPORTER_NOTE, onImporterNuit)
-            Ligne(Textes.Reglages.EFFACER, Textes.Reglages.EFFACER_CONFIRMATION, onEffacer)
+            SectionHeader(stringResource(R.string.settings_data))
+            InlineValue(stringResource(R.string.settings_space_used), etat.espaceOccupe.resoudre())
+            Ligne(stringResource(R.string.settings_import), stringResource(R.string.settings_import_note), onImporterNuit)
+            Ligne(
+                stringResource(R.string.settings_erase),
+                stringResource(R.string.settings_erase_confirmation),
+                onEffacer,
+            )
             etat.dernierImport?.let {
                 Spacer(Modifier.height(Spacing.xs.dp))
-                Text(it, style = PendulumType.caption, color = c.textSecondary)
+                Text(it.resoudre(), style = PendulumType.caption, color = c.textSecondary)
             }
         }
 
         PendulumCard {
-            SectionHeader(Textes.Reglages.APPARENCE)
+            SectionHeader(stringResource(R.string.settings_appearance))
             // Sombre par defaut, et force au premier lancement : consultation nocturne et
             // matinale, souvent dans le noir.
-            InlineValue(Textes.Reglages.THEME, etat.theme)
+            InlineValue(stringResource(R.string.settings_theme), etat.theme.resoudre())
         }
 
         PendulumCard {
-            SectionHeader(Textes.Reglages.A_PROPOS)
-            InlineValue(Textes.Reglages.VERSION_APP, etat.versionApp)
-            InlineValue(Textes.Reglages.VERSION_ALGO, etat.versionAlgo)
-            Ligne(Textes.Reglages.RELIRE_AVERTISSEMENT, null, onRelireAvertissement)
+            SectionHeader(stringResource(R.string.settings_about))
+            InlineValue(stringResource(R.string.settings_app_version), etat.versionApp.resoudre())
+            InlineValue(stringResource(R.string.settings_algo_version), etat.versionAlgo.resoudre())
+            Ligne(stringResource(R.string.settings_read_notice_again), null, onRelireAvertissement)
             Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(Textes.Avertissement.BANDEAU_EXPORT, couleur = c.textSecondary)
+            Paragraphe(stringResource(R.string.notice_export_banner), couleur = c.textSecondary)
         }
 
         Spacer(Modifier.height(Spacing.l.dp))

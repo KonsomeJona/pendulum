@@ -38,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.data.EtatAppairage
 import com.pendulum.phone.data.EtatMontre
 import com.pendulum.phone.health.SleepReader
@@ -48,7 +50,6 @@ import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.Progression
 import com.pendulum.phone.ui.common.SectionHeader
-import com.pendulum.phone.ui.text.Textes
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumType
@@ -92,7 +93,7 @@ data class AssistantActions(
 )
 
 /**
- * Le premier lancement : cinq etapes, non sautables, **dans un pager non swipable**.
+ * Le premier lancement : six etapes, non sautables, **dans un pager non swipable**.
  *
  * La progression se fait par bouton uniquement. Ce n'est pas une contrainte gratuite : un pager
  * swipable se survole d'un geste, et l'ecran qu'on survolerait en premier est precisement
@@ -145,7 +146,7 @@ fun OnboardingPager(
     Column(modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Progression((etat.currentPage + 1) / RepriseAssistant.PAGES.toFloat())
         Text(
-            Textes.Accueil.ETAPE.format(etat.currentPage + 1),
+            stringResource(R.string.onboarding_step, etat.currentPage + 1),
             style = PendulumType.label,
             color = c.textTertiary,
             modifier = Modifier.padding(horizontal = Spacing.screen.dp, vertical = Spacing.s.dp),
@@ -166,24 +167,25 @@ fun OnboardingPager(
                     onInstaller = actions.onInstallerSurLaMontre,
                     onContinuer = ::suivant,
                 )
-                3 -> SleepSourcePage(
+                3 -> WearingPage(
+                    repere = repere,
+                    onRepere = { repere = it },
+                    onContinuer = {
+                        // Le repere est persiste **a la sortie de cette etape** et non a la fin de
+                        // l'assistant : il est saisi ici, et quelqu'un qui abandonne aux
+                        // notifications garderait sinon un champ vide alors qu'il l'a rempli.
+                        actions.onRepere(repere)
+                        suivant()
+                    },
+                )
+                4 -> SleepSourcePage(
                     sante = sante,
                     sourcePreferee = sourcePreferee,
                     onRelire = actions.onRelireLaSante,
                     onChoisirSource = actions.onChoisirSource,
                     onContinuer = ::suivant,
                 )
-                else -> NotificationsPage(
-                    repere = repere,
-                    onRepere = { repere = it },
-                    onTerminer = {
-                        // Le repere est persiste **avant** de fermer l'assistant. Il etait saisi
-                        // et jete : le champ existait, son texte remontait a un appelant qui
-                        // n'existait pas, et le formulaire du soir repartait vide chaque nuit.
-                        actions.onRepere(repere)
-                        suivant()
-                    },
-                )
+                else -> NotificationsPage(onTerminer = ::suivant)
             }
         }
     }
@@ -225,10 +227,10 @@ fun DisclaimerPage(onContinuer: () -> Unit) {
     }
 
     val confirmations = listOf(
-        Textes.Avertissement.Confirmations.DIAGNOSTIC,
-        Textes.Avertissement.Confirmations.RESPIRATION,
-        Textes.Avertissement.Confirmations.UNE_JAMBE,
-        Textes.Avertissement.Confirmations.ACTIGRAPHIE,
+        stringResource(R.string.notice_confirm_diagnosis),
+        stringResource(R.string.notice_confirm_breathing),
+        stringResource(R.string.notice_confirm_one_leg),
+        stringResource(R.string.notice_confirm_actigraphy),
     )
     // `rememberSaveable` : une rotation d'ecran ne doit pas effacer quatre acquittements, sans
     // quoi le garde-fou devient une punition.
@@ -236,13 +238,13 @@ fun DisclaimerPage(onContinuer: () -> Unit) {
     val toutesCochees = cochees.value.size == confirmations.size
 
     Column(Modifier.fillMaxSize().padding(Spacing.screen.dp)) {
-        Text(Textes.Avertissement.TITRE, style = PendulumType.titleL, color = c.textPrimary)
+        Text(stringResource(R.string.notice_title), style = PendulumType.titleL, color = c.textPrimary)
         Spacer(Modifier.height(Spacing.sm.dp))
         Column(Modifier.weight(1f).verticalScroll(scroll)) {
-            Paragraphe(Textes.Avertissement.CORPS, couleur = c.textPrimary)
+            Paragraphe(stringResource(R.string.notice_body), couleur = c.textPrimary)
             Spacer(Modifier.height(Spacing.l.dp))
             PendulumCard {
-                SectionHeader(Textes.Avertissement.Confirmations.TITRE)
+                SectionHeader(stringResource(R.string.notice_confirm_title))
                 confirmations.forEachIndexed { i, phrase ->
                     Row(
                         Modifier.fillMaxWidth().padding(vertical = Spacing.xs.dp),
@@ -265,7 +267,8 @@ fun DisclaimerPage(onContinuer: () -> Unit) {
                     }
                 }
                 Text(
-                    Textes.Avertissement.Confirmations.compte(
+                    stringResource(
+                        R.string.notice_confirm_count,
                         cochees.value.size,
                         confirmations.size,
                     ),
@@ -282,16 +285,16 @@ fun DisclaimerPage(onContinuer: () -> Unit) {
         // lit pas cette phrase conclut au bug, ce que la KDoc ci-dessus donne precisement comme
         // motif de l'ecrire. Le composant existait, avec les bonnes teintes (4,93:1).
         BoutonMotive(
-            libelle = Textes.Avertissement.BOUTON,
+            libelle = stringResource(R.string.notice_button),
             motifIndisponible = when {
-                !lu -> Textes.Avertissement.BOUTON_BLOQUE
-                !toutesCochees -> Textes.Avertissement.BOUTON_A_CONFIRMER
+                !lu -> stringResource(R.string.notice_button_scroll_first)
+                !toutesCochees -> stringResource(R.string.notice_button_confirm_first)
                 else -> null
             },
             onClick = onContinuer,
         )
         Spacer(Modifier.height(Spacing.s.dp))
-        Text(Textes.Avertissement.RAPPEL, style = PendulumType.caption, color = c.textTertiary)
+        Text(stringResource(R.string.notice_reminder), style = PendulumType.caption, color = c.textTertiary)
     }
 }
 
@@ -302,12 +305,12 @@ fun RequirementsPage(onContinuer: () -> Unit) {
         Modifier.fillMaxSize().padding(Spacing.screen.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
     ) {
-        Text(Textes.Accueil.Besoins.TITRE, style = PendulumType.titleL, color = c.textPrimary)
-        Exigence(Textes.Accueil.Besoins.MONTRE_TITRE, Textes.Accueil.Besoins.MONTRE_CORPS)
-        Exigence(Textes.Accueil.Besoins.SOMMEIL_TITRE, Textes.Accueil.Besoins.SOMMEIL_CORPS)
-        Exigence(Textes.Accueil.Besoins.NUITS_TITRE, Textes.Accueil.Besoins.NUITS_CORPS)
+        Text(stringResource(R.string.onboarding_needs_title), style = PendulumType.titleL, color = c.textPrimary)
+        Exigence(stringResource(R.string.onboarding_needs_watch_title), stringResource(R.string.onboarding_needs_watch_body))
+        Exigence(stringResource(R.string.onboarding_needs_sleep_title), stringResource(R.string.onboarding_needs_sleep_body))
+        Exigence(stringResource(R.string.onboarding_needs_nights_title), stringResource(R.string.onboarding_needs_nights_body))
         Button(onClick = onContinuer, shape = PendulumShapes.button, modifier = Modifier.fillMaxWidth()) {
-            Text(Textes.Accueil.Besoins.BOUTON)
+            Text(stringResource(R.string.onboarding_needs_button))
         }
     }
 }
@@ -360,22 +363,22 @@ fun PairingPage(
         Modifier.fillMaxSize().padding(Spacing.screen.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
     ) {
-        Text(Textes.Accueil.Appairage.TITRE, style = PendulumType.titleL, color = c.textPrimary)
+        Text(stringResource(R.string.onboarding_pairing_title), style = PendulumType.titleL, color = c.textPrimary)
 
         when (montre.etat) {
             EtatAppairage.AUCUNE_MONTRE -> {
                 PendulumCard {
                     Text(
-                        Textes.Accueil.Appairage.AUCUNE_MONTRE_TITRE,
+                        stringResource(R.string.onboarding_pairing_no_watch_title),
                         style = PendulumType.titleM,
                         color = c.textPrimary,
                     )
                     Spacer(Modifier.height(Spacing.s.dp))
-                    Paragraphe(Textes.Accueil.Appairage.AUCUNE_MONTRE_CORPS)
+                    Paragraphe(stringResource(R.string.onboarding_pairing_no_watch_body))
                     if (compagnonIntrouvable) {
                         Spacer(Modifier.height(Spacing.s.dp))
                         Paragraphe(
-                            Textes.Accueil.Appairage.COMPAGNON_INTROUVABLE,
+                            stringResource(R.string.onboarding_pairing_companion_not_found),
                             couleur = c.attention,
                         )
                     }
@@ -384,13 +387,13 @@ fun PairingPage(
                     onClick = { compagnonIntrouvable = !onOuvrirCompagnon() },
                     shape = PendulumShapes.button,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(Textes.Accueil.Appairage.OUVRIR_COMPAGNON) }
+                ) { Text(stringResource(R.string.onboarding_pairing_open_companion)) }
             }
 
             EtatAppairage.APP_ABSENTE_OU_HORS_PORTEE -> {
                 PendulumCard {
                     Text(
-                        Textes.Accueil.Appairage.APP_ABSENTE_TITRE,
+                        stringResource(R.string.onboarding_pairing_app_missing_title),
                         style = PendulumType.titleM,
                         color = c.textPrimary,
                     )
@@ -398,12 +401,12 @@ fun PairingPage(
                         Text(it, style = PendulumType.bodyNum, color = c.textSecondary)
                     }
                     Spacer(Modifier.height(Spacing.s.dp))
-                    Paragraphe(Textes.Accueil.Appairage.APP_ABSENTE_CORPS)
+                    Paragraphe(stringResource(R.string.onboarding_pairing_app_missing_body))
                     installation?.let {
                         Spacer(Modifier.height(Spacing.s.dp))
                         Paragraphe(
-                            if (it) Textes.Accueil.Appairage.INSTALLATION_OUVERTE
-                            else Textes.Accueil.Appairage.INSTALLATION_ECHOUEE,
+                            if (it) stringResource(R.string.onboarding_pairing_install_opened)
+                            else stringResource(R.string.onboarding_pairing_install_failed),
                             couleur = if (it) c.textSecondary else c.attention,
                         )
                     }
@@ -412,29 +415,29 @@ fun PairingPage(
                     onClick = onInstaller,
                     shape = PendulumShapes.button,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(Textes.Accueil.Appairage.INSTALLER_SUR_MONTRE) }
+                ) { Text(stringResource(R.string.onboarding_pairing_install_on_watch)) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.height(16.dp).width(16.dp))
                     Spacer(Modifier.width(Spacing.s.dp))
-                    Paragraphe(Textes.Accueil.Appairage.ATTENTE_AUTOMATIQUE)
+                    Paragraphe(stringResource(R.string.onboarding_pairing_auto_wait))
                 }
             }
 
             EtatAppairage.PRETE -> PendulumCard {
                 Text(
-                    montre.nom ?: Textes.Accueil.Appairage.TROUVEE_TITRE,
+                    montre.nom ?: stringResource(R.string.onboarding_pairing_found_title),
                     style = PendulumType.titleM,
                     color = c.textPrimary,
                 )
                 Spacer(Modifier.height(Spacing.s.dp))
                 Text(
-                    Textes.Accueil.Appairage.VERIFICATION_ABSENTE,
+                    stringResource(R.string.onboarding_pairing_sensor_check_missing),
                     style = PendulumType.mono,
                     color = c.textSecondary,
                 )
                 Spacer(Modifier.height(Spacing.xs.dp))
                 Text(
-                    Textes.Accueil.Appairage.VERIFICATION_ABSENTE_NOTE,
+                    stringResource(R.string.onboarding_pairing_sensor_check_note),
                     style = PendulumType.caption,
                     color = c.textTertiary,
                 )
@@ -446,11 +449,11 @@ fun PairingPage(
             enabled = montre.etat == EtatAppairage.PRETE,
             shape = PendulumShapes.button,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text(Textes.Accueil.Appairage.BOUTON) }
+        ) { Text(stringResource(R.string.onboarding_pairing_button)) }
 
         // Le seul echappatoire de cet ecran, et il reste : une montre en cours de livraison ne
         // doit pas empecher de lire le reste de l'assistant.
-        TextButton(onClick = onContinuer) { Text(Textes.Accueil.Appairage.SANS_MONTRE) }
+        TextButton(onClick = onContinuer) { Text(stringResource(R.string.onboarding_pairing_skip)) }
     }
 }
 
@@ -505,30 +508,30 @@ fun SleepSourcePage(
         Modifier.fillMaxSize().padding(Spacing.screen.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
     ) {
-        Text(Textes.Accueil.SourceSommeil.TITRE, style = PendulumType.titleL, color = c.textPrimary)
+        Text(stringResource(R.string.onboarding_sleep_title), style = PendulumType.titleL, color = c.textPrimary)
 
         PendulumCard {
-            SectionHeader(Textes.Accueil.SourceSommeil.ROLE_TITRE)
-            Paragraphe(Textes.Accueil.SourceSommeil.ROLE_CORPS)
+            SectionHeader(stringResource(R.string.onboarding_sleep_role_title))
+            Paragraphe(stringResource(R.string.onboarding_sleep_role_body))
             TextButton(onClick = { enSavoirPlus = !enSavoirPlus }) {
-                Text(Textes.Accueil.SourceSommeil.ROLE_PLUS)
+                Text(stringResource(R.string.onboarding_sleep_role_more))
             }
-            if (enSavoirPlus) Paragraphe(Textes.Accueil.SourceSommeil.ROLE_PLUS_CORPS)
+            if (enSavoirPlus) Paragraphe(stringResource(R.string.onboarding_sleep_role_more_body))
         }
 
         when (sante?.disponibilite) {
             null -> Unit // Rien tant que Health Connect n'a pas repondu.
 
             SleepReader.Availability.SDK_UNAVAILABLE -> ReparationSante(
-                titre = Textes.Accueil.SourceSommeil.SDK_ABSENT_TITRE,
-                corps = Textes.Accueil.SourceSommeil.SDK_ABSENT_CORPS,
-                bouton = Textes.Accueil.SourceSommeil.INSTALLER_HEALTH_CONNECT,
+                titre = stringResource(R.string.onboarding_sleep_sdk_missing_title),
+                corps = stringResource(R.string.onboarding_sleep_sdk_missing_body),
+                bouton = stringResource(R.string.onboarding_sleep_install_hc),
             )
 
             SleepReader.Availability.UPDATE_REQUIRED -> ReparationSante(
-                titre = Textes.Accueil.SourceSommeil.MISE_A_JOUR_TITRE,
-                corps = Textes.Accueil.SourceSommeil.MISE_A_JOUR_CORPS,
-                bouton = Textes.Accueil.SourceSommeil.METTRE_A_JOUR,
+                titre = stringResource(R.string.onboarding_sleep_update_title),
+                corps = stringResource(R.string.onboarding_sleep_update_body),
+                bouton = stringResource(R.string.onboarding_sleep_update_button),
             )
 
             SleepReader.Availability.PERMISSIONS_MISSING -> Button(
@@ -539,16 +542,16 @@ fun SleepSourcePage(
                 },
                 shape = PendulumShapes.button,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(Textes.Accueil.SourceSommeil.AUTORISER) }
+            ) { Text(stringResource(R.string.onboarding_sleep_allow)) }
 
             SleepReader.Availability.BACKGROUND_READ_UNAVAILABLE -> PendulumCard {
                 Text(
-                    Textes.Accueil.SourceSommeil.FOND_INDISPONIBLE_TITRE,
+                    stringResource(R.string.onboarding_sleep_background_title),
                     style = PendulumType.titleM,
                     color = c.textPrimary,
                 )
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(Textes.Accueil.SourceSommeil.FOND_INDISPONIBLE_CORPS)
+                Paragraphe(stringResource(R.string.onboarding_sleep_background_body))
             }
 
             SleepReader.Availability.READY -> ListeDesSources(
@@ -559,13 +562,13 @@ fun SleepSourcePage(
         }
 
         BoutonMotive(
-            libelle = Textes.Accueil.Besoins.BOUTON,
-            motifIndisponible = Textes.Accueil.SourceSommeil.BOUTON_BLOQUE
+            libelle = stringResource(R.string.onboarding_needs_button),
+            motifIndisponible = stringResource(R.string.onboarding_sleep_button_blocked)
                 .takeIf { sante?.disponibilite != SleepReader.Availability.READY },
             onClick = onContinuer,
         )
         TextButton(onClick = onContinuer) {
-            Text(Textes.Accueil.SourceSommeil.SANS_HYPNOGRAMME)
+            Text(stringResource(R.string.onboarding_sleep_skip))
         }
     }
 }
@@ -589,38 +592,46 @@ private fun ListeDesSources(
     if (sources.isEmpty()) {
         PendulumCard {
             Text(
-                Textes.Accueil.SourceSommeil.AUCUNE_TITRE,
+                stringResource(R.string.onboarding_sleep_none_title),
                 style = PendulumType.titleM,
                 color = c.textPrimary,
             )
             Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(Textes.Accueil.SourceSommeil.AUCUNE_CORPS)
+            Paragraphe(stringResource(R.string.onboarding_sleep_none_body))
             Spacer(Modifier.height(Spacing.m.dp))
-            SectionHeader(Textes.Accueil.SourceSommeil.APPLICATIONS_CONNUES_TITRE)
-            Paragraphe(Textes.Accueil.SourceSommeil.APPLICATIONS_CONNUES_CORPS)
+            SectionHeader(stringResource(R.string.onboarding_sleep_known_apps_title))
+            Paragraphe(stringResource(R.string.onboarding_sleep_known_apps_body))
         }
         return
     }
 
     PendulumCard {
-        SectionHeader(Textes.Accueil.SourceSommeil.SOURCES_DETECTEES)
+        SectionHeader(stringResource(R.string.onboarding_sleep_sources_detected))
         sources.forEach { source ->
             val choisie = source.paquet == sourcePreferee
             Column(Modifier.fillMaxWidth().padding(vertical = Spacing.xs.dp)) {
                 Text(source.paquet, style = PendulumType.body, color = c.textPrimary)
                 Text(
-                    Textes.Accueil.SourceSommeil.couverture(
+                    stringResource(
+                        R.string.onboarding_sleep_coverage,
                         source.nuits,
                         SourcesSommeil.JOURS_OBSERVES,
-                        source.stades,
-                    ) + if (choisie) "   ● ${Textes.Accueil.SourceSommeil.PREFEREE}" else "",
+                        stringResource(
+                            if (source.stades) R.string.onboarding_sleep_coverage_staged
+                            else R.string.onboarding_sleep_coverage_total,
+                        ),
+                    ) + if (choisie) {
+                        "   ● " + stringResource(R.string.onboarding_sleep_preferred)
+                    } else {
+                        ""
+                    },
                     style = PendulumType.caption,
                     color = c.textTertiary,
                 )
-                if (!source.stades) Paragraphe(Textes.Accueil.SourceSommeil.SANS_STADES)
+                if (!source.stades) Paragraphe(stringResource(R.string.onboarding_sleep_no_stages))
                 if (!choisie) {
                     TextButton(onClick = { onChoisirSource(source.paquet) }) {
-                        Text(Textes.Accueil.SourceSommeil.CHOISIR)
+                        Text(stringResource(R.string.onboarding_sleep_choose))
                     }
                 }
             }
@@ -664,14 +675,68 @@ private fun ReparationSante(titre: String, corps: String, bouton: String) {
 private const val LIEN_HEALTH_CONNECT =
     "market://details?id=com.google.android.apps.healthdata"
 
+/**
+ * Ou porter la montre, et ce qui doit rester identique d'une nuit a l'autre.
+ *
+ * ### Pourquoi cette etape existe maintenant, alors que le texte existait deja
+ *
+ * Ces consignes vivaient dans l'etape des **notifications**, sous un titre qui annonce un reglage
+ * de permission. Ce sont pourtant les quatre conditions dont depend toute la comparabilite des
+ * nuits, donc la valeur entiere du produit : quelqu'un qui traversait l'assistant en retenait
+ * « autoriser les notifications » et pas « notez votre trou de bracelet ». Deux sujets sans
+ * rapport dans un meme ecran, dont le plus important arrivait en second.
+ *
+ * Elle est placee **juste apres l'appairage** et non a la fin : c'est le moment ou l'utilisateur a
+ * la montre en main et s'apprete a la porter pour la premiere fois. Une consigne spatiale lue
+ * trois ecrans trop tot est une consigne qu'on relit rarement.
+ *
+ * Le champ du repere de bracelet a suivi les consignes plutot que de rester avec les
+ * notifications : il appartient a ce qui doit rester identique, pas au rappel du soir.
+ */
 @Composable
-fun NotificationsPage(repere: String, onRepere: (String) -> Unit, onTerminer: () -> Unit) {
+fun WearingPage(repere: String, onRepere: (String) -> Unit, onContinuer: () -> Unit) {
     val c = LocalPendulumColors.current
     Column(
         Modifier.fillMaxSize().padding(Spacing.screen.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
     ) {
-        Text(Textes.Accueil.Notifications.TITRE, style = PendulumType.titleL, color = c.textPrimary)
+        Text(stringResource(R.string.wearing_title), style = PendulumType.titleL, color = c.textPrimary)
+        Paragraphe(stringResource(R.string.wearing_subtitle))
+
+        // Le schema porte l'emplacement, les phrases portent la raison. Aucun texte n'est dessine
+        // dedans : un texte dessine ne se traduit pas.
+        SchemaDePort()
+
+        PendulumCard {
+            Paragraphe(stringResource(R.string.wearing_point_front))
+            Paragraphe(stringResource(R.string.wearing_point_not_on_bone))
+            Paragraphe(stringResource(R.string.wearing_point_orientation))
+        }
+        Paragraphe(stringResource(R.string.wearing_keep_identical))
+
+        OutlinedTextField(
+            value = repere,
+            onValueChange = onRepere,
+            label = { Text(stringResource(R.string.onboarding_notif_strap_field)) },
+            singleLine = true,
+            shape = PendulumShapes.field,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(onClick = onContinuer, shape = PendulumShapes.button, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.wearing_button))
+        }
+        Spacer(Modifier.height(Spacing.l.dp))
+    }
+}
+
+@Composable
+fun NotificationsPage(onTerminer: () -> Unit) {
+    val c = LocalPendulumColors.current
+    Column(
+        Modifier.fillMaxSize().padding(Spacing.screen.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(Spacing.betweenCards.dp),
+    ) {
+        Text(stringResource(R.string.onboarding_notif_title), style = PendulumType.titleL, color = c.textPrimary)
 
         // `POST_NOTIFICATIONS` est une permission d'execution depuis Android 13 : la declarer au
         // manifeste ne suffit pas. Sans elle, le rappel du soir n'apparait pas, et l'oubli de
@@ -686,23 +751,11 @@ fun NotificationsPage(repere: String, onRepere: (String) -> Unit, onTerminer: ()
             shape = PendulumShapes.button,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(Textes.Accueil.Notifications.AUTORISER)
+            Text(stringResource(R.string.onboarding_notif_allow))
         }
-        Paragraphe(Textes.Accueil.Notifications.RAISON)
-        PendulumCard {
-            SectionHeader(Textes.Accueil.Notifications.CONDITIONS_TITRE)
-            Paragraphe(Textes.Accueil.Notifications.CONDITIONS_CORPS)
-        }
-        OutlinedTextField(
-            value = repere,
-            onValueChange = onRepere,
-            label = { Text(Textes.Accueil.Notifications.CHAMP_REPERE) },
-            singleLine = true,
-            shape = PendulumShapes.field,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Paragraphe(stringResource(R.string.onboarding_notif_reason))
         Button(onClick = onTerminer, shape = PendulumShapes.button, modifier = Modifier.fillMaxWidth()) {
-            Text(Textes.Accueil.Notifications.BOUTON)
+            Text(stringResource(R.string.onboarding_notif_button))
         }
         Spacer(Modifier.height(Spacing.l.dp))
     }

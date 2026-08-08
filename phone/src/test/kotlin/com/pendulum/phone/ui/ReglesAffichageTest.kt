@@ -8,7 +8,8 @@ import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.model.EtatReveil
 import com.pendulum.phone.ui.model.MotifRefus
 import com.pendulum.phone.ui.model.TendanceUiState
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
@@ -145,7 +146,7 @@ class ReglesAffichageTest {
         val b = resultat(22.0, 14.0, 31.0, 6, 12.0)
         val c = Aggregat.comparer(a, b, -24.0, 5.0, 11)
         assertThat(c.distinguable).isFalse()
-        assertThat(c.verdict).isEqualTo(Textes.Comparaison.NON_CONCLUANTE)
+        assertThat(c.verdict).isEqualTo(texte(R.string.compare_inconclusive))
     }
 
     @Test
@@ -157,7 +158,7 @@ class ReglesAffichageTest {
         val c = Aggregat.comparer(a, b, -5.0, -1.0, 11)
         assertThat(c.mdc95).isCloseTo(13.58, within(0.1))
         assertThat(c.distinguable).isFalse()
-        assertThat(c.motifNonConcluant).contains("smallest change")
+        assertThat(Ressources.resoudre(c.motifNonConcluant!!)).contains("smallest change")
     }
 
     @Test
@@ -175,8 +176,8 @@ class ReglesAffichageTest {
     @Test
     fun `la periodicite n'est qualifiee qu'a partir de cinq nuits`() {
         assertThat(Aggregat.qualifierPeriodicite(0.71, 4)).isNull()
-        assertThat(Aggregat.qualifierPeriodicite(0.71, 6)).isEqualTo(Textes.Tendance.PERIODICITE_ELEVEE)
-        assertThat(Aggregat.qualifierPeriodicite(0.31, 6)).isEqualTo(Textes.Tendance.PERIODICITE_BASSE)
+        assertThat(Aggregat.qualifierPeriodicite(0.71, 6)).isEqualTo(texte(R.string.trend_periodicity_high))
+        assertThat(Aggregat.qualifierPeriodicite(0.31, 6)).isEqualTo(texte(R.string.trend_periodicity_low))
     }
 
     @Test
@@ -184,8 +185,9 @@ class ReglesAffichageTest {
         listOf(0.0, 0.31, 0.5, 0.58, 0.71, 1.0).forEach { indice ->
             val libelle = Aggregat.qualifierPeriodicite(indice, 6)
             assertThat(libelle).isNotNull()
-            assertThat(libelle!!).doesNotContain(indice.toString())
-            assertThat(libelle).doesNotContain(",")
+            val rendu = Ressources.resoudre(libelle!!)
+            assertThat(rendu).doesNotContain(indice.toString())
+            assertThat(rendu).doesNotContain(",")
         }
     }
 
@@ -238,7 +240,7 @@ class ReglesAffichageTest {
     /** Le texte du second motif ne doit pas se lire comme une panne, et il cite sa mesure. */
     @Test
     fun `le refus de rythme se presente comme une propriete du produit`() {
-        val corps = Textes.Tendance.REFUS_RYTHME_CORPS
+        val corps = Ressources.lire(R.string.trend_rhythm_refusal_body)
         assertThat(corps).contains("2 fits out of 20")
         assertThat(corps).contains("refuses")
         // Ni panne, ni erreur, ni echec : ce qui s'est produit est un refus documente.

@@ -24,7 +24,6 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,11 +31,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.model.Aggregat
 import com.pendulum.phone.ui.model.ErreurPendulum
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumType
@@ -111,7 +116,7 @@ fun BandeauProfilPersonnalise(profil: String?, modifier: Modifier = Modifier) {
     val c = LocalPendulumColors.current
     profil?.let {
         PendulumCard(modifier) {
-            Paragraphe(Textes.Tendance.PARAMS_PERSONNALISES.format(it), couleur = c.attention)
+            Paragraphe(stringResource(R.string.trend_custom_params, it), couleur = c.attention)
         }
     }
 }
@@ -154,7 +159,7 @@ fun Paragraphe(texte: String, modifier: Modifier = Modifier, couleur: Color? = n
 fun MetricHeadline(
     resultat: Aggregat.Resultat,
     libelle: String,
-    qualificatif: String? = null,
+    qualificatif: UiText? = null,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
@@ -167,7 +172,7 @@ fun MetricHeadline(
             )
             Spacer(Modifier.width(Spacing.xs.dp))
             Text(
-                resultat.grandeur.unite,
+                stringResource(resultat.grandeur.unite),
                 style = PendulumType.titleM,
                 color = c.textSecondary,
                 modifier = Modifier.padding(bottom = 8.dp),
@@ -175,7 +180,7 @@ fun MetricHeadline(
             qualificatif?.let {
                 Spacer(Modifier.width(Spacing.sm.dp))
                 Text(
-                    "· $it",
+                    "· " + it.resoudre(),
                     style = PendulumType.body,
                     color = c.textSecondary,
                     modifier = Modifier.padding(bottom = 10.dp),
@@ -189,11 +194,11 @@ fun MetricHeadline(
         val bas = formaterValeur(resultat.ciBas, resultat.grandeur)
         val haut = formaterValeur(resultat.ciHaut, resultat.grandeur)
         Text(
-            if (resultat.icCalibre) {
-                Textes.Tendance.intervalleEtN(bas, haut, resultat.nuits)
-            } else {
-                Textes.Tendance.intervalleNonCalibre(bas, haut, resultat.nuits)
-            },
+            stringResource(
+                if (resultat.icCalibre) R.string.trend_interval_and_n
+                else R.string.trend_interval_uncalibrated,
+                bas, haut, resultat.nuits,
+            ),
             style = PendulumType.bodyNum,
             color = c.textSecondary,
         )
@@ -229,19 +234,46 @@ fun PositionBox(texte: String, modifier: Modifier = Modifier) {
 
 /** Une valeur en ligne : libelle a gauche, valeur a droite, note optionnelle en dessous. */
 @Composable
-fun InlineValue(libelle: String, valeur: String, note: String? = null, barre: Boolean = false) {
+fun InlineValue(
+    libelle: String,
+    valeur: String,
+    note: String? = null,
+    barre: Boolean = false,
+    descriptionValeur: String? = null,
+) {
     val c = LocalPendulumColors.current
     Column(Modifier.fillMaxWidth().padding(vertical = Spacing.xs.dp)) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(libelle, style = PendulumType.body, color = c.textSecondary)
+            // `weight(fill = false)` sur les deux : chacun prend ce qu'il lui faut, et l'un ne peut
+            // plus deborder sur l'autre. Sans cela, `SpaceBetween` laissait une valeur longue se
+            // coller a son intitule et se couper n'importe ou — « Automatic stopon the charger, on
+            // waking, or after 10 » puis un « h » seul a la ligne suivante, et le paquet
+            // `com.google.android.apps.fitness` casse au milieu du mot. La gouttiere garantit que
+            // les deux textes ne se touchent jamais, quelle que soit leur longueur.
+            Text(
+                libelle,
+                style = PendulumType.body,
+                color = c.textSecondary,
+                modifier = Modifier.weight(1f, fill = false).padding(end = Spacing.sm.dp),
+            )
             Text(
                 valeur,
                 style = PendulumType.bodyNum,
                 color = c.textPrimary,
+                textAlign = TextAlign.End,
                 textDecoration = if (barre) TextDecoration.LineThrough else null,
+                // Quand la valeur porte un signe — `✓`, `✗`, `—` — le signe **est** l'information,
+                // et un lecteur d'ecran n'en dit rien ou en dit le nom Unicode. L'appelant fournit
+                // alors la meme information en mots. Sans ce parametre la valeur se lit telle
+                // quelle, ce qui reste juste pour toutes les autres lignes.
+                modifier = (
+                    descriptionValeur
+                        ?.let { d -> Modifier.semantics { contentDescription = d } }
+                        ?: Modifier
+                    ).weight(1f, fill = false),
             )
         }
         note?.let { Text(it, style = PendulumType.caption, color = c.textTertiary) }
@@ -250,11 +282,11 @@ fun InlineValue(libelle: String, valeur: String, note: String? = null, barre: Bo
 
 /** Drapeau de qualite. Ce n'est pas une alerte : c'est une propriete mesuree de la nuit. */
 @Composable
-fun QualityChip(libelle: String) {
+fun QualityChip(libelle: UiText) {
     val c = LocalPendulumColors.current
     AssistChip(
         onClick = {},
-        label = { Text(libelle, style = PendulumType.caption) },
+        label = { Text(libelle.resoudre(), style = PendulumType.caption) },
         shape = PendulumShapes.chip,
         colors = AssistChipDefaults.assistChipColors(
             containerColor = c.surfaceMuted,
@@ -326,12 +358,21 @@ fun BlockingState(
  * chose est reellement casse (transfert, permission, integrite, stockage), ambre pour tout le
  * reste, qui n'est pas une panne mais une **situation**. Employer le rouge pour une nuit courte
  * apprend a l'utilisateur a ignorer le rouge.
+ *
+ * ### Un seul bouton, et il mene quelque part
+ *
+ * La carte portait un second bouton, alimente par un `boutonSecondaire` que deux messages
+ * remplissaient avec « See the technical detail ». Il n'existe aucun ecran de journal technique
+ * dans ce module — ni table, ni fichier, ni fonction — et la ligne « Technical log » des reglages
+ * avait deja ete retiree pour cette raison. Le second bouton appelait donc un `{}` par defaut : il
+ * n'echouait meme pas, il ne faisait rien. La regle du [BoutonMotive] vaut ici aussi, en plus
+ * dur — un bouton actif qui echoue apprend a se mefier de tous les boutons, un bouton qui n'a pas
+ * meme d'erreur apprend a se mefier de l'application.
  */
 @Composable
 fun ErrorCard(
     erreur: ErreurPendulum,
     onAction: () -> Unit = {},
-    onActionSecondaire: () -> Unit = {},
 ) {
     val c = LocalPendulumColors.current
     val teinte = if (erreur.technique) c.error else c.attention
@@ -339,22 +380,15 @@ fun ErrorCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(8.dp).clip(CircleShape).background(teinte))
             Spacer(Modifier.width(Spacing.s.dp))
-            Text(erreur.titre, style = PendulumType.titleM, color = c.textPrimary)
+            Text(erreur.titre.resoudre(), style = PendulumType.titleM, color = c.textPrimary)
         }
         Spacer(Modifier.height(Spacing.s.dp))
-        Paragraphe(erreur.cause)
+        Paragraphe(erreur.cause.resoudre())
         Spacer(Modifier.height(Spacing.s.dp))
-        Paragraphe(erreur.action)
-        if (erreur.bouton != null || erreur.boutonSecondaire != null) {
+        Paragraphe(erreur.action.resoudre())
+        erreur.bouton?.let {
             Spacer(Modifier.height(Spacing.sm.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s.dp)) {
-                erreur.bouton?.let {
-                    Button(onClick = onAction, shape = PendulumShapes.button) { Text(it) }
-                }
-                erreur.boutonSecondaire?.let {
-                    OutlinedButton(onClick = onActionSecondaire, shape = PendulumShapes.button) { Text(it) }
-                }
-            }
+            Button(onClick = onAction, shape = PendulumShapes.button) { Text(it.resoudre()) }
         }
         Spacer(Modifier.height(Spacing.s.dp))
         // Le code est utile a un utilisateur technicien, et il est le meme dans le journal.
@@ -435,7 +469,7 @@ fun ConfirmDialog(
     titre: String,
     corps: String,
     confirmer: String,
-    annuler: String = "Annuler",
+    annuler: String = stringResource(R.string.dialog_cancel),
     onConfirmer: () -> Unit,
     onAnnuler: () -> Unit,
 ) {

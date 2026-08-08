@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Les libelles du schema de port.
+
+     Ils sont dans un fichier separe de `strings.xml` pour une raison de fabrication et non de
+     rangement : deux chantiers ecrivaient des ressources en meme temps, et un fichier par
+     chantier evite le conflit. Android fusionne tous les `values/*.xml`, la separation n'a aucun
+     effet a l'execution — un traducteur les verra comme un seul ensemble.
+
+     Le schema lui-meme ne porte aucun texte (`ui/onboarding/SchemaDePort.kt`) : un texte dessine
+     ne se traduit pas. Ce fichier est donc la moitie parlante du dessin.
+-->
+<resources>
+
+    <!--
+         Le titre de l'etape. Il dit « garder identique » et non « bien porter » : la consigne
+         n'est pas qu'il existerait une bonne facon de porter la montre dans l'absolu, c'est que
+         le seuil de detection s'adapte au bruit de fond de chaque nuit, et que deux nuits
+         mesurees dans des conditions mecaniques differentes ne sont plus comparables.
+    -->
+    <string name="wearing_title">Where to wear the watch</string>
+
+    <!--
+         Sous-titre. « Every night the same » avant le detail : c'est la constance qui porte la
+         valeur de la mesure, pas le choix de tel ou tel cote.
+    -->
+    <string name="wearing_subtitle">The same way every night. If the mechanical conditions change, your nights stop being comparable with one another.</string>
+
+    <!-- Les trois consignes que le dessin montre, dans l'ordre du dessin. -->
+    <string name="wearing_point_front">On the front of the shin, just above the ankle bone.</string>
+
+    <!--
+         « Not on the bone itself » a une raison mecanique qu'il vaut mieux donner que taire : sur
+         l'os, la montre tourne avec le pied sans se deplacer, donc elle ne voit presque rien. Sans
+         cette phrase, la consigne ressemble a une preference et se neglige.
+    -->
+    <string name="wearing_point_not_on_bone">Not on the bony bump itself: there, the watch turns with the foot without travelling, and sees almost nothing.</string>
+
+    <!--
+         Celle-ci enleve une inquietude plutot qu'elle n'ajoute une contrainte. La chaine de
+         traitement travaille sur la magnitude des trois axes, invariante par rotation : il n'y a
+         aucun axe a aligner, et le dire evite qu'on cherche a bien orienter un boitier qui n'a
+         pas besoin de l'etre.
+    -->
+    <string name="wearing_point_orientation">Which way the case faces does not matter: screen outwards, inwards or tilted, the reading is the same.</string>
+
+    <!--
+         Ce qui ne doit pas changer d'une nuit a l'autre, y compris ce que le dessin ne peut pas
+         montrer — le bracelet, son trou, la jambe.
+    -->
+    <string name="wearing_keep_identical">Keep identical: the same leg, the same strap at the same hole, and the same spot on the shin.</string>
+
+    <!--
+         L'alternative textuelle du schema, pour les lecteurs d'ecran. Elle decrit ce que le
+         dessin **montre**, pas ce qu'il faut faire : les consignes sont dans les chaines
+         ci-dessus, qui sont lues juste apres. Un schema sans alternative ne dit rien a qui ne le
+         voit pas, et c'est deja arrive une fois dans ce produit.
+    -->
+    <string name="wearing_diagram_description">Diagram. A lower leg seen from the front, with a watch drawn on the front of the shin above the ankle bones. Two crossed-out watch outlines sit on the ankle bones themselves. Below, the same watch is drawn three times with its button in a different position each time, and a curved arrow, showing that the case may be turned any way.</string>
+
+
+    <!-- Le bouton de l'etape. Meme mot que les autres etapes, entree distincte. -->
+    <string name="wearing_button">Continue</string>
+
+</resources>

@@ -3,7 +3,9 @@ package com.pendulum.phone.ui.model
 import com.pendulum.format.wire.WirePaths
 import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.db.TelemetryPointEntity
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
@@ -71,9 +73,9 @@ object PorteP1 {
 
     /** Un critere : sa valeur mesuree, son seuil, son etat. Les trois, toujours — comme [Controles]. */
     data class Critere(
-        val libelle: String,
-        val valeur: String,
-        val seuil: String,
+        val libelle: UiText,
+        val valeur: UiText,
+        val seuil: UiText,
         val etat: Conformite,
     )
 
@@ -192,9 +194,9 @@ object PorteP1 {
     private fun couverture(session: NightSessionEntity): Critere {
         val c = Controles.couverture(session)
         return Critere(
-            libelle = Textes.Nuits.Detail.COUVERTURE,
-            valeur = c?.let(::pourcent) ?: TIRET,
-            seuil = Textes.P1.auMoins(pourcent(Controles.COUVERTURE_MIN)),
+            libelle = texte(R.string.night_detail_coverage),
+            valeur = texte(c?.let(::pourcent) ?: TIRET),
+            seuil = texte(R.string.p1_at_least, pourcent(Controles.COUVERTURE_MIN)),
             etat = verdict(Controles.couvertureTenue(c)),
         )
     }
@@ -244,17 +246,22 @@ object PorteP1 {
         session: NightSessionEntity,
         telemetrie: List<TelemetryPointEntity>,
     ): Critere {
-        val seuil = Textes.P1.batterieSeuil(Controles.BATTERIE_MIN_PCT, DUREE_CIBLE_H.toInt())
-        val libelle = Textes.Nuits.Detail.BATTERIE_FIN
+        val seuil = texte(
+            R.string.p1_battery_threshold,
+            Controles.BATTERIE_MIN_PCT,
+            DUREE_CIBLE_H.toInt(),
+        )
+        val libelle = texte(R.string.night_detail_battery_end)
 
         PenteBatterie.de(telemetrie, DUREE_CIBLE_H)?.let { p ->
             return Critere(
                 libelle = libelle,
-                valeur = Textes.P1.batterieExtrapolee(
-                    pct = "%.0f%%".format(Locale.UK, p.pctA8h),
-                    heures = DUREE_CIBLE_H.toInt(),
-                    parHeure = "%.1f%%".format(Locale.UK, p.pctParHeure),
-                    points = p.pointsRetenus,
+                valeur = texte(
+                    R.string.p1_battery_extrapolated,
+                    "%.0f%%".format(Locale.UK, p.pctA8h),
+                    DUREE_CIBLE_H.toInt(),
+                    "%.1f%%".format(Locale.UK, p.pctParHeure),
+                    p.pointsRetenus,
                 ),
                 seuil = seuil,
                 etat = if (p.pctA8h > Controles.BATTERIE_MIN_PCT) {
@@ -270,11 +277,13 @@ object PorteP1 {
         val atteintHuitHeures = heures != null && heures >= DUREE_CIBLE_H
         return Critere(
             libelle = libelle,
-            valeur = when {
-                pct == null -> TIRET
-                heures == null -> "$pct%"
-                else -> "$pct%  ·  ${Mapping.dureeLisible(heures * 60.0)}"
-            },
+            valeur = texte(
+                when {
+                    pct == null -> TIRET
+                    heures == null -> "$pct%"
+                    else -> "$pct%  ·  ${Mapping.dureeLisible(heures * 60.0)}"
+                },
+            ),
             seuil = seuil,
             // Le seul des trois criteres qui ne se reduise pas a [verdict] : un niveau tenu ne
             // conclut que si la nuit a effectivement atteint huit heures.
@@ -295,9 +304,9 @@ object PorteP1 {
     private fun frequence(session: NightSessionEntity): Critere {
         val nominal = session.nominalRateHz
         return Critere(
-            libelle = Textes.Nuits.Detail.FREQUENCE,
-            valeur = Controles.cadenceLisible(session.fsMeasuredHz),
-            seuil = Textes.P1.frequenceSeuil(nominal, pourcent(Controles.TOLERANCE_FS)),
+            libelle = texte(R.string.night_detail_frequency),
+            valeur = texte(Controles.cadenceLisible(session.fsMeasuredHz)),
+            seuil = texte(R.string.p1_frequency_threshold, nominal, pourcent(Controles.TOLERANCE_FS)),
             etat = verdict(Controles.cadenceTenue(session.fsMeasuredHz, nominal)),
         )
     }

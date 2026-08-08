@@ -24,13 +24,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.annotation.StringRes
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.QualityChip
 import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.NuitUi
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumTheme
@@ -74,7 +77,7 @@ fun NightListScreen(
                 FilterChip(
                     selected = filtre == f,
                     onClick = { filtre = f },
-                    label = { Text(f.libelle, style = PendulumType.label) },
+                    label = { Text(stringResource(f.libelle), style = PendulumType.label) },
                     shape = PendulumShapes.chip,
                 )
             }
@@ -84,17 +87,22 @@ fun NightListScreen(
             items(visibles, key = { it.sessionHex }) { NightRow(it, onNuit) }
             item {
                 Spacer(Modifier.height(Spacing.m.dp))
-                PendulumCard { Paragraphe(Textes.Nuits.PAS_DE_BOUTON_EXCLURE) }
+                PendulumCard { Paragraphe(stringResource(R.string.nights_no_exclude_button)) }
                 Spacer(Modifier.height(Spacing.l.dp))
             }
         }
     }
 }
 
-enum class FiltreNuits(val libelle: String) {
-    TOUTES(Textes.Nuits.FILTRE_TOUTES),
-    ELIGIBLES(Textes.Nuits.FILTRE_ELIGIBLES),
-    ECARTEES(Textes.Nuits.FILTRE_ECARTEES),
+/**
+ * Les trois filtres. Le libelle est un **identifiant de ressource** et non une chaine : un
+ * constructeur d'`enum` n'a pas de `Context`, et le resoudre ici figerait la langue au chargement
+ * de la classe.
+ */
+enum class FiltreNuits(@StringRes val libelle: Int) {
+    TOUTES(R.string.nights_filter_all),
+    ELIGIBLES(R.string.nights_filter_eligible),
+    ECARTEES(R.string.nights_filter_excluded),
     ;
 
     fun filtrer(l: List<NuitUi>): List<NuitUi> = when (this) {
@@ -135,28 +143,36 @@ fun NightRow(n: NuitUi, onNuit: (String) -> Unit) {
             PastilleEtat(n.etat)
         }
         Text(
-            "${n.debut} → ${n.fin} · ${n.sommeilLisible} (${n.sourceSommeil})",
+            "${n.debut} → ${n.fin} · ${n.sommeilLisible} (${n.sourceSommeil.resoudre()})",
             style = PendulumType.caption,
             color = c.textTertiary,
         )
         Spacer(Modifier.height(Spacing.xs.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (devoile) Mapping.rythmeLisible(n.rythmeSec) else Textes.EcranAccueil.Resultat.MASQUE_LIGNE,
+                if (devoile) {
+                    Mapping.rythmeLisible(n.rythmeSec).resoudre()
+                } else {
+                    stringResource(R.string.home_result_hidden_line)
+                },
                 style = PendulumType.bodyNum,
                 color = if (devoile) c.textSecondary else c.textTertiary,
                 textDecoration = if (ecartee && devoile) TextDecoration.LineThrough else null,
             )
             if (devoile) {
                 Text(
-                    "   ${Textes.Nuits.VALEUR_UNE_NUIT}",
+                    "   " + stringResource(R.string.nights_single_value),
                     style = PendulumType.caption,
                     color = c.textTertiary,
                 )
             }
         }
         n.motif?.let {
-            Text("${Textes.Nuits.ETAT_ECARTEE}: $it", style = PendulumType.caption, color = c.attention)
+            Text(
+                "${stringResource(R.string.nights_state_excluded)}: ${it.resoudre()}",
+                style = PendulumType.caption,
+                color = c.attention,
+            )
         }
         if (n.drapeaux.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.xs.dp))
@@ -175,9 +191,9 @@ fun NightRow(n: NuitUi, onNuit: (String) -> Unit) {
 private fun PastilleEtat(etat: EtatNuit) {
     val c = LocalPendulumColors.current
     val (glyphe, libelle, teinte) = when (etat) {
-        EtatNuit.ELIGIBLE -> Triple("●", Textes.Nuits.ETAT_ELIGIBLE, c.accent)
-        EtatNuit.PROVISOIRE -> Triple("◐", Textes.Nuits.ETAT_PROVISOIRE, c.attention)
-        EtatNuit.ECARTEE -> Triple("○", Textes.Nuits.ETAT_ECARTEE, c.textTertiary)
+        EtatNuit.ELIGIBLE -> Triple("●", stringResource(R.string.nights_state_eligible), c.accent)
+        EtatNuit.PROVISOIRE -> Triple("◐", stringResource(R.string.nights_state_provisional), c.attention)
+        EtatNuit.ECARTEE -> Triple("○", stringResource(R.string.nights_state_excluded), c.textTertiary)
     }
     Text("$glyphe $libelle", style = PendulumType.label, color = teinte)
 }

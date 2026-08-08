@@ -17,11 +17,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.theme.LocalChartTokens
 import com.pendulum.phone.ui.theme.PendulumType
+import kotlin.math.roundToInt
 
 /**
  * Les enveloppes composables des trois graphes.
@@ -51,6 +53,13 @@ fun GrapheNuit(
     val mesureur = rememberTextMeasurer()
     val scratch = remember { ChartScratch() }
 
+    // Resolue ici, en composition, comme les noms de voie : le dessin n'a pas de `Context`. Elle
+    // est mise en forme meme quand le pic ne sera pas annote — c'est une lecture de ressource
+    // contre une condition de seuil dupliquee entre le dessin et son appelant.
+    val libellePic = spec.pic?.let {
+        stringResource(R.string.chart_night_peak, it.ratio.roundToInt(), it.heure)
+    }
+
     Column(modifier) {
         Canvas(
             modifier = Modifier
@@ -79,10 +88,10 @@ fun GrapheNuit(
                     )
                 },
         ) {
-            dessinerGrapheNuit(spec, tokens, transform, mesureur, scratch, curseurMs)
+            dessinerGrapheNuit(spec, tokens, transform, mesureur, scratch, libellePic, curseurMs)
         }
         TextButton(onClick = onValeurs, modifier = Modifier.padding(start = 4.dp)) {
-            Text(Textes.Graphes.VALEURS, style = PendulumType.label)
+            Text(stringResource(R.string.chart_values), style = PendulumType.label)
         }
     }
 }
@@ -98,6 +107,17 @@ fun Hypnogramme(
     val mesureur = rememberTextMeasurer()
     val scratch = remember { ChartScratch() }
 
+    // Meme regle que pour la bande de metrologie : les six mots de la marge sont resolus en
+    // composition et passes au dessin, qui n'a ni composition ni `Context`.
+    val libelles = LibellesHypnogramme(
+        immobile = stringResource(R.string.chart_lane_immobile),
+        eveil = stringResource(R.string.chart_stage_awake),
+        rem = stringResource(R.string.chart_stage_rem),
+        n1 = stringResource(R.string.chart_stage_n1),
+        n2 = stringResource(R.string.chart_stage_n2),
+        n3 = stringResource(R.string.chart_stage_n3),
+    )
+
     // Aucun `pointerInput` ici : un seul proprietaire du geste, c'est le graphe de nuit.
     Canvas(
         modifier = modifier
@@ -105,7 +125,7 @@ fun Hypnogramme(
             .height(96.dp)
             .semantics { contentDescription = spec.statistiques },
     ) {
-        dessinerHypnogramme(spec, tokens, transform, mesureur, scratch, curseurMs)
+        dessinerHypnogramme(spec, tokens, transform, mesureur, scratch, libelles, curseurMs)
     }
 }
 
@@ -128,13 +148,25 @@ fun BandeMetrologie(
     val mesureur = rememberTextMeasurer()
     val scratch = remember { ChartScratch() }
 
+    // Les noms de voie sont resolus **ici**, en composition, et passes au dessin : une extension
+    // de `DrawScope` n'a ni composition ni `Context`, et faire descendre un `Context` dans un
+    // `Canvas` pour y lire cinq mots serait payer la resolution a chaque trame.
+    val libelles = LibellesBande(
+        port = stringResource(R.string.chart_lane_worn),
+        sansCapteur = stringResource(R.string.chart_no_offbody_sensor),
+        charge = stringResource(R.string.chart_lane_charger),
+        ecretage = stringResource(R.string.chart_lane_clip),
+        gels = stringResource(R.string.chart_lane_freeze),
+        batterie = stringResource(R.string.chart_lane_battery),
+    )
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(150.dp)
             .semantics { contentDescription = spec.descriptionAccessible },
     ) {
-        dessinerBandeMetrologie(spec, tokens, transform, mesureur, scratch, curseurMs)
+        dessinerBandeMetrologie(spec, tokens, transform, mesureur, scratch, libelles, curseurMs)
     }
 }
 
@@ -183,7 +215,7 @@ fun GrapheTendance(
             Text(it.legende, style = PendulumType.caption, modifier = Modifier.padding(start = 4.dp))
         }
         TextButton(onClick = onValeurs, modifier = Modifier.padding(start = 4.dp)) {
-            Text(Textes.Graphes.VALEURS, style = PendulumType.label)
+            Text(stringResource(R.string.chart_values), style = PendulumType.label)
         }
     }
 }

@@ -32,3 +32,7 @@ sessions/
 # androidTest des deux modules. Leur source versionnee est `tools/banc/BancDataLayer-*.kt` ;
 # la copie deposee ne doit pas etre commitee, sinon elle se compile chez tout le monde.
 **/src/androidTest/kotlin/com/pendulum/*/BancDataLayer.kt
+
+# Captures et APK de travail des revues d'interface (non versionnes).
+captures-ui/
+artefacts-test/

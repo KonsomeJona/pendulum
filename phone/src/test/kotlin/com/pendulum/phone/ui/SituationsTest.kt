@@ -7,7 +7,8 @@ import com.pendulum.phone.health.SleepReader
 import com.pendulum.phone.ui.model.ErreurPendulum
 import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.Situations
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -36,7 +37,7 @@ class SituationsTest {
         val e = Situations.sommeil(SleepReader.Availability.PERMISSIONS_MISSING, null, 0)!!
         assertThat(e.code).isEqualTo("E-HC-02")
         assertThat(e.technique).isTrue()
-        assertThat(e.bouton).isEqualTo(Textes.Erreurs.HC_02_BOUTON)
+        assertThat(e.bouton).isEqualTo(texte(R.string.error_hc_02_button))
     }
 
     @Test
@@ -146,11 +147,23 @@ class SituationsTest {
     }
 
     @Test
-    fun `trous de signal - ambre, avec une action qui a un cout`() {
+    fun `trous de signal - ambre, et aucun bouton parce que le mode continu n'existe pas`() {
+        // Le message portait « Force continuous mode » et renvoyait a « Settings › Measurement ».
+        // Ce reglage n'existe nulle part — ni preference cote telephone, ni commande vers la
+        // montre — et le bouton etait rendu au detail de nuit, ou `ErrorCard` recoit des lambdas
+        // vides. Il ne faisait donc rien, ce qui est pire qu'un bouton grise avec son motif.
         val e = Situations.nuit(nuit(), session(gapTotalMs = 300_000L))!!
         assertThat(e.code).isEqualTo("E-NIGHT-04")
         assertThat(e.technique).isFalse()
-        assertThat(e.bouton).isEqualTo(Textes.Erreurs.NIGHT_04_BOUTON)
+        assertThat(e.bouton).isNull()
+    }
+
+    @Test
+    fun `deux sources - aucun bouton, la source ne se rechoisit pas depuis cette carte`() {
+        // « Change the preferred source » ouvrait les reglages de Health Connect, ou la preference
+        // de Pendulum ne se change pas : le seul ecran qui l'ecrit est l'etape 4 de l'assistant.
+        val e = Situations.sommeil(SleepReader.Availability.READY, 2, 2)!!
+        assertThat(e.bouton).isNull()
     }
 
     @Test
@@ -190,12 +203,14 @@ class SituationsTest {
         assertThat(tous).hasSize(7)
         tous.forEach { e ->
             assertThat(e.code).matches("E-[A-Z]+-\\d\\d")
-            assertThat(e.titre).isNotBlank()
-            assertThat(e.cause).isNotBlank()
-            assertThat(e.action).isNotBlank()
+            val titre = Ressources.resoudre(e.titre)
+            val cause = Ressources.resoudre(e.cause)
+            assertThat(titre).isNotBlank()
+            assertThat(cause).isNotBlank()
+            assertThat(Ressources.resoudre(e.action)).isNotBlank()
             // « Une erreur est survenue » n'a nulle part ou s'ecrire, et on le verifie.
-            assertThat(e.titre.lowercase()).doesNotContain("oops")
-            assertThat(e.cause.lowercase()).doesNotContain("an error occurred")
+            assertThat(titre.lowercase()).doesNotContain("oops")
+            assertThat(cause.lowercase()).doesNotContain("an error occurred")
         }
     }
 

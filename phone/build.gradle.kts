@@ -19,8 +19,12 @@ android {
         applicationId = "com.pendulum"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Injectees par le workflow de publication depuis le tag Git, defaut de developpement
+        // sinon. Le detail est dans le `build.gradle.kts` de la racine, qui les definit une fois
+        // pour les deux applications — elles doivent rester identiques, le Data Layer n'echangeant
+        // qu'entre paquets de meme `applicationId`.
+        versionCode = rootProject.extra["pendulumVersionCode"] as Int
+        versionName = rootProject.extra["pendulumVersionName"] as String
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -165,7 +169,15 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
-    androidTestImplementation(libs.room.testing)
+    // Remonte Espresso au-dessus de ce que le BOM Compose epingle. Le detail du defaut qu'on evite
+    // ainsi est dans `libs.versions.toml`. Il est declare ici et pas dans `:wear` parce que c'est le
+    // seul module dont les tests instrumentes passent par Compose, donc le seul qui touche Espresso.
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    // `room-testing` a ete retire le 7 aout 2026 : il n'apportait que `MigrationTestHelper`, dont
+    // meme l'ancien `MigrationTest` ne se servait pas, et il n'a plus aucun objet depuis que la
+    // base est repartie en v1 sans migration. Il reviendra avec la premiere vraie migration —
+    // c'est lui qui permet de reconstruire une base d'une version anterieure a partir des schemas
+    // exportes, et c'est pour cela que `exportSchema` reste a `true`.
     // Pour les sondes de `tools/banc/`, qui se posent dans ce source set. Les avoir ici evite le
     // correctif de build applique au vol par `datalayer.sh`, qui portait la mention « a ne pas
     // commiter » — c'est-a-dire une consigne que seul un humain attentif applique.

@@ -2,7 +2,10 @@ package com.pendulum.phone.ui.model
 
 import com.pendulum.phone.db.ComparableNight
 import com.pendulum.phone.db.PlmResultEntity
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.Formats
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 import java.util.Locale
 
 /**
@@ -35,16 +38,16 @@ import java.util.Locale
 object CheminDeCalcul {
 
     /** Une ligne du tableau : un libelle, une valeur, et une note quand la valeur se discute. */
-    data class Ligne(val libelle: String, val valeur: String, val note: String? = null)
+    data class Ligne(val libelle: UiText, val valeur: UiText, val note: UiText? = null)
 
     /**
      * Le bloc complet. [avertissement] est un champ et non un texte pose par l'ecran : un bloc de
      * chemin de calcul sans sa phrase de non-causalite ne doit pas pouvoir exister.
      */
     data class Bloc(
-        val titre: String,
+        val titre: UiText,
         val lignes: List<Ligne>,
-        val avertissement: String = Textes.Nuits.Detail.Pourquoi.AVERTISSEMENT,
+        val avertissement: UiText = texte(R.string.night_why_disclaimer),
     )
 
     /**
@@ -63,55 +66,87 @@ object CheminDeCalcul {
         resultat: PlmResultEntity?,
         dureeEnregistreeMin: Double,
         mouvementsRetenus: Int,
-        regle: String,
-        sourceSommeil: String,
+        regle: UiText,
+        sourceSommeil: UiText,
         metrologie: Metrologie.Resume? = null,
     ): Bloc? {
         if (resultat == null) return null
-        val p = Textes.Nuits.Detail.Pourquoi
         val masqueIndependant = n.maskSource != Mapping.MASQUE_ACCELERO
 
         val lignes = buildList {
             add(
                 Ligne(
-                    libelle = p.SOMMEIL_ANALYSABLE,
-                    valeur = Mapping.dureeLisible(n.analysableTstMin),
-                    note = p.surEnregistre(Mapping.dureeLisible(dureeEnregistreeMin)),
+                    libelle = texte(R.string.night_why_analysable_sleep),
+                    valeur = texte(Mapping.dureeLisible(n.analysableTstMin)),
+                    note = texte(
+                        R.string.night_why_of_recorded,
+                        Mapping.dureeLisible(dureeEnregistreeMin),
+                    ),
                 ),
             )
-            add(Ligne(p.MOUVEMENTS_RETENUS, mouvementsRetenus.toString()))
-            add(Ligne(p.REGLE, regle))
             add(
                 Ligne(
-                    libelle = p.MASQUE,
-                    valeur = "$sourceSommeil, " +
-                        if (masqueIndependant) p.MASQUE_HYPNOGRAMME else p.MASQUE_ACCELERO,
+                    texte(R.string.night_why_movements_counted),
+                    texte(mouvementsRetenus.toString()),
+                ),
+            )
+            add(Ligne(texte(R.string.night_why_rule), regle))
+            add(
+                Ligne(
+                    libelle = texte(R.string.night_why_mask),
+                    valeur = texte(
+                        R.string.night_why_mask_value,
+                        sourceSommeil,
+                        texte(
+                            if (masqueIndependant) R.string.night_why_mask_hypnogram
+                            else R.string.night_why_mask_accel,
+                        ),
+                    ),
                 ),
             )
             // Le denominateur est la seule ligne qui porte un jugement, et c'est un jugement
             // structurel : il vient du meme capteur que le numerateur, ou il n'en vient pas.
             add(
                 Ligne(
-                    libelle = p.DENOMINATEUR,
-                    valeur = if (masqueIndependant) p.DENOMINATEUR_INDEPENDANT else p.DENOMINATEUR_CIRCULAIRE,
+                    libelle = texte(R.string.night_why_denominator),
+                    valeur = texte(
+                        if (masqueIndependant) R.string.night_why_denominator_independent
+                        else R.string.night_why_denominator_circular,
+                    ),
                 ),
             )
-            add(Ligne(p.TAUX_MANQUES, "%.2f".format(Locale.UK, n.missRate)))
-
-            // L'encadrement respiratoire : `plmiRespWorstCase` est l'index qu'on obtiendrait en
-            // retirant tout ce qui pourrait etre lie a la respiration. L'ecart est negatif par
-            // construction, et c'est la borne basse d'un intervalle dont le chiffre affiche est
-            // la borne haute. Pendulum ne mesure pas la respiration : on ne peut pas trancher
-            // dedans, on peut seulement le montrer.
-            val ecart = resultat.plmiRespWorstCase - resultat.plmi
+            // En pourcentage, comme la table de qualite du meme ecran (`Controles`) : le meme
+            // `missRate` s'y lisait « 31.1% » et ici « 0.39 ». Deux ecritures d'une seule grandeur,
+            // a deux cartes de distance, dont l'une sans unite — rien ne disait au lecteur qu'il
+            // regardait deux fois le meme nombre.
             add(
                 Ligne(
-                    libelle = p.ENCADREMENT_RESPI,
-                    valeur = p.bornePessimiste(
-                        "%+.1f ".format(Locale.UK, ecart),
-                        Textes.Tendance.UNITE_PAR_HEURE,
+                    texte(R.string.night_why_missed_rate),
+                    texte(Mapping.pourcent(n.missRate)),
+                ),
+            )
+
+            // L'encadrement respiratoire : `plmiRespWorstCase` est l'index qu'on obtiendrait en
+            // retirant tout ce qui pourrait etre lie a la respiration. C'est la borne basse d'un
+            // intervalle dont le chiffre affiche en tete de carte est la borne haute. Pendulum ne
+            // mesure pas la respiration : on ne peut pas trancher dedans, on peut seulement le
+            // montrer.
+            //
+            // La **borne**, et non l'ecart a la borne. La ligne affichait `plmiRespWorstCase -
+            // plmi`, donc un nombre negatif par construction, sous une note qui dit « this line is
+            // the value the index would take » — soit, lu au mot, un index de −15,1/h, ce qui
+            // n'existe pas. La note dit aussi « between the two », qui suppose deux valeurs et non
+            // une valeur et un ecart. Montrer la borne rend les deux phrases vraies et epargne au
+            // lecteur une soustraction faite de tete sur le chiffre qui porte le diagnostic.
+            add(
+                Ligne(
+                    libelle = texte(R.string.night_why_resp_bracket),
+                    valeur = texte(
+                        R.string.night_why_worst_bound,
+                        "%.1f ".format(Locale.UK, resultat.plmiRespWorstCase),
+                        texte(R.string.trend_unit_per_hour),
                     ),
-                    note = p.ENCADREMENT_RESPI_NOTE,
+                    note = texte(R.string.night_why_resp_bracket_note),
                 ),
             )
 
@@ -119,8 +154,13 @@ object CheminDeCalcul {
         }
 
         return Bloc(
-            titre = p.titre(
-                "%.1f %s".format(Locale.UK, resultat.plmi, Textes.Tendance.UNITE_PAR_HEURE),
+            titre = texte(
+                R.string.night_why_title,
+                texte(
+                    R.string.trend_value_with_unit,
+                    "%.1f".format(Locale.UK, resultat.plmi),
+                    texte(R.string.trend_unit_per_hour),
+                ),
             ),
             lignes = lignes,
         )
@@ -157,40 +197,47 @@ object CheminDeCalcul {
      *    non le cumul, qui explique une interruption capteur ratee a un instant precis.
      */
     private fun MutableList<Ligne>.ajouterMetrologie(m: Metrologie.Resume) {
-        val p = Textes.Nuits.Detail.Pourquoi
-
         add(
             Ligne(
-                libelle = p.ECRETAGE,
+                libelle = texte(R.string.night_why_clipping),
                 valeur = if (m.echantillonsEcretes == 0) {
-                    p.AUCUN
+                    texte(R.string.night_why_none)
                 } else {
-                    p.ecretage(m.echantillonsEcretes, m.pointsEcretes)
+                    texte(
+                        R.string.night_why_clipping_value,
+                        Formats.milliers(m.echantillonsEcretes),
+                        m.pointsEcretes,
+                    )
                 },
-                note = p.ECRETAGE_NOTE,
+                note = texte(R.string.night_why_clipping_note),
             ),
         )
 
         add(
             Ligne(
-                libelle = p.DATATION,
-                valeur = p.datation(
+                libelle = texte(R.string.night_why_timing),
+                valeur = texte(
+                    R.string.night_why_timing_value,
                     "%.1f ms".format(Locale.UK, m.gigueMedianeUs / 1000.0),
                     "%.0f ms".format(Locale.UK, m.pireIntervalleUs / 1000.0),
                 ),
-                note = p.DATATION_NOTE,
+                note = texte(R.string.night_why_timing_note),
             ),
         )
 
         add(
             Ligne(
-                libelle = p.GELS,
+                libelle = texte(R.string.night_why_freezes),
                 valeur = if (m.gels == 0) {
-                    p.AUCUN
+                    texte(R.string.night_why_none)
                 } else {
-                    p.gels(m.gels, "%.0f ms".format(Locale.UK, m.pireGelUs / 1000.0))
+                    texte(
+                        R.string.night_why_freezes_value,
+                        m.gels,
+                        "%.0f ms".format(Locale.UK, m.pireGelUs / 1000.0),
+                    )
                 },
-                note = p.GELS_NOTE,
+                note = texte(R.string.night_why_freezes_note),
             ),
         )
     }

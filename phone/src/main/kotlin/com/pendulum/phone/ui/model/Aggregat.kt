@@ -1,6 +1,9 @@
 package com.pendulum.phone.ui.model
 
-import com.pendulum.phone.ui.text.Textes
+import androidx.annotation.StringRes
+import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.UiText
+import com.pendulum.phone.ui.text.texte
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.pow
@@ -62,7 +65,7 @@ object Aggregat {
      * couverture.
      *
      * La seule reponse honnete est donc de nommer ce que l'intervalle est reellement en dessous
-     * de six nuits — [Textes.Tendance.INTERVALLE_NON_CALIBRE] — et de ne pas ecrire « 95 % ».
+     * de six nuits — `trend_interval_uncalibrated_note` — et de ne pas ecrire « 95 % ».
      */
     const val MIN_NUITS_IC_CALIBRE = 6
 
@@ -88,9 +91,9 @@ object Aggregat {
      * Le compte horaire **reste** — c'est la langue des somnologues — mais au second rang a
      * l'ecran et en premier rang dans le rapport pour le medecin.
      */
-    enum class Grandeur(val unite: String, val decimales: Int) {
-        RYTHME_SECONDES(Textes.Tendance.UNITE_SECONDES, 0),
-        COMPTE_HORAIRE(Textes.Tendance.UNITE_PAR_HEURE, 0),
+    enum class Grandeur(@StringRes val unite: Int, val decimales: Int) {
+        RYTHME_SECONDES(R.string.trend_unit_seconds, 0),
+        COMPTE_HORAIRE(R.string.trend_unit_per_hour, 0),
     }
 
     /**
@@ -114,7 +117,7 @@ object Aggregat {
          * L'intervalle merite-t-il son etiquette « 95 % » ?
          *
          * Faux sous [MIN_NUITS_IC_CALIBRE] nuits, ou la couverture reelle mesuree tombe a 75 %.
-         * L'ecran change alors de libelle ([Textes.Tendance.intervalleNonCalibre]) au lieu de
+         * L'ecran change alors de libelle (`trend_interval_uncalibrated`) au lieu de
          * promettre une precision qui n'existe pas.
          */
         val icCalibre: Boolean get() = nuits >= MIN_NUITS_IC_CALIBRE
@@ -207,12 +210,13 @@ object Aggregat {
         data object AuDessusSeuil : Position
         data object EnglobeSeuil : Position
 
-        fun texte(): String = when (this) {
-            Refus -> ""
-            is Provisoire -> Textes.Tendance.provisoire(nuits)
-            SousSeuil -> Textes.Tendance.SOUS_SEUIL
-            AuDessusSeuil -> Textes.Tendance.AU_DESSUS_SEUIL
-            EnglobeSeuil -> Textes.Tendance.ENGLOBE_SEUIL
+        /** `null` sous trois nuits : l'ecran de refus ne pose aucune phrase de position. */
+        fun phrase(): UiText? = when (this) {
+            Refus -> null
+            is Provisoire -> texte(R.string.trend_position_provisional, nuits)
+            SousSeuil -> texte(R.string.trend_below_threshold)
+            AuDessusSeuil -> texte(R.string.trend_above_threshold)
+            EnglobeSeuil -> texte(R.string.trend_spans_threshold)
         }
     }
 
@@ -221,7 +225,7 @@ object Aggregat {
      *
      * **Il vient de la polysomnographie et il est applique ici a un accelerometre de cheville.**
      * Ce n'est pas la meme mesure, et le dire fait partie du produit : voir
-     * [SEUIL_ACTIMETRIQUE_CHEVILLE_PAR_HEURE] et [Textes.Graphes.LEGENDE_SEUIL_15].
+     * [SEUIL_ACTIMETRIQUE_CHEVILLE_PAR_HEURE] et `chart_threshold_15_legend`.
      */
     const val SEUIL_CLINIQUE_PAR_HEURE = 15.0
 
@@ -264,7 +268,7 @@ object Aggregat {
      *
      * 3 et 26 sont mesures. 14 est un compromis : demander 26 nuits rendrait l'ecran inutilisable
      * en pratique, en demander 3 le rendrait confiant precisement la ou il a le moins de raisons
-     * de l'etre. [Textes.Tendance.NUITS_REQUISES_REGIME_BAS] enonce les deux chiffres et nomme
+     * de l'etre. `trend_nights_required_low` enonce les deux chiffres et nomme
      * le compromis comme tel.
      */
     fun nuitsRequises(ciBas: Double, ciHaut: Double): Int = when {
@@ -274,10 +278,10 @@ object Aggregat {
     }
 
     /** Le motif, en toutes lettres, du nombre rendu par [nuitsRequises]. Jamais un chiffre nu. */
-    fun motifNuitsRequises(ciBas: Double, ciHaut: Double): String = when {
-        ciBas > SEUIL_CLINIQUE_PAR_HEURE -> Textes.Tendance.NUITS_REQUISES_REGIME_HAUT
-        ciHaut < SEUIL_CLINIQUE_PAR_HEURE -> Textes.Tendance.NUITS_REQUISES_REGIME_BAS
-        else -> Textes.Tendance.NUITS_REQUISES_A_CHEVAL
+    fun motifNuitsRequises(ciBas: Double, ciHaut: Double): UiText = when {
+        ciBas > SEUIL_CLINIQUE_PAR_HEURE -> texte(R.string.trend_nights_required_high)
+        ciHaut < SEUIL_CLINIQUE_PAR_HEURE -> texte(R.string.trend_nights_required_low)
+        else -> texte(R.string.trend_nights_required_straddling)
     }
 
     /**
@@ -286,7 +290,7 @@ object Aggregat {
      * Elle ne s'applique **qu'au compte horaire**. Le rythme fondamental n'a pas d'equivalent :
      * le seuil publie sur la periodicite (≈ 0,5, Ferri 2016) est sur une autre echelle avec
      * d'autres preuves derriere lui, et le transposer mecaniquement serait fabriquer une
-     * frontiere clinique. Voir [Textes.Tendance.RYTHME_SANS_SEUIL].
+     * frontiere clinique. Voir `trend_rhythm_no_threshold`.
      */
     fun position(ciBas: Double, ciHaut: Double, n: Int): Position = when {
         n < MIN_NUITS_AGREGAT -> Position.Refus
@@ -320,15 +324,19 @@ object Aggregat {
         /** `null` quand le nombre requis depasse 30 : dire « hors de portee » est plus honnete. */
         val nuitsNecessaires: Int?,
     ) {
-        val verdict: String
-            get() = if (distinguable) Textes.Comparaison.DISTINGUABLE else Textes.Comparaison.NON_CONCLUANTE
+        val verdict: UiText
+            get() = if (distinguable) {
+                texte(R.string.compare_distinguishable)
+            } else {
+                texte(R.string.compare_inconclusive)
+            }
 
         /** Pourquoi ce n'est pas concluant : zero dans l'intervalle, ou ecart sous la MDC95. */
-        val motifNonConcluant: String?
+        val motifNonConcluant: UiText?
             get() = when {
                 distinguable -> null
-                abs(difference) <= mdc95 -> Textes.Comparaison.SOUS_MDC
-                else -> Textes.Comparaison.ZERO_DANS_INTERVALLE
+                abs(difference) <= mdc95 -> texte(R.string.compare_below_mdc)
+                else -> texte(R.string.compare_zero_in_interval)
             }
     }
 
@@ -376,9 +384,9 @@ object Aggregat {
      * se representer, et la periodicite comme un qualificatif, disponible seulement quand il y a
      * assez de nuits pour qu'une categorie ait un sens.
      */
-    fun qualifierPeriodicite(indice: Double, nuits: Int): String? = when {
+    fun qualifierPeriodicite(indice: Double, nuits: Int): UiText? = when {
         nuits < MIN_NUITS_CATEGORIE -> null
-        indice >= 0.5 -> Textes.Tendance.PERIODICITE_ELEVEE
-        else -> Textes.Tendance.PERIODICITE_BASSE
+        indice >= 0.5 -> texte(R.string.trend_periodicity_high)
+        else -> texte(R.string.trend_periodicity_low)
     }
 }

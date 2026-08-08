@@ -15,8 +15,11 @@ import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.SectionHeader
+import androidx.compose.ui.res.stringResource
+import com.pendulum.phone.R
 import com.pendulum.phone.ui.model.CeSoirUi
-import com.pendulum.phone.ui.text.Textes
+import com.pendulum.phone.ui.model.CompteRendu
+import com.pendulum.phone.ui.text.resoudre
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumType
@@ -46,8 +49,19 @@ import com.pendulum.phone.ui.theme.Spacing
  *
  * Le contexte est append-only : le sceller deux fois leve. Le bouton pourrait donc disparaitre
  * une fois le geste fait — et la carte changerait de hauteur au moment precis ou l'utilisateur
- * vient d'agir. Il reste, grise, et **porte son motif** : « contexte scelle, la montre peut
- * demarrer ». La forme de la carte est la meme du debut a la fin de la soiree.
+ * vient d'agir. Il reste, grise, et **porte son motif** : le contexte est scelle sur ce telephone.
+ * La forme de la carte est la meme du debut a la fin de la soiree.
+ *
+ * ### Le bouton de demarrage rend compte
+ *
+ * `demanderLeDemarrage` peut echouer — la montre est hors de portee, ou son application n'est pas
+ * installee — et le ViewModel publiait deja les deux issues dans un flux que **personne ne
+ * collectait**. « La montre enregistre » et « la montre n'a rien recu » etaient donc le meme
+ * ecran. C'est le pire endroit de l'application ou taire un echec : il ne se constate qu'au
+ * reveil, quand la nuit est perdue et qu'il n'y a plus rien a rattraper.
+ *
+ * [retourDemarrage] tient sous le bouton, en une ligne, et disparait — voir l'appelant. La teinte
+ * vient de `CompteRendu.echec` et non du texte.
  */
 @Composable
 fun TonightCard(
@@ -55,40 +69,44 @@ fun TonightCard(
     motifIndisponible: String?,
     onSceller: () -> Unit,
     onDemarrer: (() -> Unit)? = null,
+    retourDemarrage: CompteRendu? = null,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
     PendulumCard(modifier) {
         SectionHeader(
             if (etat.enregistrement == null) {
-                Textes.EcranAccueil.Preparer.TITRE
+                stringResource(R.string.home_prepare_title)
             } else {
-                Textes.CeSoir.EN_COURS
+                stringResource(R.string.tonight_recording)
             },
         )
 
         val enr = etat.enregistrement
         if (enr == null) {
             Ligne(
-                Textes.CeSoir.LIGNE_MONTRE,
+                stringResource(R.string.tonight_row_watch),
                 "${pourcentage(etat.batteriePct)}  ·  ${etat.espaceLibre ?: TIRET} free",
                 if (etat.batterieInsuffisante) c.attention else null,
             )
             if (etat.batterieInsuffisante) {
-                Text(Textes.CeSoir.BATTERIE_BASSE, style = PendulumType.caption, color = c.attention)
+                Text(stringResource(R.string.tonight_low_battery), style = PendulumType.caption, color = c.attention)
             }
-            Ligne(Textes.CeSoir.LIGNE_BRACELET, portLisible(etat))
+            Ligne(stringResource(R.string.tonight_row_strap), portLisible(etat))
             Ligne(
-                Textes.CeSoir.LIGNE_SOMMEIL,
-                etat.sourceSommeil,
+                stringResource(R.string.tonight_row_sleep),
+                etat.sourceSommeil.resoudre(),
                 if (etat.sourceActive == false) c.attention else null,
             )
             Spacer(Modifier.height(Spacing.sm.dp))
 
-            Paragraphe(Textes.CeSoir.SCELLEMENT_CORPS)
+            Paragraphe(stringResource(R.string.tonight_seal_body))
             Spacer(Modifier.height(Spacing.s.dp))
             Text(
-                if (etat.contexteScelle) Textes.CeSoir.CONSIGNE_DEMARRAGE else Textes.CeSoir.SCELLEMENT_MANQUANT,
+                stringResource(
+                    if (etat.contexteScelle) R.string.tonight_start_instruction
+                    else R.string.tonight_seal_missing,
+                ),
                 style = if (etat.contexteScelle) PendulumType.bodyEmph else PendulumType.body,
                 color = if (etat.contexteScelle) c.textPrimary else c.attention,
             )
@@ -110,22 +128,44 @@ fun TonightCard(
                     onClick = onDemarrer,
                     shape = PendulumShapes.button,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(Textes.CeSoir.DEMARRER_SUR_LA_MONTRE) }
+                ) { Text(stringResource(R.string.tonight_start_on_watch)) }
+
+                // Sous le bouton et non a sa place : le libelle d'un bouton reste invariant, c'est
+                // la meme regle que le motif de `BoutonMotive`. Ambre quand la montre n'a rien
+                // recu — rien n'est casse, mais la consigne du dessus devient la seule qui marche.
+                retourDemarrage?.let {
+                    Spacer(Modifier.height(Spacing.xs.dp))
+                    Text(
+                        it.message.resoudre(),
+                        style = PendulumType.caption,
+                        color = if (it.echec) c.attention else c.textSecondary,
+                    )
+                }
             }
 
             BoutonMotive(
-                libelle = Textes.CeSoir.SCELLEMENT_BOUTON,
+                libelle = stringResource(R.string.tonight_seal_button),
                 motifIndisponible = motifIndisponible,
                 onClick = onSceller,
             )
         } else {
-            Ligne("Since ${enr.depuis}", enr.duree)
-            Ligne("Samples", "${enr.echantillons}  ·  ${"%.1f".format(enr.hzMesures)} Hz")
-            Ligne("Watch battery", "${enr.batteriePct}%  ·  ${enr.trous} gaps")
+            Ligne(stringResource(R.string.tonight_row_since, enr.depuis), enr.duree)
+            Ligne(
+                stringResource(R.string.tonight_row_samples),
+                stringResource(
+                    R.string.tonight_row_samples_value,
+                    enr.echantillons,
+                    "%.1f".format(enr.hzMesures),
+                ),
+            )
+            Ligne(
+                stringResource(R.string.tonight_row_battery),
+                stringResource(R.string.tonight_row_battery_value, enr.batteriePct, enr.trous),
+            )
             Spacer(Modifier.height(Spacing.s.dp))
             // Rafraichissement 60 s, ecran allume et application au premier plan uniquement.
             // Aucun service telephone, aucune notification persistante : rien a surveiller.
-            Paragraphe(Textes.CeSoir.CONSIGNE_ARRET)
+            Paragraphe(stringResource(R.string.tonight_stop_instruction))
         }
     }
 }
@@ -136,8 +176,9 @@ fun TonightCard(
  * Avant le scellement la jambe est inconnue et le reste — la deviner fausserait le critere de
  * comparabilite sans que rien ne le signale.
  */
+@Composable
 private fun portLisible(etat: CeSoirUi): String =
-    listOfNotNull(etat.bracelet.takeIf { it.isNotBlank() }, etat.jambe)
+    listOfNotNull(etat.bracelet.takeIf { it.isNotBlank() }, etat.jambe?.resoudre())
         .joinToString(", ")
         .ifBlank { TIRET }
 
