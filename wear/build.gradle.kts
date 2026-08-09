@@ -67,6 +67,12 @@ android {
         ?.also { require(it >= 1L) { "pendulum.temps.diviseur doit valoir au moins 1, recu $it" } }
         ?: 1L
 
+    // Le banc pilote la montre par USB, donc en charge, donc `StopConditions` l'arrete au bout
+    // d'une minute. C'est la bonne regle la nuit et la seule qui empeche un essai branche.
+    // `./gradlew -Ppendulum.banc.ignorer.chargeur=true :wear:assembleDebug`
+    val ignorerChargeur = (project.findProperty("pendulum.banc.ignorer.chargeur") as String?)
+        ?.toBooleanStrictOrNull() ?: false
+
     buildTypes {
         release {
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")
@@ -76,6 +82,7 @@ android {
         }
         debug {
             buildConfigField("long", "TEMPS_DIVISEUR", "${diviseurTemps}L")
+            buildConfigField("boolean", "BANC_IGNORER_CHARGEUR", "$ignorerChargeur")
         }
     }
 

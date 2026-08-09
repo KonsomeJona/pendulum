@@ -124,6 +124,13 @@ object Preflight {
         if (sensor != null && wakeUp == null) warnings += Issue(IssueId.NO_WAKEUP_SENSOR)
         if (pending > 0) warnings += Issue(IssueId.PENDING_SYNC, listOf(pending.toString()))
         if (!phoneReachable(ctx)) warnings += Issue(IssueId.PHONE_UNREACHABLE)
+        // Une derogation de banc doit se voir. Le diviseur de temps a le sien depuis le
+        // debut ; celle-ci merite le meme traitement, sinon une compilation de banc
+        // enregistre sur le chargeur sans que rien ne le dise. Avertissement et non
+        // bloqueur : c'est exactement ce qu'on a demande a la compilation de faire.
+        if (com.pendulum.wear.temps.Banc.IGNORER_CHARGEUR) {
+            warnings += Issue(IssueId.BANC_CHARGEUR_IGNORE)
+        }
 
         return PreflightResult(blockers, warnings, battery, free, pending)
     }
@@ -204,6 +211,9 @@ enum class IssueId {
      *  [Preflight.echelleDesaccordee]. N'existe pas en release : le diviseur y vaut 1. */
     BENCH_SCALE_MISMATCH,
 
+    /** Compilation de banc : l'arret sur chargeur est desactive. Voir `Banc.IGNORER_CHARGEUR`. */
+    BANC_CHARGEUR_IGNORE,
+
     // avertissements
     LOW_BATTERY,
     PHONE_UNREACHABLE,
@@ -235,7 +245,12 @@ val IssueId.estUnePanne: Boolean
         IssueId.BENCH_SCALE_MISMATCH -> true
 
         IssueId.CONTEXT_NOT_SEALED,
-        IssueId.NOTIFICATIONS_DENIED -> false
+        IssueId.NOTIFICATIONS_DENIED,
+        // Pas une panne : la derogation est exactement ce qu'on a demande a la compilation de
+        // faire. Elle merite d'etre vue, pas d'etre signalee comme casse — et contrairement a
+        // `BENCH_SCALE_MISMATCH`, elle ne fausse aucune mesure, elle laisse seulement tourner un
+        // enregistrement qui n'est pas une nuit.
+        IssueId.BANC_CHARGEUR_IGNORE -> false
 
         // Les avertissements sont ambre par construction ; la question ne se pose pas pour eux.
         IssueId.LOW_BATTERY,

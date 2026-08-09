@@ -424,10 +424,27 @@ private fun RecordingContent(state: RecordUiState, onStop: () -> Unit) {
     )
     Text(text = stringResource(R.string.samples_line, groupDigits(state.samples)), style = captionStyle())
     Text(
-        text = stringResource(R.string.written_line, "%.1f".format(state.bytesWritten / 1_048_576.0)),
+        // `Locale.UK` explicite, comme `Preflight.formatBytes` : sans lui le format suit la locale
+        // de la montre, et l'ecran affichait « 0,0 MB written » a trois lignes de « Free space
+        // 12.0 GB ». Deux separateurs decimaux sur le meme ecran du meme appareil.
+        text = stringResource(
+            R.string.written_line,
+            "%.1f".format(Locale.UK, state.bytesWritten / 1_048_576.0),
+        ),
         style = captionStyle(),
     )
-    Text(text = stringResource(R.string.battery_line, state.batteryPct), style = captionStyle())
+    // La batterie n'est connue qu'a la premiere lecture du capteur. `RecordUiState` porte `-1`
+    // jusque-la, et cette ligne l'affichait tel quel : « Battery -1% » pendant les premieres
+    // secondes de chaque nuit. Un pourcentage negatif n'existe pas — tant qu'on ne sait pas, on
+    // le dit avec le meme tiret que partout ailleurs dans le produit.
+    Text(
+        text = if (state.batteryPct >= 0) {
+            stringResource(R.string.battery_line, state.batteryPct)
+        } else {
+            stringResource(R.string.battery_line_unknown)
+        },
+        style = captionStyle(),
+    )
     Text(
         text = if (state.gapTotalMs > 0) {
             stringResource(R.string.gaps_line_total, state.gapCount, formatSeconds(state.gapTotalMs))
@@ -541,6 +558,7 @@ private fun issueText(issue: Issue): String = when (issue.id) {
     IssueId.STORAGE_FULL -> stringResource(R.string.blocker_storage_full, issue.args[0], issue.args[1])
     IssueId.FGS_REFUSED -> stringResource(R.string.blocker_fgs_refused)
     IssueId.BENCH_SCALE_MISMATCH -> stringResource(R.string.blocker_bench_scale, issue.args[0])
+    IssueId.BANC_CHARGEUR_IGNORE -> stringResource(R.string.warning_banc_chargeur)
     IssueId.LOW_BATTERY -> stringResource(R.string.warning_low_battery, issue.args[0])
     IssueId.PHONE_UNREACHABLE -> stringResource(R.string.warning_phone_unreachable)
     IssueId.NO_WAKEUP_SENSOR -> stringResource(R.string.warning_no_wakeup_sensor)

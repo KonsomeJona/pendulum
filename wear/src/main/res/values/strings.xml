@@ -27,6 +27,16 @@
     <string name="idle_title_blocked">Not ready</string>
     <string name="start">START</string>
     <string name="battery_line">Battery %1$d%%</string>
+
+    <!--
+         La batterie avant la premiere lecture du capteur.
+
+         `RecordUiState.batteryPct` vaut `-1` tant qu'aucune mesure n'est arrivee, et la ligne
+         affichait ce repli tel quel : « Battery -1% » pendant les premieres secondes de chaque
+         nuit. Le tiret est celui qu'emploie tout le reste du produit pour « on ne sait pas
+         encore », et il ne se confond avec aucune valeur possible.
+    -->
+    <string name="battery_line_unknown">Battery —</string>
     <string name="free_space_line">Free space %1$s</string>
     <string name="pending_sync_line">%1$d chunks awaiting sync</string>
     <string name="preflight_recheck">Check again</string>
@@ -72,6 +82,12 @@
     <!-- Avertissements : le START reste possible, l\'utilisateur décide. -->
     <string name="warning_low_battery">Battery %1$s%% — 50%% recommended for eight hours.</string>
     <string name="warning_phone_unreachable">Phone unreachable — recording carries on, sync will happen later.</string>
+    <!--
+      Compilation de banc uniquement : jamais atteignable en release, ou `Banc.IGNORER_CHARGEUR`
+      est une constante `false` et la branche disparait a la compilation. Il dit ce qui a change
+      **et** ce que la nuit vaut : une nuit enregistree sur le chargeur n'est pas une nuit.
+    -->
+    <string name="warning_banc_chargeur">Bench build: the stop on charger is disabled. This recording is a test, not a night.</string>
     <string name="warning_no_wakeup_sensor">No wake-up sensor: wake lock mode, shorter battery life.</string>
     <string name="warning_pending_sync">%1$s chunks from an earlier night are still waiting for the phone.</string>
 

@@ -1,6 +1,7 @@
 package com.pendulum.wear.record
 
 import com.pendulum.format.wire.StopReason
+import com.pendulum.wear.temps.Banc
 import com.pendulum.wear.temps.Durees
 
 /**
@@ -35,6 +36,16 @@ class StopConditions(
     private val antiRebondChargeMs: Long = CHARGING_DEBOUNCE_MS,
     private val dureeMaxMs: Long = MAX_DURATION_MS,
     private val delaiMinAvantHeureButoirMs: Long = DELAI_MIN_AVANT_HEURE_BUTOIR_MS,
+    /**
+     * Derogation de banc : ne pas arreter la nuit quand la montre est sur le chargeur. Voir
+     * [com.pendulum.wear.temps.Banc.IGNORER_CHARGEUR] — vaut `false` en release, ou la constante
+     * est connue a la compilation et la branche disparait.
+     *
+     * Parametre et non lecture directe, comme les trois durees ci-dessus et pour la meme raison :
+     * les tests de cette classe affirment des bornes a la milliseconde et ne doivent pas dependre
+     * de la variante compilee.
+     */
+    private val ignorerChargeur: Boolean = Banc.IGNORER_CHARGEUR,
 ) {
 
     companion object {
@@ -67,9 +78,14 @@ class StopConditions(
         localMinutes: Int,
         wakeRatio: Double,
     ): StopReason? {
+        // La derogation de banc s'applique **ici seulement** : le compteur d'anti-rebond continue
+        // de tourner, seul l'arret est retenu. Un banc qui ne compterait pas la charge ne testerait
+        // plus le meme code que la nuit.
         if (isCharging) {
             if (chargingSinceMs == 0L) chargingSinceMs = nowMs
-            if (nowMs - chargingSinceMs >= antiRebondChargeMs) return StopReason.CHARGING
+            if (nowMs - chargingSinceMs >= antiRebondChargeMs && !ignorerChargeur) {
+                return StopReason.CHARGING
+            }
         } else {
             chargingSinceMs = 0L
         }
