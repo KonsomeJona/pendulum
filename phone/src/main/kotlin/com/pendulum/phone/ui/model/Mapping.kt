@@ -88,7 +88,7 @@ object Mapping {
      * n'a pas ete accepte, donc aucun ecran ne peut en montrer une par distraction.
      */
     fun rythmeSec(n: ComparableNight): Double? =
-        n.fundamentalSec.takeIf { n.rhythmValid && it.isFinite() && it > 0.0 }
+        n.fundamentalSec?.takeIf { n.rhythmValid && it.isFinite() && it > 0.0 }
 
     /**
      * `21 s`, ou la mention du refus. **Le seul endroit ou un rythme se met en forme** : la liste,
@@ -98,6 +98,16 @@ object Mapping {
     fun rythmeLisible(sec: Double?): UiText =
         sec?.let { texte(R.string.night_detail_rhythm_seconds, kotlin.math.round(it).toInt()) }
             ?: texte(R.string.night_detail_rhythm_not_fitted)
+
+    /**
+     * `18/h`, ou le tiret — le pendant de [rythmeLisible] pour le compte horaire.
+     *
+     * Il existe pour la meme raison : deux ecrans arrondissaient eux-memes, et un arrondi
+     * applique a une absence rend « 0/h », c'est-a-dire une nuit sans le moindre mouvement. Ce
+     * n'est pas ce qu'une nuit sans denominateur veut dire.
+     */
+    fun compteLisible(parHeure: Double?): String =
+        parHeure?.let { "${Math.round(it)}/h" } ?: TIRET
 
     /** `23:12`, dans le fuseau ou la nuit a ete vecue. */
     fun heureLisible(ms: Long, zoneId: String): String =
@@ -165,8 +175,12 @@ object Mapping {
         if (batteryPctLast != null && batteryPctLast < SEUIL_BATTERIE_BASSE_PCT) {
             add(Drapeau(texte(R.string.nights_flag_battery, batteryPctLast)))
         }
-        if (n.missRate > SEUIL_MANQUES_NOTABLE) {
-            add(Drapeau(texte(R.string.nights_flag_missed, Math.round(n.missRate * 100).toInt())))
+        // Pas de drapeau quand le taux de manques est inconnu : un drapeau absent dit deja « rien
+        // a signaler », et en poser un sur une valeur qui n'existe pas signalerait une mesure.
+        n.missRate?.let { taux ->
+            if (taux > SEUIL_MANQUES_NOTABLE) {
+                add(Drapeau(texte(R.string.nights_flag_missed, Math.round(taux * 100).toInt())))
+            }
         }
     }
 
@@ -176,15 +190,26 @@ object Mapping {
      * Renvoyer `null` et non un `Resultat` degrade est le point : il n'existe aucune valeur
      * agregee sous trois nuits, donc aucun chemin de code ne peut en afficher une par
      * distraction. Le type porte la regle.
+     *
+     * ### Les nuits sans valeur sortent avant le compte, pas apres
+     *
+     * [valeurDe] rend `null` quand la nuit ne porte pas la grandeur — pas de sommeil analysable,
+     * ou ajustement de rythme refuse. Ces nuits sont **retirees**, et le minimum de trois porte
+     * sur ce qui reste. Les compter aurait ete le pire des deux mondes : `Aggregat.mediane`
+     * range `NaN` en fin de tri, donc une seule nuit sans valeur pouvait devenir la mediane
+     * elle-meme et rendre tout l'intervalle `NaN` — un ecran entier de tirets sans que rien ne
+     * dise pourquoi. Les remplacer par zero aurait tire la mediane vers le bas et annonce une
+     * amelioration inexistante.
      */
     fun agregat(
         grandeur: Aggregat.Grandeur,
         nuits: List<ComparableNight>,
-        valeurDe: (ComparableNight) -> Double,
+        valeurDe: (ComparableNight) -> Double?,
     ): Aggregat.Resultat? {
-        if (nuits.size < Aggregat.MIN_NUITS_AGREGAT) return null
-        val valeurs = DoubleArray(nuits.size) { valeurDe(nuits[it]) }
-        val graine = Aggregat.graineDe(nuits.map { it.sessionHex })
+        val mesurees = nuits.filter { valeurDe(it) != null }
+        if (mesurees.size < Aggregat.MIN_NUITS_AGREGAT) return null
+        val valeurs = DoubleArray(mesurees.size) { valeurDe(mesurees[it])!! }
+        val graine = Aggregat.graineDe(mesurees.map { it.sessionHex })
         val (bas, haut) = Aggregat.bootstrapCi(valeurs, graine)
         val dispersion = Aggregat.dispersion(valeurs)
         return Aggregat.Resultat(
@@ -192,9 +217,12 @@ object Mapping {
             mediane = Aggregat.mediane(valeurs),
             ciBas = bas,
             ciHaut = haut,
-            nuits = nuits.size,
+            // `mesurees` et non `nuits` : le `n` affiche a cote de l'intervalle est le nombre de
+            // valeurs qui l'ont produit. Compter les nuits sans valeur le gonflerait, et la MDC95
+            // — qui divise par la racine de ce `n` — annoncerait une precision qu'elle n'a pas.
+            nuits = mesurees.size,
             dispersion = dispersion,
-            mdc95 = Aggregat.mdc95(dispersion, nuits.size),
+            mdc95 = Aggregat.mdc95(dispersion, mesurees.size),
         )
     }
 

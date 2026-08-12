@@ -1,6 +1,26 @@
 # Pendulum — Architecture de capture et de transfert (montre → téléphone)
 
-Document de conception, complète et remplace les sections « Module `wear` » et « Transfert montre → téléphone » de `SPEC-v1.md`. Cible : Pixel Watch 3 (41 mm, ~306 mAh) portée **à la cheville**, accéléromètre 50 Hz pendant ~8 h, téléphone Android au chevet. Wear OS 5 / Android 14-15, `compileSdk 35`, sideload personnel.
+Document de conception, complète et remplace les sections « Module `wear` » et « Transfert montre → téléphone » de [`SPEC-v1.md`](SPEC-v1.md), qui est historique. Cible : Pixel Watch 3 (41 mm, ~306 mAh) portée **à la cheville**, accéléromètre 50 Hz pendant ~8 h, téléphone Android au chevet. Wear OS 5 / Android 14-15, `compileSdk 35`, sideload personnel.
+
+> **Ce document fait foi sur le budget d'énergie et sur le protocole**, c'est-à-dire sur le §1 (les
+> trois options chiffrées en mAh) et sur le §2.3 (le schéma exact de chaque `DataItem`). Ils
+> n'existent nulle part ailleurs. Sa contrepartie anglaise, plus courte et tenue à jour, est
+> [`../04-architecture.md`](../04-architecture.md) ; **la disposition octet par octet du format de
+> chunk telle qu'elle est aujourd'hui** est là-bas au §3, parce qu'ici on n'écrit que les écarts.
+>
+> **Tout ce qui est chiffré ici en milliampères-heure est une estimation d'ingénieur, pas une
+> mesure**, et le §0 sépare honnêtement ce qui a été vérifié sur source primaire de ce qui est du
+> folklore assumé. Depuis, plusieurs des questions laissées ouvertes ont été tranchées sur du vrai
+> matériel : le service de premier plan `health` a tenu 32 minutes de Doze profond forcé, écran
+> éteint, sans wake lock et sans être tué, et l'invariant du transfert — rien n'est effacé de la
+> montre avant l'accusé du téléphone — a été vérifié dans les deux sens.
+> **[`BANC-ESSAI.md`](BANC-ESSAI.md) §12 est ce compte rendu**, avec les commandes ; son §12.6 dit
+> exactement ce qui n'est toujours pas prouvé, à commencer par la batterie, qu'une montre restée sur
+> son socle ne permet pas de mesurer.
+>
+> Le §0 date ses vérifications de « aujourd'hui » sans dire lequel. Le dépôt situe l'écriture fin
+> juillet 2026 ; toute ligne de version d'API ou de bibliothèque doit être recontrôlée avant d'être
+> utilisée.
 
 ---
 
@@ -249,13 +269,26 @@ Le format append-only à blocs CRC de `ChunkCodec.kt` fait déjà le travail : `
 **Ce que voit l'utilisateur** sur la carte de nuit :
 
 ```
-Nuit du 12 → 13 juillet          ⚠ INTERROMPUE
+Nuit du 12 → 13 juillet          INTERROMPUE
 23:41 → 03:12   ·   3 h 31 enregistrées   ·   38 chunks / 38 reçus
 Dernier signal 03:12, batterie 4 % à 03:10  →  cause probable : batterie
-PLMI 11,2 /h   ·  fiabilité FAIBLE (moins de 4 h de sommeil analysé)
+Pas d'index publié — 3 h 31 de sommeil analysable, il en faut 4
 ```
 
-Et le rappel déjà acté dans `SPEC-v1.md` : **une nuit seule ne veut rien dire**, l'UI refuse de conclure sous 3 nuits. Une nuit tronquée n'est donc pas une catastrophe — c'est une nuit qui compte moins.
+> **La dernière ligne de cette carte disait `PLMI 11,2 /h · fiabilité FAIBLE`. Elle a été corrigée
+> ici, parce qu'elle annonçait un chiffre que le produit refuse d'annoncer.** Sous quatre heures de
+> sommeil analysable, la porte de publication rend `NO_PLMI` et il n'y a **aucun** index à afficher —
+> sur une poignée de mouvements groupés, l'index explose. Et le niveau de confiance qui
+> l'accompagnait n'existe plus : il a été retiré du produit en même temps que le verrou de dépistage
+> respiratoire, parce que rien ne l'alimentait. Une carte de maquette qui affiche un chiffre plus
+> assuré que celui du code est exactement le défaut que ce projet écrit partout qu'il refuse.
+>
+> Deux réserves de plus sur ce dessin, laissées en l'état parce qu'elles n'induisent personne en
+> erreur sur un chiffre : la grandeur mise en avant n'est plus le compte horaire mais la période
+> fondamentale en secondes ([`SPEC-v2.md`](SPEC-v2.md) §5), et « 38 chunks » correspond à des chunks
+> de 30 min qui n'existent plus — une nuit en compte environ 96 de cinq minutes.
+
+Et le rappel déjà acté dans [`SPEC-v1.md`](SPEC-v1.md) : **une nuit seule ne veut rien dire**, l'UI refuse de conclure sous 3 nuits. Une nuit tronquée n'est donc pas une catastrophe — c'est une nuit qui compte moins.
 
 ---
 
@@ -330,11 +363,13 @@ Escalade, **monotone** (jamais de retour arrière dans la même session, sinon o
 
 Le changement de palier **force une rotation de chunk** : `modeFlags` et `nominalRateHz` sont dans l'entête et ne sont jamais réécrits (format append-only). Chaque bloc suivant un trou porte `FLAG_GAP_BEFORE`.
 
-25 Hz reste largement suffisant : les CLM durent 0,5 à 10 s et l'enveloppe RMS est calculée sur 0,15 s. Nyquist n'est pas le facteur limitant, la résolution temporelle de l'onset l'est, et 40 ms suffisent.
+25 Hz reste largement suffisant : les CLM durent 0,5 à 10 s et l'enveloppe RMS de décision est calculée sur **0,50 s**. Nyquist n'est pas le facteur limitant, la résolution temporelle de l'onset l'est, et 40 ms suffisent.
+
+*Cette phrase portait 0,15 s, valeur reprise de la v1. [`ALGO-v2.md`](ALGO-v2.md) §0-b montre que 0,15 s n'était pas un paramètre mais un bug de transposition — la fenêtre vient de S-PLMAD, qui traite de l'EMG à 512 Hz dans une bande 10–300 Hz. La conclusion sur 25 Hz ne bouge pas ; la raison affichée, si.*
 
 ### 3.4 Arrêt automatique
 
-Cinq conditions, la première qui se présente gagne. Chacune écrit `stopReason` dans le sidecar et dans `/pendulum/session`.
+**Six** conditions, la première qui se présente gagne. Chacune écrit `stopReason` dans le sidecar et dans `/pendulum/session`. (Ce paragraphe a longtemps annoncé cinq conditions au-dessus d'un tableau qui en compte six, et deux autres endroits du document ont recopié le compte faux.)
 
 | # | Condition | Détail | `stopReason` |
 |---|---|---|---|
@@ -589,7 +624,7 @@ C'est le seul moment où l'utilisateur regarde. Le préflight s'exécute **avant
 | `AckObserver` | `WearableListenerService` : `/pendulum/ack` → supprime fichiers et items, gère `needResend` ; `/pendulum/sweep-request` → lance le balayage. |
 | `SweepSender` | Ouvre le `ChannelClient` et écrit le flux `SweepFraming` des chunks non acquittés. |
 | `TransferWorker` | `WorkManager` : rattrapage hors service (matin, reboot, backlog), contrainte batterie > 30 % ou chargeur. |
-| `BootReceiver` | `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` → reprise **ou** finalisation, selon les cinq conditions du §3.5. |
+| `BootReceiver` | `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` → reprise **ou** finalisation, selon les cinq conditions de reprise du §3.5 — à ne pas confondre avec les **six** conditions d'arrêt du §3.4. |
 | `PreflightChecker` | **Pur** (entrées injectées) : produit `List<Blocker>` + `List<Warning>`. |
 | `RecordViewModel` / `RecordScreen` / `MainActivity` | UI unique, `StateFlow` à 30 s, zéro animation. |
 
@@ -620,7 +655,7 @@ L'ordre est contraint par le fait que **P1 est une phase go/no-go** : il faut le
 
 **Vague 2 — robustesse locale (P2)**
 8. `GapMonitor` + escalade
-9. `SessionStore` + `BootReceiver` (avec les cinq conditions)
+9. `SessionStore` + `BootReceiver` (avec les cinq conditions de reprise du §3.5)
 10. `WakeDetector` + les autres conditions d'arrêt
 11. Purge de quota
 

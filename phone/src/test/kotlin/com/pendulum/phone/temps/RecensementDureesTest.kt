@@ -65,6 +65,13 @@ class RecensementDureesTest {
             "seuil d'affichage en megaoctets — un volume, jamais une duree",
         "Mapping.kt:1_000L" to
             "seuil d'affichage en kilooctets — un volume, jamais une duree",
+        // Troisieme famille, et la seule qui soit vraiment une duree : celles qui se mesurent sur
+        // l'horloge du **monde exterieur** et non sur celle du produit. Le catalogue les
+        // comprimerait avec le reste, ce qui les casserait — a diviseur 600, ce seuil vaudrait
+        // 0,67 ms et toute demande de permission passerait pour etouffee.
+        "SleepReader.kt:400L" to
+            "aller-retour d'une boite de dialogue du systeme — elle ne s'ouvre pas plus vite " +
+            "parce qu'un banc comprime le temps",
     )
 
     @Test

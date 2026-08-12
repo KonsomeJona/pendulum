@@ -2,16 +2,18 @@
 
 Ce document **remplace `SPEC-v1.md` partout où les deux se contredisent**. Il ne réécrit pas v1 : il enregistre ce qui a changé, pourquoi, et où lire le détail. `SPEC-v1.md` reste au dépôt comme trace de l'état initial.
 
-## Index des documents
-
-| Document | Contenu | Autorité |
-|---|---|---|
-| `SPEC-v1.md` | Plan initial (recherche d'antériorité, structure des modules, phases) | Historique. Ne plus s'y référer sans passer par ce fichier. |
-| `REVUE-CRITIQUE.md` | 38 défauts (6 bloquants), ce qui manque, 9 mécanismes d'auto-tromperie | Fait foi sur les défauts |
-| `ALGO-v2.md` | Chaîne DSP v2, API du module `algo`, générateur synthétique, tableau des paramètres | Fait foi sur l'algorithme |
-| `ARCHI-CAPTURE.md` | Capture montre, transfert, protocole, manifeste, cycle de vie | Fait foi sur `wear` et le transfert |
-| `SOURCES-SOMMEIL.md` | Choix de la source d'hypnogramme, Health Connect, vérification préalable | Fait foi sur `phone/health` |
-| `UX.md` | Principes, écrans, textes, data-viz, système visuel, Compose | Fait foi sur l'interface |
+> **Ce document portait ici un second index des autorités.** Il en existait deux dans le dépôt,
+> celui-ci et celui de [`../README.md`](../README.md), et ils s'étaient mis à se contredire : cet
+> index-ci donnait encore `UX.md` comme faisant foi sur l'interface, alors que `UX.md` lui-même
+> enregistre trois décisions prises après lui. Deux cartes du même territoire, c'est le défaut que ce
+> projet a déjà payé plusieurs fois. **Il n'en reste qu'une, dans
+> [`../README.md`](../README.md#which-document-makes-the-decision-and-on-what).**
+>
+> Ce que ce fichier garde en propre : la filiation entre les documents français, qu'aucun autre
+> n'écrit. `SPEC-v2.md` remplace `SPEC-v1.md` là où les deux se contredisent ;
+> [`ALGO-v2.md`](ALGO-v2.md) remplace sa section « Module `algo` » ;
+> [`ARCHI-CAPTURE.md`](ARCHI-CAPTURE.md) ses sections « Module `wear` » et « Transfert » ; les
+> défauts qui ont déclenché tout cela sont dans [`REVUE-CRITIQUE.md`](REVUE-CRITIQUE.md).
 
 **Lire le §5 en premier.** Il change la métrique principale du produit, après coup, sur la base de résultats extraits de PubMed que les cinq relectures n'avaient pas. Tout ce qui est écrit ailleurs en supposant que la métrique est le compte horaire doit être relu à sa lumière — en particulier `UX.md` §3 et §4.2, dont la logique reste valable mais dont la grandeur tracée change.
 
@@ -132,7 +134,7 @@ Les critères de phase de v1 étaient partiellement incohérents (P1 : « ≥ 97
 |---|---|
 | Skeba, Hiranniramol, Earley, Allen — *Sleep Med* 2016;17:138-43 (PMID 26847989) · 29 SJSR non traités + 22 témoins, 2 nuits consécutives | Variabilité nuit à nuit, en % de la moyenne des deux nuits : **moyenne du log IMI = 3,6 % ± 3,7** contre **PLMS/h = 43,2 % ± 37,1** (p < 0,001). L'IMI suit une loi log-normale. La variabilité du log IMI est aussi meilleure que celle du Periodicity Index. |
 | Ferri et al. — *Sleep Med* 2013;14(3):293-6 (PMID 23068780) | Le Periodicity Index varie **plus de 6,5 fois moins** que le PLMS index chez les SJSR (2 fois chez les PLMD). |
-| Ferri et al. — *Sleep Med* 2016;17:32-8 (PMID 26922620) · 107 SJSR + 48 témoins | Seuils diagnostiques optimaux : **15-16/h** (index standard), **~13/h** (index alternatif), **~0,5** (Periodicity Index), aires sous ROC similaires. La périodicité a donc son propre seuil publié. |
+| Ferri et al. — *Sleep Med* 2016;22:97-9 (PMID 26922620) · 107 SJSR + 48 témoins | Seuils diagnostiques optimaux : **15-16/h** (index standard), **~13/h** (index alternatif), **~0,5** (Periodicity Index), aires sous ROC similaires. La périodicité a donc son propre seuil publié. |
 
 À quoi s'ajoute une revue de 2026 signée Ferri lui-même (*Sleep*, PMID 42213077) dont la thèse est que « périodicité, agrégation en salves, dépendance au stade et couplage autonomique portent plus d'information clinique que les seuls comptes d'événements ».
 

@@ -274,6 +274,9 @@ zero and therefore barely translates. The forward model makes this explicit:
 | Large movement | 20° | 0.25 s | 0.30 m | 985 mg |
 | **Ankle rotation only** | 15° | 0.30 s | 0.02 m | **34 mg**, and 0 mg if the housing sits on the tibia |
 
+That last row is a wearing instruction as much as a physical result, and
+[`09-release.md`](09-release.md) §1 draws where the watch has to sit for the radius to be non-zero.
+
 The design consequence is stated plainly because it governs everything downstream: **an
 accelerometric count is a different quantity, not a noisy estimate of the EMG one.** It is on a
 different scale. Sensitivity and specificity against EMG are therefore the wrong frame — a detector

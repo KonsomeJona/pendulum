@@ -1320,6 +1320,14 @@
       `ui/SeuilsTest.kt` compare l'ordre des lignes a ces identifiants.
     -->
     <string name="night_why_title">Why %1$s</string>
+    <!--
+      Le titre du meme bloc quand la nuit ne porte aucun index : sans sommeil analysable il n'y a
+      pas de denominateur, donc pas de taux — et « Why 0 /h » annoncerait une nuit sans le moindre
+      mouvement, ce qui est une mesure et non une absence de mesure. Les lignes du bloc restent
+      affichees, avec un tiret la ou la grandeur n'existe pas : elles disent ou le calcul s'est
+      arrete, ce qu'un bloc supprime ne dirait pas.
+    -->
+    <string name="night_why_title_no_index">Why this night carries no index</string>
     <string name="night_why_analysable_sleep">Analysable sleep</string>
     <string name="night_why_movements_counted">Movements counted</string>
     <string name="night_why_rule">Counting rule</string>
@@ -1525,7 +1533,24 @@
 
     <string name="error_hc_02_title">Sleep access revoked</string>
     <string name="error_hc_02_cause">The permission to read sleep has been withdrawn from Pendulum.</string>
-    <string name="error_hc_02_action">The nights already analysed are kept; new ones will use the accelerometer mask.</string>
+<!--
+      La marche a suivre quand la boite de permission ne s'affiche plus.
+
+      Health Connect suit la regle des permissions d'execution : apres deux refus, le systeme
+      cesse d'afficher la boite et rend la main sans rien montrer. Continuer a proposer
+      « Restore the permission » serait un bouton qui ne fait rien — le defaut que ce produit a
+      deja corrige ailleurs en retirant quatre boutons muets.
+
+      Elle dit aussi ce que l'absence coute, parce que c'est la vraie information : sans sommeil,
+      le denominateur vient du meme signal que le numerateur, et l'application refuse alors de
+      laisser ce chiffre porter le resultat.
+    -->
+    <string name="error_hc_02_action_manuelle">Android no longer shows the permission dialog for Pendulum. Open Health Connect and allow sleep reading there. Without it, no night can carry a result: the sleep time used as the denominator would come from the same signal as the movements counted.</string>
+
+    <!-- Le bouton qui accompagne la marche a suivre manuelle : il ouvre l'ecran, il ne redemande pas. -->
+    <string name="error_hc_02_button_manuel">Open Health Connect</string>
+
+        <string name="error_hc_02_action">The nights already analysed are kept; new ones will use the accelerometer mask.</string>
     <string name="error_hc_02_button">Restore the permission</string>
 
     <string name="error_hc_03_title">Two sleep sources for this night</string>

@@ -226,13 +226,19 @@ object Controles {
         // Le taux de manques est **mesure** par la deconvolution harmonique, pas suppose. Il est
         // a la fois un indicateur de qualite et le critere qui dit si deux nuits mesurent la
         // meme chose : deux nuits dont les taux different beaucoup ne se comparent pas.
+        //
+        // Quand l'ajustement du rythme a ete refuse — le cas frequent — il n'y a pas de taux du
+        // tout. La ligne reste, avec un tiret et un etat inconnu : c'est la meme convention que la
+        // ligne du plus grand trou ci-dessus, et pour la meme raison — un `✓` ou un `✗` sur une
+        // valeur absente affirme un controle qui n'a pas eu lieu.
         resultat?.let {
+            val taux = nuit.missRate
             add(
                 Controle(
                     libelle = texte(R.string.night_detail_missed_rate),
-                    valeur = texte(pourcent(nuit.missRate)),
+                    valeur = texte(taux?.let { t -> pourcent(t) } ?: TIRET),
                     seuil = texte(pourcent(Mapping.SEUIL_MANQUES_NOTABLE)),
-                    ok = nuit.missRate <= Mapping.SEUIL_MANQUES_NOTABLE,
+                    ok = taux?.let { t -> t <= Mapping.SEUIL_MANQUES_NOTABLE },
                 )
             )
         }

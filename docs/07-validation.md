@@ -1017,6 +1017,14 @@ None of this is validation.
   and instrumented tests cover the interface guard rails, but no accelerometer has been worn at an
   ankle by this software. Level 2 and level 3 checks have not been performed, and the hardware
   feasibility gate itself (phase P1) has not been passed.
+- **No level tests what happens after the numbers are computed.** Every assertion above stops at the
+  output of `algo`. The path from there to a stored, displayed night is covered by unit tests on
+  objects built in memory, and a defect currently lives in exactly that gap: a night whose index is
+  a refusal rather than a value cannot be written to the database at all, so it vanishes without a
+  message instead of appearing as an excluded night with its reason.
+  [`04-architecture.md`](04-architecture.md) §4.7 describes it and the correction. It is the kind of
+  failure a synthetic suite is structurally unable to catch, because the suite never crosses the
+  storage boundary.
 
 **And no amount of synthetic testing substitutes for polysomnography.** The AASM issues a strong
 recommendation against actigraphy as a replacement for EMG in diagnosing periodic limb movement

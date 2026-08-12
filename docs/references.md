@@ -63,22 +63,6 @@ has been supplied from memory. Check it before citing Pendulum as a source for i
 |---|---|---|---|
 | Terrill P.I., Leong M., Barton K., Freakley C., Downey C., Vanniekerk M., Jorgensen G., Douglas J. **Measuring leg movements during sleep using accelerometry: comparison with EMG and piezo-electric scored events.** *Proc IEEE EMBC* 2013 | [PMID 24111321](https://pubmed.ncbi.nlm.nih.gov/24111321/) | **abstract** (full text inaccessible) | **n = 9. The accelerometer was on the right great toe, not the ankle** — the paper's words are "high temporal resolution accelerometry of the right great toe". 39.0 % of EMG-scored movements (**range 4.8–69.6 %**) and 54.9 % of piezo-scored movements (range 26.7–76.3 %) were not associated with toe movement. **Read the caveat below before using this number.** |
 | Spektor E., Fietze I., Poluektov M. **The Validation of the SOMNOwatch™ Actigraphy System for Periodic Limb Movements in Sleep Assessment.** *Clocks & Sleep* 2024;6(4):568–577 | [doi:10.3390/clockssleep6040038](https://doi.org/10.3390/clockssleep6040038) | **abstract** | The feasibility argument: r = 0.98, event-level sensitivity 86.7 % / specificity 92.3 %, and 85.7 % / 95.2 % for classifying PLMI ≥ 15/h, from a **unilateral** ankle sensor, n = 28. Important caveats: the scoring was manual, the cohort enriched, and a between-subject correlation is not event-level accuracy. **And the device validated here is the SOMNOwatch™ — the same medical-grade actigraph listed further down as "out of reach for individual use (~€1,862)".** The feasibility precedent and the unaffordable device are one and the same: a dedicated sensor with a PLM-specific algorithm and manual scoring, which is not a consumer watch under automatic scoring |
-
-> **Caveat on Terrill's 39 %, added 2026-08-05.** The project uses this figure as a floor of
-> mechanically invisible movements *at the ankle*, in `07-validation.md` §4.4, in the KDoc of
-> `Rhythm.kt`, and in the report handed to a physician. **The measurement was taken at the great
-> toe.** The two sites are not interchangeable, and the direction of the error is not neutral:
-> during a dorsiflexion about the talocrural joint, the great toe has the largest effective radius
-> of the whole limb, while a watch worn at the ankle sits *above* the joint axis — it neither
-> translates nor rotates, so even the gravity vector it measures is unchanged. **The toe is the
-> most favourable site and the ankle the least**, which means the true floor at the ankle is
-> higher than 39 %, by an amount nobody has measured. No published figure for an ankle-worn
-> accelerometer is known to this project; if one exists it should replace this transposition.
->
-> This matters beyond the wording. §4.4 concludes that "mechanics alone impose p ≥ 0.39" and that
-> the margin available to the threshold policy is 0.39 to 0.50. **If the real floor at the ankle
-> exceeds 0.50, that margin does not exist**, and the harmonic deconvolution is never identifiable
-> at any setting. That conclusion has to be reopened, not merely re-worded.
 | Sicbaldi M. et al. **Leg movement detection with a wrist- and ankle-worn accelerometer (Axivity AX6).** *Sci Rep* 2025 | [PMC12770513](https://pmc.ncbi.nlm.nih.gov/articles/PMC12770513/) | **full** | 100 Hz, 0.1–10 Hz band, 15 mg ankle detection threshold, typical sleep movement magnitude 377 ± 63 mg, waking movement 2506 ± 240 mg, movement duration 4.5 ± 0.4 s. The main amplitude anchor in the absence of a published PLMS peak |
 | Sforza E. et al. **Determination of periodic leg movements with an ambulatory device (PAM-RL).** *Sleep Med* 2005;6:407–413 | [PDF](https://worldsleepsociety.org/wp-content/uploads/2018/06/Sleep-Medicine-6-2005-407%E2%80%93413.pdf) | **full** | 40 Hz, 0.3–20 Hz band, 200 mg onset / 100 mg offset thresholds, **1 s drop-out time** (a kick ends only after the signal stays below the 100 mg decay threshold for a full second); movement duration at the ankle 4.2 s and mean IMI 31.3 s in RLS — the duty-cycle figure that governs noise-floor contamination. **Correction, 2026-07-31:** the "± 0.14" and "± 1.3" formerly quoted here as dispersions are **standard errors of the mean** — §2.5 of the paper states "results in the text and in the tables are expressed as mean ± standard error of the mean", and the RLS group is 11 patients. Between-patient SD of the mean duration is thus ≈ 0.46 s; the event-level SD is not published. The 1 s drop-out time and the 100/200 mg hysteresis are the two figures that bound the intra-event structure of a 4.2 s movement (see `07-validation.md` §5.5) |
 | Gschliesser V. et al. **PLM detection by actigraphy: comparison of two systems against PSG.** 2009 | [PMID 18656421](https://pubmed.ncbi.nlm.nih.gov/18656421/) | **abstract** | The Actiwatch (3 Hz high-pass) under-counts badly (21.2 ± 25.6 vs 34.4 ± 30.7, p < 0.001) while the PAM-RL (0.3 Hz corner) over-counts (63.6 ± 39.3 vs 37.0 ± 33.5, p = 0.009). Half of the inference that PLMS energy is low-frequency |
@@ -87,6 +71,23 @@ has been supplied from memory. Check it before citing Pendulum as a source for i
 | **S-PLMAD** — automated PLM detector for EMG | identifier not recorded | **abstract** | The source of the 0.15 s RMS window inherited by Pendulum v1. Identified as a transposition error: S-PLMAD operates on 512 Hz EMG in a 10–300 Hz band, so the window is meaningless for a 1–5 Hz accelerometric signal |
 | Marino M. et al. **Measuring sleep: accuracy, sensitivity and specificity of wrist actigraphy compared to PSG.** *Sleep* 2013;36(11):1747 | [PMID 24179309](https://pubmed.ncbi.nlm.nih.gov/24179309/) | **abstract** | Actigraphy sensitivity 0.965, specificity 0.329 — very good at calling sleep, very poor at calling wake |
 | **NeuroMetrix patents US9731126 / US10335595** | US9731126, US10335595 | **abstract** | 50 Hz sampling, 0.5 Hz high-pass, 0.02 / 0.03 g detection thresholds — the published configuration closest to the Pendulum one, and the main anchor for the absolute floor |
+
+> **Caveat on Terrill's 39 %, added 2026-08-05.** The project uses this figure as a floor of
+> mechanically invisible movements *at the ankle*, in [`07-validation.md`](07-validation.md) §4.4,
+> in the KDoc of `Rhythm.kt`, and in the report handed to a physician. **The measurement was taken
+> at the great toe.** The two sites are not interchangeable, and the direction of the error is not
+> neutral: during a dorsiflexion about the talocrural joint, the great toe has the largest
+> effective radius of the whole limb, while a watch worn at the ankle sits *above* the joint
+> axis — it neither translates nor rotates, so even the gravity vector it measures is unchanged.
+> **The toe is the most favourable site and the ankle the least**, which means the true floor at
+> the ankle is higher than 39 %, by an amount nobody has measured. No published figure for an
+> ankle-worn accelerometer is known to this project; if one exists it should replace this
+> transposition.
+>
+> This matters beyond the wording. §4.4 concludes that "mechanics alone impose p ≥ 0.39" and that
+> the margin available to the threshold policy is 0.39 to 0.50. **If the real floor at the ankle
+> exceeds 0.50, that margin does not exist**, and the harmonic deconvolution is never identifiable
+> at any setting. That conclusion has to be reopened, not merely re-worded.
 
 ---
 

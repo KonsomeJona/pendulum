@@ -136,16 +136,21 @@ data class ComparableNight(
     val maskSource: String,
     val gate: String,
     val independence: String,
-    val plmi: Double,
-    val plmiSpt: Double,
-    val fundamentalSec: Double,
+    /**
+     * `null` quand la nuit n'a aucun index a porter : sans sommeil analysable il n'y a pas de
+     * denominateur, donc pas de taux — et surtout pas un zero. Voir [PlmResultEntity.plmi].
+     */
+    val plmi: Double?,
+    val plmiSpt: Double?,
+    val fundamentalSec: Double?,
     /**
      * L'ajustement du rythme a-t-il ete accepte par `:algo` ?
      *
      * **Faux est le cas normal**, pas l'exception : sur la nuit nominale, `RhythmMeasurementTest`
      * mesure 2 ajustements valides sur 20 — la deconvolution refuse le plus souvent, parce que le
      * detecteur ne lui livre pas assez d'intervalles exploitables. `fundamentalSec` vaut alors
-     * `NaN`, et non 0, precisement pour empoisonner visiblement tout calcul qui l'ignorerait.
+     * `null`, et non 0 : `:algo` rend un `NaN` — « pas de valeur », pas « periode nulle » — et la
+     * frontiere de persistance le traduit en `NULL`.
      *
      * La colonne est dans la vue parce que `gate = 'FULL'` ne la couvre pas : la porte de
      * publication porte sur le denominateur et la troncature, jamais sur l'ajustement du rythme.
@@ -153,7 +158,7 @@ data class ComparableNight(
      */
     val rhythmValid: Boolean,
     val periodicityIndex: Double,
-    val missRate: Double,
+    val missRate: Double?,
     val analysableTstMin: Double,
     val analysableMin: Double,
     val truncated: Boolean,

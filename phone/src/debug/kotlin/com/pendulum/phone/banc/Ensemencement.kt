@@ -286,41 +286,16 @@ object Ensemencement {
         )
 
         // --- le derive -----------------------------------------------------------------
+        // Meme fabrique que l'analyse reelle. Le banc doit passer par la conversion `NaN` -> `NULL`
+        // exactement comme la production : une nuit synthetique qui s'insererait la ou une vraie
+        // echoue ferait rater au banc le seul defaut qu'il est la pour attraper.
         val resultats = nuit.mesures.map { p ->
-            PlmResultEntity(
+            PlmResultEntity.depuis(
                 sessionHex = hex,
                 paramsHash = params.paramsHash,
-                rule = p.rule.name,
-                maskSource = p.maskSource.name,
                 computedAtMs = finWallMs + 3 * 3_600_000L,
                 algoVersion = params.algoVersion,
-                plmsCount = p.plmsCount,
-                plmwCount = p.plmwCount,
-                isolatedCount = p.isolatedCount,
-                shortImiCount = p.shortImiCount,
-                tstMin = p.tstMin,
-                analysableTstMin = p.analysableTstMin,
-                sptMin = p.sptMin,
-                wasoMin = p.wasoMin,
-                plmi = p.plmi,
-                plmiSpt = p.plmiSpt,
-                plmw = p.plmw,
-                plmiFirstHalf = p.plmiFirstHalf,
-                plmiSecondHalf = p.plmiSecondHalf,
-                plmiRespWorstCase = p.plmiRespWorstCase,
-                periodicityIndex = p.pi.periodicityIndex,
-                periodicityValid = p.pi.valid,
-                fundamentalSec = p.rhythm.fundamentalSec,
-                muLog = p.rhythm.muLog,
-                sigmaLog = p.rhythm.sigmaLog,
-                missRate = p.rhythm.missRate,
-                alternationSuspect = p.rhythm.alternationSuspect,
-                rhythmConverged = p.rhythm.converged,
-                rhythmValid = p.rhythm.valid,
-                truncatedSeriesDropped = p.truncatedSeriesDropped,
-                independence = p.independence.name,
-                gate = p.gate.name,
-                floorMode = p.floorMode.name,
+                r = p,
             )
         }
 

@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.pendulum.algo.model.PlmiResult
 
 /**
  * Schema Room de `:phone`.
@@ -347,19 +348,47 @@ data class PlmResultEntity(
     val sptMin: Double,
     val wasoMin: Double,
 
-    val plmi: Double,
-    val plmiSpt: Double,
-    val plmw: Double,
-    val plmiFirstHalf: Double,
-    val plmiSecondHalf: Double,
-    val plmiRespWorstCase: Double,
+    /**
+     * Les six taux, **nullables**, et `null` veut dire « cette nuit n'en porte pas ».
+     *
+     * `safeRate` rend `NaN` des que le denominateur n'existe pas, et c'est la bonne decision — un
+     * taux sans denominateur n'est pas zero. Mais SQLite ne connait pas `NaN` : la liaison le
+     * convertit en `NULL`, et une colonne `NOT NULL` refusait alors l'insertion
+     * (`SQLiteConstraintException: NOT NULL constraint failed: plm_result.plmi`). Comme
+     * `AnalyzeWorker` rend `retry()` sur exception, la nuit etait reessayee sans fin et
+     * n'apparaissait **nulle part** : c'est le chemin par defaut de tout utilisateur sans
+     * hypnogramme Health Connect, pas un cas limite.
+     *
+     * Ecrire `0.0` a la place aurait ete pire que le defaut : « 0 mouvement par heure » est une
+     * mesure, et l'annoncer pour une nuit ou rien n'a pu etre mesure est un mensonge clinique.
+     * `null` se propage jusqu'au tiret de l'ecran ([com.pendulum.phone.ui.model.Mapping.TIRET]),
+     * qui dit exactement ce qui s'est passe.
+     *
+     * La conversion se fait en un seul endroit : [PlmResultEntity.depuis].
+     */
+    val plmi: Double?,
+    val plmiSpt: Double?,
+    val plmw: Double?,
+    val plmiFirstHalf: Double?,
+    val plmiSecondHalf: Double?,
+    val plmiRespWorstCase: Double?,
 
+    /** Jamais `NaN` : `Periodicity.fromIntervals` rend `0.0` sans intervalle, et porte son `valid`. */
     val periodicityIndex: Double,
     val periodicityValid: Boolean,
-    val fundamentalSec: Double,
-    val muLog: Double,
-    val sigmaLog: Double,
-    val missRate: Double,
+
+    /**
+     * Les quatre sorties de la deconvolution, nullables pour la meme raison que les taux
+     * ci-dessus — `Rhythm.emptyFit` les met toutes a `NaN` quand l'ajustement est refuse.
+     *
+     * **Le refus est le cas frequent**, pas l'exception : `RhythmMeasurementTest` mesure 2
+     * ajustements acceptes sur 20 nuits nominales. La colonne `NOT NULL` faisait donc echouer
+     * l'insertion de la plupart des nuits, y compris celles dont le PLMI, lui, existait.
+     */
+    val fundamentalSec: Double?,
+    val muLog: Double?,
+    val sigmaLog: Double?,
+    val missRate: Double?,
     val alternationSuspect: Boolean,
     val rhythmConverged: Boolean,
     val rhythmValid: Boolean,
@@ -368,7 +397,72 @@ data class PlmResultEntity(
     val independence: String,
     val gate: String,
     val floorMode: String,
-)
+) {
+    companion object {
+
+        /**
+         * L'unique fabrique d'une ligne de resultat, et **l'unique endroit ou un `NaN` devient un
+         * `NULL`**.
+         *
+         * Elle existe parce que la conversion doit vivre a la frontiere de persistance et nulle
+         * part ailleurs. Deux appelants construisent cette ligne — l'analyse reelle et
+         * l'ensemencement du banc — et une conversion recopiee chez chacun d'eux est une
+         * conversion dont l'un des deux exemplaires finira par oublier un champ. Le champ oublie
+         * ne se verrait pas : il ferait echouer l'insertion, `AnalyzeWorker` rendrait `retry()`,
+         * et la nuit disparaitrait en silence. C'est precisement le defaut qu'on repare.
+         */
+        fun depuis(
+            sessionHex: String,
+            paramsHash: String,
+            computedAtMs: Long,
+            algoVersion: String,
+            r: PlmiResult,
+        ): PlmResultEntity = PlmResultEntity(
+            sessionHex = sessionHex,
+            paramsHash = paramsHash,
+            rule = r.rule.name,
+            maskSource = r.maskSource.name,
+            computedAtMs = computedAtMs,
+            algoVersion = algoVersion,
+            plmsCount = r.plmsCount,
+            plmwCount = r.plmwCount,
+            isolatedCount = r.isolatedCount,
+            shortImiCount = r.shortImiCount,
+            tstMin = r.tstMin,
+            analysableTstMin = r.analysableTstMin,
+            sptMin = r.sptMin,
+            wasoMin = r.wasoMin,
+            plmi = r.plmi.siDefinie(),
+            plmiSpt = r.plmiSpt.siDefinie(),
+            plmw = r.plmw.siDefinie(),
+            plmiFirstHalf = r.plmiFirstHalf.siDefinie(),
+            plmiSecondHalf = r.plmiSecondHalf.siDefinie(),
+            plmiRespWorstCase = r.plmiRespWorstCase.siDefinie(),
+            periodicityIndex = r.pi.periodicityIndex,
+            periodicityValid = r.pi.valid,
+            fundamentalSec = r.rhythm.fundamentalSec.siDefinie(),
+            muLog = r.rhythm.muLog.siDefinie(),
+            sigmaLog = r.rhythm.sigmaLog.siDefinie(),
+            missRate = r.rhythm.missRate.siDefinie(),
+            alternationSuspect = r.rhythm.alternationSuspect,
+            rhythmConverged = r.rhythm.converged,
+            rhythmValid = r.rhythm.valid,
+            truncatedSeriesDropped = r.truncatedSeriesDropped,
+            independence = r.independence.name,
+            gate = r.gate.name,
+            floorMode = r.floorMode.name,
+        )
+    }
+}
+
+/**
+ * La traduction de la convention de `:algo` vers celle de SQLite : `NaN` (et l'infini, que
+ * `safeRate` peut produire si le denominateur devient infinitesimal) veut dire « pas de valeur »,
+ * et « pas de valeur » s'ecrit `NULL`.
+ *
+ * `night_session.gainCalG` appliquait deja cette regle a la main ; elle porte desormais un nom.
+ */
+internal fun Double.siDefinie(): Double? = takeIf { it.isFinite() }
 
 /**
  * Le contexte du soir : dose, jambe portante, bracelet, seul dans le lit, cafe, alcool.

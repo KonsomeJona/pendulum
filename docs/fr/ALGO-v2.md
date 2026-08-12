@@ -1,6 +1,27 @@
 # SPÉCIFICATION ALGORITHMIQUE v2 — Détecteur PLMS par accéléromètre de cheville 50 Hz
 
-Module `algo`. Fonctions pures, zéro I/O, `fs` explicite. Remplace la section « Module algo » de `SPEC-v1.md`.
+Module `algo`. Fonctions pures, zéro I/O, `fs` explicite. Remplace la section « Module algo » de
+[`SPEC-v1.md`](SPEC-v1.md), qui est historique.
+
+> **Où ce document fait foi, et où il ne fait plus foi.** Le **§6, tableau des paramètres finaux**,
+> est la référence : le code cite ces tables par leur nom, et les valeurs y survivent au mot près.
+> Le **§1** et le **§2** portent le raisonnement qui les produit, et c'est ce qui n'existe nulle part
+> ailleurs.
+>
+> En revanche, **ce document précède les mesures**. Le §5.5 énonce des seuils de non-régression à
+> asserter ; ils ont depuis été écrits, exécutés, et l'un d'eux a été retourné par ce qu'il a montré.
+> **L'état mesuré est dans [`../07-validation.md`](../07-validation.md) §3 et §4**, qui dit combien
+> de tests passent, ce qu'a coûté leur passage, et ce que la mesure falsifie ici même. Deux
+> divergences connues sont listées à l'endroit où elles se posent, aux §5.5 et §6.1.
+>
+> **Ce document n'a pas de section sur l'estimateur de rythme.** La métrique suivie par le produit a
+> changé après lui ([`SPEC-v2.md`](SPEC-v2.md) §5) : c'est désormais la période fondamentale en
+> secondes, obtenue par déconvolution harmonique, et sa spécification vit dans
+> [`../03-algorithm.md`](../03-algorithm.md) §6, ses paramètres au §8.7. Rien ici n'en parle, et
+> c'est le plus gros trou du fichier.
+>
+> Pour la mise en œuvre côté montre et le transfert, voir [`ARCHI-CAPTURE.md`](ARCHI-CAPTURE.md).
+> Pour la bibliographie, [`../references.md`](../references.md) — seule liste du dépôt.
 
 ---
 
@@ -418,7 +439,18 @@ Le triplet d'horloges de l'en-tête (`startWallMs`, `startElapsedRealtimeNs`, `f
 
 **Ce qu'on peut faire, concrètement, par ordre de solidité.**
 
-1. **Verrouiller le rapport derrière un dépistage SAOS.** C'est la mesure la plus utile et elle est codable immédiatement. `RespiratoryConfidence ∈ {HIGH, MEDIUM, LOW}`, dérivé de : (a) un STOP-BANG dans le questionnaire (déjà prévu au module quiz) ; (b) l'AHI ou l'index de désaturation si Health Connect en expose un (`SleepSessionRecord` + métriques SpO2 de la Galaxy Watch 5, à vérifier sur l'appareil) ; (c) le drapeau du questionnaire SJSR. Si `LOW`, l'UI n'affiche **pas** un PLMI mais le message « non interprétable sans polygraphie respiratoire », avec le détail des CLM quand même consultable. Un chiffre faux affiché est pire que pas de chiffre.
+1. ~~**Verrouiller le rapport derrière un dépistage SAOS.**~~ `RespiratoryConfidence ∈ {HIGH, MEDIUM, LOW}`, dérivé d'un STOP-BANG dans le questionnaire, de l'AHI si Health Connect en expose un, et du drapeau du questionnaire SJSR ; sous `LOW`, l'UI n'aurait pas affiché de PLMI.
+
+   > **Abandonné, et il faut dire pourquoi plutôt que de rayer la ligne.** Ce verrou a été écrit, et
+   > **rien ne l'a jamais alimenté** : aucune source ne remplissait `RespiratoryConfidence`, donc
+   > toutes les nuits sortaient au même niveau, donc la porte ne pouvait pas se fermer. **Une
+   > protection qui ne se déclenche jamais est pire qu'une protection absente, parce qu'elle se
+   > documente comme une protection.** Le verrou et le niveau de confiance ont été retirés du produit,
+   > et avec eux toute prétention au dépistage de l'apnée : Pendulum mesure des mouvements de jambe
+   > dans le contexte du syndrome des jambes sans repos, et rien d'autre. Ce qui reste est le point 2
+   > ci-dessous — un encadrement qui ne détecte rien et ne prétend rien. Voir
+   > [`../02-science.md`](../02-science.md), section *Pendulum does not screen for sleep apnoea, and
+   > will not*.
 
 2. **Publier un encadrement, jamais un point.** Calculer et afficher `plmiRaw` et `plmiRespWorstCase`, où le pire cas retire tous les CLM appartenant à des séries dont l'IMI médian tombe dans la bande apnéique 25–45 s. Ce n'est pas une exclusion RRLM — c'est **une borne inférieure garantie**. La vraie valeur est entre les deux. L'écart entre les deux bornes est en soi l'indicateur d'incertitude à afficher.
 
@@ -1209,6 +1241,28 @@ Appariement glouton par ordre chronologique, tolérance d'onset **1,0 s**. Justi
 
 Chaque test tourne sur ≥ 20 seeds ; le seuil porte sur la médiane, avec une assertion secondaire sur le pire cas quand c'est indiqué.
 
+> **Ce tableau est la commande, pas le compte rendu. Ne pas le lire comme un état.** Les tests
+> existent aujourd'hui et [`../07-validation.md`](../07-validation.md) §3 en tient la liste vivante,
+> avec deux différences qu'il faut connaître avant de citer une ligne d'ici.
+>
+> **T6 n'est plus assis sur le même dénominateur.** Il se mesurait contre `accelTruth` entier ; il se
+> mesure désormais contre `accelTruth` **restreint aux événements au-dessus du seuil d'onset**, et le
+> prix de cette restriction est publié à côté, sous le numéro **T22** : environ **70 %** de la vérité
+> mécaniquement visible tombe sous le seuil, et une fois la règle des quatre mouvements consécutifs
+> appliquée, il ne survit que **6 %** de l'index vrai. Déplacer le dénominateur sans publier T22
+> aurait été déplacer les poteaux ; c'est la paire qui en fait une mesure.
+> [`../07-validation.md`](../07-validation.md) §4.1 est le récit complet, y compris les deux
+> diagnostics successifs qui étaient eux-mêmes faux.
+>
+> **T12 n'est pas écrit.** Le balayage ±20 % décrit ici n'existe pas comme assertion. Ce qui existe
+> est deux balayages paramétriques `@Disabled`, lancés à la main ([`../07-validation.md`](../07-validation.md)
+> §4.1 et §4.4). La distinction compte, parce qu'un de ces balayages contredit un chiffre que ce
+> projet a porté « en attendant T12 » pendant toute son histoire.
+>
+> T18 à T21 ci-dessous ne sont pas écrits non plus. C'est aussi la raison pour laquelle le test
+> suivant s'appelle T22 et non T18 : réutiliser le numéro aurait créé une collision silencieuse dans
+> un tableau que plusieurs documents citent.
+
 | ID | Scénario | Assertion |
 |---|---|---|
 | T1 | Bruit MEMS seul, 30 min | **0 CLM**. Non négociable, pire cas inclus. |
@@ -1255,7 +1309,7 @@ Les impacts à ±20 % sont des **estimations d'ingénierie à confirmer par le t
 | `settleSec` | 2,0 | s | 1,5–4,0 | Établissement Butterworth ordre 2 à 0,5 Hz | < 2 % |
 | `warmupSec` | 5,0 | s | 3–10 | ≈ 2,5× settle ; sur 8 h, ~0,03 % du dénominateur | < 0,5 % |
 | `fcGravityHz` | 0,15 | Hz | 0,08–0,25 | Sous le fondamental d'un CLM de 10 s (0,1 Hz) sans avaler la respiration dans ĝ | 2–5 % (via `tilt`) |
-| `fcHpHz` | **0,50** | Hz | 0,30–0,70 | Brevets NeuroMetrix (50 Hz, 0,5 Hz) ; +7,4 dB de réjection à 0,25 Hz vs 0,3 Hz, −0,6 dB à 0,7 Hz | 3–8 % ; **> 15 % si respiration présente** |
+| `fcHpHz` | **0,50** | Hz | 0,30–0,70 | Brevets NeuroMetrix (50 Hz, 0,5 Hz) ; +7,4 dB de réjection à 0,25 Hz vs 0,3 Hz, **−0,9 dB** à 0,7 Hz (§1.2, corrigé le 2026-07-31 ; cette case portait encore −0,6 dB) | 3–8 % ; **> 15 % si respiration présente** |
 | `hpOrder` | 2 | — | 2 ou 4 | Ordre 4 : +19 dB à 0,25 Hz mais sonnerie de posture 2 s → 4 s (§1.2) | discret, tester les deux |
 | `fcLpHz` | **8,0** | Hz | 6–12 | +5,1 dB de SNR (BW 24,5 → 7,5 Hz) ; ≥ 1,5× le pic du CLM le plus rapide (5,3 Hz) | < 3 % |
 
@@ -1348,6 +1402,13 @@ Les impacts à ±20 % sont des **estimations d'ingénierie à confirmer par le t
 
 ### Sources principales
 
+> **Ce n'est pas la bibliographie du projet, et il ne faut pas l'enrichir.** La bibliographie est
+> [`../references.md`](../references.md), et elle seule porte ce qui compte d'une source : si le
+> texte intégral a été lu ou seulement le résumé, ce que le projet en tire, et les réserves
+> attachées. Une deuxième liste est exactement ce qui a produit la citation de Ferri 2016 sous deux
+> paginations différentes dans ce dépôt. **Une source nouvelle va dans `references.md` ; cette liste
+> peut être élaguée jusqu'aux seuls documents normatifs.**
+
 - AASM Summary of Updates in Version 3 (2023) — https://aasm.org/wp-content/uploads/2023/02/Summary-of-Updates-v3.pdf
 - AASM Sleep ISR, Scoring Limb Movements — https://isr.aasm.org/helpv5/ScoringLimbMovementsL.html
 - AASM Scoring Manual FAQ (items M.4, M.5) — https://aasm.org/resources/pdf/faqsscoringmanual.pdf
@@ -1360,7 +1421,7 @@ Les impacts à ±20 % sont des **estimations d'ingénierie à confirmer par le t
 - Sleep Breath 2023 (AASM vs WASM RRLM, 50,5 vs 90,7 /h) — https://pmc.ncbi.nlm.nih.gov/articles/PMC10163289/
 - Athavale et al., SLEEP 2019 (25 Hz, LP 0,4/1,6 Hz, 87,9 %/94,1 %)
 - Sicbaldi et al., Sci Rep 2025 (Axivity AX6, 0,1-10 Hz, seuil 15 mg cheville, 377 ± 63 mg) — https://pmc.ncbi.nlm.nih.gov/articles/PMC12770513/
-- Sforza et al., Sleep Med 2005;6:407-413 (PAM-RL, 40 Hz, 0,3-20 Hz, 200/100 mg, durée 4,2 ± 0,14 s) — https://worldsleepsociety.org/wp-content/uploads/2018/06/Sleep-Medicine-6-2005-407%E2%80%93413.pdf
+- Sforza et al., Sleep Med 2005;6:407-413 (PAM-RL, 40 Hz, 0,3-20 Hz, 200/100 mg, durée moyenne 4,2 s ; le ± 0,14 est une **erreur type sur 11 patients**, pas un écart-type — voir §5.1) — https://worldsleepsociety.org/wp-content/uploads/2018/06/Sleep-Medicine-6-2005-407%E2%80%93413.pdf
 - Gschliesser et al. 2009 (Actiwatch sous-compte, PAM-RL sur-compte) — https://pubmed.ncbi.nlm.nih.gov/18656421/
 - Brevets NeuroMetrix US9731126 / US10335595 (50 Hz, HP 0,5 Hz, 0,02/0,03 g)
 - Terrill et al., EMBC 2013 (39,0 % / 54,9 % de LM sans mouvement détectable) — https://pubmed.ncbi.nlm.nih.gov/24111321/

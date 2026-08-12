@@ -11,6 +11,7 @@ import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.BoutonMotive
 import com.pendulum.phone.ui.common.Paragraphe
 import com.pendulum.phone.ui.common.PendulumCard
+import com.pendulum.phone.ui.common.ErrorCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.SectionHeader
 import com.pendulum.phone.ui.model.CompteRendu
@@ -66,9 +67,19 @@ fun HomeScreen(
      * qui appartient a la session d'ecran et non a la nuit.
      */
     retourDemarrage: CompteRendu? = null,
+    onSituationSommeil: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     PendulumScreen(modifier) {
+        // 0 — La permission de sommeil, **avant** tout le reste quand elle manque.
+        //
+        // Sans hypnogramme, le temps de sommeil qui sert de denominateur vient du meme signal que
+        // les mouvements comptes : l'application refuse alors de laisser ce chiffre porter le
+        // resultat, et chaque nuit se termine sans rien a montrer. Cette carte ne vivait que sur
+        // la tendance — un ecran qu'on n'ouvre qu'apres trois nuits, et qui reste ferme tant
+        // qu'elles ne sont pas la. Le seul ecran que l'on voit tous les jours ne disait rien.
+        etat.situationSommeil?.let { ErrorCard(it, onAction = onSituationSommeil) }
+
         // 1 — Preparer la nuit. Le scellement est la seule porte du produit.
         TonightCard(
             etat = etat.ceSoir,

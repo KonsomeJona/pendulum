@@ -413,14 +413,21 @@ interface TrendDao {
     suspend fun allNights(paramsHash: String, rule: String, maskSource: String): List<ComparableNight>
 
     /**
-     * Les points qui ont le droit d'entrer dans une courbe. `comparable = 1` **et**
-     * `gate = 'FULL'`.
+     * Les points qui ont le droit d'entrer dans une courbe. `comparable = 1`, `gate = 'FULL'`
+     * **et** `plmi IS NOT NULL`.
+     *
+     * La troisieme condition n'est pas redondante avec la deuxieme, meme si les deux coincident
+     * aujourd'hui. `gate` porte sur la *publication* — assez de sommeil analysable, nuit non
+     * tronquee ; `plmi IS NOT NULL` porte sur l'*existence* du chiffre. Les faire dependre l'une
+     * de l'autre reviendrait a ce qu'un assouplissement de la porte laisse entrer une nuit sans
+     * index dans une mediane, ou elle compterait comme une nuit de plus tout en n'apportant
+     * aucune mesure.
      */
     @Query(
         """
         SELECT * FROM comparable_night
         WHERE paramsHash = :paramsHash AND rule = :rule AND maskSource = :maskSource
-          AND comparable = 1 AND gate = 'FULL'
+          AND comparable = 1 AND gate = 'FULL' AND plmi IS NOT NULL
         ORDER BY startWallMs ASC
         """
     )
@@ -430,7 +437,7 @@ interface TrendDao {
         """
         SELECT * FROM comparable_night
         WHERE paramsHash = :paramsHash AND rule = :rule AND maskSource = :maskSource
-          AND comparable = 1 AND gate = 'FULL'
+          AND comparable = 1 AND gate = 'FULL' AND plmi IS NOT NULL
         ORDER BY startWallMs ASC
         """
     )

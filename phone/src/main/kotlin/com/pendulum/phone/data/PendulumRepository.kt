@@ -166,10 +166,14 @@ class PendulumRepository(context: Context) {
                     // Le taux de manques est mesure par la deconvolution harmonique, pas suppose.
                     // Sa mediane sur les nuits retenues est a la fois un indicateur de qualite et
                     // le critere qui dit si ces nuits mesurent bien la meme chose.
+                    //
+                    // `mapNotNull` : une nuit dont l'ajustement a ete refuse n'a pas de taux, et
+                    // le compter pour zero annoncerait une mesure sans manque. `null` quand aucune
+                    // nuit n'en porte — l'ecran rend alors un tiret.
                     tauxManquesMedian = agregeables
+                        .mapNotNull { it.missRate }
                         .takeIf { it.isNotEmpty() }
-                        ?.let { Aggregat.mediane(DoubleArray(it.size) { i -> it[i].missRate }) }
-                        ?: 0.0,
+                        ?.let { Aggregat.mediane(it.toDoubleArray()) },
                     periodiciteMediane = agregeables
                         .takeIf { it.isNotEmpty() }
                         ?.let { Aggregat.mediane(DoubleArray(it.size) { i -> it[i].periodicityIndex }) }
@@ -527,7 +531,8 @@ data class EtatTendance(
     val nuitsRythmeAjuste: Int,
     val rythme: Aggregat.Resultat?,
     val compte: Aggregat.Resultat?,
-    val tauxManquesMedian: Double,
+    /** `null` quand aucune nuit retenue ne porte de taux de manques : un tiret, jamais un zero. */
+    val tauxManquesMedian: Double?,
     val periodiciteMediane: Double,
     val profilPersonnalise: String?,
     val hashsMelanges: Boolean,

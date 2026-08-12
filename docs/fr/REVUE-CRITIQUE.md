@@ -1,7 +1,13 @@
 # Pendulum — Revue critique adversariale de SPEC-v1
 
-Portée : `docs/SPEC-v1.md`, `format/src/main/kotlin/com/pendulum/format/ChunkFormat.kt`, `ChunkCodec.kt`, `format/src/test/kotlin/com/pendulum/format/ChunkCodecTest.kt`.
+Portée : [`SPEC-v1.md`](SPEC-v1.md), `format/src/main/kotlin/com/pendulum/format/ChunkFormat.kt`, `ChunkCodec.kt`, `format/src/test/kotlin/com/pendulum/format/ChunkCodecTest.kt`.
 Posture : je cherche à faire échouer la spec, pas à la valider. Ce qui suit suppose que l'objectif réel est **un chiffre défendable devant un médecin du sommeil**, pas une app qui tourne.
+
+**Ce document est daté et il garde sa valeur en tant que tel : c'est le carnet des 38 défauts, pas
+leur état d'avancement.** Ce qu'il a déclenché est enregistré ailleurs — les décisions dans
+[`SPEC-v2.md`](SPEC-v2.md), la chaîne corrigée dans [`ALGO-v2.md`](ALGO-v2.md), et l'état honnête du
+test dans [`../07-validation.md`](../07-validation.md), qui reprend son argument central : deux
+estimateurs tirés du même mouvement ne se valident pas l'un l'autre (F-20).
 
 Note de méthode : le module `format` n'a manifestement **jamais été compilé** (ses dépendances ne sont pas dans le cache Gradle local, le plugin KSP n'est pas résolvable hors ligne). Les défauts F-01 et suivants sont donc issus d'une lecture octet par octet, pas d'une exécution. F-01 doit être confirmé par un `./gradlew :format:test`.
 

@@ -300,3 +300,20 @@ the run exactly as a failed one does, because reproducibility is the property th
 that holds from a rig that held once.
 
 So the verdict is calculable, displayable and exportable. What is missing is the nights.
+
+### What real hardware has nonetheless established
+
+Not P1, and worth separating from it carefully. The chain has been run end to end on a Pixel 10 Pro
+Fold and a Pixel Watch 3: a 32-minute recording in forced deep Doze, screen off, with the `health`
+foreground service never killed and no wake lock; seven chunks pushed, ingested, CRC-verified,
+acknowledged, and only then deleted from the watch. That last clause is the protocol's central
+invariant and it has now been observed in both directions rather than argued for. The Health Connect
+read path, which had never been exercised at all, has been and works.
+
+None of that is a night. Thirty-two minutes says nothing about eight hours, the watch was on its
+dock rather than at an ankle, and **the battery — the most discriminating P1 criterion — has not been
+measured at all**, because a charging watch cannot measure it.
+
+[`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) is the record, in French: every command with the output it
+produced, and a §12.6 headed *what this session proves, and what it does not* that is stricter than
+this paragraph. Read that section before quoting any of it.

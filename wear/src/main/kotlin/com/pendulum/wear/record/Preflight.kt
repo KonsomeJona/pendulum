@@ -191,9 +191,18 @@ object Preflight {
     private fun dirSize(dir: File): Long =
         dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
+    /**
+     * Un volume libre, **valeur et unite solidaires**.
+     *
+     * Espace insecable (U+00A0) et non espace ordinaire : sur l'ecran rond de la montre, la ligne
+     * « Free space 12.2 GB » se coupait entre le nombre et son unite, laissant « GB » seul a la
+     * ligne suivante. Le banc l'avait note, et la correction a ete crue faite deux fois — sur une
+     * capture ou la valeur tenait par chance. Rien dans le code ne l'empechait : c'est le
+     * caractere lui-meme qui doit interdire la coupure, pas la largeur du nombre du jour.
+     */
     fun formatBytes(bytes: Long): String = when {
-        bytes >= 1024L * 1024 * 1024 -> "%.1f GB".format(Locale.UK, bytes / 1024.0 / 1024 / 1024)
-        else -> "%d MB".format(Locale.UK, bytes / 1024 / 1024)
+        bytes >= 1024L * 1024 * 1024 -> "%.1f\u00A0GB".format(Locale.UK, bytes / 1024.0 / 1024 / 1024)
+        else -> "%d\u00A0MB".format(Locale.UK, bytes / 1024 / 1024)
     }
 
     private const val TAG = "PendulumPreflight"

@@ -199,41 +199,17 @@ object AnalysisRunner {
             )
         }
 
+        // `depuis` et non le constructeur : c'est elle qui traduit les `NaN` de `:algo` en `NULL`.
+        // Une nuit sans sommeil analysable — le cas par defaut sans hypnogramme Health Connect —
+        // n'a pas de PLMI du tout, et l'ecrire en dur ici la ferait echouer a l'insertion.
+        val computedAtMs = System.currentTimeMillis()
         val results = r.results.map { p ->
-            PlmResultEntity(
+            PlmResultEntity.depuis(
                 sessionHex = hex,
                 paramsHash = r.paramsHash,
-                rule = p.rule.name,
-                maskSource = p.maskSource.name,
-                computedAtMs = System.currentTimeMillis(),
+                computedAtMs = computedAtMs,
                 algoVersion = r.algoVersion,
-                plmsCount = p.plmsCount,
-                plmwCount = p.plmwCount,
-                isolatedCount = p.isolatedCount,
-                shortImiCount = p.shortImiCount,
-                tstMin = p.tstMin,
-                analysableTstMin = p.analysableTstMin,
-                sptMin = p.sptMin,
-                wasoMin = p.wasoMin,
-                plmi = p.plmi,
-                plmiSpt = p.plmiSpt,
-                plmw = p.plmw,
-                plmiFirstHalf = p.plmiFirstHalf,
-                plmiSecondHalf = p.plmiSecondHalf,
-                plmiRespWorstCase = p.plmiRespWorstCase,
-                periodicityIndex = p.pi.periodicityIndex,
-                periodicityValid = p.pi.valid,
-                fundamentalSec = p.rhythm.fundamentalSec,
-                muLog = p.rhythm.muLog,
-                sigmaLog = p.rhythm.sigmaLog,
-                missRate = p.rhythm.missRate,
-                alternationSuspect = p.rhythm.alternationSuspect,
-                rhythmConverged = p.rhythm.converged,
-                rhythmValid = p.rhythm.valid,
-                truncatedSeriesDropped = p.truncatedSeriesDropped,
-                independence = p.independence.name,
-                gate = p.gate.name,
-                floorMode = p.floorMode.name,
+                r = p,
             )
         }
 

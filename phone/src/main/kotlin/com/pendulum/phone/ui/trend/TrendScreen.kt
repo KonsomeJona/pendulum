@@ -21,6 +21,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
+import com.pendulum.phone.ui.text.texte
+import com.pendulum.phone.ui.model.ErreurPendulum
 import com.pendulum.phone.ui.chart.EtatPoint
 import com.pendulum.phone.ui.chart.GrapheTendance
 import com.pendulum.phone.ui.common.BandeauProfilPersonnalise
@@ -38,6 +40,7 @@ import com.pendulum.phone.ui.common.PositionBox
 import com.pendulum.phone.ui.common.StatusStrip
 import com.pendulum.phone.ui.common.formaterValeur
 import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.MotifRefus
 import com.pendulum.phone.ui.model.NuitUi
 import com.pendulum.phone.ui.model.TendanceUiState
@@ -86,6 +89,12 @@ fun TrendScreen(
     onActionReveil: () -> Unit,
     /** Le bouton de la carte de situation Health Connect : ouvrir Health Connect, ou les reglages. */
     onSituationSommeil: () -> Unit,
+    /**
+     * Vrai quand le systeme a cesse d'afficher la boite de permission. La carte de sommeil change
+     * alors de promesse : elle n'annonce plus une demande — qui ne montrerait plus rien — mais le
+     * passage par l'ecran de Health Connect, seul geste qui reste.
+     */
+    permissionEtouffee: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
@@ -100,7 +109,7 @@ fun TrendScreen(
                 // La situation de la source de sommeil passe **avant** le refus : une permission
                 // jamais accordee se repare maintenant, pas apres six nuits scorees sur le seul
                 // masque accelerometrique.
-                etat.situationSommeil?.let { ErrorCard(it, onAction = onSituationSommeil) }
+                etat.situationSommeil?.let { ErrorCard(carteSommeil(it, permissionEtouffee), onAction = onSituationSommeil) }
                 RefusCard(etat, onNuit)
                 // L'export est visible mais desactive, avec son motif ecrit sur le bouton :
                 // jamais un bouton actif qui echoue.
@@ -123,7 +132,7 @@ fun TrendScreen(
             is TendanceUiState.Pret -> {
                 StatusStrip(etat.reveil, onActionReveil)
 
-                etat.situationSommeil?.let { ErrorCard(it, onAction = onSituationSommeil) }
+                etat.situationSommeil?.let { ErrorCard(carteSommeil(it, permissionEtouffee), onAction = onSituationSommeil) }
 
                 BandeauProfilPersonnalise(etat.profilPersonnalise)
                 if (etat.hashsMelanges) {
@@ -229,7 +238,7 @@ fun TrendScreen(
                 PendulumCard {
                     InlineValue(stringResource(R.string.trend_counting_rule), etat.regle.resoudre())
                     InlineValue(stringResource(R.string.trend_sleep_mask), etat.masque.resoudre())
-                    InlineValue(stringResource(R.string.trend_movements_awake), "${Math.round(etat.plmw)}/h")
+                    InlineValue(stringResource(R.string.trend_movements_awake), Mapping.compteLisible(etat.plmw))
                     InlineValue(
                         stringResource(R.string.trend_periodicity),
                         // Jamais l'indice nu : un qualificatif, ou rien.
@@ -238,7 +247,7 @@ fun TrendScreen(
                     )
                     InlineValue(
                         stringResource(R.string.trend_missed_rate),
-                        "${Math.round(etat.tauxManques * 100)}%",
+                        etat.tauxManques?.let { "${Math.round(it * 100)}%" } ?: Mapping.TIRET,
                         note = stringResource(R.string.trend_missed_rate_note),
                     )
                 }
@@ -415,3 +424,21 @@ private fun formaterJourCourt(ms: Long): String {
 // Apercus
 // -----------------------------------------------------------------------------------------
 
+
+/**
+ * La carte de sommeil, adaptee a ce que le systeme accepte encore de faire.
+ *
+ * Tant que la boite de permission peut s'afficher, la carte d'origine convient : son bouton la
+ * demande, et c'est le geste le plus court. Une fois la boite etouffee — deux refus, puis un
+ * silence definitif — ce bouton ment : il ne montrerait plus rien. La carte dit alors ou aller et
+ * son bouton y emmene.
+ *
+ * La cause reste la meme, seule la marche a suivre change : c'est pourquoi le code de situation
+ * (`E-HC-02`) et le titre ne bougent pas.
+ */
+private fun carteSommeil(base: ErreurPendulum, etouffee: Boolean): ErreurPendulum =
+    if (!etouffee) base
+    else base.copy(
+        action = texte(R.string.error_hc_02_action_manuelle),
+        bouton = texte(R.string.error_hc_02_button_manuel),
+    )

@@ -4,7 +4,12 @@ import android.os.Bundle
 import androidx.annotation.StringRes
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.runtime.mutableLongStateOf
+import android.os.SystemClock
 import androidx.activity.compose.setContent
+import com.pendulum.phone.ui.theme.ThemeMode
+import com.pendulum.phone.data.PendulumPreferences
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.Canvas
@@ -75,10 +80,26 @@ import kotlinx.coroutines.launch
  * l'instance existante, pas en empiler une seconde.
  */
 class MainActivity : ComponentActivity() {
+
+    private val prefs by lazy { PendulumPreferences(applicationContext) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            PendulumTheme {
+            // Le theme choisi dans les reglages, applique a la racine.
+            //
+            // `PendulumTheme` etait appele **sans argument**, donc toujours sur son defaut sombre.
+            // La preference existait pourtant de bout en bout — stockee, ecrite par les reglages,
+            // et affichee par eux avec sa valeur : l'ecran montrait « System » ou « Light » et
+            // l'application restait sombre. Un reglage qui affiche un etat qu'il n'a pas est de
+            // la meme famille que les boutons muets deja retires, en plus trompeur : celui-ci
+            // repond quelque chose.
+            //
+            // `null` tant que le DataStore n'a pas rendu sa premiere valeur : on garde le sombre
+            // d'ici la, plutot que d'ouvrir en clair pour basculer en sombre un instant apres —
+            // a 7 h du matin, cet eclair est exactement ce que le theme sombre existe pour eviter.
+            val jeton by prefs.theme.collectAsStateWithLifecycle(initialValue = null)
+            PendulumTheme(mode = modeDeTheme(jeton)) {
                 PortailPendulum()
             }
         }
@@ -340,6 +361,27 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 val vm: HomeViewModel = viewModel()
                 val etat by vm.etat.collectAsStateWithLifecycle()
                 val retourDemarrage by vm.demarrage.collectAsStateWithLifecycle()
+                val contexteAccueil = LocalContext.current
+
+                // Le meme mecanisme que sur la tendance, et pour la meme raison : la boite ne
+                // s'affiche plus apres deux refus, et il faut alors emmener dans Health Connect
+                // plutot que de proposer une demande qui ne montrerait rien.
+                var demandeAccueilA by remember { mutableLongStateOf(0L) }
+                var accueilEtouffe by remember { mutableStateOf(false) }
+                val lanceurAccueil = rememberLauncherForActivityResult(
+                    contract = SleepReader.permissionRequestContract(),
+                ) { accordees ->
+                    val ecoule = SystemClock.elapsedRealtime() - demandeAccueilA
+                    accueilEtouffe = !accordees.containsAll(SleepReader.REQUIRED_PERMISSIONS) &&
+                        ecoule < SleepReader.DELAI_DIALOGUE_ETOUFFE_MS
+                    vm.relireLaSante()
+                }
+
+                // La permission se donne hors de l'application : au retour, on relit.
+                LifecycleResumeEffect(Unit) {
+                    vm.relireLaSante()
+                    onPauseOrDispose { }
+                }
 
                 // Rien tant que la premiere lecture n'a pas abouti. Pas de squelette anime, pas
                 // de cartes vides : trois cartes qui se remplissent apres coup deplaceraient
@@ -359,6 +401,19 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                             nav.navigate("night/$hex")
                         },
                         onHistorique = { nav.navigate(ROUTE_NUITS) },
+                        onSituationSommeil = {
+                            if (accueilEtouffe) {
+                                SleepReader.intentPermissionsManuelles(contexteAccueil)
+                                    ?.let(contexteAccueil::startActivity)
+                                    ?: ouvrirHealthConnect(contexteAccueil)
+                            } else {
+                                demandeAccueilA = SystemClock.elapsedRealtime()
+                                lanceurAccueil.launch(
+                                    SleepReader.REQUIRED_PERMISSIONS +
+                                        SleepReader.OPTIONAL_PERMISSIONS,
+                                )
+                            }
+                        },
                     )
 
                     // Le compte rendu du demarrage s'efface tout seul, de deux facons.
@@ -389,9 +444,22 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                 // ecran : envoyer quelqu'un dans les reglages de Health Connect pour retrouver
                 // une case a cocher alors que le systeme sait afficher la boite de dialogue est
                 // exactement le genre de detour qui fait abandonner.
+                // La boite de dialogue cesse d'apparaitre apres deux refus, et le contrat rend
+                // alors la main immediatement, sans rien montrer. Aucune API ne distingue ce cas
+                // d'un refus ordinaire : le temps ecoule est le seul signal. En dessous du seuil,
+                // on arrete de proposer une demande qui ne peut plus aboutir et on montre le
+                // chemin manuel.
+                var demandeLanceeA by remember { mutableLongStateOf(0L) }
+                var dialogueEtouffe by remember { mutableStateOf(false) }
                 val lanceurSante = rememberLauncherForActivityResult(
                     contract = SleepReader.permissionRequestContract(),
-                ) { vm.relireLaSante() }
+                ) { accordees ->
+                    val ecoule = SystemClock.elapsedRealtime() - demandeLanceeA
+                    val manquantes = !accordees.containsAll(SleepReader.REQUIRED_PERMISSIONS)
+                    dialogueEtouffe =
+                        manquantes && ecoule < SleepReader.DELAI_DIALOGUE_ETOUFFE_MS
+                    vm.relireLaSante()
+                }
 
                 TrendScreen(
                     etat = etat,
@@ -402,14 +470,24 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                     onExport = { nav.navigate("export") },
                     onActionReveil = { sessionDeLaBande(etat)?.let(vm::relancerLeReveil) },
                     onSituationSommeil = {
-                        if (codeSituationSommeil(etat) == CODE_PERMISSION_REVOQUEE) {
-                            lanceurSante.launch(
-                                SleepReader.REQUIRED_PERMISSIONS + SleepReader.OPTIONAL_PERMISSIONS,
-                            )
-                        } else {
-                            ouvrirHealthConnect(contexte)
+                        val permission = codeSituationSommeil(etat) == CODE_PERMISSION_REVOQUEE
+                        when {
+                            permission && !dialogueEtouffe -> {
+                                demandeLanceeA = SystemClock.elapsedRealtime()
+                                lanceurSante.launch(
+                                    SleepReader.REQUIRED_PERMISSIONS +
+                                        SleepReader.OPTIONAL_PERMISSIONS,
+                                )
+                            }
+                            // Le systeme ne montrera plus rien : le seul geste qui reste est
+                            // manuel, et il faut y emmener plutot que de le decrire.
+                            permission -> SleepReader.intentPermissionsManuelles(contexte)
+                                ?.let(contexte::startActivity)
+                                ?: ouvrirHealthConnect(contexte)
+                            else -> ouvrirHealthConnect(contexte)
                         }
                     },
+                    permissionEtouffee = dialogueEtouffe,
                 )
             }
             // La liste des nuits : empilee, atteinte depuis la carte HISTORIQUE de l'accueil.
@@ -624,3 +702,12 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
     }
 }
 
+/**
+ * Le jeton stocke vers le mode du theme. `null` — premiere lecture non aboutie — vaut sombre,
+ * comme le defaut du produit.
+ */
+private fun modeDeTheme(jeton: String?): ThemeMode = when (jeton) {
+    PendulumPreferences.THEME_SYSTEME -> ThemeMode.System
+    PendulumPreferences.THEME_CLAIR -> ThemeMode.Light
+    else -> ThemeMode.Dark
+}

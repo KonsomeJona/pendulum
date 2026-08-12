@@ -183,7 +183,7 @@ fun NightDetailScreen(
             if (devoile) {
                 Text(
                     "${Mapping.rythmeLisible(detail.nuit.rythmeSec).resoudre()}  ·  " +
-                        "${Math.round(detail.nuit.comptePlmi)}/h",
+                        Mapping.compteLisible(detail.nuit.comptePlmi),
                     style = PendulumType.metricL,
                     color = c.textSecondary,
                 )

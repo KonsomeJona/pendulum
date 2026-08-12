@@ -8,6 +8,25 @@ Mesures du 3 août 2026, toutes reproduites depuis WSL par `ssh jona@100.74.103.
 la sortie est citée. Quand une question n'a pas été tranchée, elle est listée en §7 avec la
 commande qui la trancherait. Rien ici ne vient de la documentation d'Android.
 
+> **Comment lire ce fichier.** C'est un **carnet daté**, pas un état des lieux. Il s'ajoute par la
+> fin, il ne se corrige pas par le milieu, et sa valeur tient précisément à ce qu'on y voie les
+> diagnostics qui se sont révélés faux — le §11.3 propose une correction que le §12.2 mesure et
+> écarte. Une ligne datée du 3 août reste vraie le 3 août ; elle ne dit rien du code d'aujourd'hui.
+> Quand la suite a montré autre chose, c'est écrit dans une section **postérieure** qui renvoie à la
+> section d'origine, jamais en réécrivant celle-ci.
+>
+> **Les trois entrées à lire en premier**, parce qu'elles portent ce que le banc a établi de plus
+> solide : le **§12** (la livraison du Data Layer réparée pour une raison mesurée, l'invariant du
+> transfert vérifié dans les deux sens, la première veille réelle) et surtout son **§12.6**, qui dit
+> ce que la session **ne** prouve pas ; le **§14**, la revue écran par écran des deux appareils, dont
+> le §14.9 relit chaque constat dans le code d'aujourd'hui ; et le **§9**, les commandes réutilisables
+> telles quelles.
+>
+> Il n'existe pas de version anglaise de ce document, et la carte du reste de la documentation est
+> dans [`../README.md`](../README.md). Ce qu'il mesure recoupe [`ARCHI-CAPTURE.md`](ARCHI-CAPTURE.md)
+> (capture et transfert), [`SOURCES-SOMMEIL.md`](SOURCES-SOMMEIL.md) (Health Connect) et
+> [`../08-screens.md`](../08-screens.md) (les captures d'écran, côté anglais).
+
 ---
 
 ## 1. Le verdict
@@ -871,7 +890,37 @@ accélérées : seule la révision 36.1 a été prise en défaut, mais elle est 
 de l'API 34 à avoir été essayée côté téléphone. Le test est celui du §3, en une minute — mais il
 coûte environ 2 Go de disque, et le disque est le point de tension (§6).
 
-### 7.3 Ce que `SleepReader` rend réellement
+### 7.3 Ce que `SleepReader` rend réellement — tranché le 12 août 2026
+
+**La lecture Health Connect fonctionne.** Elle n'avait jamais été exercée : le service répondait, la
+permission était accordée, et personne n'avait jamais fait une vraie lecture. C'est fait, sur
+appareil réel, et la table `hc_snapshot` est alimentée — donc le chemin complet tient de bout en
+bout : `SleepReader.read` interroge Health Connect sur la fenêtre de la nuit, recoupe avec
+`aggregate(SLEEP_DURATION_TOTAL)`, `SleepSourceSelector` choisit **une** source et une seule, et le
+résultat est écrit en journal append-only, protégé par le déclencheur SQLite `hc_snapshot_no_update`.
+
+**Ce que cela établit, et rien de plus.** Le dénominateur a une source vivante, et
+`AnalysisRunner.loadHypnogram` a quelque chose à lire. C'est le premier maillon qui manquait entre la
+capture et un index publiable.
+
+**Ce que cela n'établit pas**, et il faut le dire aussi net que le §12.6 le fait pour la veille :
+
+- rien sur la **latence réelle** après le réveil, qui est le vrai risque de cette chaîne et que la
+  procédure du [`SOURCES-SOMMEIL.md`](SOURCES-SOMMEIL.md) §5, étape 1, est faite pour mesurer sur
+  trois nuits ;
+- rien sur la présence de **stades** plutôt qu'une simple durée, qui est le point n° 1 de la liste
+  des non-vérifiés du même document et que seul un `readRecords` avec son `distinctTypes` tranche ;
+- rien sur la **déduplication** entre deux sources, puisqu'une seule écrivait ;
+- rien sur `BACKGROUND_READ_UNAVAILABLE`, qui reste attendu en API 34 et non mesuré.
+
+> **Réserve de méthode, à lever.** Ce document tient de sa première page que chaque affirmation vient
+> d'une commande dont la sortie est citée. **Ce paragraphe-ci n'a pas encore sa sortie.** Il rapporte
+> une lecture faite sur appareil réel le 12 août 2026 ; tant que la ligne `hc_snapshot` — paquet
+> retenu, nombre de stades, `distinctTypes`, couverture — n'est pas recopiée ici, il vaut comme
+> constat et non comme mesure. La requête qui le règle tient en une ligne :
+> `run-as com.pendulum sqlite3 databases/pendulum.db "select selectedPackage, stageCount, aggregateTstMin, outcome from hc_snapshot order by rowid desc limit 5;"`
+
+#### L'état de départ, conservé parce qu'il datait l'ignorance
 
 Le service Health Connect répond et la permission est accordée, mais aucune lecture n'a été faite —
 il n'y a rien à lire tant que l'écrivain de sommeil de la phase 1 n'existe pas. On **attend**
@@ -880,7 +929,8 @@ il n'y a rien à lire tant que l'écrivain de sommeil de la phase 1 n'existe pas
 **Partiellement tranché au §7.1.** L'étape 4 de l'assistant du téléphone, atteinte pour la première
 fois, affiche `Background reading unavailable` et `Allow Health Connect first`. C'est bien la
 branche dégradée annoncée au §3, et elle est confirmée par l'application elle-même, pas déduite.
-Reste non mesuré ce que rend `SleepReader` sur une vraie lecture.
+Reste non mesuré ce que rend `SleepReader` sur une vraie lecture. *(Levé le 12 août ; voir le haut de
+ce paragraphe.)*
 
 ### 7.4 Le pilotage de l'assistant du téléphone — **résolu au §7.1**
 
@@ -2373,7 +2423,7 @@ L'écran d'avertissement du premier lancement — celui qui porte « ceci n'est 
 médical », rendu non esquivable par un défilement bloquant et quatre acquittements — était
 illisible.
 
-![Avant : gris très clair sur gris très clair](img/revue-avertissement-avant.png)
+![Avant : gris très clair sur gris très clair](../images/screens/revue-avertissement-avant.png)
 
 La cause n'est ni la palette ni `PendulumScreen`. **Le module `:phone` ne déclarait aucun
 `android:theme`.** Sans cet attribut, Android n'applique pas un thème neutre : `selectDefaultTheme`
@@ -2403,37 +2453,37 @@ la montre n'a jamais eu ce défaut.
 
 ### 14.2 Après
 
-![Après : la palette sombre, sur tout l'arbre](img/revue-avertissement-apres.png)
+![Après : la palette sombre, sur tout l'arbre](../images/screens/revue-avertissement-apres.png)
 
 Le bouton bloqué porte son motif, et ce motif se lit — il était rendu par les couleurs désactivées
 par défaut de Material, mesurées **3,02:1** sur l'appareil, alors que `BoutonMotive` existait déjà
 avec les bonnes teintes (4,93:1).
 
-![Le motif d'indisponibilité, lisible](img/revue-avertissement-bouton-bloque.png)
-![Les quatre acquittements](img/revue-avertissement-confirme.png)
+![Le motif d'indisponibilité, lisible](../images/screens/revue-avertissement-bouton-bloque.png)
+![Les quatre acquittements](../images/screens/revue-avertissement-confirme.png)
 
 ### 14.3 Les cinq étapes de l'assistant
 
-![Étape 2 — ce dont Pendulum a besoin](img/revue-assistant-besoins.png)
-![Étape 3 — appairage](img/revue-assistant-appairage.png)
-![Étape 4 — source de sommeil](img/revue-assistant-source-sommeil.png)
-![Étape 5 — notifications et conditions](img/revue-assistant-notifications.png)
+![Étape 2 — ce dont Pendulum a besoin](../images/screens/revue-assistant-besoins.png)
+![Étape 3 — appairage](../images/screens/revue-assistant-appairage.png)
+![Étape 4 — source de sommeil](../images/screens/revue-assistant-source-sommeil.png)
+![Étape 5 — notifications et conditions](../images/screens/revue-assistant-notifications.png)
 
 ### 14.4 L'application
 
-![Accueil](img/revue-accueil.png)
-![Tendance, état de refus](img/revue-tendance-refus.png)
-![Réglages](img/revue-reglages.png)
-![Réglages — apparence et à propos](img/revue-reglages-apparence.png)
-![Rapport P1](img/revue-rapport-p1.png)
-![L'avertissement relu depuis Réglages › À propos](img/revue-avertissement-relu.png)
-![Effacement total](img/revue-effacement.png)
-![Formulaire du soir](img/revue-formulaire-du-soir.png)
+![Accueil](../images/screens/revue-accueil.png)
+![Tendance, état de refus](../images/screens/revue-tendance-refus.png)
+![Réglages](../images/screens/revue-reglages.png)
+![Réglages — apparence et à propos](../images/screens/revue-reglages-apparence.png)
+![Rapport P1](../images/screens/revue-rapport-p1.png)
+![L'avertissement relu depuis Réglages › À propos](../images/screens/revue-avertissement-relu.png)
+![Effacement total](../images/screens/revue-effacement.png)
+![Formulaire du soir](../images/screens/revue-formulaire-du-soir.png)
 
 ### 14.5 La montre
 
-![Écran de repos, avec son bloqueur](img/revue-montre-repos.png)
-![Le bloqueur et le START inactif](img/revue-montre-repos-bas.png)
+![Écran de repos, avec son bloqueur](../images/screens/revue-montre-repos.png)
+![Le bloqueur et le START inactif](../images/screens/revue-montre-repos-bas.png)
 
 ### 14.6 Cinq écrans n'ont pas pu être vus, et c'est un constat
 
@@ -2448,7 +2498,17 @@ d'`ApercuDonnees` vers `src/debug` a corrigé.
 Le questionnaire mérite une question de conception : c'est un dépistage, il ne dépend d'aucune nuit,
 et il est aujourd'hui inatteignable jusqu'à la troisième.
 
+> **Levé depuis, et par le chemin que ce paragraphe réclamait** : un ensemencement de nuits qui vit
+> dans `src/debug` seul — rien dans `src/main`, ni code, ni manifeste, ni chaîne, vérifié sur les dex
+> et le manifeste du variant release. Les nuits passent par `NightSynth` et les mêmes étapes
+> qu'`NightAnalyzer`, donc elles sont plausibles au lieu d'être rondes. Les cinq écrans ont enfin une
+> porte, et le produit livré n'a toujours pas de bouton pour fabriquer une nuit. Voir §14.9.
+
 ### 14.7 Ce que les captures ont montré d'autre, et qui n'a pas été corrigé
+
+> **Relevé du 4 août, conservé tel quel. Six de ces douze lignes ont bougé depuis** — cinq corrigées,
+> une qui semble corrigée et ne l'est pas. Le §14.9 dit laquelle est laquelle, et sur quoi cette
+> relecture s'appuie.
 
 | Écran | Constat |
 |---|---|
@@ -2475,3 +2535,41 @@ Aucun enregistrement n'a été lancé, aucun contexte n'a été scellé, rien n'
 
 `connectedAndroidTest` n'a **pas** été exécuté : `GardeFousTest` appelle `eraseEverything()` et
 l'orchestrateur désinstalle le paquet en fin de série.
+
+### 14.9 Ce que la suite a montré — relu dans le code le 12 août 2026
+
+Le §14.7 est un relevé daté du 4 août, et il le reste : rien n'y est effacé. Ce qui suit dit
+seulement ce que ces lignes sont devenues, **vérifié fichier par fichier dans le code d'aujourd'hui**
+et non déduit d'un message de commit. Une ligne du §14.7 qui n'apparaît pas ci-dessous n'a pas été
+vérifiée ; ne pas la lire comme corrigée.
+
+| Constat du §14.7 | État | Où c'est tenu |
+|---|---|---|
+| `Arrêt automatique → Automatic stop`, la valeur répétait son intitulé | **Corrigé** | `ViewModels.kt` pose `settings_auto_stop_value`, qui dit *on the charger, on waking, or after 10 h* — une valeur, plus un écho |
+| Source de sommeil affichée en nom de paquet brut | **Corrigé, à moitié** | `Mapping.nomDApplication` est appelée par les deux sites, les nuits et les réglages, qui divergeaient. Mais c'est une transformation de chaîne, pas `PackageManager.getApplicationLabel` : `com.google.android.apps.healthdata` devient « Healthdata ». Lisible, et ce n'est pas le nom de l'application |
+| Le bloqueur du contexte non scellé rendu en rouge d'erreur | **Corrigé** | `IssueId.estUnePanne` sépare les sept bloqueurs en *panne* et *situation* ; un contexte non scellé, des notifications refusées et la dérogation de banc sont des situations et sortent en ambre. `SeveriteDesBloqueursTest` verrouille le partage |
+| Le texte défilé passant sous le bord du verre rond | **Corrigé** | La marge est passée du mauvais côté du défilement au bon (`2cacd67`) ; l'inset est désormais dérivé de la forme de l'écran |
+| Le titre « Ready » alors qu'un bloqueur existe | **Corrigé, avec un résidu assumé** | `RecordScreen` choisit `idle_title_blocked` (« Not ready ») dès que le préflight refuse le démarrage. Le résidu est écrit dans le code : **tant que le préflight n'a pas rendu son verdict, le titre dit encore « Ready »**. C'est une fenêtre de quelques centaines de millisecondes, et c'est le même défaut en plus petit |
+| « Free space 12.2 / GB », la valeur séparée de son unité par un retour à la ligne | **NON corrigé** | Voir ci-dessous |
+
+**Le cas de l'espace libre mérite d'être écrit en entier, parce qu'il est instructif.** Deux
+corrections ont touché cette ligne depuis le 4 août — le texte ne passe plus sous le verre, et le
+séparateur décimal est forcé en `Locale.UK` — et **aucune des deux ne traite le retour à la ligne**.
+La chaîne reste `Free space %1$s`, `Preflight.formatBytes` rend `12.2 GB` avec une espace ordinaire
+U+0020, donc une occasion de coupure légale, et le `Text` qui l'affiche ne pose ni `softWrap = false`
+ni espace insécable — il n'y a aucun U+00A0 dans tout le dépôt. La marge horizontale de l'écran rond
+vaut maintenant `côté × 0,18` de chaque côté : la largeur utile a **diminué**, donc la coupure est
+plus probable qu'avant, pas moins.
+
+C'est exactement le piège que ce journal existe pour éviter. Trois commits portent sur cette ligne,
+leurs messages sont justes, et un lecteur pressé en conclurait que la ligne est réglée. Elle ne l'est
+pas, et la seule façon de le savoir était d'aller lire `Preflight.formatBytes` et le `Text` qui la
+consomme.
+
+**Restent ouverts, et non revérifiés ici** : les six autres lignes du §14.7 — l'étiquette « Nights
+recorded » posée loin de ses pastilles, les boutons désactivés qui répètent la ligne d'état,
+les deux boutons Health Connect qui se lisent comme des doublons, la ligne mono de vérification du
+capteur qui déborde, les puces sans indentation suspendue, et « Jambe droite » présélectionné sur un
+formulaire qui se scelle une fois. Le message « Sleep access revoked » sur une permission jamais
+accordée est en cours de traitement au moment où ceci est écrit, mais sa chaîne de cause
+(`error_hc_02_cause`) n'a pas encore changé.

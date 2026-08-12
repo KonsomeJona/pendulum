@@ -108,6 +108,14 @@ data class SourceAccueil(
 @Immutable
 data class AccueilUi(
     val phase: PhaseAccueil,
+    /**
+     * Le bloqueur de permission de sommeil, ou `null`.
+     *
+     * Il s'affiche ici et pas seulement sur la tendance : sans hypnogramme, le denominateur vient
+     * du meme signal que le numerateur, donc aucune nuit ne peut porter de resultat — et
+     * l'utilisateur qui ne consulte jamais sa tendance ne l'apprenait nulle part.
+     */
+    val situationSommeil: com.pendulum.phone.ui.model.ErreurPendulum? = null,
     val ceSoir: CeSoirUi,
     /** Motif d'indisponibilite du scellement, ou `null` s'il est possible maintenant. */
     val motifPreparer: UiText?,

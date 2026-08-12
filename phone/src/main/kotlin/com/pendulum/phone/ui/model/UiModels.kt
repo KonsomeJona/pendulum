@@ -43,8 +43,14 @@ data class NuitUi(
      * l'ajustement — voir [Mapping.rythmeSec], qui explique pourquoi c'est le cas frequent.
      */
     val rythmeSec: Double?,
-    /** Compte horaire de cette nuit. Present, jamais mis en avant (P7). */
-    val comptePlmi: Double,
+    /**
+     * Compte horaire de cette nuit. Present, jamais mis en avant (P7).
+     *
+     * `null` quand la nuit n'a pas de sommeil analysable : il n'y a alors pas de denominateur,
+     * donc pas de taux. Le type porte la regle — aucun ecran ne peut arrondir cette absence en
+     * « 0/h », qui se lirait comme une nuit sans le moindre mouvement.
+     */
+    val comptePlmi: Double?,
     val drapeaux: List<Drapeau>,
     val startWallMs: Long,
     /**
@@ -289,14 +295,16 @@ sealed interface TendanceUiState {
         val compte: Aggregat.Resultat,
         val position: Aggregat.Position,
         val periodiciteQualifiee: UiText?,
-        val tauxManques: Double,
+        /** `null` quand il n'a pas pu etre mesure. Voir [plmw]. */
+        val tauxManques: Double?,
         val graphe: TendanceChartSpec,
         val nuitsEnregistrees: Int,
         val nuitsEligibles: Int,
         val nuitsEcartees: Int,
         val regle: UiText,
         val masque: UiText,
-        val plmw: Double,
+        /** `null` si aucune des nuits retenues ne porte ce taux : un tiret, jamais un zero. */
+        val plmw: Double?,
         val reveil: EtatReveil,
         val profilPersonnalise: String?,
         val hashsMelanges: Boolean,

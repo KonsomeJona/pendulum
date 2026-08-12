@@ -4,6 +4,19 @@
 
 **Date de rédaction : 29 juillet 2026.**
 
+> **Ce document reste la référence sur l'intégration Health Connect** — le §6 (permissions, double
+> déclaration de l'activité de justification, structure exacte de `SleepSessionRecord`,
+> déduplication par `dataOrigin`) et le §7, qui énumère un par un les **treize points non
+> vérifiés**. Sa contrepartie anglaise, plus courte, est
+> [`../05-devices.md`](../05-devices.md).
+>
+> Deux choses ont bougé depuis. Le §4 concluait que l'absence de Health Connect « n'est pas
+> bloquante » : ce point a été explicitement tranché ailleurs, et le jugement est désormais recopié
+> à l'endroit où il se pose, en fin de §4. Et la vérification du §5, écrite pour être faite « AVANT
+> d'écrire du code », ne l'a jamais été telle quelle — le code existe. Ce que le banc a effectivement
+> mesuré sur du vrai matériel est dans [`BANC-ESSAI.md`](BANC-ESSAI.md) §11.4 et §7.3 ; ce qui reste
+> à mesurer, à commencer par la latence réelle de ta propre chaîne, est inchangé.
+
 ### Méthode et limites de cette vérification
 
 Le quota de recherche web de la session était épuisé. Toutes les vérifications ont donc été faites par **récupération directe de pages primaires** (documentation Android/AndroidX, code source androidx, pages support constructeurs, article scientifique) et par un **moteur de recherche utilisé comme proxy** (DuckDuckGo lite) pour localiser les URL. Conséquence : les points appuyés sur une page primaire récupérée en entier sont **solides** ; ceux appuyés uniquement sur un extrait de résultat de recherche sont marqués **« non vérifié »** et il y en a plusieurs. La section 7 les liste tous. Ne construis rien de critique sur une ligne marquée « non vérifié » sans la contrôler toi-même.
@@ -209,6 +222,23 @@ un SleepSessionRecord qui, tout à la fois :
 ### Le garde-fou qui remet tout à l'échelle
 
 **Ne surinvestis pas dans cette décision.** L'architecture du SPEC est déjà conçue pour survivre à l'absence totale de Health Connect : `deriveImmobilityMask()` produit un masque accéléro exploitable immédiatement, `RescoreWorker` ajoute le second PLMI plus tard, et chaque nuit produit **4 lignes `plm_result`** (2 jeux de règles × 2 masques) précisément pour rendre l'écart visible plutôt que de le cacher. La source de sommeil est une **amélioration de la qualité et de l'interprétabilité**, pas un prérequis. Si la vérification de la section 5 échoue, tu perds le contrôle de plausibilité par stade — c'est réel, ce n'est pas bloquant. Ne repousse pas la phase 1, qui est le seul vrai go/no-go du projet.
+
+> **Ce paragraphe a été tranché contre lui-même, et le jugement n'avait jamais été rapatrié ici.**
+> [`SPEC-v2.md`](SPEC-v2.md) §2.3 : « c'est exact pour **faire tourner** l'app, faux pour **produire
+> un chiffre comparable d'une nuit à l'autre** ». Les deux positions cohabitent ainsi, et c'est la
+> formulation à retenir : le masque accéléro reste calculé et affiché comme second bras, mais
+> `maskSource = ACCEL_MACRO` **ne peut jamais porter le résultat principal ni alimenter la
+> tendance** — la contrainte est appliquée à la couche d'accès aux données, pas dans l'interface.
+> La raison est la circularité du dénominateur : le traitement qui réduit les mouvements fait
+> baisser le numérateur **et** grossir le dénominateur dans le même geste, si bien qu'un effet nul
+> peut s'afficher comme une amélioration franche ([`ALGO-v2.md`](ALGO-v2.md) §3.6.3).
+>
+> **Et une nuance qui va dans l'autre sens, arrivée après ce document.** La grandeur suivie nuit
+> après nuit n'est plus le compte horaire mais la période fondamentale en secondes, qui se calcule
+> sur les seuls instants d'apparition des mouvements et **n'a besoin d'aucun dénominateur**
+> ([`SPEC-v2.md`](SPEC-v2.md) §5). Health Connect redevient donc facultatif *pour le suivi*, et
+> reste nécessaire *pour le compte horaire du rapport médical*. Le titre de ce document — « choisir
+> la source de sommeil » — décrit toujours une décision réelle, mais plus une décision bloquante.
 
 ---
 

@@ -1,6 +1,8 @@
 package com.pendulum.phone.health
 
 import android.content.Context
+import android.os.Build
+import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
@@ -266,5 +268,53 @@ class SleepReader(private val context: Context) {
         /** Contrat a lancer depuis l'interface pour demander les permissions. */
         fun permissionRequestContract() =
             PermissionController.createRequestPermissionResultContract()
+
+        /**
+         * En deca de ce delai, la boite de dialogue n'a pas ete montree.
+         *
+         * Health Connect suit la regle des permissions d'execution : apres deux refus, le systeme
+         * cesse d'afficher la boite et le contrat rend la main **immediatement**, sans rien
+         * montrer et sans rien dire. Il n'existe aucune API pour distinguer ce cas d'un refus
+         * ordinaire — `shouldShowRequestPermissionRationale` ne vaut rien ici, Health Connect
+         * n'etant qu'un courtier pour ces permissions.
+         *
+         * Le temps ecoule est donc le seul signal disponible. Le seuil est volontairement bas :
+         * un aller-retour vers une vraie boite de dialogue, meme refusee d'un geste immediat,
+         * demande au systeme d'ouvrir et de fermer une activite. Se tromper dans ce sens renvoie
+         * l'utilisateur vers une nouvelle demande, ce qui est benin ; se tromper dans l'autre lui
+         * cacherait la seule issue qui lui reste.
+         */
+        const val DELAI_DIALOGUE_ETOUFFE_MS = 400L
+
+        /**
+         * L'ecran de Health Connect ou la permission se donne a la main, quand la boite ne
+         * s'affiche plus.
+         *
+         * Deux chemins selon la version : depuis Android 14 Health Connect fait partie de la
+         * plateforme et sait ouvrir la page **de cette application**, ce qui evite de faire
+         * chercher Pendulum dans une liste. Avant, il n'existe que l'ecran general.
+         *
+         * Rend `null` quand rien ne resout l'intention — l'appelant doit alors se taire plutot
+         * que de proposer un bouton qui ne fait rien.
+         */
+        fun intentPermissionsManuelles(context: Context): Intent? {
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                Intent(ACTION_GERER_PERMISSIONS_SANTE)
+                    .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+            } else {
+                Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+            }
+            return intent.takeIf {
+                it.resolveActivity(context.packageManager) != null
+            }
+        }
+
+        /**
+         * `android.health.connect.HealthConnectManager.ACTION_MANAGE_HEALTH_PERMISSIONS`, en
+         * clair : la constante vit dans une classe de la plateforme qui n'existe qu'a partir
+         * d'Android 14, et l'y referencer obligerait a hausser `compileSdk` pour une chaine.
+         */
+        private const val ACTION_GERER_PERMISSIONS_SANTE =
+            "android.health.connect.action.MANAGE_HEALTH_PERMISSIONS"
     }
 }

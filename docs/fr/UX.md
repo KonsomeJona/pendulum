@@ -1,8 +1,23 @@
 # Pendulum — Spécification d'interface (v1)
 
-Document de conception d'interface. Il complète `SPEC-v1.md` (architecture, algorithme, limites cliniques) et
-ne le répète pas. Toute contradiction entre les deux : `SPEC-v1.md` fait foi pour la technique, ce document
-fait foi pour l'écran.
+Document de conception d'interface : les principes, le raisonnement écran par écran, et les
+arbitrages qui ont été pesés puis tranchés. Il ne répète ni l'architecture ni l'algorithme.
+
+> **Ce document ne fait plus foi sur l'écran, et il faut savoir dans quel sens.** Il a été écrit
+> avant plusieurs décisions que le code a prises depuis, et il l'annonce lui-même en trois endroits :
+> la carte « Ce soir » qui apparaît et disparaît entre 20 h et 4 h n'existe plus, l'écran de
+> tendance n'est plus la destination de départ, et les couleurs du §5.1 échoueraient au test de
+> contraste que celles du code passent.
+>
+> **L'état actuel de l'interface est dans [`../06-interface.md`](../06-interface.md)**, qui dérive de
+> ce fichier et enregistre chaque écart avec sa raison. Ce qui n'existe qu'ici et qui garde toute sa
+> valeur : les options de représentation du chiffre comparées une à une (§3), les textes candidats
+> écrits en entier, et la trace du raisonnement — le *pourquoi* dont `06-interface.md` ne garde que
+> la conclusion.
+>
+> Sa phrase d'origine — « toute contradiction entre les deux : `SPEC-v1.md` fait foi pour la
+> technique » — désignait un document lui-même remplacé depuis. La carte des autorités est dans
+> [`../README.md`](../README.md).
 
 **Utilisateur unique** : un adulte, technicien, qui soupçonne un trouble moteur du sommeil et qui veut
 savoir si son traitement change quelque chose et pouvoir montrer un rapport à un médecin du sommeil.

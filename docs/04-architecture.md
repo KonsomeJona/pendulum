@@ -16,6 +16,14 @@ here are now implemented and build; they run on emulators, but **no night has ev
 them**, so every runtime figure below remains an estimate. The byte layout in §3 is read from the code,
 not from the design notes.
 
+Two companions, both in French and both carrying what this file compresses.
+[`fr/ARCHI-CAPTURE.md`](fr/ARCHI-CAPTURE.md) holds the energy arithmetic worked out in
+milliampere-hours for each of the three transport options, the exact payload schema of every
+`DataItem`, and sixteen numbered Wear OS traps sorted into *verified on a primary source*,
+*documented elsewhere* and *folklore*. [`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) is what happened when
+this design met real devices — including the two proposed fixes that measurement then rejected, and
+the one manifest line that silently killed every delivery.
+
 ---
 
 ## 1. Module map
@@ -750,6 +758,52 @@ interruption". Displaying "unknown" is information; guessing is a bug.
 And the reminder that puts it in proportion: a single night means nothing, and the interface
 refuses to draw a trend below three nights. A truncated night is not a catastrophe — it is a night
 that counts for less.
+
+### 4.7 The night that arrives intact and then disappears
+
+Everything above is about losing samples. This one loses a night that was never damaged, and it is
+worth its own section because every check upstream of it passes. *Found 12 August 2026; the
+correction below was being applied as this was written.*
+
+A night with **no analysable sleep** — the watch ran, the chunks arrived, the CRCs matched, but the
+sleep mask leaves zero analysable minutes — divides by zero. The index is defined as movements over
+hours of analysable sleep, and `safeRate` returns `NaN` rather than a wrong number when the
+denominator is zero, which is the right decision at that layer. The same happens to the fundamental
+period when the deconvolution refuses to fit, and `NaN` there is deliberate: it is how the estimator
+says *I will not answer*, and it is documented as such.
+
+The trouble is what `NaN` becomes two layers down. `plmi` is a non-null `Double` on the Room entity,
+so the generated column is `REAL NOT NULL`; SQLite binds a `NaN` as `NULL`; the insert therefore
+violates its own constraint. The insert sits inside the transaction that writes the windows, the
+events and the results together, so the abort rolls back all three, `analyzedAtMs` is never set, and
+the worker catches the exception and asks to be retried — which fails again, identically, for as long
+as it is retried.
+
+**What the user sees is nothing at all.** The night is recorded, transferred in full, acknowledged,
+and deleted from the watch, exactly as designed. It is simply absent from the trend and from the
+night list afterwards, because the `comparable_night` view joins the results table and there is no
+result row. No error is raised, no flag is set, and the one state that would have carried the
+information — a night marked ineligible with its reason — is precisely the state that could not be
+written.
+
+This is the shape of failure this project is most exposed to, and it is worth naming: not a wrong
+number, but a silence produced by a guard rail firing in a place that could not report it.
+
+**The correction, stated so that it is not confused with the defect.** A refusal must survive
+storage. The columns that can legitimately hold *no answer* — the index in each of its variants, the
+fundamental period, the miss rate — become nullable, and the write path maps a non-finite value to
+`NULL` at the boundary rather than letting it arrive there by accident. The idiom already existed one
+field away in the same function, where the calibration gain is written as
+`gainCalG.takeIf { it.isFinite() }`; what was missing was applying it to the fields that decide
+whether a night exists at all. A night that cannot be scored is then stored, displayed, and counted
+as excluded **with its reason shown** — which is what [`01-overview.md`](01-overview.md) §4 requires
+of every excluded night, and what this defect silently bypassed.
+
+Two things follow that are not the fix and should not wait for it. A worker that fails identically on
+every attempt should not retry indefinitely; a permanent failure and a transient one deserve different
+answers. And the assumption that a `NaN` index can be *read back* from the database — which some
+display code makes — cannot be true while the row is never written, so any test that exercises it is
+exercising an object built in memory and never a real row.
 
 ---
 

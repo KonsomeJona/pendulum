@@ -168,7 +168,9 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             nuitsEcartees = nuitsEcartees,
             regle = texte(R.string.settings_rule_aasm),
             masque = texte(R.string.settings_health_connect),
-            plmw = nuitsAgregeables.map { it.plmiSpt }.average().takeIf { !it.isNaN() } ?: 0.0,
+            // `mapNotNull` : une nuit sans denominateur ne porte pas ce taux, et l'inclure comme
+            // zero baisserait la moyenne d'autant. `null` quand il n'en reste aucune.
+            plmw = nuitsAgregeables.mapNotNull { it.plmiSpt }.takeIf { it.isNotEmpty() }?.average(),
             reveil = reveil,
             sessionReveil = faitsReveil?.sessionHex,
             profilPersonnalise = profilPersonnalise,
@@ -305,10 +307,28 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = PendulumRepository(app)
+    private val lecteur = SleepReader(app)
 
-    val etat: StateFlow<AccueilUi?> = repo.observerAccueil(horloge())
-        .map { MachineAccueil.de(it, heureLocale()) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    private val _disponibiliteSante = MutableStateFlow<SleepReader.Availability?>(null)
+
+    /**
+     * Relue a chaque reprise de l'ecran, et pas une seule fois : la permission se donne dans
+     * Health Connect, donc **hors de l'application**, et l'accueil est l'ecran sur lequel on
+     * revient en sortant.
+     */
+    fun relireLaSante() {
+        viewModelScope.launch { _disponibiliteSante.value = lecteur.availability() }
+    }
+
+    init { relireLaSante() }
+
+    val etat: StateFlow<AccueilUi?> = combine(
+        repo.observerAccueil(horloge()),
+        _disponibiliteSante,
+    ) { source, sante ->
+        MachineAccueil.de(source, heureLocale())
+            .copy(situationSommeil = Situations.permissionSommeil(sante))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
      * Le bouton « fin de nuit », dans l'ordre, et l'ordre compte.

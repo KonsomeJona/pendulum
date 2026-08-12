@@ -11,11 +11,19 @@ deliberate — they are the record of how the decisions were made, not user-faci
 
 > **A caution about the French strings quoted further down this file.** Several passages below quote
 > the interface in French — `Réessayer maintenant`, `masque accéléro`, `Hypnogramme indisponible`,
-> *pour le médecin*, and others. **None of these is on screen.** They are quotations from the French
-> working documents that were written before the interface was translated, and they were never
-> updated when it was. Where a sentence below is presented as the words the user reads, take the
-> string from `ui/text/Textes.kt`, which is the only authority on what the application says — and
-> which a test guards against a list of forbidden word stems.
+> *pour le médecin*, and others. **None of these is on screen.** They are quotations from
+> [`fr/UX.md`](fr/UX.md), written before the interface was translated, and never updated when it
+> was. Where a sentence below is presented as the words the user reads, take the string from
+> **`phone/src/main/res/values/strings.xml`**, which is the only authority on what the application
+> says, and which `ui/TextesTest.kt` guards against a list of forbidden word stems.
+>
+> That authority moved, and the move is the point. The strings used to be 461 English constants
+> compiled into a Kotlin `object`, on the argument that an object can be unit-tested and a
+> `strings.xml` cannot. The argument was true and it cost the translation — a string compiled into
+> an object does not localise, however well it is tested. `ui/text/Textes.kt` is now the bridge
+> rather than the source: the pure functions that assemble half of this product's text return a
+> **resource id and its arguments** instead of a string, so they stay testable on the JVM with no
+> `Context`, and Compose resolves them at the last moment in the device's locale.
 
 Every number visible on them was produced by the application's own preview
 dataset flowing through the real Compose code, and every chart was drawn by the same `DrawScope`
@@ -25,9 +33,16 @@ What they are *not*: a recorded night. No accelerometer data has ever been captu
 software, so the plotted signal is the synthetic preview data, and the indices are the values that
 dataset produces. The screens are real; the night is not.
 
-Hand-authored SVG mock-ups of the same screens are kept in [`images/`](images/) for the three cases the
-emulator run did not reach — the first-run warning, the evening card, and the trend below three nights.
-They are drawings, not captures, and they are labelled as such where they appear.
+Hand-authored SVG mock-ups of the same screens are kept in [`images/`](images/). Three of them are
+still shown below, for the cases the emulator run did not reach — the first-run warning, the evening
+card, and the trend below three nights. They are drawings, not captures, and they are labelled as
+such where they appear.
+
+Four more (`trend.svg`, `night-detail.svg`, `waking-provisional.svg`, `watch.svg`) are in that
+directory and are no longer displayed anywhere: a real capture of the same screen replaced each one.
+They are kept rather than deleted because a mock-up and the screen that came out of it are worth
+comparing — three of the defects listed below are visible only in that comparison — but nothing in
+this document should be checked against them.
 
 ## What the real screenshots caught that the mock-ups could not
 
@@ -303,16 +318,21 @@ by looking at a screen. Five of them can be checked on these files as they stand
 
 | # | Constraint | Where to check it |
 |---|---|---|
-| **P1** | No aggregation below three eligible nights | `trend-refused.svg` — no plot, no median, no category, export disabled with its reason |
-| **P2** | Every aggregate figure carries its uncertainty in the same line | `trend.svg` — `IC 95 % : 19 – 23 s · 7 nuits éligibles`, and the hourly count carries its own |
-| **P4** | At most three pieces of information above the fold on waking, at most one action | `waking-provisional.svg` — status, hidden aggregate, one button |
-| **P5** | No truncated scale, no mean hiding an extremum | `night-detail.svg` — min/max decimation; and the trend's zero-anchor exception, argued above rather than assumed |
+| **P1** | No aggregation below three eligible nights | [`images/trend-refused.svg`](images/trend-refused.svg), and the real capture [`images/screens/revue-tendance-refus.png`](images/screens/revue-tendance-refus.png) — no plot, no median, no category, export disabled with its reason |
+| **P2** | Every aggregate figure carries its uncertainty in the same line | [`images/screenshots/trend-numbers.png`](images/screenshots/trend-numbers.png) — the interval and the eligible-night count sit on the figure's own line, and the hourly count carries its own |
+| **P4** | At most three pieces of information above the fold on waking, at most one action | [`images/screenshots/waking-provisional.png`](images/screenshots/waking-provisional.png) — status, hidden aggregate, one button |
+| **P5** | No truncated scale, no mean hiding an extremum | [`images/screenshots/night-detail.png`](images/screenshots/night-detail.png) — min/max decimation; and the trend's zero-anchor exception, argued above rather than assumed |
 | **P6** | Colour is never the sole carrier | Desaturate any of these files: night states stay distinguishable as filled / ringed / hollow, chart lines as solid / dashed / dotted, REM and disagreement by hatching, sleep stages by vertical position |
-| **P7** | The per-night figure is available but never foregrounded | `night-detail.svg` — body size, secondary colour, fused with its warning; absent from `trend.svg` entirely |
+| **P7** | The per-night figure is available but never foregrounded | [`images/screenshots/night-detail.png`](images/screenshots/night-detail.png) — body size, secondary colour, fused with its warning; absent from the trend chart entirely |
 
 P3 — a variation indistinguishable from noise is named as such before it is quantified — is visible in
-`trend.svg`, where the statement precedes the figure, but its real test is a unit test on the strings
-file, not a picture.
+[`images/screenshots/trend-numbers.png`](images/screenshots/trend-numbers.png), where the statement
+precedes the figure, but its real test is a unit test on the strings file, not a picture.
+
+*This table used to cite `trend.svg`, `waking-provisional.svg` and `night-detail.svg`. Those
+drawings are still in [`images/`](images/) but this document stopped showing them when the real
+captures replaced them, so the table was pointing at artefacts the reader could not see. A check you
+cannot perform is not a check.*
 
 The one thing a mock-up cannot check is the thing most likely to go wrong: whether these screens survive
 a font scale of 1.3, a night with no data, a period containing four nights, and a physician who wants the

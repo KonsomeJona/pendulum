@@ -1,5 +1,23 @@
 # Pendulum — Estimation du PLM Index par accéléromètre de cheville (Wear OS)
 
+> ## Document historique. Ne pas s'en servir comme référence.
+>
+> **C'est le plan initial du projet, conservé comme trace de l'état de départ.** Il a été révisé
+> point par point par [`REVUE-CRITIQUE.md`](REVUE-CRITIQUE.md) — 38 défauts, dont 6 bloquants — puis
+> remplacé par [`SPEC-v2.md`](SPEC-v2.md) partout où les deux se contredisent. Aucune décision ne se
+> prend en le lisant.
+>
+> **Trois choses que ce document dit et que le projet ne dit plus.** Il annonce un « indicateur de
+> **dépistage** » : le produit ne dépiste rien, il mesure, et [`../01-overview.md`](../01-overview.md)
+> §4 explique pourquoi la distinction est structurelle et pas rhétorique. Il fait du compte horaire
+> la grandeur suivie : elle a changé pour le rythme fondamental ([`SPEC-v2.md`](SPEC-v2.md) §5). Et
+> il chiffre une chaîne DSP — fenêtre RMS de 0,15 s, contenu spectral 10–15 Hz — que
+> [`ALGO-v2.md`](ALGO-v2.md) §0 identifie comme deux erreurs de transposition, pas comme des
+> paramètres.
+>
+> Ce qui reste vrai et qui n'existe qu'ici : la recherche d'antériorité, et le tableau des
+> hypothèses avec leur niveau de confiance à la date où il a été écrit.
+
 ## Contexte
 
 **Le besoin.** Détecter les mouvements périodiques de jambes pendant le sommeil (PLMS) avec une montre Wear OS portée à la cheville, croiser le résultat avec les stades de sommeil mesurés au poignet, et produire un indicateur de **dépistage** orienté syndrome des jambes sans repos (SJSR) / PLMD — sur plusieurs nuits, à usage personnel.

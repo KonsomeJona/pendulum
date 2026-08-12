@@ -1366,6 +1366,11 @@ and that is exactly what makes `tiltExcursionDeg` informative on the detector si
 Impacts at ±20 % are **engineering estimates awaiting confirmation by the parametric sensitivity
 test**, not measured values. They are given to prioritise validation effort.
 
+These tables are the English rendering of [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §6, which is the version
+the code cites by name and therefore the one to change first if a default moves. **§8.7 below is the
+exception**: the rhythm estimator arrived after that document and has no French section at all, so
+these are its only parameters anywhere.
+
 ### 8.1 Integrity and pre-processing
 
 | Parameter | Default | Unit | Plausible range | Justification / source | Effect of ±20 % |
@@ -1502,10 +1507,11 @@ and neither is optional.
 > **This list is a shortcut, not a bibliography.** The bibliography of the project is
 > [`references.md`](references.md), and it alone carries what matters about a source: whether the
 > full text was read or only the abstract, what the project takes from it, and the caveats attached.
-> Keeping a second list here is how the two came to disagree — the Ferri 2016 thresholds paper was
-> cited as *17:32-8* five hundred lines above while this list and `references.md` both said
-> *22:97-99*. **When adding a source, add it to `references.md`; this list may be pruned to the
-> handful of standards documents that are not research papers.**
+> Keeping a second list here is how the two came to disagree: the Ferri 2016 thresholds paper stood
+> in `fr/SPEC-v2.md` §5.1 as *Sleep Med* **17:32-8** while this list and `references.md` both said
+> **22:97-99**. PubMed settles it — 26922620 is *Sleep Med* 2016;**22**:97-99 — and `fr/SPEC-v2.md`
+> was corrected on 2026-08-12. **When adding a source, add it to `references.md`; this list may be
+> pruned to the handful of standards documents that are not research papers.**
 
 - AASM Summary of Updates in Version 3 (2023) — <https://aasm.org/wp-content/uploads/2023/02/Summary-of-Updates-v3.pdf>
 - AASM Sleep ISR, Scoring Limb Movements — <https://isr.aasm.org/helpv5/ScoringLimbMovementsL.html>

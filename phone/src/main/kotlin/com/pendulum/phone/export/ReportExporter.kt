@@ -398,7 +398,13 @@ object ReportExporter {
      * `PorteP1Exporter`, dont la KDoc documente precisement ce piege ; ce fichier etait le seul a
      * l'avoir manque, et il est celui qui sort de l'application.
      */
-    private fun fmt(v: Double): String = if (v.isFinite()) "%.2f".format(Locale.UK, v) else "—"
+    /**
+     * `18.40`, ou le tiret. Il accepte `null` depuis que les taux sans denominateur sont
+     * `NULL` en base plutot que `NaN` : les deux disent la meme chose — la grandeur n'existe pas
+     * pour cette nuit — et le rapport medical doit le dire plutot que d'ecrire `0.00`.
+     */
+    private fun fmt(v: Double?): String =
+        if (v != null && v.isFinite()) "%.2f".format(Locale.UK, v) else "—"
 
     private fun format(ms: Long, zone: ZoneId): String = stamp.withZone(zone).format(Instant.ofEpochMilli(ms))
 

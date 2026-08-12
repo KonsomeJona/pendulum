@@ -51,6 +51,31 @@ object Situations {
      * @param originesDerniereNuit nombre d'applications distinctes ayant publie une session
      *   recouvrant la derniere nuit. Deux ou plus, et le denominateur depend de celle qu'on lit.
      */
+    /**
+     * Le seul bloqueur de permission, sans le diagnostic de source qui l'accompagne ailleurs.
+     *
+     * L'accueil s'en sert, la tendance aussi via [sommeil] : une permission manquante doit se
+     * lire au meme endroit qu'on la repare, et l'accueil est le premier ecran que l'on ouvre.
+     * Elle n'y etait pas — la carte ne vivait que sur la tendance, donc quelqu'un qui ne va
+     * jamais voir sa tendance ne voyait jamais qu'il manquait la moitie de la mesure.
+     *
+     * Les autres situations de source (`E-HC-01`, `E-HC-03`) restent a la tendance : elles
+     * parlent de nuits deja mesurees et de chiffres qui n'existent pas sur l'accueil.
+     *
+     * Une seule fabrique pour les deux ecrans, parce que deux copies du meme diagnostic finissent
+     * par se contredire — c'est un travers que ce projet a deja paye.
+     */
+    fun permissionSommeil(disponibilite: SleepReader.Availability?): ErreurPendulum? =
+        if (disponibilite != SleepReader.Availability.PERMISSIONS_MISSING) null
+        else ErreurPendulum(
+            code = "E-HC-02",
+            titre = texte(R.string.error_hc_02_title),
+            cause = texte(R.string.error_hc_02_cause),
+            action = texte(R.string.error_hc_02_action),
+            bouton = texte(R.string.error_hc_02_button),
+            technique = true,
+        )
+
     fun sommeil(
         disponibilite: SleepReader.Availability?,
         sourcesRecentes: Int?,
@@ -60,14 +85,8 @@ object Situations {
 
         // La permission est **cassee**, pas absente : rouge. C'est la seule des trois qui empeche
         // reellement quelque chose, et la seule qui se repare en un geste.
-        disponibilite == SleepReader.Availability.PERMISSIONS_MISSING -> ErreurPendulum(
-            code = "E-HC-02",
-            titre = texte(R.string.error_hc_02_title),
-            cause = texte(R.string.error_hc_02_cause),
-            action = texte(R.string.error_hc_02_action),
-            bouton = texte(R.string.error_hc_02_button),
-            technique = true,
-        )
+        disponibilite == SleepReader.Availability.PERMISSIONS_MISSING ->
+            permissionSommeil(disponibilite)
 
         // Health Connect absent ou trop ancien : l'assistant de premier lancement porte deja ces
         // deux cas avec leur bouton d'installation. Les repeter en tete de la tendance ferait

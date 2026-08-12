@@ -119,10 +119,13 @@ object CheminDeCalcul {
             // `missRate` s'y lisait « 31.1% » et ici « 0.39 ». Deux ecritures d'une seule grandeur,
             // a deux cartes de distance, dont l'une sans unite — rien ne disait au lecteur qu'il
             // regardait deux fois le meme nombre.
+            //
+            // Un tiret quand l'ajustement du rythme a ete refuse : il n'y a alors pas de taux, et
+            // « 0.0% » se lirait comme une deconvolution qui n'a rien manque.
             add(
                 Ligne(
                     texte(R.string.night_why_missed_rate),
-                    texte(Mapping.pourcent(n.missRate)),
+                    texte(n.missRate?.let { Mapping.pourcent(it) } ?: Mapping.TIRET),
                 ),
             )
 
@@ -138,14 +141,20 @@ object CheminDeCalcul {
             // n'existe pas. La note dit aussi « between the two », qui suppose deux valeurs et non
             // une valeur et un ecart. Montrer la borne rend les deux phrases vraies et epargne au
             // lecteur une soustraction faite de tete sur le chiffre qui porte le diagnostic.
+            //
+            // La borne partage le denominateur du chiffre principal : quand celui-ci n'existe pas,
+            // elle n'existe pas non plus, et la ligne rend un tiret plutot qu'un encadrement dont
+            // les deux bornes seraient inventees.
             add(
                 Ligne(
                     libelle = texte(R.string.night_why_resp_bracket),
-                    valeur = texte(
-                        R.string.night_why_worst_bound,
-                        "%.1f ".format(Locale.UK, resultat.plmiRespWorstCase),
-                        texte(R.string.trend_unit_per_hour),
-                    ),
+                    valeur = resultat.plmiRespWorstCase?.let { borne ->
+                        texte(
+                            R.string.night_why_worst_bound,
+                            "%.1f ".format(Locale.UK, borne),
+                            texte(R.string.trend_unit_per_hour),
+                        )
+                    } ?: texte(Mapping.TIRET),
                     note = texte(R.string.night_why_resp_bracket_note),
                 ),
             )
@@ -153,15 +162,20 @@ object CheminDeCalcul {
             metrologie?.let { ajouterMetrologie(it) }
         }
 
+        // Le titre nomme le chiffre qu'on explique — sauf quand il n'y en a pas. Le bloc reste
+        // affiche : ses lignes disent alors ou le calcul s'est arrete, ce qu'un bloc supprime ne
+        // dirait pas.
         return Bloc(
-            titre = texte(
-                R.string.night_why_title,
+            titre = resultat.plmi?.let { index ->
                 texte(
-                    R.string.trend_value_with_unit,
-                    "%.1f".format(Locale.UK, resultat.plmi),
-                    texte(R.string.trend_unit_per_hour),
-                ),
-            ),
+                    R.string.night_why_title,
+                    texte(
+                        R.string.trend_value_with_unit,
+                        "%.1f".format(Locale.UK, index),
+                        texte(R.string.trend_unit_per_hour),
+                    ),
+                )
+            } ?: texte(R.string.night_why_title_no_index),
             lignes = lignes,
         )
     }

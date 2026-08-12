@@ -84,6 +84,23 @@ and gives a ranked recommendation.
 4. Wear the watch at the ankle, strap snug, same leg every night.
 5. In the morning, put the watch on its charger. Transfer happens on its own.
 
+**Where exactly to put it**, because a few centimetres change what the sensor can see:
+
+![Where to wear the watch: on the front of the shin just above the ankle bones, never on the bones themselves; the case may be rotated freely in its own plane](images/where-to-wear.svg)
+
+On the **front of the shin, just above the ankle bones** — not on a bone. The rotation of the case in
+its own plane does not matter; the position along the leg does. A sensor sitting directly over the
+joint axis has an effective radius near zero, so a pure ankle movement barely translates it at all
+and produces almost no signal. [`02-science.md`](02-science.md) §4 gives the arithmetic: the same
+movement reads 184 mg at a 22 cm radius and about 34 mg at 2 cm, falling to nothing when the housing
+rests on the tibia.
+
+The instruction that matters more than the exact spot is **the same spot every night**, on the same
+leg, with the strap at the same hole. Between-night comparability rests on it: the application
+estimates a mechanical gain from body turns during the night, which is a subdued correction, not a
+strong one, and a strap moved by one hole moves the index by more than most things it is meant to
+measure.
+
 Nothing aggregate appears before **three eligible nights**. That is not a loading state and there is
 no way to override it: in confirmed patients the clinical threshold is exceeded on only about a third
 of individual nights, so a single night carries no information about a trend.
