@@ -170,7 +170,28 @@ Never trust the `nominalRateHz` header field. It exists for traceability, not fo
 |---|---|
 | < 0.10 s (≤ 5 samples) | silent linear interpolation, no flag — shorter than the fastest CLM feature (`T_rise ≥ 0.15 s`) |
 | 0.10–2.0 s | samples marked `NaN`. The movement channel treats them as zero, the gravity channel **holds its last value**. A **blind zone** is marked over `[start − 2 s, end + 2 s]`; no movement may start or end inside it, and one that spans it is rejected |
-| > 2.0 s | **hard segment boundary**. All filter states are reset, any open series is terminated. This is WASM rule 3.3.3 verbatim: the prior interval is not measured for the first movement after restarting the recording |
+| > 2.0 s | **hard segment boundary**. All filter states are reset, the detector's state machine restarts, the first 5 s of the new segment are blind, and **any open PLM series is ended** — WASM 3.3.3, see the note below |
+
+> **Why the series ends there, and not only when a movement is cut.** WASM 3.3.3 says the prior IMI
+> "is not measured […] for the first CLM after starting or re-starting the recording", and since
+> 3.3.5 counts only CLM that meet the period criteria, a CLM with no measurable prior IMI cannot
+> continue a sequence. Ending the series only on the `TRUNCATED` flag — raised on a movement the
+> boundary actually cuts — would miss the common case: a 3-second gap falling in a quiet stretch
+> between two movements 40 s apart cuts no movement at all, and would leave the series open with a
+> 40 s interval **measured across a period during which no movement could have been seen**. That is
+> not a measurement, it is an assumption of absence. On a healthy night the case is rare; on a night
+> carrying the FIFO gaps of distractor family 6 it is the normal case.
+>
+> The break is **unconditional in the length of the gap**: any hole large enough to cut the segment
+> makes the prior IMI unobservable, and no tolerance would make it observable again. Below 2 s the
+> hole is a blind zone inside a single segment and does not break the series — the movement that
+> spans it is rejected by the detector instead, and the series then breaks only if the merged
+> interval exceeds 90 s.
+>
+> `SeriesBuilder` therefore takes the segment list as an argument, and **the same list reaches the
+> regression harness, the ground-truth expectation and the bench** (`Segment.between`). A harness
+> holding its own idea of where the recording restarts would validate a chain the application does
+> not have, which is the failure this repository has already paid for.
 
 Blind time and gap time are **removed from the denominator**. On a healthy night (cumulative gaps
 under 2 min in 8 h, i.e. 0.42 %) the effect is nil; on a degraded night with 30 min of gaps, failing
@@ -404,8 +425,9 @@ screen.
 - Typical low-power MEMS noise density: 150–300 µg/√Hz. Take 200 µg/√Hz.
 - Useful band 0.5–8 Hz → BW = 7.5 Hz → per-axis RMS noise = `200 µg × √7.5` = **548 µg**.
 - Format quantisation: LSB = 1/2048 g = 488 µg, RMS = LSB/√12 = 141 µg spread over 25 Hz, i.e.
-  28.2 µg/√Hz → **87 µg** in band. Negligible against the analogue noise: **the format resolution is
-  not the limiting factor**.
+  28.2 µg/√Hz → **77 µg** in band (`28.2 × √7.5`; this line read 87 µg until 2026-08-12, which no
+  bandwidth in the budget reproduces). Negligible against the analogue noise either way: **the format
+  resolution is not the limiting factor**.
 - L2 norm of three i.i.d. Gaussian axes → Maxwell: `E[‖v‖] = 2σ√(2/π) = 1.596 σ` ≈ **875 µg**.
 - Onset threshold at 8× that floor = **7.0 mg**.
 
@@ -444,19 +466,29 @@ index for ±20 %).
 
 #### The calibration term
 
-`f_cal · gainCal` normalises across nights. `gainCal` is a **direct measurement of that night's
-mechanical gain** — ankle → strap → case → MEMS — obtained from a 70-second bedtime ritual on the
-watch: 30 s still (`floorCal`), ten metronome-guided voluntary dorsiflexions at 3 s spacing
-(`gainCal` = median of the ten peak envelope amplitudes), 10 s still. A movement is declared if it
-reaches **12 % of the amplitude of a comfortable voluntary dorsiflexion of that night**. The 12 % is
-an engineering choice within 0.08–0.20.
+`f_cal · gainCal` normalises across nights. `gainCal` is a measurement of that night's mechanical
+gain — ankle → strap → case → MEMS — and it comes from **one source only: the median peak amplitude
+of the night's gross body movements**. Turns are physiologically stereotyped, frequent (20–60/night)
+and reasonably stable across subjects (377 ± 63 mg, CV 17 %). It is an **undergone** gesture, not an
+imposed one: its amplitude varies with the starting position, the bedding and the depth of sleep.
+That is the known limit of this standard, and there is no other. The field
+`gainSource ∈ {GROSS_BODY, NONE}` must accompany **every** published index; `NONE` means no
+inter-night comparison is founded.
 
 This is the only one of the three terms that compensates strap tightness, which is the variable that
-destroys night-to-night comparability. If the ritual is skipped, the fallback reference is the median
-peak amplitude of the night's gross body movements — turns are physiologically stereotyped, frequent
-(20–60/night) and reasonably stable (377 ± 63 mg, CV 17 % across subjects). A worse internal
-standard than the ritual, much better than nothing. The field `gainSource ∈ {RITUAL, GROSS_BODY,
-NONE}` must accompany **every** published index.
+destroys night-to-night comparability.
+
+> **Correction, 2026-08-12.** This section described `gainCal` as coming from a 70-second bedtime
+> ritual — 30 s still, ten metronome-guided voluntary dorsiflexions, 10 s still — with the gross body
+> movements as a fallback, and listed `gainSource ∈ {RITUAL, GROSS_BODY, NONE}`. **The ritual was
+> removed on 2026-08-05** because it had never been wired: the function was written and tested, no
+> production caller ever invoked it, and the watch screen that would have guided it did not exist.
+> `GainSource` has carried two values ever since, and the fallback is now the whole mechanism. Two
+> consequences the removal leaves standing, both stated in [`07-validation.md`](07-validation.md)
+> §4.5: inter-night comparability rests on `GROSS_BODY` plus the instruction *same strap, same hole,
+> same leg*, which v1 of this project called a wish rather than a solution; and the synthetic
+> generator still renders an idealised ritual gain, so **the regression suite runs on a cleaner
+> calibration than the application obtains**.
 
 If `gainCal` is absent or zero, the third term is simply switched off and the threshold falls back to
 `max(k_on·floor, Θ_abs)`, which is still correct — but the night is no longer comparable with
@@ -521,8 +553,19 @@ downward bias already present — two errors in the same direction.
 Δφ(t, τ) = arccos( clamp( ĝ_u(t+τ) · ĝ_u(t−τ), −1, 1 ) ) · 180/π
 
 posture change at t  ⟺  Δφ(t, 2.0 s) > 20°
-                        AND ĝ_u stays within a 10° cone around ĝ_u(t + 2 s) for at least 10 s
+                        AND ĝ_u stays within a 10° cone around ĝ_u(t − 2 s) for the 10 s before
+                        AND ĝ_u stays within a 10° cone around ĝ_u(t + 2 s) for the 10 s after
 ```
+
+**The departure condition is an addition, and it is not optional.** The specification writes only the
+arrival condition; the code enforces both, symmetrically, and the reason is arithmetic. With
+`τ = 2 s`, any large leg movement that *returns* to its starting orientation produces an instant `t`
+where `ĝ_u(t − τ)` sits at the peak of the movement and `ĝ_u(t + τ)` sits after the return: the angle
+exceeds 20° and the arrival is perfectly stable, because it is the original orientation. The
+arrival-only rule would therefore manufacture a posture change out of an ordinary movement, which
+would exclude its neighbours through the ±2.5 s guard window *and* cut the noise-floor windows at a
+place where nothing happened. A posture change is a transition **between two persistent
+orientations**; §8.4 already says as much of `stableSec`.
 
 A turn changes the projection of gravity on an axis by up to **1 g** in 0.5–3 s. Through the
 high-pass, that step produces a transient of initial amplitude ≈ the step, with time constant
@@ -541,7 +584,7 @@ Two **literal implementations**, never one parametric rule with a switch.
 | Minimum movements per series | 4 (3 intervals) | 4 (3 intervals) |
 | Interval shorter than the lower bound | `SKIP_LATER` — the later movement is ignored, the period is measured to the next candidate (*interpreted*: AASM is silent; this is the WASM 2006 convention) | **`BREAK_SERIES`** (3.3.6) |
 | Interval longer than 90 s | ends the series | ends the series (3.3.6) |
-| Limb movement longer than 10 s | does not break the series (`breakOnLongLm = false`) | **breaks the series** (3.2.1: "LM now have no maximum length. A LM > 10 s now ends a PLM sequence.") |
+| Limb movement longer than 10 s | does not break the series (`breakOnLongLm = false`) | **breaks the series**. The normative sentence is **3.3.6**: "LM that are not CLM, eg. monolateral LM that are >10 s […] end a sequence", with the 0.5–10 s CLM bound set by **3.3.1**. The often-quoted "LM now have no maximum length. A LM > 10 s now ends a PLM sequence" is the paper's summary of changes, not a numbered rule |
 | Sleep constraint | **at least part of each movement must fall in a sleep epoch** (new in v3) | a series may **cross** a wake/sleep transition (2.4.4) |
 
 **Why the two really differ, and why the first specification got it wrong.** It is tempting to
@@ -560,6 +603,12 @@ typical regime (interval ~21 s), missing one movement doubles the interval to ~4
 inside `[5, 90] s`: the series survives and only the count falls. Breaking happens only if the
 *merged* interval exceeds 90 s. No "protective" heuristic is layered on top of the rule — that would
 be inventing a clinical rule. §7.3 quantifies this.
+
+**A recording gap, on the other hand, does break a series**, in both rule sets. A missed movement
+leaves an interval that was still observed; a recording gap leaves an interval that was not. WASM
+3.3.3 covers exactly that case, and the gap-policy table above states what it costs. The movement
+that opens the new series is marked truncated at its start, so a remnant of fewer than four
+movements is dropped **and counted** in `truncatedSeriesDropped` rather than disappearing silently.
 
 Output: `plmsCount` (in-series movements during sleep), `plmwCount` (in-series movements during
 intra-SPT wake — a WASM metric, undefined by AASM), `isolatedCount`, `shortImiCount`. A series
@@ -1029,8 +1078,16 @@ Implementation notes that matter for reproducibility:
    literal model ignores both corrections; below `σ ≤ 0.3` they are worth less than 1.5 % on the
    period. They are the first thing to revisit if the estimated `σ` exceeds 0.4.
 2. **Truncation at `K` harmonics.** The tail `k > K` piles onto the last component and pulls `p`
-   **upward**. At `K = 5` and `p = 0.39` the tail is 0.9 % — negligible. At `p = 0.65` it is 7.5 %
-   and the estimate of `p` is no longer trustworthy, which the goodness-of-fit measures detect.
+   **upward**. The tail weighs `p^K`: at `K = 5` and `p = 0.39` that is 0.9 % — negligible; at
+   `p = 0.65` it is **11.6 %** and the estimate of `p` is no longer trustworthy, which the
+   goodness-of-fit measures detect.
+
+   > **Correction, 2026-08-12.** This paragraph read "7.5 %" at `p = 0.65`. That figure is `p^6`,
+   > the tail for `K = 6`, while the shipped `maxHarmonics` is 5, where the tail is `0.65⁵ = 0.116`.
+   > The 0.9 % in the same sentence was already the `K = 5` value, so the two figures were being read
+   > off different truncations. Nothing changes in the code: `alternationMaxMissRate = 0.65` rests on
+   > the tail being *too heavy to trust* beyond that point, and 11.6 % supports that more firmly than
+   > 7.5 % did. `RhythmTest` now asserts both numbers, so the prose cannot drift from them again.
 3. **Independence of misses — probably false, and coded as such.** The accelerometer misses
    low-amplitude movements first; if a burst decays in amplitude, misses cluster at the end of the
    series and the 2× peak is **under-populated** relative to the geometric model.
@@ -1411,10 +1468,10 @@ these are its only parameters anywhere.
 
 | Parameter | Default | Unit | Plausible range | Justification / source | Effect of ±20 % |
 |---|---|---|---|---|---|
-| `kOn` | **8.0** | × floor | 5–12 | **Anti-artefact budget, not anti-noise**: 4.8 would already suffice against thermal noise. Carried over from the first specification for want of better evidence — an engineering choice, not a published figure | **10–15 % — the dominant parameter** |
+| `kOn` | **8.0** | × floor | 5–12 | **Anti-artefact budget, not anti-noise**: 4.8 would already suffice against thermal noise. Carried over from the first specification for want of better evidence — an engineering choice, not a published figure | ~~10–15 % — the dominant parameter~~ **falsified**: swept over [4, 12], `Θ_on` does not move at all on a calibrated night (`07-validation.md` §4.1). What residual effect exists runs through the GBM criterion, not the threshold |
 | `kOff` | 2.5 | × floor | 2.0–4.0 | Hysteresis 3.2; transposition of the AASM 8 µV / 2 µV ratio | 3–6 % |
 | `absFloorG` | **0.020** | g | 0.010–0.050 | Bracketed by NeuroMetrix 0.02/0.03 g and Sicbaldi 15 mg; the exact value is an engineering choice. The relative term alone would fall to 7 mg | 0 % on a normal night; **up to 15 % on a very quiet night** |
-| `calFraction` | 0.12 | × gainCal | 0.08–0.20 | 12 % of a comfortable voluntary dorsiflexion — an engineering choice, no published equivalent | 5–10 % when this term dominates |
+| `calFraction` | 0.12 | × gainCal | 0.08–0.20 | 12 % of the night's median gross body movement — an engineering choice, no published equivalent, and **its original referent no longer exists**: 0.12 was set against a voluntary dorsiflexion, and the ritual that produced one was removed on 2026-08-05 (§2, stage 4). It has never been re-derived against the turn amplitude it is now applied to | **it sets `Θ_on` on 99 % of a calibrated night** (`07-validation.md` §4.1); the sweep in §4.4 moves the published index from 5 % of truth to 47 % |
 | `offHoldSec` | 0.50 | s | **fixed** | Literal AASM/WASM rule | do not vary |
 | `minDurSec` | 0.50 | s | **fixed** | AASM VII / WASM 3.3.1 | do not vary (< 3 % if done) |
 | `maxDurSec` | 10.0 | s | **fixed** | AASM: upper bound of a candidate movement. WASM: beyond it, a long LM that **breaks** the series | do not vary |
@@ -1470,7 +1527,7 @@ Varying these is a rule-comparison experiment, not a sensitivity sweep.
 
 | Parameter | Default | Unit | Plausible range | Justification / source | Effect of ±20 % |
 |---|---|---|---|---|---|
-| `maxHarmonics` | 5 | — | 3–8 | At `p = 0.39` the tail beyond `K = 5` weighs 0.9 %; beyond `K = 8` the far components capture noise and inflate `p` | biases `p` by ~±0.03 |
+| `maxHarmonics` | 5 | — | 3–8 | The tail beyond `K` weighs `p^K`: 0.9 % at `p = 0.39`, 11.6 % at `p = 0.65`; beyond `K = 8` the far components capture noise and inflate `p` | biases `p` by ~±0.03 |
 | `minIntervals` | 30 | — | 20–60 | Below this, no result is produced at all; engineering choice | n/a (gate) |
 | `minIntervalSec` | 5.0 | s | 3–10 | Excludes intra-burst fragments (the 2–4 s mode) | small |
 | `maxIntervalSec` | 150.0 | s | 100–250 | Must cover `maxHarmonics × expected fundamental`, else high harmonics are amputated and `p` underestimated | biases `p` downward if too low |

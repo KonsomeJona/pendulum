@@ -143,8 +143,18 @@
          First launch
          ===================================================================================== -->
 
-    <!-- %1$d: the rank of the current step, from 1 to 5. -->
-    <string name="onboarding_step">Step %1$d of 5</string>
+    <!--
+      %1$d: the rank of the current step. %2$d: how many there are.
+
+      The total was written into the sentence as a literal "5" while `ONBOARDING_STEPS` was 6, so
+      the last step rendered "Step 6 of 5" — under a progress bar already full. A wizard that
+      cannot count its own steps is read as a broken application at the one moment the product has
+      to be trusted, and the notice it has just made the user acknowledge is on that same wizard.
+
+      The total is therefore a substitution fed by `OnboardingResume.PAGES`, which is the constant
+      the pager itself counts with: adding or removing a step can no longer leave the label behind.
+    -->
+    <string name="onboarding_step">Step %1$d of %2$d</string>
 
     <string name="onboarding_needs_title">What Pendulum needs</string>
     <string name="onboarding_needs_watch_title">A Wear OS watch at the ankle</string>
@@ -551,6 +561,26 @@
     <!-- %1$s: the name of the period. %2$d: its eligible nights. -->
     <string name="compare_unavailable_body">%1$s: %2$d eligible nights. At least 5 are needed in each period.\nWith fewer nights, the measured difference would be dominated by the ordinary variability from one night to the next, and not by a real effect.</string>
 
+    <!--
+      What the screen says as long as there is no date picker, which is the only state it has ever
+      been reached in.
+
+      `MainActivity` fed `MIN_NIGHTS_COMPARISON` into the **count** slot of
+      `compare_unavailable_body`, so the screen rendered "Period A: 5 eligible nights. At least 5
+      are needed in each period." — it named the requirement, stated it was met, and refused all
+      the same. The count was not a count: it was the threshold, printed where a measurement
+      belongs.
+
+      That is the very defect the comment in `MainActivity` says this screen exists to avoid. Two
+      fabricated period labels had already been removed from it, on the grounds that an invented
+      context reads exactly as well as a real one; an invented night count is the same fault one
+      slot further along.
+
+      The text therefore says what is true — the two periods are not choosable yet — and it names
+      no figure at all. `Aggregate.compare` is written and tested; what is missing is the picker.
+    -->
+    <string name="compare_no_periods">There is no way to choose the two periods yet. The comparison itself is written and tested; what it is waiting for is the screen that sets the before and the after. Until that exists, Pendulum would have to invent the two periods, and an invented period reads on screen exactly like a measured one.</string>
+
     <!-- %1$d: order of magnitude of the nights that would be needed per period. -->
     <string name="compare_nights_needed">To settle it, about %1$d nights per period would be needed.</string>
     <string name="compare_out_of_reach">With variability this large, an effect of this size is not measurable by this method.</string>
@@ -842,8 +872,18 @@
     <string name="p1_outside">outside P1</string>
     <string name="p1_undecidable">not decidable</string>
 
-    <!-- %1$d consecutive nights reached out of %2$d required. -->
-    <string name="p1_run">Longest run of consecutive nights inside the three criteria: %1$d of %2$d</string>
+    <!--
+      %1$d consecutive nights reached, %2$d required.
+
+      "%1$d of %2$d" reads in English as a fraction, and this one is not bounded by its
+      denominator: nine consecutive compliant nights against a gate of three rendered "9 of 3".
+      A run that exceeds what is asked of it is the good outcome, and the label made it look like
+      an arithmetic fault — the same shape of defect as an onboarding counting "Step 6 of 5".
+
+      The requirement therefore moves out of the fraction and into a parenthesis, where it stays
+      readable whichever side of the gate the run falls.
+    -->
+    <string name="p1_run">Longest run of consecutive nights inside the three criteria: %1$d (%2$d required)</string>
     <!-- %1$s: first night of the run. %2$s: last. -->
     <string name="p1_run_range">%1$s → %2$s</string>
     <!-- %1$d compliant out of %2$d examined. -->
@@ -967,8 +1007,23 @@
       instrumented test that attests the figure stays hidden until it has been pressed.
     -->
     <string name="home_result_button">Show the result</string>
-    <!-- %1$s: the readable date of the night. -->
-    <string name="home_result_recorded">Night of %1$s recorded · quality acceptable</string>
+    <!--
+      %1$s: the readable date of the night.
+
+      It read "· quality acceptable", and **nobody had established that**. The line is emitted by
+      `HomeMachine` and by the night detail from the sole fact that a night is analysed and not yet
+      revealed; neither of the two callers consults a single quality check. On the night detail the
+      sentence therefore sat a screen's length above "Gaps in total 227 s ✗ threshold 120 s" and
+      "Estimated missed movements 29.3% ✗ threshold 20.0%" — the title asserted what the table
+      below denied, on the one product whose argument is that it does not claim what it has not
+      measured.
+
+      "checked" and not "acceptable": that a check ran is exactly what the two callers know, and it
+      is what `home_result_hidden_body` already says on the very next line — "the night was
+      recorded and its quality was checked". The verdict is left to the table, which carries it row
+      by row with the threshold each one is compared against.
+    -->
+    <string name="home_result_recorded">Night of %1$s recorded · quality checked</string>
     <!-- **No caller**: the timestamp of the reveal only comes out in the export. -->
     <string name="home_result_shown_at">Result shown on %1$s</string>
 
@@ -1083,13 +1138,40 @@
     <!-- A value and its unit, in that order. %1$s the value, %2$s the unit. -->
     <string name="trend_value_with_unit">%1$s %2$s</string>
 
-    <!-- Canonical line: the value, its interval and its n, in the same sentence (P2). -->
-    <string name="trend_interval_and_n">95%% CI: %1$s – %2$s   ·   %3$d eligible nights</string>
+    <!--
+      Canonical line: the value, its interval and its n, in the same sentence (P2).
+
+      %4$s is **the noun the n is counted in**, and it is a substitution rather than the two words
+      "eligible nights" written into the sentence. The line is drawn by one shared component for
+      both quantities, and the two quantities do not count the same nights: the hourly count
+      aggregates every eligible night, the rhythm aggregates only the nights whose fit was accepted
+      — `PendulumRepository.observeTrend` filters on exactly that, and says so.
+
+      Written as a literal, the sentence therefore announced "4 eligible nights" on a screen whose
+      counter said "9 nights recorded · 7 eligible · 1 excluded" four cards below, and whose export
+      said "7 eligible nights". Nothing on screen let the two figures be reconciled, and the wrong
+      one was the headline quantity.
+
+      It is the defect `ui/DisplayRulesTest.kt` already forbids on the refusal card — "nine
+      eligible nights, two identified rhythms, and a screen announcing 2 nights out of 3" — left
+      standing one card further down. `trend_rhythm_counter` carries the same rule in its comment:
+      never the plain count of nights.
+    -->
+    <string name="trend_interval_and_n">95%% CI: %1$s – %2$s   ·   %3$d %4$s</string>
     <!--
       The same line when the interval **is not a 95% one**, and we refuse to label it as such.
       `ui/ThresholdsTest.kt` checks that the canonical form "95% CI" appears only above six nights.
     -->
-    <string name="trend_interval_uncalibrated">Interval %1$s – %2$s   ·   %3$d eligible nights   ·   not a calibrated 95%% interval</string>
+    <string name="trend_interval_uncalibrated">Interval %1$s – %2$s   ·   %3$d %4$s   ·   not a calibrated 95%% interval</string>
+
+    <!--
+      The two nouns the `n` of an aggregate can be counted in, one per `Aggregate.Quantity`.
+
+      They are separate entries and not a boolean interpolated in the code: a language may need to
+      agree the noun with the number that precedes it, and a Kotlin `if` freezes that.
+    -->
+    <string name="trend_nights_noun_eligible">eligible nights</string>
+    <string name="trend_nights_noun_fitted_rhythm">nights with an identified rhythm</string>
     <string name="trend_interval_uncalibrated_note" formatted="false">Below six nights this interval is not a 95% interval, and Pendulum does not label it as one. Simulated on 10,000 draws, it holds the true value 75% of the time on three nights and 88% on four, where the label promises 95%.\n\nThe cause is arithmetic rather than a fault. The interval is built by resampling the nights you recorded, so it can never reach past your lowest and your highest night; with three nights, those two bounds fall on either side of the true value only three times in four. No variant of the method escapes that, so Pendulum names the interval for what it is instead of widening it by an invented amount.</string>
 
     <!--
@@ -1231,8 +1313,19 @@
     -->
     <string name="nights_flag_accel_mask">accel mask</string>
     <string name="nights_flag_truncated">truncated</string>
-    <!-- %1$d seconds of gap, %2$d times. -->
-    <string name="nights_flag_gap">gap %1$ds ×%2$d</string>
+    <!--
+      %1$d: seconds of gap **in total**. %2$d: how many gaps make it up.
+
+      It read "gap %1$ds ×%2$d", so it rendered "gap 227s ×52" — and `×` is a multiplication sign:
+      it says 227 s each, fifty-two times, which is three and a quarter hours of a seven-hour
+      night, on a night the same product scores at 99.2 % signal coverage. The two cannot both be
+      true, and the reader has no way of knowing which half to disbelieve.
+
+      The night detail names the same quantity "Gaps in total"; the chip now says the same thing in
+      the same order of reading, and the count comes first because it is the smaller, plainer
+      number. Nothing multiplies any more.
+    -->
+    <string name="nights_flag_gap">%2$d gaps · %1$d s total</string>
     <string name="nights_flag_battery">battery %1$d%%</string>
     <!--
       The missed rate comes from the harmonic deconvolution, which measures it instead of assuming
@@ -1538,12 +1631,12 @@
       denominator comes from the same signal as the numerator, and the application then refuses to
       let that figure carry the result.
     -->
-    <string name="error_hc_02_action_manuelle">Android no longer shows the permission dialog for Pendulum. Open Health Connect and allow sleep reading there. Without it, no night can carry a result: the sleep time used as the denominator would come from the same signal as the movements counted.</string>
+    <string name="error_hc_02_action_manual">Android no longer shows the permission dialog for Pendulum. Open Health Connect and allow sleep reading there. Without it, no night can carry a result: the sleep time used as the denominator would come from the same signal as the movements counted.</string>
 
     <!-- The button that goes with the manual route: it opens the screen, it does not ask again. -->
-    <string name="error_hc_02_button_manuel">Open Health Connect</string>
+    <string name="error_hc_02_button_manual">Open Health Connect</string>
 
-        <string name="error_hc_02_action">The nights already analysed are kept; new ones will use the accelerometer mask.</string>
+    <string name="error_hc_02_action">The nights already analysed are kept; new ones will use the accelerometer mask.</string>
     <string name="error_hc_02_button">Restore the permission</string>
 
     <string name="error_hc_03_title">Two sleep sources for this night</string>

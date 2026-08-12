@@ -648,9 +648,14 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
             // still to be built, not a wiring to be laid, and the screen must say it is not there
             // rather than mimic it.
             composable("compare") {
+                // `unavailableReason` is null and not a fabricated pair: there is no period A, so
+                // there is no count of its nights either. Passing
+                // `MIN_NIGHTS_COMPARISON` in that slot printed the threshold where a measurement
+                // belongs — "Period A: 5 eligible nights. At least 5 are needed in each period."
+                // The screen carries its own text for this state.
                 ComparePeriodsScreen(
                     result = null,
-                    unavailableReason = text(R.string.compare_period_a) to Aggregate.MIN_NIGHTS_COMPARISON,
+                    unavailableReason = null,
                     periodALabel = "",
                     periodBLabel = "",
                 )

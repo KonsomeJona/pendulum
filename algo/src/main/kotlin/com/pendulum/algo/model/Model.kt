@@ -108,6 +108,29 @@ data class Gap(val fromIdx: Int, val toIdx: Int, val kind: GapKind, val duration
 /** Continuous, analysable interval. Bounds as uniform-grid indices, `toIdx` excluded. */
 data class Segment(val fromIdx: Int, val toIdx: Int) {
     val length: Int get() = toIdx - fromIdx
+
+    companion object {
+        /**
+         * The intervals left by the [GapKind.SEGMENT_BREAK] holes of [gaps] over a grid of [n]
+         * points.
+         *
+         * Shared rather than rewritten at each site because the same segmentation now feeds the
+         * timeline, the ground-truth expectation and the bench, and `SeriesBuilder` breaks a series
+         * on its boundaries: two sites disagreeing on where a recording restarts would publish two
+         * different indices for the same night, and only one of them would be tested.
+         */
+        fun between(gaps: List<Gap>, n: Int): List<Segment> {
+            val out = ArrayList<Segment>()
+            var start = 0
+            for (g in gaps.sortedBy { it.fromIdx }) {
+                if (g.kind != GapKind.SEGMENT_BREAK) continue
+                if (g.fromIdx > start) out.add(Segment(start, g.fromIdx))
+                start = maxOf(start, g.toIdx)
+            }
+            if (start < n) out.add(Segment(start, n))
+            return out
+        }
+    }
 }
 
 // --- Integrity (step -1) ---

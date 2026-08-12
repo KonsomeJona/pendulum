@@ -199,6 +199,22 @@ class RhythmTest {
     }
 
     @Test
+    fun `the truncated tail is the one the module quotes to justify its bounds`() {
+        // `RhythmConfig` argues approximation no. 2 and `alternationMaxMissRate` from the mass the
+        // truncation pushes onto the last component. That mass is `p^K` and it is quoted in prose
+        // in three documents, so it is pinned here: prose drifts, an assertion does not. The
+        // figures below are read at the module's own default `maxHarmonics`, which is the only
+        // value at which the argument applies.
+        val k = RhythmConfig().maxHarmonics
+        for ((p, expected) in listOf(0.39 to 0.0090, 0.65 to 0.1160)) {
+            val untruncated = DoubleArray(k) { Math.pow(p, it.toDouble()) * (1.0 - p) }
+            assertThat(1.0 - untruncated.sum())
+                .`as`("mass beyond K = %d at p = %s", k, p)
+                .isCloseTo(expected, within(5e-5))
+        }
+    }
+
+    @Test
     fun `the estimation of p exactly inverts the mean rank of the model`() {
         for (p in doubleArrayOf(0.0, 0.05, 0.2, 0.39, 0.5, 0.7, 0.85)) {
             val m = Rhythm.meanRank(p, 5)

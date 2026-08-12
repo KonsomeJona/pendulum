@@ -92,9 +92,19 @@ object Preflight {
         val pending = pendingChunkCount(store.chunksRoot)
         val free = ctx.filesDir.usableSpace
         val occupied = dirSize(store.chunksRoot)
-        if (free < MIN_FREE_BYTES || occupied > CHUNK_DIR_CAP_BYTES * 95 / 100) {
-            // Refusing to begin a night is better than silently overwriting one.
+        // Two distinct facts, and they were raised as one issue carrying one message.
+        //
+        // The disk being full and this application's own backlog reaching its cap have nothing in
+        // common except that both forbid a night. The single message described the first, so a
+        // watch with 4.6 GB free and a saturated chunk directory read "Storage full: 4.6 GB free"
+        // — a sentence disproved by its own figure, in error red. And the remedy differs: the
+        // first needs space freed on the watch, the second needs the phone to come and collect.
+        //
+        // Refusing to begin a night is better than silently overwriting one, in both cases.
+        if (free < MIN_FREE_BYTES) {
             blockers += Issue(IssueId.STORAGE_FULL, listOf(formatBytes(free), pending.toString()))
+        } else if (occupied > CHUNK_DIR_CAP_BYTES * 95 / 100) {
+            blockers += Issue(IssueId.BACKLOG_AT_CAP, listOf(pending.toString()))
         }
 
         val nightKey = DataLayerTransfer.nightKey(nowMs)
@@ -212,6 +222,9 @@ enum class IssueId {
     NOTIFICATIONS_DENIED,
     NO_ACCELEROMETER,
     STORAGE_FULL,
+
+    /** This application's own chunk directory has reached its cap. The disk may be far from full. */
+    BACKLOG_AT_CAP,
     FGS_REFUSED,
 
     /** Bench build — compressed wall-clock time — on the real sensor. See
@@ -248,6 +261,9 @@ val IssueId.isFailure: Boolean
     get() = when (this) {
         IssueId.NO_ACCELEROMETER,
         IssueId.STORAGE_FULL,
+        // A failure and not a situation, like `STORAGE_FULL`: the user cannot lift it from this
+        // screen. It clears when the phone collects, which happens elsewhere and on its own.
+        IssueId.BACKLOG_AT_CAP,
         IssueId.FGS_REFUSED,
         IssueId.BENCH_SCALE_MISMATCH -> true
 

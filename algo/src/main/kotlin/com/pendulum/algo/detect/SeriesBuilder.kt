@@ -3,6 +3,7 @@ package com.pendulum.algo.detect
 import com.pendulum.algo.model.Clm
 import com.pendulum.algo.model.ClmFlags
 import com.pendulum.algo.model.PlmSeries
+import com.pendulum.algo.model.Segment
 import com.pendulum.algo.model.SeriesRule
 import com.pendulum.algo.model.ShortImiPolicy
 import com.pendulum.algo.model.SleepMask
@@ -49,10 +50,14 @@ data class SeriesConfig(
         )
 
         /**
-         * WASM 2016. IMI in [10, 90] s; >= 4 CLM (= 3 IMI); an out-of-bounds IMI **breaks** the
-         * series (3.3.6); an LM > 10 s breaks the series (3.2.1: "LM now have no maximum length.
-         * A LM > 10 s now ends a PLM sequence."); a series may **cross** a wake/sleep transition
-         * (2.4.4), hence `requirePortionInSleep = false`.
+         * WASM 2016, read against the numbered rules rather than against the paper's summary of
+         * changes. 3.3.4: "The period length for two consecutive CLM to be considered as PLM must
+         * be at least 10 and no more than 90 s" — both bounds inclusive, which is why the builder
+         * closes on `imi > 90` and keeps exactly 90.0 s. 3.3.5: "four or more" consecutive CLM.
+         * 3.3.6: "Long (>90 s) and short (<10 s) CLM IMIs end a sequence", and "LM that are not
+         * CLM, eg. monolateral LM that are >10 s […] end a sequence" — hence `breakOnLongLm`, the
+         * 10 s bound itself coming from 3.3.1. 2.4.4 lets a series **cross** a wake/sleep
+         * transition, hence `requirePortionInSleep = false`.
          */
         fun wasm2016() = SeriesConfig(
             rule = SeriesRule.WASM_2016,
@@ -84,6 +89,17 @@ data class SeriesBuildResult(val series: List<PlmSeries>, val truncatedSeriesDro
  * inside the [5, 90] s window: the series survives and only the count drops. A break only happens
  * if the **merged** interval exceeds `imiMaxSec`. No "protection" heuristic is added on top of the
  * rule — that would be inventing a clinical rule.
+ *
+ * **What a recording gap does, and why.** WASM 2016 rule 3.3.3: "The prior IMI is not measured in
+ * special cases, ie. for the first CLM after starting or re-starting the recording". Since 3.3.5
+ * counts only the CLM that satisfy the period criteria, a CLM whose prior IMI cannot be measured
+ * cannot continue a sequence: the sequence ends at the restart. A recording gap long enough to cut
+ * the segment therefore breaks any open series, **even when it falls in a quiet stretch and no
+ * movement carries the `TRUNCATED` flag**. Without that, two movements 40 s apart with a 3 s hole
+ * between them would record a 40 s interval measured across a period in which no movement could
+ * have been observed — an interval that is not a measurement but an assumption of absence. The
+ * break is unconditional in the length of the gap: as soon as the recording stops, the prior IMI is
+ * unobservable, and no tolerance would make it observable again.
  */
 object SeriesBuilder {
 
@@ -96,17 +112,29 @@ object SeriesBuilder {
      *   bound the night for the detection of truncated series.
      * @param fsHz grid rate, explicit: the IMI are computed on the **indices**, never on the
      *   millisecond fields, which are rounded.
+     * @param segments the continuous analysable intervals of the recording, on the same index grid
+     *   as `Clm.onsetIdx`. Two CLM lying on either side of a boundary are separated by a recording
+     *   restart, and rule 3.3.3 forbids measuring the prior IMI of the second one. **An empty list
+     *   means "no segmentation known", not "no gap"**: it restores the behaviour of a continuous
+     *   recording, so every caller that has a timeline must pass its segments, otherwise it silently
+     *   publishes intervals measured across holes.
      * @return the series of at least `minClmPerSeries` CLM. `PlmSeries.clmIndices` indexes the
      *   `events` list **as supplied**, so that `events[i]` is always valid.
      */
-    fun build(events: List<Clm>, mask: SleepMask, fsHz: Double, cfg: SeriesConfig): List<PlmSeries> =
-        buildDetailed(events, mask, fsHz, cfg).series
+    fun build(
+        events: List<Clm>,
+        mask: SleepMask,
+        fsHz: Double,
+        cfg: SeriesConfig,
+        segments: List<Segment> = emptyList(),
+    ): List<PlmSeries> = buildDetailed(events, mask, fsHz, cfg, segments).series
 
     fun buildDetailed(
         events: List<Clm>,
         mask: SleepMask,
         fsHz: Double,
         cfg: SeriesConfig,
+        segments: List<Segment> = emptyList(),
     ): SeriesBuildResult {
         require(fsHz > 0.0) { "fsHz must be > 0" }
         val order = events.indices.sortedBy { events[it].onsetIdx }
@@ -114,6 +142,15 @@ object SeriesBuilder {
         val nightStartMs = mask.windows.minOfOrNull { it.startMsRel } ?: 0L
         val nightEndMs = mask.windows.maxOfOrNull { it.endMsRel }
             ?: events.maxOfOrNull { it.onsetMsRel + it.durationMs } ?: 0L
+
+        // Restart rank: the number of segments already started at the onset of the event. Two CLM
+        // whose ranks differ have at least one recording restart between them, so the prior IMI of
+        // the later one is not measurable (3.3.3). Only the segment **starts** are read: an event
+        // whose onset falls inside the hole itself — possible when the events come from a ground
+        // truth rather than from the detector — keeps the rank of the segment before it, which
+        // produces one break and not two.
+        val segStarts = segments.map { it.fromIdx }.sorted()
+        val restartRank = IntArray(events.size) { i -> segStarts.count { it <= events[i].onsetIdx } }
 
         val out = ArrayList<PlmSeries>()
         var dropped = 0
@@ -173,6 +210,14 @@ object SeriesBuilder {
             if (open.isEmpty()) {
                 openWith(idx, afterHardBreak)
                 afterHardBreak = false
+                continue
+            }
+            // A recording restart between the two onsets. Same treatment as a movement cut by the
+            // edge: the series that was open ends there, and the one that starts has no measurable
+            // prior IMI, hence is truncated at its start.
+            if (restartRank[idx] != restartRank[open.last()]) {
+                close(truncatedAtEnd = true)
+                openWith(idx, hardBreak = true)
                 continue
             }
             sawAnyClm = true

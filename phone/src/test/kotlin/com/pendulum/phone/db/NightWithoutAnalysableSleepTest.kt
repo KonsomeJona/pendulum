@@ -219,6 +219,7 @@ class NightWithoutAnalysableSleepTest {
         fundamentalSec = null,
         rhythmValid = false,
         periodicityIndex = 0.0,
+        periodicityValid = true,
         missRate = null,
         analysableTstMin = if (plmi == null) 0.0 else 312.0,
         analysableMin = 42.0,

@@ -440,6 +440,6 @@ private fun formatShortDay(ms: Long): String {
 private fun sleepCard(base: PendulumError, suppressed: Boolean): PendulumError =
     if (!suppressed) base
     else base.copy(
-        action = text(R.string.error_hc_02_action_manuelle),
-        button = text(R.string.error_hc_02_button_manuel),
+        action = text(R.string.error_hc_02_action_manual),
+        button = text(R.string.error_hc_02_button_manual),
     )

@@ -158,6 +158,16 @@ data class ComparableNight(
      */
     val rhythmValid: Boolean,
     val periodicityIndex: Double,
+    /**
+     * Whether the periodicity index may be shown at all.
+     *
+     * It is here for the same reason as [rhythmValid], and it was missing: `Periodicity` states
+     * that below its interval rate the value **must not be displayed**, the view did not carry the
+     * flag, and the trend took a median over every night regardless — falling back to `0.0`, which
+     * is a legitimate index meaning "no periodicity whatsoever". An unknown was published as a
+     * measurement, and as the most reassuring one available.
+     */
+    val periodicityValid: Boolean,
     val missRate: Double?,
     val analysableTstMin: Double,
     val analysableMin: Double,
@@ -195,6 +205,7 @@ internal object ComparableNightSql {
                 r.fundamentalSec      AS fundamentalSec,
                 r.rhythmValid         AS rhythmValid,
                 r.periodicityIndex    AS periodicityIndex,
+                r.periodicityValid    AS periodicityValid,
                 r.missRate            AS missRate,
                 r.analysableTstMin    AS analysableTstMin,
                 s.analysableMin       AS analysableMin,

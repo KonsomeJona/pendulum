@@ -193,7 +193,10 @@ object NightAnalyzer {
             // underestimate the miss rate.
             val rhythm = Rhythm.fromClms(clms, mask, params.rhythm)
             for (cfg in rules) {
-                out += computeOne(clms, mask, source, cfg, fsHz, timeline.truncated, params, pi, rhythm)
+                out += computeOne(
+                    clms, mask, source, cfg, fsHz, timeline.truncated, params, pi, rhythm,
+                    timeline.segments,
+                )
             }
         }
 
@@ -221,6 +224,8 @@ object NightAnalyzer {
      * @param pi and [rhythm] **measured by the caller, once per mask**. They do not depend on
      *   [cfg]: passing them rather than recomputing them here is what avoids paying twice for the
      *   same deconvolution for the two rule sets of a single mask.
+     * @param segments the segments of the timeline. Without them `SeriesBuilder` would let a series
+     *   run across a recording gap and publish an interval nobody could have observed — WASM 3.3.3.
      */
     private fun computeOne(
         clms: List<Clm>,
@@ -232,8 +237,9 @@ object NightAnalyzer {
         params: AnalysisParams,
         pi: PiResult,
         rhythm: RhythmResult,
+        segments: List<Segment>,
     ): PlmiResult {
-        val built = SeriesBuilder.buildDetailed(clms, mask, fsHz, cfg)
+        val built = SeriesBuilder.buildDetailed(clms, mask, fsHz, cfg, segments)
 
         return Plmi.compute(
             clms = clms,

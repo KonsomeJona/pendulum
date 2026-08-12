@@ -75,6 +75,16 @@
     <string name="blocker_notifications">Allow notifications, otherwise the system will stop the recording in the middle of the night.</string>
     <string name="blocker_no_accelerometer">Accelerometer unavailable. Restart the watch.</string>
     <string name="blocker_storage_full">Storage full: %1$s free, 300 MB needed. Sync first (%2$s chunks waiting).</string>
+
+    <!--
+      The backlog cap, which is not the disk being full.
+
+      Both facts used to raise one issue carrying this file's other message, so a watch with
+      several gigabytes free read "Storage full: 4.6 GB free" — disproved by its own figure. This
+      one names the real limit and the real remedy: the nights are held here until the phone comes
+      and collects them, and no space on the watch will change that.
+    -->
+    <string name="blocker_backlog_at_cap">Nights already recorded are waiting for the phone (%1$s chunks). Open Pendulum on it, within Bluetooth range, before starting another.</string>
     <string name="blocker_fgs_refused">The watch refuses to start the measurement service. Restart the watch, then try again.</string>
     <!-- Bench build only: never reachable in a release, where the divider is 1. -->
     <string name="blocker_bench_scale">Bench build: wall time is divided by %1$s, but the real sensor is not. Rebuild without -Ppendulum.temps.diviseur, or start with the synthetic source.</string>

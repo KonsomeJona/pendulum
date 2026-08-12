@@ -244,6 +244,7 @@ class MappingTest {
         fundamentalSec = fundamentalSec,
         rhythmValid = rhythmValid,
         periodicityIndex = 0.58,
+        periodicityValid = true,
         missRate = missRate,
         analysableTstMin = 312.0,
         analysableMin = 420.0,

@@ -57,11 +57,24 @@ fun ComparePeriodsScreen(
 ) {
     val c = LocalPendulumColors.current
     PendulumScreen(modifier) {
-        if (unavailableReason != null || result == null) {
-            val (period, nights) = unavailableReason ?: (text(R.string.compare_period_a) to 0)
+        // Two refusals, and they are not the same refusal. `unavailableReason` names a period that
+        // exists and counts the nights it holds; its absence means there is no period at all,
+        // because nothing lets one be chosen yet. Filling the count slot of the first message with
+        // the threshold — which is what the caller used to do — produced "Period A: 5 eligible
+        // nights. At least 5 are needed", a screen stating its own condition met and refusing all
+        // the same.
+        if (unavailableReason != null) {
+            val (period, nights) = unavailableReason
             BlockingState(
                 title = stringResource(R.string.compare_unavailable_title),
                 body = stringResource(R.string.compare_unavailable_body, period.resolve(), nights),
+            )
+            return@PendulumScreen
+        }
+        if (result == null) {
+            BlockingState(
+                title = stringResource(R.string.compare_unavailable_title),
+                body = stringResource(R.string.compare_no_periods),
             )
             return@PendulumScreen
         }

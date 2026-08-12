@@ -148,6 +148,7 @@ class P1GateTest {
         fundamentalSec = 21.0,
         rhythmValid = true,
         periodicityIndex = 0.58,
+        periodicityValid = true,
         missRate = 0.11,
         analysableTstMin = 312.0,
         analysableMin = 460.0,

@@ -3,6 +3,7 @@ package com.pendulum.algo.detect
 import com.pendulum.algo.model.Clm
 import com.pendulum.algo.model.ClmFlags
 import com.pendulum.algo.model.ClmRejectReason
+import com.pendulum.algo.model.Segment
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -114,6 +115,60 @@ class SeriesBuilderTest {
         assertThat(series).hasSize(2)
         assertThat(series[0].truncatedAtEnd).isTrue()
         assertThat(series[1].truncatedAtStart).isTrue()
+    }
+
+    @Test
+    @DisplayName("a recording gap between two movements breaks the series (WASM 3.3.3)")
+    fun recordingGapBetweenMovementsBreaksTheSeries() {
+        // Eight CLM 40 s apart, nothing truncated: no movement touches the hole, so no `TRUNCATED`
+        // flag is raised anywhere. The recording stops at 245 s and restarts at 248 s, in a quiet
+        // stretch between the movement at 220 s and the one at 260 s.
+        val events = listOf(100.0, 140.0, 180.0, 220.0, 260.0, 300.0, 340.0, 380.0).map { clmAt(it) }
+        val segments = listOf(Segment(0, samples(245.0)), Segment(samples(248.0), samples(3600.0)))
+
+        // The control: told nothing about the hole, the builder measures a 40 s interval across a
+        // period during which no movement could have been observed.
+        val blind = SeriesBuilder.build(events, night, FS, SeriesConfig.wasm2016())
+        assertThat(blind).hasSize(1)
+        assertThat(blind.single().imiSec.toList()).containsExactly(40f, 40f, 40f, 40f, 40f, 40f, 40f)
+
+        val series = SeriesBuilder.build(events, night, FS, SeriesConfig.wasm2016(), segments)
+
+        assertThat(series).hasSize(2)
+        assertThat(series[0].clmIndices.toList()).containsExactly(0, 1, 2, 3)
+        assertThat(series[0].imiSec.toList()).containsExactly(40f, 40f, 40f)
+        assertThat(series[0].truncatedAtEnd).isTrue()
+        assertThat(series[1].clmIndices.toList()).containsExactly(4, 5, 6, 7)
+        assertThat(series[1].imiSec.toList()).containsExactly(40f, 40f, 40f)
+        assertThat(series[1].truncatedAtStart).isTrue()
+    }
+
+    @Test
+    @DisplayName("a gap that no series straddles changes nothing")
+    fun recordingGapOutsideAnySeriesChangesNothing() {
+        val events = listOf(100.0, 140.0, 180.0, 220.0).map { clmAt(it) }
+        val segments = listOf(Segment(0, samples(60.0)), Segment(samples(70.0), samples(3600.0)))
+
+        val series = SeriesBuilder.build(events, night, FS, SeriesConfig.wasm2016(), segments)
+
+        assertThat(series).hasSize(1)
+        assertThat(series.single().clmIndices.toList()).containsExactly(0, 1, 2, 3)
+        assertThat(series.single().truncatedAtStart).isFalse()
+    }
+
+    @Test
+    @DisplayName("a series cut short by a gap is dropped and counted, not silently lost")
+    fun seriesCutShortByAGapIsCounted() {
+        val events = listOf(100.0, 140.0, 180.0, 220.0, 260.0, 300.0).map { clmAt(it) }
+        val segments = listOf(Segment(0, samples(245.0)), Segment(samples(248.0), samples(3600.0)))
+
+        val result = SeriesBuilder.buildDetailed(events, night, FS, SeriesConfig.wasm2016(), segments)
+
+        assertThat(result.series).hasSize(1)
+        assertThat(result.series.single().clmIndices.toList()).containsExactly(0, 1, 2, 3)
+        // The two movements left after the restart cannot form a series: dropped, but counted, since
+        // the loss is caused by a recording edge and is a downward bias on the published index.
+        assertThat(result.truncatedSeriesDropped).isEqualTo(1)
     }
 
     @Test

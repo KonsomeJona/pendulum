@@ -9,6 +9,7 @@ import com.pendulum.algo.mask.MaskFusion
 import com.pendulum.algo.model.Clm
 import com.pendulum.algo.model.FloorMode
 import com.pendulum.algo.model.PlmiResult
+import com.pendulum.algo.model.Segment
 import com.pendulum.algo.model.SleepMask
 import com.pendulum.algo.model.Stage
 import com.pendulum.algo.synth.DistractorSpec
@@ -126,8 +127,14 @@ internal object Campaign {
         val pi = Periodicity.ferriIndex(clms, mask, FS_HZ, params.periodicity)
         val rhythm = Rhythm.fromClms(clms, mask, params.rhythm)
 
+        // The same segmentation as the timeline would produce from those holes. `SeriesBuilder`
+        // ends a series at a recording restart (WASM 3.3.3); a bench that omitted the segments
+        // would score the app against a night without holes and would report an index the app never
+        // computes.
+        val segments = Segment.between(truth.gaps, Math.round(synth.spec.recordedH * 3600.0 * FS_HZ).toInt())
+
         val measurements = listOf(SeriesConfig.aasmV3(), SeriesConfig.wasm2016()).map { cfg ->
-            val detailed = SeriesBuilder.buildDetailed(clms, mask, FS_HZ, cfg)
+            val detailed = SeriesBuilder.buildDetailed(clms, mask, FS_HZ, cfg, segments)
             Plmi.compute(
                 clms = clms,
                 series = detailed.series,

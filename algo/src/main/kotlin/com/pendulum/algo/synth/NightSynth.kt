@@ -15,6 +15,7 @@ import com.pendulum.algo.model.RhythmResult
 import com.pendulum.algo.model.GapKind
 import com.pendulum.algo.model.MaskSource
 import com.pendulum.algo.model.SampleBlock
+import com.pendulum.algo.model.Segment
 import com.pendulum.algo.model.SeriesRule
 import com.pendulum.algo.model.SimpleBlock
 import com.pendulum.algo.model.SleepMask
@@ -916,14 +917,20 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             Gap(fromIdx, toIdx, kind, durSec)
         }
 
+        // Segments of the reference grid, deduced from the same holes. The expected index must
+        // break its series at a recording restart exactly where the measurement does (WASM 3.3.3):
+        // an expectation built on an unbroken night would charge the detector with a difference
+        // that comes from the holes.
+        val segments = Segment.between(gaps, Math.round(msAt(n - 1) * TARGET_FS_HZ / 1000.0).toInt() + 1)
+
         // The expected indices are obtained by making the ground truth cross the SAME steps 6 and 7
         // as the detection. Any remaining difference is therefore imputable to the detector, which
         // is exactly what T6 claims to measure.
         val truthClms = truthAsClms(accel.filter { it.isLegMovement }, floorG.toFloat())
         val pi = Periodicity.ferriIndex(truthClms, mask, TARGET_FS_HZ)
         val rhythm = Rhythm.fromClms(truthClms, mask)
-        val aasm = indexOf(truthClms, mask, SeriesConfig.aasmV3(), SeriesRule.AASM_V3, pi, rhythm)
-        val wasm = indexOf(truthClms, mask, SeriesConfig.wasm2016(), SeriesRule.WASM_2016, pi, rhythm)
+        val aasm = indexOf(truthClms, mask, SeriesConfig.aasmV3(), SeriesRule.AASM_V3, pi, rhythm, segments)
+        val wasm = indexOf(truthClms, mask, SeriesConfig.wasm2016(), SeriesRule.WASM_2016, pi, rhythm, segments)
 
         return GroundTruth(
             emgTruth = emg,
@@ -952,8 +959,9 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         rule: SeriesRule,
         pi: PiResult,
         rhythm: RhythmResult,
+        segments: List<Segment>,
     ): PlmiResult {
-        val built = SeriesBuilder.buildDetailed(clms, mask, TARGET_FS_HZ, cfg)
+        val built = SeriesBuilder.buildDetailed(clms, mask, TARGET_FS_HZ, cfg, segments)
         return Plmi.compute(
             clms = clms,
             series = built.series,

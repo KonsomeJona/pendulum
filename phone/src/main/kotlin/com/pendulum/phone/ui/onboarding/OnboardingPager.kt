@@ -147,7 +147,11 @@ fun OnboardingPager(
     Column(modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Progress((pagerState.currentPage + 1) / OnboardingResume.PAGES.toFloat())
         Text(
-            stringResource(R.string.onboarding_step, pagerState.currentPage + 1),
+            stringResource(
+                R.string.onboarding_step,
+                pagerState.currentPage + 1,
+                OnboardingResume.PAGES,
+            ),
             style = PendulumType.label,
             color = c.textTertiary,
             modifier = Modifier.padding(horizontal = Spacing.screen.dp, vertical = Spacing.s.dp),

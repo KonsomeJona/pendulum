@@ -173,7 +173,12 @@ internal class Analysis(
 
     private fun indexOf(events: List<Clm>, rule: SeriesRule): PlmiResult {
         val cfg = if (rule == SeriesRule.AASM_V3) SeriesConfig.aasmV3() else SeriesConfig.wasm2016()
-        val built = SeriesBuilder.buildDetailed(events, mask, FS, cfg)
+        // The segments of the timeline, and the same object for the measurement and for the
+        // expected value: `SeriesBuilder` breaks a series at a recording restart (WASM 3.3.3), so a
+        // harness keeping its own idea of where the recording stopped would compare an index built
+        // on one segmentation with an index built on another, and would validate a chain the
+        // application does not have. That is the failure this project has already paid for.
+        val built = SeriesBuilder.buildDetailed(events, mask, FS, cfg, timeline.segments)
 
         // `events` and not the filtered list. `clms` is **the complete list**, the one just handed
         // to `SeriesBuilder`, and `Plmi.compute` does the translation to the retained ones itself.

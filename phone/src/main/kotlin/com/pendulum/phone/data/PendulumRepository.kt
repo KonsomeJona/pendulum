@@ -171,10 +171,18 @@ class PendulumRepository(context: Context) {
                         .mapNotNull { it.missRate }
                         .takeIf { it.isNotEmpty() }
                         ?.let { Aggregate.median(it.toDoubleArray()) },
+                    // Only the nights whose fit was accepted, and `null` when there are none.
+                    //
+                    // The median used to run over every aggregatable night and fall back to `0.0`.
+                    // Both halves were wrong in the same direction: `Periodicity` states that below
+                    // its interval rate the value must not be displayed, and `0.0` is not an absence
+                    // but a legitimate index meaning "no periodicity whatsoever" — the single most
+                    // reassuring figure the scale can produce, published for a night that measured
+                    // nothing. Same treatment as the rhythm two lines above, and as `plmi`.
                     medianPeriodicity = aggregatable
+                        .filter { it.periodicityValid }
                         .takeIf { it.isNotEmpty() }
-                        ?.let { Aggregate.median(DoubleArray(it.size) { i -> it[i].periodicityIndex }) }
-                        ?: 0.0,
+                        ?.let { Aggregate.median(DoubleArray(it.size) { i -> it[i].periodicityIndex }) },
                     customProfile = profile
                         ?.takeIf { it.paramsHash != AnalysisParams.DEFAULT.paramsHash }
                         ?.label,
@@ -531,7 +539,7 @@ data class TrendState(
     val count: Aggregate.Result?,
     /** `null` when no night kept carries a miss rate: a dash, never a zero. */
     val medianMissRate: Double?,
-    val medianPeriodicity: Double,
+    val medianPeriodicity: Double?,
     val customProfile: String?,
     val mixedHashes: Boolean,
     val wakingFacts: WakingMachine.Facts? = null,

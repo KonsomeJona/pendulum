@@ -153,6 +153,14 @@ fun RecordRoute(
     LifecycleResumeEffect(context) {
         refreshKey++
 
+        // The outcome of the last "open on phone" is a **result of a gesture**, not a state, and it
+        // was never cleared. So the confirmation stayed on screen across a resume, with its own
+        // button greyed out behind it — and the person most likely to come back is precisely the
+        // one whose phone did not light up. Retrying was the only useful thing left, and it was the
+        // one thing the screen forbade. Coming back to this screen means the question is being
+        // asked again.
+        phoneOpening = PhoneOpening.None
+
         val client = Wearable.getDataClient(context)
         val listener = DataClient.OnDataChangedListener { refreshKey++ }
         client.addListener(
@@ -553,6 +561,7 @@ private fun issueText(issue: Issue): String = when (issue.id) {
     IssueId.NOTIFICATIONS_DENIED -> stringResource(R.string.blocker_notifications)
     IssueId.NO_ACCELEROMETER -> stringResource(R.string.blocker_no_accelerometer)
     IssueId.STORAGE_FULL -> stringResource(R.string.blocker_storage_full, issue.args[0], issue.args[1])
+    IssueId.BACKLOG_AT_CAP -> stringResource(R.string.blocker_backlog_at_cap, issue.args[0])
     IssueId.FGS_REFUSED -> stringResource(R.string.blocker_fgs_refused)
     IssueId.BENCH_SCALE_MISMATCH -> stringResource(R.string.blocker_bench_scale, issue.args[0])
     IssueId.BENCH_CHARGER_IGNORED -> stringResource(R.string.warning_bench_charger)

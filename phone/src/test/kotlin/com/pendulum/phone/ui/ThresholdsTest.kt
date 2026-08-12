@@ -94,14 +94,17 @@ class ThresholdsTest {
 
     @Test
     fun `below six nights, the label does not promise 95 percent`() {
+        // The fourth argument is the noun the `n` is counted in: it differs between the rhythm and
+        // the hourly count, which do not aggregate the same nights.
+        val noun = Resources.read(R.string.trend_nights_noun_eligible)
         val uncalibrated = Resources.resolve(
-            text(R.string.trend_interval_uncalibrated, "18", "26", 3),
+            text(R.string.trend_interval_uncalibrated, "18", "26", 3, noun),
         )
         // The figure 95 does appear, but **denied**: "not a calibrated 95% interval". What must not
         // appear is the canonical form that asserts it.
         assertThat(uncalibrated).doesNotContain("95% CI")
         assertThat(uncalibrated).contains("not a calibrated")
-        assertThat(Resources.resolve(text(R.string.trend_interval_and_n, "18", "26", 6)))
+        assertThat(Resources.resolve(text(R.string.trend_interval_and_n, "18", "26", 6, noun)))
             .contains("95% CI")
     }
 
@@ -131,6 +134,7 @@ class ThresholdsTest {
         fundamentalSec = 21.0,
         rhythmValid = true,
         periodicityIndex = 0.58,
+        periodicityValid = true,
         missRate = 0.21,
         analysableTstMin = 312.0,
         analysableMin = 460.0,

@@ -273,14 +273,7 @@ object TimelineBuilder {
         val signal = TriAxial(fsTarget, t0Ns, gx, gy, gz)
 
         // --- Segments -------------------------------------------------------------------
-        val segments = ArrayList<Segment>()
-        var segStart = 0
-        for (g in gaps) {
-            if (g.kind != GapKind.SEGMENT_BREAK) continue
-            if (g.fromIdx > segStart) segments.add(Segment(segStart, g.fromIdx))
-            segStart = g.toIdx
-        }
-        if (segStart < n) segments.add(Segment(segStart, n))
+        val segments = Segment.between(gaps, n)
 
         // --- Blind zones -----------------------------------------------------------------
         // Two origins gathered in the same list, because they have exactly the same downstream

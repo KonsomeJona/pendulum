@@ -71,9 +71,12 @@ import kotlin.math.sqrt
  *    are worth less than 1.5 % on the period and the added complexity is not worth it. They are,
  *    on the other hand, the first thing to revisit if the estimated `σ` exceeds 0.4.
  * 2. **Truncation at `K` harmonics.** The tail `k > K` clumps onto the last component and pulls
- *    `p` **upward**. At `K = 5` and `p = 0.39`, the tail weighs 0.9 %: negligible bias. At
- *    `p = 0.65` it weighs 7.5 % and the estimation of `p` is no longer reliable — which the
- *    goodness-of-fit measure below detects.
+ *    `p` **upward**. The tail weighs `p^K`: at `K = 5` and `p = 0.39` that is 0.9 %, a negligible
+ *    bias; at `p = 0.65` it is **11.6 %** and the estimation of `p` is no longer reliable — which
+ *    the goodness-of-fit measure below detects. (The figure 7.5 %, which this KDoc and
+ *    `docs/03-algorithm.md` both carried, is `p^6`: it belongs to `K = 6`, not to the `K = 5` this
+ *    module ships. Correcting it strengthens the argument it was serving rather than weakening it,
+ *    and `RhythmTest` now pins both numbers so the prose cannot drift again.)
  * 3. **Independence of the misses — probably false, and it is coded as such.** The accelerometer
  *    misses the low-amplitude movements first; if a burst decreases in amplitude, the misses clump
  *    at the end of the series and the 2× peak is **under-populated** with respect to the geometric
@@ -188,7 +191,7 @@ data class RhythmConfig(
      *
      * The value 0.65 is not chosen to make a measurement pass: it is the one this file already
      * stated two paragraphs above, at approximation no. 2 — beyond `p = 0.65` the truncated tail
-     * weighs 7.5 % and "the estimation of `p` is no longer reliable". A flag cannot rest on a
+     * weighs 11.6 % and "the estimation of `p` is no longer reliable". A flag cannot rest on a
      * quantity that the module itself declares unreliable. It leaves intact the 0.53–0.55 range
      * where a true lateralisation comes out on a pure train, which `RhythmTest` asserts.
      *

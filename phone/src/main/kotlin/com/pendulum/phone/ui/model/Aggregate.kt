@@ -87,10 +87,22 @@ object Aggregate {
      *
      * The hourly count **stays** — it is the language of sleep physicians — but in second place on
      * screen and in first place in the report for the doctor.
+     *
+     * @param nightsNoun what the `n` of an aggregate of this quantity counts.
+     *
+     * The two quantities do not aggregate the same nights, and the interval line is drawn for both
+     * by the same component. The hourly count takes every eligible night; the rhythm takes only
+     * those whose fit was accepted, which `PendulumRepository.observeTrend` filters out and which
+     * is usually far fewer. A line that named them all "eligible nights" therefore published, next
+     * to the headline figure, a count of eligible nights that the rest of the product contradicted.
      */
-    enum class Quantity(@StringRes val unit: Int, val decimals: Int) {
-        RHYTHM_SECONDS(R.string.trend_unit_seconds, 0),
-        HOURLY_COUNT(R.string.trend_unit_per_hour, 0),
+    enum class Quantity(
+        @StringRes val unit: Int,
+        val decimals: Int,
+        @StringRes val nightsNoun: Int,
+    ) {
+        RHYTHM_SECONDS(R.string.trend_unit_seconds, 0, R.string.trend_nights_noun_fitted_rhythm),
+        HOURLY_COUNT(R.string.trend_unit_per_hour, 0, R.string.trend_nights_noun_eligible),
     }
 
     /**
@@ -381,7 +393,15 @@ object Aggregate {
      * periodicity as a qualifier, available only when there are enough nights for a category to
      * mean something.
      */
-    fun qualifyPeriodicity(index: Double, nights: Int): UiText? = when {
+    /**
+     * @param index the median periodicity index, or `null` when no night carried an accepted fit.
+     *   Nullable rather than defaulted: `Periodicity` states the value must not be displayed below
+     *   its interval rate, and `0.0` is a legitimate index meaning "no periodicity whatsoever" —
+     *   so a default would publish the most reassuring reading the scale can produce for a night
+     *   that measured nothing.
+     */
+    fun qualifyPeriodicity(index: Double?, nights: Int): UiText? = when {
+        index == null -> null
         nights < MIN_NIGHTS_CATEGORY -> null
         index >= 0.5 -> text(R.string.trend_periodicity_high)
         else -> text(R.string.trend_periodicity_low)

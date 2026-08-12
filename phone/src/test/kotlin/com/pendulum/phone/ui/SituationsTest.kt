@@ -89,6 +89,7 @@ class SituationsTest {
         fundamentalSec = 21.0,
         rhythmValid = true,
         periodicityIndex = 0.58,
+        periodicityValid = true,
         missRate = 0.21,
         analysableTstMin = 312.0,
         analysableMin = 460.0,

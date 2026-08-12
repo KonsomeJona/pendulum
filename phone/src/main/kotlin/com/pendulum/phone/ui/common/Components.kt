@@ -197,7 +197,7 @@ fun MetricHeadline(
             stringResource(
                 if (result.ciCalibrated) R.string.trend_interval_and_n
                 else R.string.trend_interval_uncalibrated,
-                low, high, result.nights,
+                low, high, result.nights, stringResource(result.quantity.nightsNoun),
             ),
             style = PendulumType.bodyNum,
             color = c.textSecondary,
