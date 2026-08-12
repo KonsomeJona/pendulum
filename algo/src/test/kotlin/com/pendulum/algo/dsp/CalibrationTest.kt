@@ -10,50 +10,51 @@ class CalibrationTest {
     private val fs = 50.0
 
     /**
-     * **Le volet A a disparu, et ce fichier ne le teste donc plus.**
+     * **Part A has gone, and this file therefore no longer tests it.**
      *
-     * Deux tests vivaient ici : l'autocalibration statique du capteur retrouvait un offset et un
-     * gain connus, et refusait de conclure sur une nuit passee dans une seule orientation. Ils
-     * etaient bons. Ce qu'ils ne disaient pas, c'est que `autocalibrate` n'avait aucun appelant de
-     * production et que sa sortie, `NightCalibration.sensor`, n'avait aucun lecteur : la corriger
-     * n'aurait rien change a aucun chiffre. Meme critere que pour le rituel guide, meme issue.
+     * Two tests lived here: the sensor's static autocalibration recovered a known offset and a
+     * known gain, and refused to conclude on a night spent in a single orientation. They were
+     * good. What they did not say is that `autocalibrate` had no production caller and that its
+     * output, `NightCalibration.sensor`, had no reader: correcting it would have changed no
+     * figure at all. Same criterion as for the guided ritual, same outcome.
      *
-     * Ce qui subsiste ci-dessous est le volet B, le seul etalon de gain reellement utilise.
+     * What remains below is part B, the only gain reference actually used.
      */
 
     /**
-     * Ce test passait par le rituel guide, qui a ete retire faute d'avoir jamais ete branche. Le
-     * garde-fou qu'il verifie, lui, n'a pas disparu : un serrage de bracelet qui change d'une nuit
-     * sur l'autre deplace le gain mecanique, et deux nuits mesurees a des gains differents ne sont
-     * pas comparables. Il est donc rebranche sur le seul etalon qui subsiste.
+     * This test went through the guided ritual, which was removed for never having been wired up.
+     * The guard rail it checks, on the other hand, has not gone away: a strap tightness that
+     * changes from one night to the next shifts the mechanical gain, and two nights measured at
+     * different gains are not comparable. It is therefore rewired onto the only reference that
+     * remains.
      */
     @Test
-    fun `un serrage de bracelet different d une nuit sur l autre est signale`() {
-        val moitieDuGainHabituel = listOf(
+    fun `a strap tightness that differs from one night to the next is flagged`() {
+        val halfTheUsualGain = listOf(
             clm(peak = 0.180f, floor = 0.010f, gross = true),
             clm(peak = 0.190f, floor = 0.010f, gross = true),
             clm(peak = 0.185f, floor = 0.010f, gross = true),
         )
-        val cal = Calibration.fromGrossBodyMovements(moitieDuGainHabituel, baselineGainG = 0.370f)
+        val cal = Calibration.fromGrossBodyMovements(halfTheUsualGain, baselineGainG = 0.370f)
 
         assertThat(cal.outlierVsBaseline).isTrue()
         assertThat(cal.gainSource).isEqualTo(GainSource.GROSS_BODY)
     }
 
     @Test
-    fun `un serrage identique d une nuit sur l autre ne leve rien`() {
-        val memeGain = listOf(
+    fun `an identical strap tightness from one night to the next raises nothing`() {
+        val sameGain = listOf(
             clm(peak = 0.360f, floor = 0.010f, gross = true),
             clm(peak = 0.380f, floor = 0.010f, gross = true),
             clm(peak = 0.370f, floor = 0.010f, gross = true),
         )
-        val cal = Calibration.fromGrossBodyMovements(memeGain, baselineGainG = 0.370f)
+        val cal = Calibration.fromGrossBodyMovements(sameGain, baselineGainG = 0.370f)
 
         assertThat(cal.outlierVsBaseline).isFalse()
     }
 
     @Test
-    fun `les mouvements corporels grossiers fournissent l etalon de gain`() {
+    fun `gross body movements provide the gain reference`() {
         val clms = listOf(
             clm(peak = 0.360f, floor = 0.010f, gross = true),
             clm(peak = 0.380f, floor = 0.010f, gross = true),
@@ -62,11 +63,11 @@ class CalibrationTest {
         )
         val cal = Calibration.fromGrossBodyMovements(clms)
         assertThat(cal.gainSource).isEqualTo(GainSource.GROSS_BODY)
-        assertThat(cal.gainCalG).isEqualTo(0.380f) // mediane des seuls GBM
+        assertThat(cal.gainCalG).isEqualTo(0.380f) // median of the GBM only
     }
 
     @Test
-    fun `aucun etalon disponible donne gainSource NONE`() {
+    fun `no reference available gives gainSource NONE`() {
         val cal = Calibration.fromGrossBodyMovements(emptyList())
         assertThat(cal.gainSource).isEqualTo(GainSource.NONE)
         assertThat(cal.gainCalG).isNaN()

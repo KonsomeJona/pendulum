@@ -5,18 +5,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * **Unique** source d'etat pour l'interface, emise par le service toutes les 30 s.
+ * The **one** source of state for the interface, emitted by the service every 30 s.
  *
- * Le contrat est celui-la et pas un autre : le service ecrit dans ce flux a cadence fixe, et
- * l'ecran le collecte avec `collectAsStateWithLifecycle()`. Ecran eteint, la collecte est
- * arretee et le service emet dans le vide — aucune recomposition entre le coucher et le reveil.
- * Toute autre voie d'affichage (un `LaunchedEffect` a cadence rapide, une animation, un
- * `System.currentTimeMillis()` lu dans une composable) casse ce critere sans qu'aucun test ne
- * s'en apercoive.
+ * The contract is this one and no other: the service writes into this flow at a fixed rate, and
+ * the screen collects it with `collectAsStateWithLifecycle()`. With the screen off, collection is
+ * stopped and the service emits into the void — no recomposition between going to bed and waking.
+ * Any other display route (a fast-rate `LaunchedEffect`, an animation, a
+ * `System.currentTimeMillis()` read inside a composable) breaks that criterion without any test
+ * noticing.
  *
- * L'objet est un singleton de processus : le service et l'activite vivent dans le meme
- * processus, et un `bindService` pour transporter six entiers couterait plus cher en
- * complexite et en reveils que ce qu'il rapporterait.
+ * The object is a process singleton: the service and the activity live in the same process, and a
+ * `bindService` to carry six integers would cost more in complexity and in wake-ups than it would
+ * bring back.
  */
 object RecordingState {
 
@@ -43,11 +43,11 @@ data class RecordUiState(
     val gapCount: Int = 0,
     val gapTotalMs: Long = 0,
     val modeLabel: String = "",
-    /** Chunks encore sur le disque, c'est-a-dire pas encore acquittes par le telephone. */
+    /** Chunks still on the disk, that is, not yet acknowledged by the phone. */
     val chunksPending: Int = 0,
     val chunksTotal: Int = 0,
-    /** Le plafond d'items en vol est atteint : le transfert est en retard, pas la mesure. */
+    /** The ceiling of in-flight items is reached: the transfer is behind, not the measurement. */
     val syncBacklogged: Boolean = false,
-    /** Raison du dernier arret, affichee une fois au reveil. */
+    /** Reason for the last stop, shown once on waking. */
     val lastStopReason: StopReason? = null,
 )

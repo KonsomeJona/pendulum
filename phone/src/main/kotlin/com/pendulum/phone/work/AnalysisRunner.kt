@@ -18,25 +18,25 @@ import com.pendulum.phone.ingest.SessionReassembler
 import com.pendulum.phone.ingest.TimeAnchor
 
 /**
- * Analyse d'une nuit, de la base a la base. C'est le seul endroit qui ecrit dans les tables
- * derivees.
+ * Analysis of a night, from the database to the database. This is the only place that writes into
+ * the derived tables.
  *
- * ### L'idempotence est une exigence, pas une propriete heureuse
+ * ### Idempotence is a requirement, not a happy property
  *
- * La meme nuit est analysee plusieurs fois par construction : une premiere fois au reveil avec le
- * seul masque accelerometrique, une deuxieme quand l'hypnogramme arrive, une troisieme si le
- * fournisseur reecrit sa session, et une n-ieme a chaque changement de parametre. Chaque passage
- * **remplace** ce qui existait pour `(nuit, paramsHash)` au lieu d'y ajouter. Un rescore qui
- * empilerait doublerait le nombre d'evenements a chaque tour, et le symptome — un index qui
- * double — ressemblerait exactement a une aggravation clinique.
+ * The same night is analysed several times by construction: a first time on waking with the
+ * accelerometer mask alone, a second when the hypnogram arrives, a third if the provider rewrites
+ * its session, and an n-th at every parameter change. Each pass **replaces** what existed for
+ * `(night, paramsHash)` instead of adding to it. A rescore that piled up would double the number
+ * of events at every round, and the symptom — an index that doubles — would look exactly like a
+ * clinical worsening.
  */
 object AnalysisRunner {
 
     private const val TAG = "PendulumAnalysis"
 
     /**
-     * @return `true` si l'analyse a produit des resultats, `false` si la nuit n'etait pas
-     *   analysable (aucun chunk, ou aucun bloc valide).
+     * @return `true` if the analysis produced results, `false` if the night was not analysable
+     *   (no chunk, or no valid block).
      */
     suspend fun analyse(
         context: Context,
@@ -47,9 +47,9 @@ object AnalysisRunner {
         val store = ChunkStore(context)
         val session = db.nightDao().find(sessionHex) ?: return false
 
-        // Le profil de parametres est enregistre comme actif s'il ne l'est pas deja : la
-        // tendance filtre sur `paramsHash`, et un resultat dont le hash n'existe pas dans
-        // `param_profile` serait un chiffre orphelin, impossible a expliquer plus tard.
+        // The parameter profile is recorded as active if it is not already: the trend filters on
+        // `paramsHash`, and a result whose hash does not exist in `param_profile` would be an
+        // orphan figure, impossible to explain later.
         db.paramDao().insertIfAbsent(
             ParamProfileEntity(
                 paramsHash = params.paramsHash,
@@ -70,7 +70,7 @@ object AnalysisRunner {
             declaredChunks = session.totalChunks,
         )
         if (night.blocks.isEmpty() || night.anchor == null) {
-            Log.w(TAG, "$sessionHex : aucun bloc exploitable")
+            Log.w(TAG, "$sessionHex: no usable block")
             return false
         }
 
@@ -95,14 +95,14 @@ object AnalysisRunner {
     // ------------------------------------------------------------------
 
     /**
-     * L'hypnogramme retenu par la derniere lecture Health Connect, relu depuis
+     * The hypnogram retained by the last Health Connect read, re-read from
      * `hc_snapshot.selectedStagesCsv`.
      *
-     * On ne relit **pas** Health Connect ici. Deux raisons : un rescore doit pouvoir tourner sur
-     * une base restauree depuis un bundle, sur un telephone qui n'a jamais vu cette nuit ; et
-     * relire donnerait une reponse potentiellement differente (le fournisseur reecrit ses
-     * sessions), ce qui rendrait le rescore non reproductible — deux executions successives sans
-     * changement de parametre pourraient produire deux chiffres.
+     * We do **not** re-read Health Connect here. Two reasons: a rescore must be able to run on a
+     * database restored from a bundle, on a phone that has never seen this night; and re-reading
+     * would give a potentially different answer (the provider rewrites its sessions), which would
+     * make the rescore non-reproducible — two successive runs with no parameter change could
+     * produce two figures.
      */
     private suspend fun loadHypnogram(
         db: PendulumDatabase,
@@ -119,9 +119,9 @@ object AnalysisRunner {
     }
 
     /**
-     * Le journal manuel, depuis le contexte scelle du soir. Il ne rend pas le masque
-     * accelerometrique independant du signal — il borne la recherche du SPT, ce qui empeche une
-     * sieste ou une immobilite de canape de preempter le debut de nuit.
+     * The manual diary, from the sealed evening context. It does not make the accelerometer mask
+     * independent of the signal — it bounds the search for the SPT, which stops a nap or a stretch
+     * of sofa stillness from pre-empting the start of the night.
      */
     private suspend fun loadDiary(
         db: PendulumDatabase,
@@ -135,17 +135,16 @@ object AnalysisRunner {
     }
 
     /**
-     * L'etalon de gain de la **nuit de reference** — la premiere dont le contexte a ete scelle,
-     * la meme que celle qui sert de reference a la vue `comparable_night`. Utiliser la moyenne
-     * de la campagne ferait bouger la reference a chaque nuit ajoutee, et une nuit hier
-     * comparable pourrait cesser de l'etre aujourd'hui sans que rien n'ait change chez le
-     * dormeur.
+     * The gain reference of the **reference night** — the first one whose context was sealed, the
+     * same one that serves as the reference for the `comparable_night` view. Using the campaign
+     * average would move the reference at every night added, and a night comparable yesterday
+     * could stop being comparable today without anything having changed in the sleeper.
      */
     private suspend fun baselineGainOf(db: PendulumDatabase, sessionHex: String): Float? {
         val ref = db.contextDao().reference() ?: return null
-        // Le contexte de reference est cle par la soiree, pas par la session : c'est la nuit
-        // enregistree sous cette soiree qui porte l'etalon de gain. Elle peut ne pas exister —
-        // un formulaire scelle un soir ou la montre n'a finalement pas demarre.
+        // The reference context is keyed by the evening, not by the session: it is the night
+        // recorded under that evening that carries the gain reference. It may not exist — a form
+        // sealed on an evening where the watch did not, in the end, start.
         val refSession = db.nightDao().findByNightKey(ref.nightKey) ?: return null
         if (refSession.sessionHex == sessionHex) return null
         return refSession.gainCalG?.toFloat()
@@ -180,8 +179,8 @@ object AnalysisRunner {
             }
         }
 
-        // Appartenance aux series, par jeu de regles. On la reconstruit depuis les resultats
-        // plutot que de la deviner : c'est `SeriesBuilder` qui decide, et lui seul.
+        // Series membership, per rule set. It is rebuilt from the results rather than guessed:
+        // `SeriesBuilder` decides, and it alone.
         val events = r.clms.map { c ->
             ClmEventEntity(
                 sessionHex = hex,
@@ -199,12 +198,13 @@ object AnalysisRunner {
             )
         }
 
-        // `depuis` et non le constructeur : c'est elle qui traduit les `NaN` de `:algo` en `NULL`.
-        // Une nuit sans sommeil analysable — le cas par defaut sans hypnogramme Health Connect —
-        // n'a pas de PLMI du tout, et l'ecrire en dur ici la ferait echouer a l'insertion.
+        // `from` and not the constructor: it is the one that translates the `NaN` of `:algo`
+        // into `NULL`. A night with no analysable sleep — the default case without a Health
+        // Connect hypnogram — has no PLMI at all, and hard-coding one here would make it fail on
+        // insertion.
         val computedAtMs = System.currentTimeMillis()
         val results = r.results.map { p ->
-            PlmResultEntity.depuis(
+            PlmResultEntity.from(
                 sessionHex = hex,
                 paramsHash = r.paramsHash,
                 computedAtMs = computedAtMs,

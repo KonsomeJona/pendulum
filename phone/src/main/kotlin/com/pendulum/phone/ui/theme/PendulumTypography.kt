@@ -10,29 +10,29 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.sp
 
 /**
- * Neuf styles, pas dix.
+ * Nine styles, not ten.
  *
- * ### Les chiffres tabulaires ne sont pas une coquetterie
+ * ### Tabular figures are not an affectation
  *
- * `fontFeatureSettings = "tnum"` est obligatoire partout ou une valeur peut changer : compteur
- * d'echantillons qui s'incremente, duree qui defile, bornes d'intervalle. Sans chasse fixe, les
- * chiffres n'ont pas la meme largeur et le compteur **tressaute** a chaque rafraichissement. Sur
- * un ecran dont le metier est de rendre des nombres lisibles, c'est disqualifiant.
+ * `fontFeatureSettings = "tnum"` is mandatory everywhere a value can change: a sample counter
+ * ticking up, a duration running, interval bounds. Without a fixed advance width, the digits do not
+ * have the same width and the counter **jitters** at every refresh. On a screen whose job is to
+ * make numbers legible, that is disqualifying.
  *
- * ### [metricXL] a exactement un site d'usage dans toute l'application
+ * ### [metricXL] has exactly one use site in the whole application
  *
- * C'est le principe P7 rendu verifiable : le chiffre d'une seule nuit n'est jamais un titre. Un
- * grand nombre est lu, une precaution ecrite a cote ne l'est pas — donc on ne met en grand que
- * ce qui a le droit d'etre lu seul, c'est-a-dire l'agregat de la periode, jamais une nuit.
- * Le site unique est `MetricHeadline`, et un grep sur `PendulumType.metricXL` doit le confirmer.
+ * This is principle P7 made verifiable: the figure of a single night is never a headline. A large
+ * number gets read, a caveat written beside it does not — so only what is allowed to be read on its
+ * own is set large, that is, the aggregate over the period, never one night. The single site is
+ * `MetricHeadline`, and a grep on `PendulumType.metricXL` must confirm it.
  */
 @Immutable
 object PendulumType {
 
     /**
-     * Roboto Flex est fourni par le systeme sur Pixel et Wear ; ailleurs le repli est Roboto.
-     * On ne fournit pas la police en asset : elle pese, et la difference visuelle sur des
-     * graisses 300/400/500 est marginale devant le cout.
+     * Roboto Flex is supplied by the system on Pixel and Wear; elsewhere the fallback is Roboto. We
+     * do not ship the font as an asset: it weighs, and the visual difference on weights 300/400/500
+     * is marginal against the cost.
      */
     private val family = FontFamily.Default
 
@@ -57,31 +57,31 @@ object PendulumType {
         lineHeightStyle = tightLineHeight,
     )
 
-    /** Mediane de la periode. **Un seul usage dans l'application** (P7). */
+    /** Median over the period. **One use only in the application** (P7). */
     val metricXL = style(44, FontWeight.Light, 48, -0.5, tabular = true)
 
-    /** Valeurs de section : compte horaire au second rang, totaux du detail de nuit. */
+    /** Section values: the hourly count in second place, the totals of the night detail. */
     val metricL = style(26, FontWeight.Normal, 32, tabular = true)
 
     val titleL = style(22, FontWeight.Medium, 28)
     val titleM = style(17, FontWeight.Medium, 24)
     val body = style(15, FontWeight.Normal, 22)
 
-    /** Premiere ligne d'un verdict : « Variation non concluante » et ses freres. */
+    /** First line of a verdict: "Inconclusive variation" and its siblings. */
     val bodyEmph = style(15, FontWeight.Medium, 22)
 
     val label = style(13, FontWeight.Medium, 18, 0.3)
     val caption = style(12, FontWeight.Normal, 16)
 
-    /** Journal technique et valeurs brutes. L'utilisateur est technicien, le journal lui sert. */
+    /** Technical log and raw values. The user is a technician, the log is of use to them. */
     val mono = style(13, FontWeight.Normal, 18).copy(fontFamily = FontFamily.Monospace)
 
-    /** Variante tabulaire de [body], pour les lignes de valeurs alignees en colonnes. */
+    /** Tabular variant of [body], for rows of values aligned in columns. */
     val bodyNum = body.copy(fontFeatureSettings = "tnum")
 
     /**
-     * Projection sur les emplacements Material 3, pour que `Button`, `ListItem`, `TopAppBar` et
-     * consorts heritent des memes styles sans qu'on ait a les habiller un par un.
+     * Projection onto the Material 3 slots, so that `Button`, `ListItem`, `TopAppBar` and the like
+     * inherit the same styles without our having to dress them one by one.
      */
     val material = Typography(
         displayLarge = metricXL,
@@ -103,11 +103,11 @@ object PendulumType {
 }
 
 /**
- * Echelle d'espacement : `4 · 8 · 12 · 16 · 24 · 32 · 48` dp, et rien d'autre.
+ * Spacing scale: `4 · 8 · 12 · 16 · 24 · 32 · 48` dp, and nothing else.
  *
- * Une echelle fermee est un outil de revue : une marge de 13 dp se voit dans la revue de code
- * parce qu'elle ne peut pas s'ecrire avec ces noms. C'est aussi ce qui fait qu'une capture
- * d'ecran et une page de PDF se ressemblent sans qu'on ait a les accorder a la main.
+ * A closed scale is a review tool: a 13 dp margin shows up in code review because it cannot be
+ * written with these names. It is also what makes a screenshot and a PDF page look alike without
+ * anyone having to tune them by hand.
  */
 @Immutable
 object Spacing {
@@ -119,19 +119,19 @@ object Spacing {
     val xl = 32
     val xxl = 48
 
-    /** Marge d'ecran. */
+    /** Screen margin. */
     val screen = m
 
-    /** Espace inter-cartes. */
+    /** Space between cards. */
     val betweenCards = sm
 
-    /** Padding interne d'une carte. */
+    /** Inner padding of a card. */
     val card = m
 
     /**
-     * Largeur maximale d'un paragraphe explicatif : ~60 caracteres.
-     * Les blocs d'explication de cette application sont longs — c'est leur metier — donc ils
-     * doivent rester lisibles, et une ligne de 90 caracteres ne l'est pas.
+     * Maximum width of an explanatory paragraph: ~60 characters.
+     * The explanation blocks of this application are long — that is their job — so they must stay
+     * legible, and a 90-character line is not.
      */
     val paragraphMax = 340
 }

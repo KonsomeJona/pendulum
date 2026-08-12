@@ -9,25 +9,25 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Fabriques synthetiques du paquet `mask`.
+ * Synthetic factories of the `mask` package.
  *
- * `fs` volontairement a 10 Hz et non a 50 : le masque travaille par epoques de 5 s, aucun de ses
- * criteres n'a de contenu au-dessus de 1 Hz, et une nuit de 8 h a 10 Hz tient dans 288 000
- * echantillons. Cela verifie au passage que rien n'est code en dur a 50 Hz.
+ * `fs` deliberately at 10 Hz and not at 50: the mask works in epochs of 5 s, none of its criteria
+ * has content above 1 Hz, and an 8 h night at 10 Hz fits in 288 000 samples. This checks in
+ * passing that nothing is hard-coded at 50 Hz.
  *
- * Aucun aleatoire, aucune horloge : les tests doivent etre reproductibles au bit.
+ * No randomness, no clock: the tests must be reproducible to the bit.
  */
 internal const val FS = 10.0
 
-/** Plancher de bruit constant, et enveloppe au repos. Rapport 1 : le repos est sous tout seuil. */
+/** Constant noise floor, and envelope at rest. Ratio 1: rest is below every threshold. */
 internal const val FLOOR_G = 0.004f
 
 internal fun samples(sec: Double): Int = Math.round(sec * FS).toInt()
 
 /**
- * Nuit synthetique : gravite d'orientation controlee, enveloppe au repos, plancher constant.
- * L'orientation est parametree par un seul angle de tangage `theta` autour de `x`, ce qui suffit :
- * le critere teste est un angle entre deux directions, pas une orientation absolue.
+ * Synthetic night: gravity of controlled orientation, envelope at rest, constant floor. The
+ * orientation is parameterised by a single pitch angle `theta` around `x`, which is enough: the
+ * criterion under test is an angle between two directions, not an absolute orientation.
  */
 internal class Night(val durSec: Double) {
     val n: Int = samples(durSec)
@@ -35,7 +35,7 @@ internal class Night(val durSec: Double) {
     private val envV = FloatArray(n) { FLOOR_G }
     private val floorV = FloatArray(n) { FLOOR_G }
 
-    /** Bouffee d'amplitude constante. Renvoie l'intervalle, pret a servir d'`ignoreIntervals`. */
+    /** Burst of constant amplitude. Returns the interval, ready to serve as `ignoreIntervals`. */
     fun burst(startSec: Double, durSec: Double, ampG: Float): Segment {
         val from = samples(startSec).coerceIn(0, n)
         val to = samples(startSec + durSec).coerceIn(0, n)
@@ -43,14 +43,14 @@ internal class Night(val durSec: Double) {
         return Segment(from, to)
     }
 
-    /** Serie periodique de bouffees identiques : le cas qui casse la regle des 5 min. */
+    /** Periodic series of identical bursts: the case that breaks the 5 min rule. */
     fun periodic(startSec: Double, imiSec: Double, durSec: Double, ampG: Float, count: Int): List<Segment> =
         (0 until count).map { burst(startSec + it * imiSec, durSec, ampG) }
 
     /**
-     * Reorientation **persistante** de `deg` degres, en rampe lineaire sur `rampSec` : c'est la
-     * signature d'un changement de posture ou d'un mouvement corporel grossier, par opposition a
-     * une secousse qui revient a sa position de depart.
+     * **Persistent** reorientation of `deg` degrees, as a linear ramp over `rampSec`: this is the
+     * signature of a posture change or of a gross body movement, as opposed to a jolt that returns
+     * to its starting position.
      */
     fun tilt(atSec: Double, deg: Double, rampSec: Double = 2.0) {
         val from = samples(atSec).coerceIn(0, n)
@@ -80,9 +80,9 @@ internal class Night(val durSec: Double) {
 }
 
 /**
- * Rotation constante du boitier, par la formule de Rodrigues. Applique la **meme** rotation a tous
- * les echantillons : c'est exactement ce que produit un bracelet remis a l'envers d'une nuit sur
- * l'autre, et le masque ne doit pas s'en apercevoir.
+ * Constant rotation of the case, by Rodrigues' formula. Applies the **same** rotation to every
+ * sample: this is exactly what a strap put back the other way round from one night to the next
+ * produces, and the mask must not notice it.
  */
 internal fun rotate(g: TriAxial, ax: Double, ay: Double, az: Double, angleDeg: Double): TriAxial {
     val norm = sqrt(ax * ax + ay * ay + az * az)

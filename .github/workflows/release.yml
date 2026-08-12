@@ -1,13 +1,12 @@
 name: Release
 
-# Déclenché par un tag `v*`. Produit, pour chacune des deux applications, un APK (installation
-# directe, sideload) et un AAB (le format que le Play Store demande), signés avec la clé de
-# publication, puis attache les quatre fichiers à une release GitHub avec leurs empreintes.
+# Triggered by a `v*` tag. Produces, for each of the two applications, an APK (direct install,
+# sideload) and an AAB (the format the Play Store asks for), signed with the release key, then
+# attaches the four files to a GitHub release along with their digests.
 #
-# La signature est obligatoire ici et il n'y a pas de repli : si les secrets manquent, le job
-# échoue au lieu de publier des artefacts signés en debug. Un APK debug distribué comme une
-# release s'installe, tourne, et devient impossible à mettre à jour par la suite puisque sa
-# signature ne correspondra jamais à la vraie.
+# Signing is mandatory here and there is no fallback: if the secrets are missing, the job fails
+# instead of publishing debug-signed artefacts. A debug APK distributed as a release installs,
+# runs, and then becomes impossible to upgrade, since its signature will never match the real one.
 
 on:
   push:
@@ -30,18 +29,18 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      # Le `versionCode` est derive du tag et non d'un compteur : `v1.2.3` donne 10203, ce qui est
-      # monotone tant que les composants restent sous 100 et se relit a l'oeil dans un rapport de
-      # defaut. Sans cette etape, les deux applications portaient `versionCode = 1` a chaque
-      # publication — donc un artefact impossible a installer par-dessus le precedent, et un ecran
-      # « A propos » qui annoncait la meme version pour toutes.
+      # The `versionCode` is derived from the tag and not from a counter: `v1.2.3` gives 10203,
+      # which is monotonic as long as the components stay below 100 and reads back at a glance in a
+      # defect report. Without this step, both applications carried `versionCode = 1` at every
+      # publication — so an artefact impossible to install over the previous one, and an "About"
+      # screen that announced the same version for all of them.
       #
-      # **Placée juste après le checkout, et pas plus bas.** C'est du bash pur, sans dépendance :
-      # elle ne lit que le nom du tag, ne coûte rien, et peut échouer — un tag `v1.100.0` sort en
-      # `exit 1` sur la garde des composants < 100. Placée après la suite de tests complète et
-      # lint, ce refus arrivait au bout d'une vingtaine de minutes ; il arrive maintenant à la
-      # première seconde. Règle générale de ce fichier : ce qui peut refuser doit refuser tôt.
-      # Ses sorties ne sont consommées qu'à l'étape « Build signed artifacts », bien plus bas.
+      # **Placed right after the checkout, and not further down.** It is pure bash, with no
+      # dependency: it only reads the tag name, costs nothing, and can fail — a `v1.100.0` tag
+      # exits 1 on the guard for components < 100. Placed after the full test suite and lint, that
+      # refusal arrived some twenty minutes in; it now arrives in the first second. General rule of
+      # this file: whatever can refuse must refuse early. Its outputs are only consumed by the
+      # "Build signed artifacts" step, much further down.
       - name: Derive the version from the tag
         id: version
         shell: bash
@@ -86,22 +85,22 @@ jobs:
           echo "$KEYSTORE" | base64 -d > release.keystore
           echo "keystore: $(wc -c < release.keystore) bytes"
 
-      # Ce qui tournait ici : `:format:test :algo:test || true`, et rien d'autre. Le pipeline qui
-      # détient la clé de signature était donc **plus permissif que la CI ordinaire** — les 624 tests
-      # des deux applications ne s'exécutaient pas avant de produire l'AAB publié, si bien qu'une
-      # régression bloquée sur une pull request pouvait partir en production par un tag.
+      # What used to run here: `:format:test :algo:test || true`, and nothing else. The pipeline
+      # that holds the signing key was therefore **more permissive than ordinary CI** — the 624
+      # tests of the two applications did not run before producing the published AAB, so that a
+      # regression blocked on a pull request could ship to production through a tag.
       #
-      # Trois défauts cumulés, tous corrigés ici :
-      #  - les tests des modules Android n'étaient pas lancés ;
-      #  - `|| true` sans garde de comptage : une erreur de compilation ne produit **aucun** rapport
-      #    XML, la liste d'échecs sort vide, et l'absence de résultat se lisait comme un succès ;
-      #  - une exception nommée `T6` était codée en dur, alors que `ci.yml` documente depuis
-      #    longtemps qu'aucun test n'est plus toléré rouge. Des deux fichiers, c'était le plus
-      #    permissif qui gardait le keystore.
+      # Three cumulative defects, all fixed here:
+      #  - the Android modules' tests were not launched;
+      #  - `|| true` with no counting guard: a compilation error produces **no** XML report at all,
+      #    the failure list comes out empty, and the absence of a result read as a success;
+      #  - an exception named `T6` was hard-coded, while `ci.yml` has documented for a long time
+      #    that no test is tolerated red any more. Of the two files, it was the more permissive one
+      #    that guarded the keystore.
       #
-      # `:sleepwriter:testSourceADebugUnitTest` et non `:sleepwriter:test` : `test` est un agrégat
-      # sur les quatre variantes (deux saveurs × deux types de build) alors que les 16 tests vivent
-      # dans le `src/test/` partagé et qu'aucun ne distingue les saveurs. Même choix que `ci.yml`.
+      # `:sleepwriter:testSourceADebugUnitTest` and not `:sleepwriter:test`: `test` is an aggregate
+      # over the four variants (two flavours x two build types) while the 16 tests live in the
+      # shared `src/test/` and none of them tells the flavours apart. Same choice as `ci.yml`.
       - name: Run every test before shipping anything
         continue-on-error: true
         run: |
@@ -109,30 +108,32 @@ jobs:
             :format:test :algo:test :sleepwriter:testSourceADebugUnitTest \
             :wear:testDebugUnitTest :phone:testDebugUnitTest
 
-      # Les variantes release, à part, et filtrées sur ce qu'elles seules apportent :
-      # `EchelleReleaseTest`, le garde-fou qui refuse qu'une compilation de banc — temps comprimé
-      # d'un facteur 300 — parte en production. Sans filtre, `testReleaseUnitTest` rejoue en plus
-      # tout `src/test/`, soit ~320 tests déjà verts en debug quelques secondes plus tôt, pour en
-      # gagner 6. Étape séparée parce qu'un `--tests` s'applique à toutes les tâches de test de
-      # l'invocation et que Gradle échoue si l'une d'elles n'a aucune correspondance ; les deux
-      # modules ont bien ce fichier, donc les grouper entre eux est sûr.
+      # The release variants, apart, and filtered on what they alone bring: the guard rail that
+      # refuses to let a bench build — time compressed by a factor of 300 — ship to production.
+      # Without a filter, `testReleaseUnitTest` additionally replays the whole of `src/test/`, some
+      # ~320 tests that were green in debug a few seconds earlier, to gain 6. A separate step
+      # because a `--tests` applies to every test task of the invocation and Gradle fails if one of
+      # them has no match; both modules do have their file, so grouping them together is safe.
+      #
+      # Two patterns because the modules name their guard rail differently — `ReleaseScaleTest` on
+      # the watch, `ReleaseTimeScalingTest` on the phone. Same reasoning as `ci.yml`.
       - name: Run the release-variant guard-rail tests
         continue-on-error: true
         run: |
           ./gradlew --console=plain --continue \
             :wear:testReleaseUnitTest :phone:testReleaseUnitTest \
-            --tests '*EchelleReleaseTest'
+            --tests '*ReleaseScaleTest' --tests '*ReleaseTimeScalingTest'
 
-      # La garde qui manquait, désormais partagée mot pour mot avec `ci.yml` : c'est le fichier
-      # `tools/ci/verifier-tests.py` qui décide, et non le code de retour de Gradle. Zéro rapport
-      # n'y veut pas dire zéro échec, mais « rien n'a tourné » — le cas où publier serait le plus
-      # grave, et celui qui avait laissé sortir une release non testée. Trois copies divergentes
-      # de ce contrôle, c'était trois occasions de le corriger à un seul endroit.
+      # The guard that was missing, now shared word for word with `ci.yml`: it is the file
+      # `tools/ci/verifier-tests.py` that decides, and not Gradle's exit code. Zero reports does
+      # not mean zero failures there, it means "nothing ran" — the case where publishing would be
+      # the most serious, and the one that had let an untested release out. Three divergent copies
+      # of this check meant three occasions to fix it in a single place.
       - name: Refuse to release unless every test passed
         run: python3 tools/ci/verifier-tests.py
 
-      # Lint aussi, avant signature : `lintVitalRelease` que `bundleRelease` déclenche ne joue que
-      # les règles FATAL, et laissait donc passer les erreurs de sévérité ERROR.
+      # Lint too, before signing: `lintVitalRelease`, which `bundleRelease` triggers, only plays
+      # the FATAL rules, and therefore let errors of ERROR severity through.
       - name: Lint before shipping
         run: ./gradlew :wear:lintDebug :phone:lintDebug --console=plain --continue
 

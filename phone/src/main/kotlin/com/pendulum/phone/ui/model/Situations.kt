@@ -5,204 +5,201 @@ import com.pendulum.phone.db.ComparableNight
 import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.health.SleepReader
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.text.texte
+import com.pendulum.phone.ui.text.text
 
 /**
- * Le cablage des messages d'erreur : deux fonctions pures, un seul gabarit.
+ * The wiring of the error messages: two pure functions, a single template.
  *
- * ### Le gabarit, invariable
+ * ### The template, invariant
  *
- * **Titre neutre, une phrase de cause, une phrase d'action, un bouton quand une action existe, un
- * code stable.** [ErreurPendulum] ne peut pas etre construit autrement — il n'y a pas de
- * constructeur qui accepte un message seul. « Une erreur est survenue » n'a donc pas d'endroit ou
- * s'ecrire.
+ * **A neutral title, one sentence of cause, one sentence of action, a button when an action exists,
+ * a stable code.** [PendulumError] cannot be built any other way — there is no constructor that
+ * accepts a message alone. "An error occurred" therefore has nowhere to be written.
  *
- * ### La regle transversale, qui est portee par un booleen et non par une convention
+ * ### The cross-cutting rule, which is carried by a boolean and not by a convention
  *
- * Une nuit sans hypnogramme, une nuit courte, une montre restee sur la table sont des
- * **situations**. Elles s'affichent en ambre. Le rouge est reserve a ce qui est reellement
- * casse : transfert, permissions, integrite de fichier, stockage. C'est exactement
- * [ErreurPendulum.technique], lu par `ErrorCard` pour choisir la teinte — employer le rouge pour
- * une nuit courte apprend a ignorer le rouge, et le jour ou le transfert casse vraiment, plus
- * personne ne regarde.
+ * A night without a hypnogram, a short night, a watch left on the table are **situations**. They
+ * are shown in amber. Red is reserved for what is really broken: transfer, permissions, file
+ * integrity, storage. That is exactly [PendulumError.technical], read by `ErrorCard` to choose the
+ * tint — using red for a short night teaches people to ignore red, and the day the transfer really
+ * breaks, nobody is looking any more.
  *
- * ### Ce qui n'est pas cable, et pourquoi c'est ecrit ici
+ * ### What is not wired, and why that is written here
  *
- * `E-NIGHT-05` (montre sur la table) et `E-NIGHT-06` (bracelet lache) demandent la fraction
- * hors-corps et le plancher de bruit de la nuit ; ni l'un ni l'autre n'est persiste au niveau de
- * la nuit — le plancher n'existe que par evenement, dans `clm_event.noiseFloorG`. `E-NIGHT-08`
- * (derive d'horloge entre les deux appareils) demande une comparaison des horodatages montre et
- * telephone que l'ingestion ne conserve pas. Les trois textes existent et restent en place :
- * les cabler sur une approximation donnerait un message faux, ce qui est pire qu'un message
- * absent. `E-HC-02` en revanche est cable, parce que la permission, elle, se lit.
+ * `E-NIGHT-05` (watch on the table) and `E-NIGHT-06` (loose strap) require the off-body fraction
+ * and the night's noise floor; neither is persisted at the night level — the floor only exists per
+ * event, in `clm_event.noiseFloorG`. `E-NIGHT-08` (clock drift between the two devices) requires a
+ * comparison of the watch and phone timestamps that the ingestion does not keep. All three texts
+ * exist and stay in place: wiring them on an approximation would give a false message, which is
+ * worse than an absent message. `E-HC-02`, on the other hand, is wired, because a permission can be
+ * read.
  */
 object Situations {
 
     // -------------------------------------------------------------------------------------
-    // Health Connect : les trois codes E-HC-*
+    // Health Connect: the three E-HC-* codes
     // -------------------------------------------------------------------------------------
 
     /**
-     * La situation de la source de sommeil, ou `null` quand tout va.
+     * The sleep source situation, or `null` when all is well.
      *
-     * @param sourcesRecentes nombre de sources ayant ecrit une session sur les sept derniers
-     *   jours. `null` quand la question n'a pas encore ete posee — a distinguer de zero, qui est
-     *   une reponse.
-     * @param originesDerniereNuit nombre d'applications distinctes ayant publie une session
-     *   recouvrant la derniere nuit. Deux ou plus, et le denominateur depend de celle qu'on lit.
+     * @param recentSources number of sources having written a session over the last seven days.
+     *   `null` when the question has not been asked yet — to be distinguished from zero, which is
+     *   an answer.
+     * @param lastNightOrigins number of distinct applications having published a session
+     *   overlapping last night. Two or more, and the denominator depends on which one is read.
      */
     /**
-     * Le seul bloqueur de permission, sans le diagnostic de source qui l'accompagne ailleurs.
+     * The only permission blocker, without the source diagnosis that goes with it elsewhere.
      *
-     * L'accueil s'en sert, la tendance aussi via [sommeil] : une permission manquante doit se
-     * lire au meme endroit qu'on la repare, et l'accueil est le premier ecran que l'on ouvre.
-     * Elle n'y etait pas — la carte ne vivait que sur la tendance, donc quelqu'un qui ne va
-     * jamais voir sa tendance ne voyait jamais qu'il manquait la moitie de la mesure.
+     * The home screen uses it, and so does the trend via [sleep]: a missing permission must be read
+     * in the same place where it is repaired, and the home screen is the first one opened. It was
+     * not there — the card lived only on the trend, so someone who never looks at their trend never
+     * saw that half the measurement was missing.
      *
-     * Les autres situations de source (`E-HC-01`, `E-HC-03`) restent a la tendance : elles
-     * parlent de nuits deja mesurees et de chiffres qui n'existent pas sur l'accueil.
+     * The other source situations (`E-HC-01`, `E-HC-03`) stay on the trend: they talk about nights
+     * already measured and about numbers that do not exist on the home screen.
      *
-     * Une seule fabrique pour les deux ecrans, parce que deux copies du meme diagnostic finissent
-     * par se contredire — c'est un travers que ce projet a deja paye.
+     * A single factory for both screens, because two copies of the same diagnosis end up
+     * contradicting each other — a flaw this project has already paid for.
      */
-    fun permissionSommeil(disponibilite: SleepReader.Availability?): ErreurPendulum? =
-        if (disponibilite != SleepReader.Availability.PERMISSIONS_MISSING) null
-        else ErreurPendulum(
+    fun sleepPermission(availability: SleepReader.Availability?): PendulumError? =
+        if (availability != SleepReader.Availability.PERMISSIONS_MISSING) null
+        else PendulumError(
             code = "E-HC-02",
-            titre = texte(R.string.error_hc_02_title),
-            cause = texte(R.string.error_hc_02_cause),
-            action = texte(R.string.error_hc_02_action),
-            bouton = texte(R.string.error_hc_02_button),
-            technique = true,
+            title = text(R.string.error_hc_02_title),
+            cause = text(R.string.error_hc_02_cause),
+            action = text(R.string.error_hc_02_action),
+            button = text(R.string.error_hc_02_button),
+            technical = true,
         )
 
-    fun sommeil(
-        disponibilite: SleepReader.Availability?,
-        sourcesRecentes: Int?,
-        originesDerniereNuit: Int,
-    ): ErreurPendulum? = when {
-        disponibilite == null -> null
+    fun sleep(
+        availability: SleepReader.Availability?,
+        recentSources: Int?,
+        lastNightOrigins: Int,
+    ): PendulumError? = when {
+        availability == null -> null
 
-        // La permission est **cassee**, pas absente : rouge. C'est la seule des trois qui empeche
-        // reellement quelque chose, et la seule qui se repare en un geste.
-        disponibilite == SleepReader.Availability.PERMISSIONS_MISSING ->
-            permissionSommeil(disponibilite)
+        // The permission is **broken**, not absent: red. It is the only one of the three that
+        // really prevents something, and the only one that is repaired in one gesture.
+        availability == SleepReader.Availability.PERMISSIONS_MISSING ->
+            sleepPermission(availability)
 
-        // Health Connect absent ou trop ancien : l'assistant de premier lancement porte deja ces
-        // deux cas avec leur bouton d'installation. Les repeter en tete de la tendance ferait
-        // deux endroits pour une meme reparation, et celui-ci n'est pas le bon.
-        disponibilite != SleepReader.Availability.READY -> null
+        // Health Connect absent or too old: the onboarding already carries those two cases with
+        // their install button. Repeating them at the top of the trend would make two places for
+        // one repair, and this one is not the right place.
+        availability != SleepReader.Availability.READY -> null
 
-        // Aucune source : une **situation**, en ambre. L'application continue, sur son propre
-        // masque, et chaque nuit concernee le porte. Ce n'est pas une panne de Pendulum.
-        sourcesRecentes == 0 -> ErreurPendulum(
+        // No source: a **situation**, in amber. The application carries on, on its own mask, and
+        // every night concerned carries the flag. This is not a Pendulum failure.
+        recentSources == 0 -> PendulumError(
             code = "E-HC-01",
-            titre = texte(R.string.error_hc_01_title),
-            cause = texte(R.string.error_hc_01_cause),
-            action = texte(R.string.error_hc_01_action),
-            bouton = texte(R.string.error_hc_01_button),
-            technique = false,
+            title = text(R.string.error_hc_01_title),
+            cause = text(R.string.error_hc_01_cause),
+            action = text(R.string.error_hc_01_action),
+            button = text(R.string.error_hc_01_button),
+            technical = false,
         )
 
-        // Deux sources contradictoires : on ne fusionne jamais, on choisit et on le dit.
+        // Two contradictory sources: we never merge, we choose and we say so.
         //
-        // Aucun bouton. Il en portait un — « Change the preferred source » — et le seul endroit ou
-        // la source preferee s'ecrit est l'etape 4 de l'assistant de premier lancement, qui ne se
-        // rouvre pas. Le bouton menait donc aux reglages de Health Connect, ou rien ne change la
-        // preference de Pendulum : il avait l'air de reparer et ne reparait rien. La phrase
-        // d'action dit maintenant ou la source retenue se lit, ce qui est verifiable.
-        originesDerniereNuit >= 2 -> ErreurPendulum(
+        // No button. It used to carry one — "Change the preferred source" — and the only place the
+        // preferred source is written is step 4 of the onboarding, which does not reopen. The
+        // button therefore led to the Health Connect settings, where nothing changes Pendulum's
+        // preference: it looked like it repaired something and repaired nothing. The action
+        // sentence now says where the chosen source can be read, which is verifiable.
+        lastNightOrigins >= 2 -> PendulumError(
             code = "E-HC-03",
-            titre = texte(R.string.error_hc_03_title),
-            cause = texte(R.string.error_hc_03_cause),
-            action = texte(R.string.error_hc_03_action),
-            technique = false,
+            title = text(R.string.error_hc_03_title),
+            cause = text(R.string.error_hc_03_cause),
+            action = text(R.string.error_hc_03_action),
+            technical = false,
         )
 
         else -> null
     }
 
     // -------------------------------------------------------------------------------------
-    // Une nuit : les codes E-NIGHT-*
+    // One night: the E-NIGHT-* codes
     // -------------------------------------------------------------------------------------
 
     /**
-     * La situation d'une nuit, ou `null` quand elle n'appelle aucune explication.
+     * A night's situation, or `null` when it calls for no explanation.
      *
-     * Une seule est rendue, et l'ordre est celui de la **consequence** et non de la gravite
-     * ressentie : ce qui met la nuit hors de la tendance passe avant ce qui la laisse dedans. Un
-     * utilisateur qui lit « pas de stades de sommeil » sur une nuit par ailleurs trop courte
-     * reparerait la mauvaise chose.
+     * Only one is returned, and the order is that of the **consequence** and not of the felt
+     * severity: what puts the night out of the trend comes before what leaves it in. A user reading
+     * "no sleep stages" on a night that is too short anyway would repair the wrong thing.
      */
-    fun nuit(
+    fun night(
         n: ComparableNight,
         session: NightSessionEntity?,
-    ): ErreurPendulum? {
-        // `E-NIGHT-07` (transfert incomplet) n'est **pas** rendu ici, et ce n'est pas un oubli :
-        // `night_session.truncated` dit que l'enregistrement s'est arrete sans fermeture propre,
-        // pas qu'il manque des fichiers. Le fait qui distingue les deux est le nombre de chunks
-        // recus contre `totalChunks`, que la vue `comparable_night` ne porte pas. Ce code est donc
-        // rendu par `MachineReveil`, qui a les deux compteurs sous la main. Le deduire ici de
-        // `truncated` afficherait « des fichiers manquent » sur une nuit integralement transferee
-        // dont la montre s'est simplement arretee tot — un message faux, avec un bouton rouge.
+    ): PendulumError? {
+        // `E-NIGHT-07` (incomplete transfer) is **not** returned here, and that is not an omission:
+        // `night_session.truncated` says the recording stopped without a clean close, not that
+        // files are missing. The fact that distinguishes the two is the number of chunks received
+        // against `totalChunks`, which the `comparable_night` view does not carry. That code is
+        // therefore returned by `WakingMachine`, which has both counters to hand. Deducing it here
+        // from `truncated` would show "files are missing" on a fully transferred night whose watch
+        // simply stopped early — a false message, with a red button.
         //
-        // Consequence : **toutes les situations de nuit sont ambre**. C'est exactement ce que dit
-        // la regle transversale — une nuit courte, une nuit sans hypnogramme, une montre
-        // dechargee sont des situations, pas des pannes.
+        // Consequence: **all night situations are amber**. That is exactly what the cross-cutting
+        // rule says — a short night, a night without a hypnogram, a discharged watch are
+        // situations, not failures.
 
-        // 1. Nuit trop courte : elle sort de la tendance, et il n'y a rien a faire. Ambre.
+        // 1. Night too short: it drops out of the trend, and there is nothing to be done. Amber.
         if (n.exclusionReason == ComparabilityRule.TOO_SHORT) {
-            return ErreurPendulum(
+            return PendulumError(
                 code = "E-NIGHT-02",
-                titre = texte(R.string.error_night_02_title),
-                cause = texte(R.string.error_night_02_cause),
-                action = texte(R.string.error_night_02_action),
-                technique = false,
+                title = text(R.string.error_night_02_title),
+                cause = text(R.string.error_night_02_cause),
+                action = text(R.string.error_night_02_action),
+                technical = false,
             )
         }
 
-        // 2. Montre dechargee en cours de nuit. Le chiffre reste, mais il est vraisemblablement
-        //    sous-estime : les mouvements se concentrent dans la seconde moitie de la nuit.
-        val batterie = session?.batteryPctLast
-        if (batterie != null && batterie < Mapping.SEUIL_BATTERIE_BASSE_PCT) {
-            return ErreurPendulum(
+        // 2. Watch discharged during the night. The number stays, but it is most likely
+        //    under-estimated: movements concentrate in the second half of the night.
+        val battery = session?.batteryPctLast
+        if (battery != null && battery < Mapping.LOW_BATTERY_THRESHOLD_PCT) {
+            return PendulumError(
                 code = "E-NIGHT-03",
-                titre = texte(R.string.error_night_03_title),
-                cause = texte(R.string.error_night_03_cause),
-                action = texte(R.string.error_night_03_action),
-                technique = false,
+                title = text(R.string.error_night_03_title),
+                cause = text(R.string.error_night_03_cause),
+                action = text(R.string.error_night_03_action),
+                technical = false,
             )
         }
 
-        // 3. Trous de signal au-dela du cumul tolerable. Ambre, et **sans bouton**.
+        // 3. Signal gaps beyond the tolerable total. Amber, and **with no button**.
         //
-        //    Il en portait un — « Force continuous mode » — et sa phrase d'action renvoyait a
-        //    « Settings › Measurement ». Ce reglage n'existe nulle part : ni preference cote
-        //    telephone, ni commande vers la montre, ni lecture cote montre. Le bouton etait affiche
-        //    par `ErrorCard` au detail de nuit, ou les deux lambdas d'action sont a `{}` — il ne
-        //    faisait donc rien, et la phrase envoyait chercher un ecran introuvable. Ce qui reste
-        //    est ce que la mesure permet de dire : les mouvements tombes dans les trous ne sont pas
-        //    comptes. Le bouton reviendra avec le mode qu'il commande.
-        val cumulS = (session?.gapTotalMs ?: 0L) / 1000.0
-        if (cumulS > Controles.CUMUL_TROUS_MAX_S) {
-            return ErreurPendulum(
+        //    It used to carry one — "Force continuous mode" — and its action sentence pointed to
+        //    "Settings > Measurement". That setting exists nowhere: no preference on the phone
+        //    side, no command to the watch, no reading on the watch side. The button was shown by
+        //    `ErrorCard` in the night detail, where both action lambdas are `{}` — so it did
+        //    nothing, and the sentence sent people looking for a screen that cannot be found. What
+        //    remains is what the measurement allows us to say: the movements that fell into the
+        //    gaps are not counted. The button will come back with the mode it commands.
+        val totalS = (session?.gapTotalMs ?: 0L) / 1000.0
+        if (totalS > Checks.MAX_TOTAL_GAPS_S) {
+            return PendulumError(
                 code = "E-NIGHT-04",
-                titre = texte(R.string.error_night_04_title),
-                cause = texte(R.string.error_night_04_cause),
-                action = texte(R.string.error_night_04_action),
-                technique = false,
+                title = text(R.string.error_night_04_title),
+                cause = text(R.string.error_night_04_cause),
+                action = text(R.string.error_night_04_action),
+                technical = false,
             )
         }
 
-        // 4. Pas d'hypnogramme. C'est le cas le plus frequent et le moins grave, donc le dernier :
-        //    la nuit compte, elle porte son drapeau, et son temps de sommeil est estime.
-        if (n.maskSource == Mapping.MASQUE_ACCELERO) {
-            return ErreurPendulum(
+        // 4. No hypnogram. It is the most frequent case and the least serious, hence the last one:
+        //    the night counts, it carries its flag, and its sleep time is estimated.
+        if (n.maskSource == Mapping.ACCEL_MASK) {
+            return PendulumError(
                 code = "E-NIGHT-01",
-                titre = texte(R.string.error_night_01_title),
-                cause = texte(R.string.error_night_01_cause),
-                action = texte(R.string.error_night_01_action),
-                technique = false,
+                title = text(R.string.error_night_01_title),
+                cause = text(R.string.error_night_01_cause),
+                action = text(R.string.error_night_01_action),
+                technical = false,
             )
         }
 

@@ -1,40 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Manifeste de la variante **debug** de `:phone`. Il n'existait pas : jusqu'ici `src/debug/` ne
-  portait que du code (les apercus `@Preview` et le jumeau `EchelleTemps`), c'est-a-dire rien qui
-  demande une declaration systeme.
+  Manifest of the **debug** variant of `:phone`. It did not exist: until now `src/debug/` carried
+  only code (the `@Preview` previews and the `TimeScaling` twin), that is, nothing requiring a
+  system declaration.
 
-  ### Ce qu'il declare, et pourquoi il est ici et pas dans `src/main/`
+  ### What it declares, and why it is here and not in `src/main/`
 
-  Un unique `BroadcastReceiver` : le declencheur d'ensemencement du banc. Il remplit la base avec
-  des nuits synthetiques, et **cela ne doit exister dans aucune version publiable**. Le mettre
-  dans `src/main/` avec un garde `if (BuildConfig.DEBUG)` ne suffirait pas : la classe et son
-  entree de manifeste partiraient quand meme dans l'APK de release, ou n'importe qui peut les
-  lire et les invoquer. Le source set est la seule barriere qui ne repose sur aucune vigilance —
-  la variante release ne compile simplement pas ce repertoire, et `aapt dump xmltree` sur l'APK
-  de release ne trouve pas le receveur.
+  A single `BroadcastReceiver`: the bench seeding trigger. It fills the database with synthetic
+  nights, and **that must exist in no publishable build**. Putting it in `src/main/` behind an
+  `if (BuildConfig.DEBUG)` guard would not be enough: the class and its manifest entry would go
+  into the release APK all the same, where anybody can read them and invoke them. The source set is
+  the only barrier that rests on no vigilance — the release variant simply does not compile this
+  directory, and `aapt dump xmltree` on the release APK does not find the receiver.
 
-  C'est le meme raisonnement qui avait fait deplacer `ApercuDonnees` vers `src/debug`, et la
-  meme garantie que `:sleepwriter` obtient en desactivant sa variante release.
+  It is the same reasoning that moved `PreviewData` into `src/debug`, and the same guarantee
+  `:sleepwriter` obtains by disabling its release variant.
 
   ### `exported="true"`
 
-  Impose par l'usage : c'est `adb shell am broadcast` qui l'atteint, donc un processus exterieur
-  (le shell). Un receveur non exporte serait refuse avec `Permission Denial`, et aucune
-  permission de signature ne repare cela pour le shell. Le risque est nul la ou ce fichier
-  existe — un APK de debug, jamais signe de la cle de publication, jamais distribue.
+  Imposed by the usage: it is `adb shell am broadcast` that reaches it, so an outside process (the
+  shell). A non-exported receiver would be refused with `Permission Denial`, and no signature
+  permission repairs that for the shell. The risk is nil where this file exists — a debug APK,
+  never signed with the publication key, never distributed.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
 
         <!--
-          Le nom est **absolu**. Un nom relatif (`.banc.EnsemenceurReceiver`) se resoudrait sur
-          `applicationId` — `com.pendulum` — et non sur le `namespace` `com.pendulum.phone` :
-          c'est la meme regle que le manifeste principal enonce pour toutes ses declarations.
+          The name is **absolute**. A relative name (`.bench.SeederReceiver`) would resolve against
+          `applicationId` — `com.pendulum` — and not against the `namespace` `com.pendulum.phone`:
+          it is the same rule the main manifest states for all its declarations.
         -->
         <receiver
-            android:name="com.pendulum.phone.banc.EnsemenceurReceiver"
+            android:name="com.pendulum.phone.bench.SeederReceiver"
             android:exported="true" />
 
     </application>

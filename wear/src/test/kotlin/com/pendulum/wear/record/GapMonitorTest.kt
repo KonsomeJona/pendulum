@@ -6,14 +6,14 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * L'integrite temporelle vue par [GapMonitor], et surtout la regle qui ne se negocie pas :
- * un trou se mesure sur les ecarts de `SensorEvent.timestamp`, jamais sur l'heure d'arrivee.
+ * Timing integrity as seen by [GapMonitor], and above all the rule that is not negotiable:
+ * a gap is measured on `SensorEvent.timestamp` differences, never on arrival time.
  *
- * Le premier test de ce fichier est celui qui protege le comportement le plus couteux a casser.
- * Si quelqu'un reintroduit un jour une detection fondee sur l'heure de livraison, chaque salve
- * batchee redevient un « trou », l'escalade prend un wake lock, et chaque nuit de test brule
- * 65 % de batterie en silence — la panne ressemble alors a « le batching ne marche pas », alors
- * que c'est le moniteur qui a tort.
+ * The first test in this file is the one that protects the behaviour that is most costly to break.
+ * If somebody one day reintroduces a detection founded on delivery time, every batched burst
+ * becomes a "gap" again, the escalation takes a wake lock, and every test night silently burns
+ * 65 % of the battery — the failure then looks like "batching does not work", when it is the
+ * monitor that is wrong.
  */
 class GapMonitorTest {
 
@@ -23,10 +23,10 @@ class GapMonitorTest {
     }
 
     /**
-     * Simule le flux vu par `onSensorChanged` : seuls les timestamps capteur existent.
-     * [flagged] compte les echantillons marques `FLAG_GAP_BEFORE`.
+     * Simulates the feed seen by `onSensorChanged`: only sensor timestamps exist.
+     * [flagged] counts the samples marked `FLAG_GAP_BEFORE`.
      */
-    private class Flux(val monitor: GapMonitor, startNs: Long, val periodNs: Long = PERIOD) {
+    private class Feed(val monitor: GapMonitor, startNs: Long, val periodNs: Long = PERIOD) {
         var ts = startNs
             private set
         var flagged = 0
@@ -36,7 +36,7 @@ class GapMonitorTest {
             monitor.onSample(ts)
         }
 
-        /** Echantillons reguliers jusqu'a [targetNs] inclus (multiple de la periode attendu). */
+        /** Regular samples up to [targetNs] inclusive (a multiple of the period is expected). */
         fun regularUntil(targetNs: Long) {
             while (ts < targetNs) {
                 ts += periodNs
@@ -44,7 +44,7 @@ class GapMonitorTest {
             }
         }
 
-        /** Silence capteur de [durationNs], puis l'echantillon qui le clot. */
+        /** Sensor silence of [durationNs], then the sample that closes it. */
         fun hole(durationNs: Long) {
             ts += durationNs
             if (monitor.onSample(ts)) flagged++
@@ -52,145 +52,145 @@ class GapMonitorTest {
     }
 
     // -------------------------------------------------------------------------------------
-    // La regle non negociable
+    // The non-negotiable rule
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("une salve batchee — 30 s de silence puis 1500 evenements d'un coup — n'est pas un trou")
-    fun `le batching nominal ne declenche rien`() {
+    @DisplayName("a batched burst — 30 s of silence then 1500 events at once — is not a gap")
+    fun `nominal batching triggers nothing`() {
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
+        val feed = Feed(monitor, T0)
 
-        // Deux lots de 30 s livres « d'un coup » : la boucle serree ci-dessous EST la salve.
-        // L'heure d'arrivee n'apparait nulle part, parce que l'API de GapMonitor ne la consomme
-        // pas — c'est la signature elle-meme qui verrouille la regle. Un futur monitor qui
-        // voudrait regarder l'heure de livraison devrait casser ce test pour le faire.
-        flux.regularUntil(T0 + 30_000_000_000L) // lot 1 : 1500 evenements, timestamps reguliers
-        flux.regularUntil(T0 + 60_000_000_000L) // lot 2, apres 30 s de silence de livraison
+        // Two 30 s batches delivered "at once": the tight loop below IS the burst. Arrival time
+        // appears nowhere, because GapMonitor's API does not consume it — it is the signature
+        // itself that locks the rule in. A future monitor that wanted to look at delivery time
+        // would have to break this test in order to do so.
+        feed.regularUntil(T0 + 30_000_000_000L) // batch 1: 1500 events, regular timestamps
+        feed.regularUntil(T0 + 60_000_000_000L) // batch 2, after 30 s of delivery silence
 
         assertThat(monitor.gapCount)
             .withFailMessage(
-                "Le fonctionnement nominal du batching a ete compte comme %d trou(s). " +
-                    "Consequence directe : l'escalade prend un PARTIAL_WAKE_LOCK sur une nuit " +
-                    "saine, la batterie tombe a 35 %%, et la mesure d'autonomie de la phase de " +
-                    "test est invalidee sans aucun message d'erreur.",
+                "Nominal batching operation was counted as %d gap(s). Direct consequence: the " +
+                    "escalation takes a PARTIAL_WAKE_LOCK on a healthy night, the battery falls " +
+                    "to 35 %%, and the battery-life measurement of the test phase is invalidated " +
+                    "without any error message.",
                 monitor.gapCount,
             )
             .isZero()
         assertThat(monitor.gapTotalMs).isZero()
-        assertThat(flux.flagged).isZero()
+        assertThat(feed.flagged).isZero()
         assertThat(monitor.step).isZero()
         assertThat(monitor.consumePendingStep()).isNull()
-        // La fenetre de 60 s s'est close au passage : le fs mesure est nominal.
+        // The 60 s window closed along the way: the measured fs is nominal.
         assertThat(monitor.measuredRateHz).isCloseTo(50.0, within(0.1))
         assertThat(monitor.rateDeviates).isFalse()
     }
 
     // -------------------------------------------------------------------------------------
-    // Signal intra-lot : seuil de 3 fois la periode nominale
+    // Intra-batch signal: threshold at 3 times the nominal period
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("un ecart d'exactement 3 periodes passe ; une nanoseconde de plus est un trou")
-    fun `borne exacte du seuil intra-lot`() {
+    @DisplayName("an interval of exactly 3 periods passes; one nanosecond more is a gap")
+    fun `exact bound of the intra-batch threshold`() {
         val monitor = GapMonitor(50)
         monitor.onSample(T0)
 
-        // 60 ms tout juste : la gigue de livraison d'un vrai capteur atteint couramment deux
-        // periodes ; compter un trou ici noierait le journal de faux positifs.
+        // 60 ms exactly: the delivery jitter of a real sensor commonly reaches two periods;
+        // counting a gap here would drown the log in false positives.
         assertThat(monitor.onSample(T0 + 3 * PERIOD)).isFalse()
         assertThat(monitor.gapCount).isZero()
 
-        // 60 ms + 1 ns : le trou est reel, et l'echantillon qui le suit doit porter le drapeau
-        // FLAG_GAP_BEFORE — c'est lui qui permettra a l'analyse d'ecarter le bloc.
+        // 60 ms + 1 ns: the gap is real, and the sample that follows it must carry the
+        // FLAG_GAP_BEFORE flag — it is what will let the analysis exclude the block.
         assertThat(monitor.onSample(T0 + 3 * PERIOD + 3 * PERIOD + 1)).isTrue()
         assertThat(monitor.gapCount).isEqualTo(1)
-        // Duree manquante = dt moins la periode attendue : 60,000001 - 20 = 40 ms.
+        // Missing duration = dt minus the expected period: 60.000001 - 20 = 40 ms.
         assertThat(monitor.gapTotalMs).isEqualTo(40)
     }
 
     // -------------------------------------------------------------------------------------
-    // Escalade : trois gros trous en dix minutes
+    // Escalation: three big gaps in ten minutes
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("trois trous de 3 s en moins de dix minutes montent d'un palier, pas avant")
-    fun `escalade au troisieme gros trou`() {
+    @DisplayName("three 3 s gaps in less than ten minutes climb one step, not before")
+    fun `escalation on the third big gap`() {
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
+        val feed = Feed(monitor, T0)
 
-        // Trois trous d'exactement 3 s (la borne inclusive du « gros trou »), chacun dans une
-        // fenetre de mesure differente pour que seul le signal intra-lot les voie : 3 s manquantes
-        // sur 60 s laissent 2851 echantillons recus pour 2850 exiges — juste au-dessus du seuil
-        // de deficit de 0,95, ce qui verifie au passage cette borne-la aussi.
-        flux.regularUntil(T0 + 10_000_000_000L)
-        flux.hole(3_000_000_000L) // trou 1, a t=13 s
+        // Three gaps of exactly 3 s (the inclusive bound of a "big gap"), each one in a different
+        // measurement window so that only the intra-batch signal sees them: 3 s missing out of
+        // 60 s leave 2851 samples received for 2850 required — just above the 0.95 deficit
+        // threshold, which checks that bound too along the way.
+        feed.regularUntil(T0 + 10_000_000_000L)
+        feed.hole(3_000_000_000L) // gap 1, at t=13 s
         assertThat(monitor.step).isZero()
 
-        flux.regularUntil(T0 + 70_000_000_000L)
-        flux.hole(3_000_000_000L) // trou 2, a t=73 s
+        feed.regularUntil(T0 + 70_000_000_000L)
+        feed.hole(3_000_000_000L) // gap 2, at t=73 s
         assertThat(monitor.step)
             .withFailMessage(
-                "Deux gros trous ont suffi a escalader. Le wake lock du palier 1 doit se " +
-                    "meriter : un appareil qui perd deux lots isoles dans la nuit ne justifie " +
-                    "pas de sacrifier l'autonomie de toutes les heures restantes.",
+                "Two big gaps were enough to escalate. The wake lock of step 1 must be earned: " +
+                    "a device that loses two isolated batches during the night does not justify " +
+                    "sacrificing the battery life of all the remaining hours.",
             )
             .isZero()
 
-        flux.regularUntil(T0 + 130_000_000_000L)
-        flux.hole(3_000_000_000L) // trou 3, a t=133 s : les trois tiennent dans 10 min
+        feed.regularUntil(T0 + 130_000_000_000L)
+        feed.hole(3_000_000_000L) // gap 3, at t=133 s: all three fit within 10 min
 
         assertThat(monitor.gapCount).isEqualTo(3)
-        assertThat(flux.flagged).isEqualTo(3)
+        assertThat(feed.flagged).isEqualTo(3)
         assertThat(monitor.step).isEqualTo(1)
         assertThat(monitor.consumePendingStep()).isEqualTo(1)
-        // Le palier est consomme une seule fois : le service ne doit pas re-appliquer la meme
-        // degradation a chaque tour de boucle.
+        // The step is consumed only once: the service must not re-apply the same degradation on
+        // every turn of its loop.
         assertThat(monitor.consumePendingStep()).isNull()
     }
 
     @Test
-    @DisplayName("des trous espaces de plus de dix minutes ne s'additionnent jamais")
-    fun `la fenetre d'escalade glisse`() {
+    @DisplayName("gaps more than ten minutes apart never add up")
+    fun `the escalation window slides`() {
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
+        val feed = Feed(monitor, T0)
 
-        flux.regularUntil(T0 + 10_000_000_000L)
-        flux.hole(3_000_000_000L) // trou 1, a t=13 s
-        flux.regularUntil(T0 + 70_000_000_000L)
-        flux.hole(3_000_000_000L) // trou 2, a t=73 s
-        flux.regularUntil(T0 + 612_000_000_000L)
-        flux.hole(3_000_000_000L) // trou 3, a t=615 s : le trou 1 est sorti de la fenetre
+        feed.regularUntil(T0 + 10_000_000_000L)
+        feed.hole(3_000_000_000L) // gap 1, at t=13 s
+        feed.regularUntil(T0 + 70_000_000_000L)
+        feed.hole(3_000_000_000L) // gap 2, at t=73 s
+        feed.regularUntil(T0 + 612_000_000_000L)
+        feed.hole(3_000_000_000L) // gap 3, at t=615 s: gap 1 has left the window
 
-        // Une nuit entiere accumule fatalement quelques trous isoles. S'ils comptaient pour
-        // toujours, toute nuit assez longue finirait sous wake lock — l'escalade ne repondrait
-        // plus a une panne mais a la simple duree.
+        // A whole night inevitably accumulates a few isolated gaps. If they counted for ever, any
+        // sufficiently long night would end up under a wake lock — the escalation would no longer
+        // be answering a failure but merely duration.
         assertThat(monitor.gapCount).isEqualTo(3)
         assertThat(monitor.step).isZero()
         assertThat(monitor.consumePendingStep()).isNull()
     }
 
     @Test
-    @DisplayName("l'escalade ne redescend jamais et plafonne au palier 3")
-    fun `escalade monotone et plafonnee`() {
+    @DisplayName("the escalation never goes back down and caps at step 3")
+    fun `monotonic and capped escalation`() {
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
+        val feed = Feed(monitor, T0)
         val steps = mutableListOf<Int>()
 
-        // Une degradation continue : gros trous en rafale. Peu importe ici que certains soient
-        // aussi comptes par le deficit de fenetre — on verifie la trajectoire des paliers, pas
-        // le comptage.
+        // A continuous degradation: big gaps one after another. It does not matter here that some
+        // of them are also counted by the window deficit — what is checked is the trajectory of
+        // the steps, not the counting.
         repeat(30) {
-            flux.regularUntil(flux.ts + 1_000_000_000L)
-            flux.hole(3_000_000_000L)
+            feed.regularUntil(feed.ts + 1_000_000_000L)
+            feed.hole(3_000_000_000L)
             monitor.consumePendingStep()?.let { steps += it }
         }
 
         assertThat(steps)
             .withFailMessage(
-                "Les paliers emis sont %s. Ils doivent monter strictement — 1 puis 2 puis 3 — " +
-                    "et s'arreter la : un palier qui redescend ou se repete fait osciller le " +
-                    "service entre deux modes toute la nuit, une rotation de chunk a chaque fois.",
+                "The steps emitted are %s. They must climb strictly — 1 then 2 then 3 — and stop " +
+                    "there: a step that goes back down or repeats makes the service oscillate " +
+                    "between two modes all night long, one chunk rotation each time.",
                 steps,
             )
             .isEqualTo(listOf(1, 2, 3))
@@ -198,107 +198,107 @@ class GapMonitorTest {
     }
 
     // -------------------------------------------------------------------------------------
-    // Signal de fenetre : deficit sur 60 s de temps capteur
+    // Window signal: deficit over 60 s of sensor time
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("un capteur qui livre 40 Hz au lieu de 50 est vu par la fenetre, pas par l'intra-lot")
-    fun `deficit de fenetre sans trou intra-lot`() {
+    @DisplayName("a sensor delivering 40 Hz for 50 is seen by the window, not by the intra-batch")
+    fun `window deficit without an intra-batch gap`() {
         val monitor = GapMonitor(50)
-        // Ecarts de 25 ms : chacun est tres loin du seuil intra-lot de 60 ms, mais il manque
-        // 20 % des echantillons. Sans le signal de fenetre, cette nuit passerait pour saine et
-        // tous les filtres de l'analyse tourneraient avec un fs faux de 20 %.
-        val flux = Flux(monitor, T0, periodNs = 25_000_000L)
-        flux.regularUntil(T0 + 60_000_000_000L)
+        // Intervals of 25 ms: each one is very far from the 60 ms intra-batch threshold, yet 20 %
+        // of the samples are missing. Without the window signal, this night would pass for
+        // healthy and every filter of the analysis would run with an fs wrong by 20 %.
+        val feed = Feed(monitor, T0, periodNs = 25_000_000L)
+        feed.regularUntil(T0 + 60_000_000_000L)
 
-        assertThat(flux.flagged).isZero() // l'intra-lot ne voit rien : c'est le point
+        assertThat(feed.flagged).isZero() // the intra-batch signal sees nothing: that is the point
         assertThat(monitor.gapCount).isEqualTo(1)
-        // 3000 attendus, 2401 recus : 599 manquants a 20 ms piece = 11 980 ms.
+        // 3000 expected, 2401 received: 599 missing at 20 ms each = 11,980 ms.
         assertThat(monitor.gapTotalMs).isEqualTo(11_980)
         assertThat(monitor.measuredRateHz).isCloseTo(40.0, within(0.1))
         assertThat(monitor.rateDeviates)
             .withFailMessage(
-                "fs mesure a 40 Hz pour 50 nominal sans que rateDeviates leve. Un fs faux " +
-                    "decale toutes les durees de mouvement de la chaine d'analyse de 20 %%.",
+                "fs measured at 40 Hz for a nominal 50 without rateDeviates being raised. A " +
+                    "wrong fs shifts every movement duration of the analysis chain by 20 %%.",
             )
             .isTrue()
     }
 
     @Test
-    @DisplayName("le fs mesure reste a zero tant qu'aucune fenetre de 60 s n'est close")
-    fun `fs mesure avant la premiere fenetre`() {
+    @DisplayName("the measured fs stays at zero as long as no 60 s window has closed")
+    fun `measured fs before the first window`() {
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
-        flux.regularUntil(T0 + 59_000_000_000L)
+        val feed = Feed(monitor, T0)
+        feed.regularUntil(T0 + 59_000_000_000L)
 
-        // Un fs « mesure » sur trois secondes de donnees serait un mensonge de precision :
-        // 0 dit honnetement « pas encore de mesure », et l'appelant peut l'afficher tel quel.
+        // An fs "measured" over three seconds of data would be a lie of precision: 0 honestly
+        // says "no measurement yet", and the caller can display it as it is.
         assertThat(monitor.measuredRateHz).isEqualTo(0.0)
 
-        flux.regularUntil(T0 + 60_000_000_000L)
+        feed.regularUntil(T0 + 60_000_000_000L)
         assertThat(monitor.measuredRateHz).isCloseTo(50.0, within(0.1))
         assertThat(monitor.rateDeviates).isFalse()
     }
 
     // -------------------------------------------------------------------------------------
-    // Dispersion : ce que la moyenne ne dit pas
+    // Dispersion: what the mean does not say
     // -------------------------------------------------------------------------------------
 
-    /** Alterne deux intervalles dont la moyenne vaut exactement la periode nominale. */
-    private fun fluxAlterne(monitor: GapMonitor, courtNs: Long, longNs: Long, jusquaNs: Long) {
+    /** Alternates two intervals whose mean is exactly the nominal period. */
+    private fun alternatingFeed(monitor: GapMonitor, shortNs: Long, longNs: Long, untilNs: Long) {
         var t = T0
         monitor.onSample(t)
         var i = 0
-        while (t < jusquaNs) {
-            t += if (i % 2 == 0) courtNs else longNs
+        while (t < untilNs) {
+            t += if (i % 2 == 0) shortNs else longNs
             monitor.onSample(t)
             i++
         }
     }
 
     @Test
-    @DisplayName("une cadence parfaite a une dispersion nulle")
-    fun `dispersion nulle sur une cadence reguliere`() {
+    @DisplayName("a perfect rate has zero dispersion")
+    fun `zero dispersion on a regular rate`() {
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
-        flux.regularUntil(T0 + 60_000_000_000L)
+        val feed = Feed(monitor, T0)
+        feed.regularUntil(T0 + 60_000_000_000L)
 
-        // Assertion inversee : une dispersion qui ne serait jamais nulle ne distinguerait plus
-        // rien. Et le calcul par difference de moments doit rendre 0, pas un NaN d'annulation.
+        // An inverted assertion: a dispersion that was never zero would no longer distinguish
+        // anything. And the difference-of-moments computation must give 0, not a cancellation NaN.
         assertThat(monitor.jitterStdUs).isEqualTo(0.0)
         assertThat(monitor.maxIntervalUs).isEqualTo(20_000L)
     }
 
     @Test
-    @DisplayName("une cadence qui alterne 10 et 30 ms rend un fs parfait — et une dispersion de 10 ms")
-    fun `la moyenne ne voit pas la gigue`() {
+    @DisplayName("a rate alternating 10 and 30 ms yields a perfect fs — and a dispersion of 10 ms")
+    fun `the mean does not see the jitter`() {
         val monitor = GapMonitor(50)
-        fluxAlterne(monitor, 10_000_000L, 30_000_000L, T0 + 60_000_000_000L)
+        alternatingFeed(monitor, 10_000_000L, 30_000_000L, T0 + 60_000_000_000L)
 
-        // Le point de tout ce mecanisme, en trois lignes : tout ce que le moniteur savait dire
-        // avant est **vert**. 50 Hz pile, aucune deviation, aucun trou.
+        // The point of this whole mechanism, in three lines: everything the monitor could say
+        // before is **green**. Exactly 50 Hz, no deviation, no gap.
         assertThat(monitor.measuredRateHz).isCloseTo(50.0, within(0.1))
         assertThat(monitor.rateDeviates).isFalse()
         assertThat(monitor.gapCount).isZero()
 
-        // Et pourtant chaque echantillon est date a 10 ms pres. Le format n'a pas d'horodatage par
-        // echantillon : il interpole lineairement entre `tFirstNs` et `tLastNs`, et cette
-        // interpolation est fausse d'autant que les intervalles sont disperses. C'est ce chiffre,
-        // et lui seul, qui dit si un mouvement a ete date ou seulement situe.
+        // And yet every sample is dated only to within 10 ms. The format has no per-sample
+        // timestamp: it interpolates linearly between `tFirstNs` and `tLastNs`, and that
+        // interpolation is wrong in proportion to how dispersed the intervals are. It is this
+        // figure, and it alone, that says whether a movement was dated or merely located.
         assertThat(monitor.jitterStdUs).isCloseTo(10_000.0, within(1.0))
         assertThat(monitor.maxIntervalUs).isEqualTo(30_000L)
     }
 
     @Test
-    @DisplayName("la dispersion d'une fenetre ne deborde pas sur la suivante")
-    fun `la dispersion repart de zero a chaque fenetre`() {
+    @DisplayName("the dispersion of one window does not spill over into the next")
+    fun `dispersion restarts from zero at each window`() {
         val monitor = GapMonitor(50)
-        fluxAlterne(monitor, 10_000_000L, 30_000_000L, T0 + 60_000_000_000L)
+        alternatingFeed(monitor, 10_000_000L, 30_000_000L, T0 + 60_000_000_000L)
         assertThat(monitor.jitterStdUs).isGreaterThan(1_000.0)
 
-        // Seconde fenetre, reguliere. Sans remise a zero des accumulateurs, la telemetrie
-        // continuerait d'annoncer une gigue eteinte depuis une minute — une panne resolue qui
-        // reste affichee est aussi trompeuse qu'une panne manquee.
+        // Second window, regular. Without resetting the accumulators, the telemetry would keep
+        // announcing a jitter that has been gone for a minute — a failure that has been resolved
+        // but stays on display is as misleading as a failure that was missed.
         var t = T0 + 60_000_000_000L
         while (t < T0 + 120_000_000_000L) {
             t += PERIOD
@@ -309,27 +309,27 @@ class GapMonitorTest {
     }
 
     @Test
-    @DisplayName("un gros trou ne fait pas deborder l'accumulateur de variance")
-    fun `pas de debordement sur un trou de plusieurs secondes`() {
-        // La somme des carres se fait en microsecondes et non en nanosecondes : en nanosecondes,
-        // un trou de 3 s vaut 9e18, a un facteur 1,03 du plus grand Long, et un seul suffisait a
-        // rendre une variance negative — donc un ecart-type NaN.
+    @DisplayName("a big gap does not overflow the variance accumulator")
+    fun `no overflow on a gap of several seconds`() {
+        // The sum of squares is done in microseconds and not in nanoseconds: in nanoseconds, a
+        // 3 s gap is worth 9e18, within a factor of 1.03 of the largest Long, and a single one
+        // was enough to yield a negative variance — hence a NaN standard deviation.
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
-        flux.regularUntil(T0 + 10_000_000_000L)
-        flux.hole(30_000_000_000L)
-        flux.regularUntil(T0 + 61_000_000_000L)
+        val feed = Feed(monitor, T0)
+        feed.regularUntil(T0 + 10_000_000_000L)
+        feed.hole(30_000_000_000L)
+        feed.regularUntil(T0 + 61_000_000_000L)
 
         assertThat(monitor.jitterStdUs).isNotNaN().isGreaterThan(0.0)
         assertThat(monitor.maxIntervalUs).isEqualTo(30_000_000L)
     }
 
     @Test
-    @DisplayName("le dernier horodatage capteur est lisible, et remis a zero par une re-inscription")
-    fun `dernier horodatage expose`() {
-        // C'est lui qui ancre un point de telemetrie sur la base de temps des echantillons : sans
-        // lui, aligner « la temperature a chute » sur « ce mouvement a ete rejete » passerait par
-        // une conversion d'horloge dont la mesure du 3 aout 2026 montre qu'elle derive.
+    @DisplayName("the last sensor timestamp is readable, and reset to zero by a re-registration")
+    fun `last timestamp exposed`() {
+        // It is what anchors a telemetry point on the samples' time base: without it, aligning
+        // "the temperature dropped" with "this movement was rejected" would go through a clock
+        // conversion that the measurement of 3 August 2026 shows to drift.
         val monitor = GapMonitor(50)
         assertThat(monitor.lastTimestampNs).isZero()
         monitor.onSample(T0)
@@ -341,82 +341,82 @@ class GapMonitorTest {
     }
 
     // -------------------------------------------------------------------------------------
-    // Re-inscription du capteur
+    // Sensor re-registration
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("apres onRateChanged, la discontinuite de re-inscription n'est pas comptee")
-    fun `re-inscription sans trou auto-inflige`() {
+    @DisplayName("after onRateChanged, the discontinuity of the re-registration is not counted")
+    fun `re-registration without a self-inflicted gap`() {
         val monitor = GapMonitor(50)
         monitor.onSample(T0)
         monitor.onSample(T0 + PERIOD)
 
         monitor.onRateChanged(25)
 
-        // La re-inscription rompt la continuite : le premier echantillon du nouveau regime
-        // arrive bien plus tard, et ce silence est notre fait, pas celui du capteur.
+        // The re-registration breaks continuity: the first sample of the new regime arrives much
+        // later, and that silence is our doing, not the sensor's.
         val t1 = T0 + 100_000_000_000L
         assertThat(monitor.onSample(t1)).isFalse()
         assertThat(monitor.gapCount).isZero()
 
-        // Et le seuil suit la nouvelle periode : 100 ms passent a 25 Hz (seuil 120 ms) alors
-        // qu'ils etaient un trou a 50 Hz — sinon le palier 3 se punirait lui-meme.
+        // And the threshold follows the new period: 100 ms passes at 25 Hz (threshold 120 ms)
+        // where it was a gap at 50 Hz — otherwise step 3 would punish itself.
         assertThat(monitor.onSample(t1 + 100_000_000L)).isFalse()
         assertThat(monitor.onSample(t1 + 100_000_000L + 121_000_000L)).isTrue()
     }
 
     // -------------------------------------------------------------------------------------
-    // Le double comptage, et les deux defauts trouves avec lui
+    // Double counting, and the two defects found along with it
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("un trou physique n'est compte qu'une fois, meme quand la fenetre le voit aussi")
-    fun `pas de double comptage d un gros trou`() {
+    @DisplayName("a physical gap is counted only once, even when the window sees it too")
+    fun `no double counting of a big gap`() {
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
+        val feed = Feed(monitor, T0)
 
-        // Un unique trou de 25 s. Le signal intra-lot le compte a son arrivee ; la fenetre de
-        // 60 s constate ensuite le meme deficit, et doit reconnaitre qu'il a deja ete impute.
-        flux.regularUntil(T0 + 10_000_000_000L)
-        flux.hole(25_000_000_000L)
-        flux.regularUntil(T0 + 60_000_000_000L)
+        // A single gap of 25 s. The intra-batch signal counts it on arrival; the 60 s window then
+        // observes the same deficit, and must recognise that it has already been attributed.
+        feed.regularUntil(T0 + 10_000_000_000L)
+        feed.hole(25_000_000_000L)
+        feed.regularUntil(T0 + 60_000_000_000L)
 
-        // Un trou physique, une entree. Avant correction il y en avait deux : `gapCount` et
-        // `gapTotalMs` doublaient, et surtout **deux** trous physiques dans une meme fenetre
-        // suffisaient a escalader la ou la regle en annonce trois.
+        // One physical gap, one entry. Before the fix there were two: `gapCount` and `gapTotalMs`
+        // doubled, and above all **two** physical gaps within a single window were enough to
+        // escalate where the rule announces three.
         //
-        // Ce n'etait pas une imprecision cosmetique. Chaque palier prend un `PARTIAL_WAKE_LOCK` :
-        // escalader une fois et demie trop vite, c'est passer la nuit sous wake lock, depenser
-        // 65 % de batterie et invalider la mesure d'autonomie de la phase P1 — le cout exact que
-        // la KDoc de `GapMonitor` dit vouloir eviter.
+        // This was not a cosmetic imprecision. Every step takes a `PARTIAL_WAKE_LOCK`: escalating
+        // one and a half times too fast means spending the night under wake lock, spending 65 %
+        // of the battery and invalidating the battery-life measurement of phase P1 — the exact
+        // cost that the KDoc of `GapMonitor` says it wants to avoid.
         assertThat(monitor.gapCount).isEqualTo(1)
         assertThat(monitor.step).isZero()
 
-        // Deux trous physiques : toujours pas d'escalade. La regle des trois tient.
-        flux.regularUntil(T0 + 70_000_000_000L)
-        flux.hole(25_000_000_000L)
+        // Two physical gaps: still no escalation. The rule of three holds.
+        feed.regularUntil(T0 + 70_000_000_000L)
+        feed.hole(25_000_000_000L)
         assertThat(monitor.step).isZero()
 
-        // Trois : elle monte, et pas avant.
-        flux.regularUntil(T0 + 130_000_000_000L)
-        flux.hole(25_000_000_000L)
+        // Three: it climbs, and not before.
+        feed.regularUntil(T0 + 130_000_000_000L)
+        feed.hole(25_000_000_000L)
         assertThat(monitor.step).isEqualTo(1)
         assertThat(monitor.consumePendingStep()).isEqualTo(1)
     }
 
     @Test
-    @DisplayName("un capteur plus rapide que sa cadence nominale ne fait pas REGRESSER le temps perdu")
-    fun `pas de deficit negatif`() {
+    @DisplayName("a sensor faster than its nominal rate does not make the lost time GO BACKWARDS")
+    fun `no negative deficit`() {
         val monitor = GapMonitor(50)
 
-        // 51 Hz delivres pour 50 demandes : la fenetre recoit plus d'echantillons qu'attendu.
-        // Avant correction, `expected - windowCount` etait negatif et `gapTotalMs` **diminuait** —
-        // le compteur de temps perdu se mettait a en regagner, ce qu'aucune lecture ne detecte.
-        val periode = 1_000_000_000L / 51
+        // 51 Hz delivered for 50 requested: the window receives more samples than expected.
+        // Before the fix, `expected - windowCount` was negative and `gapTotalMs` **decreased** —
+        // the lost-time counter started winning time back, which no reading detects.
+        val period = 1_000_000_000L / 51
         var t = T0
         repeat(3_500) {
             monitor.onSample(t)
-            t += periode
+            t += period
         }
 
         assertThat(monitor.gapTotalMs).isGreaterThanOrEqualTo(0)
@@ -424,22 +424,22 @@ class GapMonitorTest {
     }
 
     @Test
-    @DisplayName("un horodatage qui recule est ignore, il ne corrompt pas la fenetre")
-    fun `horodatage retrograde`() {
+    @DisplayName("a timestamp that goes backwards is ignored, it does not corrupt the window")
+    fun `backwards timestamp`() {
         val monitor = GapMonitor(50)
-        val flux = Flux(monitor, T0)
-        flux.regularUntil(T0 + 30_000_000_000L)
-        val comptesAvant = monitor.gapCount
+        val feed = Feed(monitor, T0)
+        feed.regularUntil(T0 + 30_000_000_000L)
+        val countsBefore = monitor.gapCount
 
-        // Les couches capteur d'Android font parfois repartir les horodatages en arriere en mode
-        // batche. Laisser passer l'echantillon rendait `spanNs` negatif a la cloture, donc
-        // `expected` aussi, donc le deficit ne se declenchait plus jamais — et `windowStartNs`
-        // repartait dans le passe, ce dont la fenetre suivante ne se remettait pas.
+        // Android's sensor layers sometimes make the timestamps restart backwards in batched
+        // mode. Letting the sample through made `spanNs` negative when the window closed, so
+        // `expected` too, so the deficit never fired again — and `windowStartNs` restarted in the
+        // past, which the next window did not recover from.
         assertThat(monitor.onSample(T0 + 10_000_000_000L)).isFalse()
-        assertThat(monitor.gapCount).isEqualTo(comptesAvant)
+        assertThat(monitor.gapCount).isEqualTo(countsBefore)
 
-        // La suite normale reprend sans sequelle.
-        flux.regularUntil(T0 + 65_000_000_000L)
+        // The normal sequence resumes with no after-effects.
+        feed.regularUntil(T0 + 65_000_000_000L)
         assertThat(monitor.measuredRateHz).isCloseTo(50.0, within(2.0))
     }
 }

@@ -4,26 +4,26 @@ import com.pendulum.format.wire.PreviewEnvelopeCodec
 import kotlin.math.sqrt
 
 /**
- * Enveloppe RMS decimee a 1 Hz sur les quinze dernieres minutes, quantifiee u8 logarithmique :
- * 900 octets qui voyagent dans une salve deja payee, pour environ +0,3 % de son volume et
- * **zero reveil radio supplementaire**.
+ * RMS envelope decimated to 1 Hz over the last fifteen minutes, quantised as a logarithmic u8:
+ * 900 bytes riding along in a burst already paid for, for about +0.3 % of its volume and **zero
+ * extra radio wake-up**.
  *
- * **Cet apercu ne sert jamais au calcul.** Tout chiffre publie est recalcule sur les chunks
- * bruts, cote telephone. Ici : preuve de vie et forme du signal, rien d'autre.
+ * **This preview is never used for computation.** Every published figure is recomputed from the
+ * raw chunks, on the phone side. Here: proof of life and the shape of the signal, nothing else.
  *
- * Le passe-haut est une simple soustraction de moyenne glissante exponentielle : la gravite est
- * quasi continue, le mouvement ne l'est pas. On ne reutilise pas `:algo`, dont les fonctions
- * travaillent sur des signaux materialises alors qu'ici tout est en flux, echantillon par
- * echantillon, sur un budget de calcul qui doit rester invisible dans la consommation.
+ * The high-pass filter is a plain subtraction of an exponential moving average: gravity is very
+ * nearly constant, movement is not. `:algo` is not reused: its functions work on materialised
+ * signals, whereas here everything is streamed, sample by sample, on a computation budget that
+ * must stay invisible in the power draw.
  */
 class PreviewEnvelope(
     rateHz: Int,
-    /** Appele a chaque seconde close. Le detecteur de reveil s'y branche : il n'y a aucune
-     *  raison de recalculer une seconde fois une RMS qui vient d'etre produite. */
+    /** Called on every closed second. The wake detector hooks in here: there is no reason to
+     *  compute a second time an RMS that has just been produced. */
     private val onSecond: (rms: Double, tsNs: Long) -> Unit = { _, _ -> },
 ) {
 
-    /** Constante de temps du retrait de gravite, en secondes. */
+    /** Time constant of the gravity removal, in seconds. */
     private val tauSec = 0.5
 
     private var alpha = 1.0 / (tauSec * rateHz + 1.0)
@@ -36,7 +36,7 @@ class PreviewEnvelope(
     private var sumSq = 0.0
     private var n = 0
 
-    /** Tampon circulaire des 900 dernieres secondes. */
+    /** Ring buffer of the last 900 seconds. */
     private val ring = DoubleArray(PreviewEnvelopeCodec.LENGTH)
     private var head = 0
     private var filled = 0
@@ -77,9 +77,9 @@ class PreviewEnvelope(
     }
 
     /**
-     * Fenetre de 900 octets, l'octet le plus recent en queue. Une nuit qui vient de commencer
-     * est completee a zero **en tete**, ce qui evite au telephone d'avoir a savoir depuis
-     * combien de temps elle dure.
+     * Window of 900 bytes, the most recent byte at the tail. A night that has only just begun is
+     * padded with zeros **at the head**, which spares the phone from having to know how long it
+     * has been running.
      */
     fun snapshot(): ByteArray {
         val values = DoubleArray(filled)

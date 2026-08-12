@@ -1,73 +1,73 @@
 #!/usr/bin/env bash
-# Le transfert reel montre -> telephone, et l'invariant qui le tient : aucun fichier n'est efface
-# de la montre avant que le telephone n'ait accuse sa reception.
+# The real watch -> phone transfer, and the invariant that holds it: no file is erased from the
+# watch before the phone has acknowledged receiving it.
 #
-# Ce script existe parce que la fenetre a mesurer est courte. Entre l'instant ou le telephone
-# ecrit sa ligne en base et celui ou la montre efface le fichier, il y a un aller-retour du Data
-# Layer ; le mesurer depuis WSL, une commande ssh a la fois, mettrait plus de temps a poser la
-# question qu'il n'en faut a la reponse pour changer. Toute la sequence chronometree tient donc
-# dans une seule invocation sur le Mac.
+# This script exists because the window to be measured is short. Between the moment the phone
+# writes its row in the database and the moment the watch erases the file, there is one Data Layer
+# round trip; measuring it from WSL, one ssh command at a time, would take longer to ask the
+# question than the answer takes to change. The whole timed sequence therefore fits in a single
+# invocation on the Mac.
 #
-# Deux prealables, decouverts et non supposes :
+# Two preconditions, discovered and not assumed:
 #
-#  - **La montre est sur son socle**, puisque c'est son seul lien USB. `BatteryManager.isCharging`
-#    y rend vrai, et `StopConditions` arrete alors la nuit au bout de `antiRebondChargeMs` — 240 ms
-#    a l'echelle du banc. Sans `dumpsys battery unplug`, aucun enregistrement ne survit une seconde.
-#    C'est reversible par `dumpsys battery reset`, et `restaurer` le fait et le verifie.
-#  - **L'ecran doit etre reveille avant chaque geste** : en mode ambiant, `input tap` s'execute
-#    sans erreur et ne tape sur rien (§7.4). On ne touche ni `screen_off_timeout` ni
-#    `svc power stayon` : le premier vaut deja 600 000 ms sur cet appareil, et le second est sans
-#    effet une fois la batterie declaree debranchee.
+#  - **The watch is on its dock**, since that is its only USB link. `BatteryManager.isCharging`
+#    returns true there, and `StopConditions` then stops the night after `chargingDebounceMs` —
+#    240 ms at the bench scale. Without `dumpsys battery unplug`, no recording survives a second.
+#    It is reversible with `dumpsys battery reset`, and `restaurer` does it and checks it.
+#  - **The screen must be woken before every gesture**: in ambient mode, `input tap` runs without
+#    error and taps on nothing (§7.4). Neither `screen_off_timeout` nor `svc power stayon` is
+#    touched: the first is already 600,000 ms on this device, and the second has no effect once the
+#    battery is declared unplugged.
 #
-# Usage, depuis la racine d'une copie du depot :
-#     bash tools/banc/transfert.sh etat      <montre> <telephone>
-#     bash tools/banc/transfert.sh preparer  <montre>
-#     bash tools/banc/transfert.sh mesurer   <montre> <telephone> <secondes> <dossier>
-#     bash tools/banc/transfert.sh restaurer <montre>
+# Usage, from the root of a checkout:
+#     bash tools/banc/transfert.sh etat      <watch> <phone>
+#     bash tools/banc/transfert.sh preparer  <watch>
+#     bash tools/banc/transfert.sh mesurer   <watch> <phone> <seconds> <folder>
+#     bash tools/banc/transfert.sh restaurer <watch>
 #
-# Chaque commande emet des marqueurs `TRANSFERT_*` : ssh ne propage pas fiablement les codes de
-# sortie, l'appelant lit les marqueurs.
+# Every command emits `TRANSFERT_*` markers: ssh does not reliably propagate exit codes, so the
+# caller reads the markers.
 set -o pipefail
 
 ADB="${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}"
-RACINE="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$RACINE" || exit 1
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT" || exit 1
 
-horodate() { python3 -c 'import time; print(int(time.time()*1000))'; }
+timestamp() { python3 -c 'import time; print(int(time.time()*1000))'; }
 
-reveiller() {
+wake() {
   "$ADB" -s "$1" shell input keyevent KEYCODE_WAKEUP </dev/null >/dev/null 2>&1
   sleep 0.4
 }
 
-# Un geste sur la montre, en faisant defiler tant que la cible n'est pas dans l'arbre.
-# `uiautomator` ne dumpe que ce qui est **rendu** : sur une colonne Wear, START et STOP sont sous
-# le pli, donc absents du dump tant qu'on n'a pas fait defiler. Chercher sans defiler rend
-# « motif absent », ce qui ressemble a un ecran qui n'est pas le bon.
-geste() {
-  local s="$1" verbe="$2" motif="$3" extra="$4" i r
+# One gesture on the watch, scrolling for as long as the target is not in the tree.
+# `uiautomator` only dumps what is **rendered**: on a Wear column, START and STOP are below the
+# fold, hence absent from the dump until something has scrolled. Searching without scrolling
+# returns "pattern absent", which looks like a screen that is not the right one.
+gesture() {
+  local s="$1" verb="$2" pattern="$3" extra="$4" i r
   for i in 1 2 3 4 5 6; do
-    # Reveiller **avant chaque tentative**, et pas une fois pour toutes. Une Wear OS retombe en
-    # mode ambiant en une dizaine de secondes, et un `uiautomator dump` en coute deja trois :
-    # l'ecran lu au debut de la boucle n'est plus celui qu'on touche a la fin. Sous le cadran,
-    # `input tap` s'execute sans erreur et ne tape sur rien, et le dump ne rend que l'heure.
-    # `svc power stayon true` ne remplace pas ce reveil ici : la batterie est declaree
-    # debranchee (voir `preparer`), donc le maintien ecran-allume-sur-secteur ne s'applique pas.
-    reveiller "$s"
-    r=$(python3 tools/banc/uictl.py "$s" "$verbe" "$motif" $extra </dev/null 2>&1 | tail -1)
+    # Wake **before every attempt**, and not once and for all. A Wear OS falls back to ambient
+    # mode in about ten seconds, and a `uiautomator dump` already costs three: the screen read at
+    # the start of the loop is no longer the one being touched at the end. Under the watch face,
+    # `input tap` runs without error and taps on nothing, and the dump only returns the time.
+    # `svc power stayon true` does not replace this wake here: the battery is declared unplugged
+    # (see `preparer`), so screen-on-while-charging does not apply.
+    wake "$s"
+    r=$(python3 tools/banc/uictl.py "$s" "$verb" "$pattern" $extra </dev/null 2>&1 | tail -1)
     case "$r" in
       *UICTL_OK*) echo "$r"; return 0 ;;
     esac
     "$ADB" -s "$s" shell input swipe 228 380 228 150 250 </dev/null >/dev/null 2>&1
     sleep 0.7
   done
-  echo "TRANSFERT_GESTE_FAIL $verbe $motif"
+  echo "TRANSFERT_GESTE_FAIL $verb $pattern"
   return 1
 }
 
 etat() {
   local m="$1" t="$2"
-  echo "TRANSFERT_ETAT_HOTE $(horodate)"
+  echo "TRANSFERT_ETAT_HOTE $(timestamp)"
   echo "TRANSFERT_ETAT_MONTRE_MS $("$ADB" -s "$m" shell date +%s%3N </dev/null | tr -d '\r')"
   echo "TRANSFERT_ETAT_TEL_MS $("$ADB" -s "$t" shell date +%s%3N </dev/null | tr -d '\r')"
   echo "TRANSFERT_ETAT_BATTERIE $("$ADB" -s "$m" shell dumpsys battery </dev/null | grep -E 'AC powered|status:|level:' | tr -d '\r' | tr '\n' ' ')"
@@ -81,30 +81,30 @@ etat() {
 preparer() {
   local m="$1"
   "$ADB" -s "$m" shell dumpsys battery unplug </dev/null >/dev/null 2>&1
-  # `unplug` seul ne suffit pas : il retire les sources d'alimentation mais **laisse `status` a 5**
-  # (FULL), et `BatteryManager.isCharging()` rend vrai pour FULL comme pour CHARGING. Sur une
-  # montre a 100 % posee sur son socle, c'est exactement le cas. Il faut donc aussi declarer la
-  # decharge. `dumpsys battery reset` defait les deux.
+  # `unplug` alone is not enough: it removes the power sources but **leaves `status` at 5** (FULL),
+  # and `BatteryManager.isCharging()` returns true for FULL just as for CHARGING. On a watch at
+  # 100 % sitting on its dock, that is exactly the case. Discharge must therefore be declared too.
+  # `dumpsys battery reset` undoes both.
   "$ADB" -s "$m" shell dumpsys battery set status 3 </dev/null >/dev/null 2>&1
   sleep 1
-  local etat_batt
-  etat_batt="$("$ADB" -s "$m" shell dumpsys battery </dev/null | grep -E 'AC powered|status:' | tr -d '\r' | tr '\n' ' ')"
-  echo "TRANSFERT_PREPARE $etat_batt"
+  local battery_state
+  battery_state="$("$ADB" -s "$m" shell dumpsys battery </dev/null | grep -E 'AC powered|status:' | tr -d '\r' | tr '\n' ' ')"
+  echo "TRANSFERT_PREPARE $battery_state"
 }
 
 restaurer() {
   local m="$1"
   "$ADB" -s "$m" shell dumpsys battery reset </dev/null >/dev/null 2>&1
   sleep 1
-  local etat_batt
-  etat_batt="$("$ADB" -s "$m" shell dumpsys battery </dev/null | grep -E 'AC powered|status:|level:' | tr -d '\r' | tr '\n' ' ')"
-  echo "TRANSFERT_RESTAURE $etat_batt"
+  local battery_state
+  battery_state="$("$ADB" -s "$m" shell dumpsys battery </dev/null | grep -E 'AC powered|status:|level:' | tr -d '\r' | tr '\n' ' ')"
+  echo "TRANSFERT_RESTAURE $battery_state"
 }
 
-# La sequence chronometree. Tout ce qui suit se joue sans retour a l'appelant : c'est la seule
-# facon d'avoir des instants comparables.
+# The timed sequence. Everything below plays out without returning to the caller: that is the only
+# way to get comparable instants.
 mesurer() {
-  local m="$1" t="$2" duree="$3" dir="$4"
+  local m="$1" t="$2" duration="$3" dir="$4"
   mkdir -p "$dir"
   local U="python3 tools/banc/uictl.py"
 
@@ -116,57 +116,56 @@ mesurer() {
   "$ADB" -s "$t" logcat -v epoch -s PendulumIngest:V >"$dir/telephone.log" 2>&1 </dev/null &
   local pid_lt=$!
 
-  # La sonde couvre toute la sequence, demarrage compris : elle doit avoir montre les disques
-  # vides avant que quoi que ce soit n'y apparaisse, sinon « le fichier existait deja » reste
-  # une hypothese.
+  # The probe covers the whole sequence, start-up included: it must have shown the disks empty
+  # before anything appeared on them, otherwise "the file was already there" stays a hypothesis.
   local total
-  total=$(python3 -c "print(int($duree) + 75)")
+  total=$(python3 -c "print(int($duration) + 75)")
   python3 tools/banc/sonde_transfert.py "$m" "$t" "$total" 250 >"$dir/sonde.txt" 2>&1 </dev/null &
-  local pid_sonde=$!
+  local pid_probe=$!
   sleep 2
 
-  reveiller "$m"
+  wake "$m"
   "$ADB" -s "$m" shell am start -n com.pendulum/.wear.ui.MainActivity </dev/null >/dev/null 2>&1
   sleep 3
-  reveiller "$m"
+  wake "$m"
   echo "TRANSFERT_PREFLIGHT_ECRAN"
   $U "$m" dump </dev/null 2>&1 | grep -o 'text="[^"]*"' | sort -u | tr '\n' ' '
   echo
 
   local t0
-  t0=$(horodate)
-  geste "$m" tap "START"
+  t0=$(timestamp)
+  gesture "$m" tap "START"
   echo "TRANSFERT_START_MS $t0"
 
-  sleep "$duree"
+  sleep "$duration"
 
-  reveiller "$m"
+  wake "$m"
   echo "TRANSFERT_ECRAN_ENREGISTREMENT"
   $U "$m" dump </dev/null 2>&1 | grep -o 'text="[^"]*"' | sort -u | tr '\n' ' '
   echo
 
-  # L'arret, et son repli. Un enregistrement qui survit au banc est le seul risque reel pour
-  # l'appareil de quelqu'un : on ne sort pas d'ici sans l'avoir ferme. Le chemin nominal est le
-  # geste du produit — appui long puis confirmation. S'il echoue, on redeclare la montre en
-  # charge : `StopConditions` ferme alors la nuit **proprement**, avec `StopReason.CHARGING`,
-  # fichier courant clos et salve finale urgente. C'est un chemin du produit, pas un `kill`.
-  local t1 moyen
-  t1=$(horodate)
-  moyen=ECRAN
-  if geste "$m" presse "=STOP" 900; then
+  # The stop, and its fallback. A recording that survives the bench is the only real risk to
+  # somebody's device: we do not leave here without having closed it. The nominal path is the
+  # product's own gesture — long press then confirmation. If that fails, the watch is declared
+  # charging again: `StopConditions` then closes the night **cleanly**, with `StopReason.CHARGING`,
+  # the current file closed and a final urgent burst. That is a product path, not a `kill`.
+  local t1 means
+  t1=$(timestamp)
+  means=ECRAN
+  if gesture "$m" presse "=STOP" 900; then
     sleep 1
-    geste "$m" tap "Confirm stopping the night" || moyen=CHARGEUR
+    gesture "$m" tap "Confirm stopping the night" || means=CHARGEUR
   else
-    moyen=CHARGEUR
+    means=CHARGEUR
   fi
-  if [ "$moyen" = CHARGEUR ]; then
+  if [ "$means" = CHARGEUR ]; then
     "$ADB" -s "$m" shell dumpsys battery reset </dev/null >/dev/null 2>&1
   fi
-  echo "TRANSFERT_STOP_MS $t1 moyen=$moyen"
+  echo "TRANSFERT_STOP_MS $t1 moyen=$means"
 
-  # Le reste de la fenetre appartient a la sonde : la salve finale, l'ingestion, l'accuse et les
-  # suppressions arrivent apres l'arret du capteur.
-  wait $pid_sonde
+  # The rest of the window belongs to the probe: the final burst, the ingestion, the acknowledgement
+  # and the deletions all arrive after the sensor has stopped.
+  wait $pid_probe
   kill $pid_lm $pid_lt 2>/dev/null
   sleep 1
   echo "TRANSFERT_MESURE_FIN $dir"
@@ -177,5 +176,5 @@ case "$1" in
   preparer)  preparer "$2" ;;
   restaurer) restaurer "$2" ;;
   mesurer)   mesurer "$2" "$3" "$4" "$5" ;;
-  *) echo "TRANSFERT_FAIL commande inconnue: $1" ;;
+  *) echo "TRANSFERT_FAIL unknown command: $1" ;;
 esac

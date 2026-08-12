@@ -14,8 +14,8 @@ private const val MIN = 60_000L
 private const val HOUR = 3_600_000L
 
 /**
- * Masque accelerometrique de reference : 8 h au lit, un eveil de 20 min a 3 h du matin.
- * Construit a la main plutot que par [ImmobilityMask] : ce fichier teste la fusion, pas le scorage.
+ * Reference accelerometer mask: 8 h in bed, a 20 min wake at 3 in the morning.
+ * Built by hand rather than by [ImmobilityMask]: this file tests the fusion, not the scoring.
  */
 private fun accelMask(
     independence: DenominatorIndependence = DenominatorIndependence.CIRCULAR,
@@ -43,12 +43,12 @@ private fun shifted(windows: List<SleepWindow>, byMs: Long): List<SleepWindow> =
 class MaskFusionTest {
 
     /**
-     * Le recalage doit retrouver un decalage injecte. Deux montres, deux horloges : sans cette
-     * correction, deux minutes d'ecart suffisent a faire basculer des mouvements de part et d'autre
-     * de l'endormissement, donc a les imputer au mauvais stade.
+     * The realignment must recover an injected lag. Two watches, two clocks: without this
+     * correction, two minutes of difference are enough to tip movements to either side of sleep
+     * onset, and so to charge them to the wrong stage.
      */
     @Test
-    fun `recherche de decalage - un decalage injecte est retrouve`() {
+    fun `lag search - an injected lag is recovered`() {
         val accel = accelMask()
         val hc = shifted(accel.windows, -2 * MIN)
 
@@ -61,7 +61,7 @@ class MaskFusionTest {
     }
 
     @Test
-    fun `recherche de decalage - a accord egal le plus petit decalage gagne`() {
+    fun `lag search - at equal agreement the smallest lag wins`() {
         val accel = accelMask()
 
         val agreement = MaskFusion.align(accel, accel.windows)
@@ -72,7 +72,7 @@ class MaskFusionTest {
     }
 
     @Test
-    fun `un decalage superieur a cinq minutes est suspect`() {
+    fun `a lag greater than five minutes is suspect`() {
         val accel = accelMask()
         val hc = shifted(accel.windows, -7 * MIN)
 
@@ -83,17 +83,17 @@ class MaskFusionTest {
     }
 
     @Test
-    fun `accord nul quand l'un des masques est vide`() {
+    fun `no agreement when one of the masks is empty`() {
         val agreement = MaskFusion.align(accelMask(), emptyList())
 
         assertThat(agreement.kappa).isNaN()
         assertThat(agreement.bestLagMs).isEqualTo(0L)
     }
 
-    // --- Independance du denominateur ---------------------------------------------------------
+    // --- Denominator independence -------------------------------------------------------------
 
     @Test
-    fun `independence - Health Connect rompt la circularite`() {
+    fun `independence - Health Connect breaks the circularity`() {
         val hc = MaskFusion.fromHealthConnect(accelMask().windows)
 
         assertThat(hc.source).isEqualTo(MaskSource.HEALTH_CONNECT)
@@ -103,19 +103,19 @@ class MaskFusionTest {
     }
 
     @Test
-    fun `independence - le journal donne un denominateur totalement independant du signal`() {
+    fun `independence - the diary gives a denominator wholly independent of the signal`() {
         val diary = MaskFusion.fromDiary(DiaryWindow(0L, 8 * HOUR))
 
         assertThat(diary.source).isEqualTo(MaskSource.DIARY)
         assertThat(diary.independence).isEqualTo(DenominatorIndependence.INDEPENDENT_DIARY)
-        // Le temps au lit surestime le TST : l'indice en ressort deflate, biais prudent ET
-        // independant du nombre de mouvements — c'est precisement ce qu'on achete.
+        // Time in bed overestimates the TST: the index comes out deflated, a cautious bias AND
+        // independent of the number of movements — that is precisely what is being bought.
         assertThat(diary.tstMin).isCloseTo(480.0, within(1e-9))
         assertThat(diary.wasoMin).isCloseTo(0.0, within(1e-9))
     }
 
     @Test
-    fun `fusion - HC prioritaire, recale, et independant`() {
+    fun `fusion - HC takes priority, realigned, and independent`() {
         val accel = accelMask()
         val hc = shifted(accel.windows, -2 * MIN)
 
@@ -125,12 +125,12 @@ class MaskFusionTest {
         assertThat(fused.independence).isEqualTo(DenominatorIndependence.INDEPENDENT_HC)
         assertThat(fused.lagAppliedMs).isEqualTo(2 * MIN)
         assertThat(fused.windows.first().startMsRel).isEqualTo(0L)
-        // Le taux de couverture analysable est une propriete de l'ENREGISTREMENT : il se transfere.
+        // The analysable coverage rate is a property of the RECORDING: it carries over.
         assertThat(fused.analysableSptMin / fused.sptMin).isCloseTo(456.0 / 480.0, within(1e-9))
     }
 
     @Test
-    fun `fusion - sans HC le journal prend le relais`() {
+    fun `fusion - without HC the diary takes over`() {
         val fused = MaskFusion.fuse(accelMask(), hc = null, diary = DiaryWindow(0L, 8 * HOUR))
 
         assertThat(fused.source).isEqualTo(MaskSource.FUSED)
@@ -139,12 +139,12 @@ class MaskFusionTest {
     }
 
     /**
-     * Regle non negociable de `SPEC-v2.md` §2.3 : sans source independante, il n'y a rien a fusionner
-     * et le masque accelerometrique est renvoye **tel quel**. Le renommer `FUSED` laisserait croire
-     * a une fusion, et un `CIRCULAR` deguise finirait par porter un resultat principal.
+     * Non-negotiable rule of `SPEC-v2.md` §2.3: without an independent source, there is nothing to
+     * fuse and the accelerometer mask is returned **as it is**. Renaming it `FUSED` would let a
+     * fusion be believed in, and a disguised `CIRCULAR` would end up carrying a primary result.
      */
     @Test
-    fun `fusion - sans HC ni journal le masque reste accelerometrique et circulaire`() {
+    fun `fusion - without HC or diary the mask stays accelerometer and circular`() {
         val accel = accelMask()
 
         val fused = MaskFusion.fuse(accel, hc = null, diary = null)
@@ -155,7 +155,7 @@ class MaskFusionTest {
     }
 
     @Test
-    fun `fusion - le journal borne les fenetres HC au temps passe au lit`() {
+    fun `fusion - the diary bounds the HC windows to the time spent in bed`() {
         val accel = accelMask()
         val hc = accel.windows
 
@@ -166,10 +166,10 @@ class MaskFusionTest {
         assertThat(fused.sptMin).isCloseTo(360.0, within(1e-9))
     }
 
-    // --- Correction apprise -------------------------------------------------------------------
+    // --- Learned correction -------------------------------------------------------------------
 
     @Test
-    fun `correction - moins de trois nuits, aucune correction`() {
+    fun `correction - fewer than three nights, no correction`() {
         val fit = MaskFusion.fitCorrection(listOf(400.0 to 460.0, 380.0 to 440.0))
 
         assertThat(fit.valid).isFalse()
@@ -177,16 +177,16 @@ class MaskFusionTest {
     }
 
     @Test
-    fun `correction - entre trois et cinq nuits, mediane du ratio`() {
+    fun `correction - between three and five nights, median of the ratio`() {
         val fit = MaskFusion.fitCorrection(listOf(400.0 to 440.0, 300.0 to 360.0, 200.0 to 220.0))
 
         assertThat(fit.valid).isTrue()
         assertThat(fit.beta).isEqualTo(0.0)
-        assertThat(fit.alpha).isCloseTo(1.1, within(1e-9)) // mediane de {1,10 ; 1,20 ; 1,10}
+        assertThat(fit.alpha).isCloseTo(1.1, within(1e-9)) // median of {1.10 ; 1.20 ; 1.10}
     }
 
     @Test
-    fun `correction - au moins cinq nuits, Theil-Sen retrouve la droite`() {
+    fun `correction - at least five nights, Theil-Sen recovers the line`() {
         val pairs = (0 until 6).map { val x = 300.0 + 20.0 * it; x to (1.2 * x + 15.0) }
 
         val fit = MaskFusion.fitCorrection(pairs)
@@ -197,7 +197,7 @@ class MaskFusionTest {
     }
 
     @Test
-    fun `correction - une nuit aberrante ne fait pas basculer la pente`() {
+    fun `correction - an outlier night does not tip the slope`() {
         val clean = (0 until 6).map { val x = 300.0 + 20.0 * it; x to (1.2 * x + 15.0) }
         val fit = MaskFusion.fitCorrection(clean + listOf(340.0 to 900.0))
 
@@ -205,11 +205,11 @@ class MaskFusionTest {
     }
 
     /**
-     * Recaler la moyenne d'un estimateur ne le rend pas independant de ce qu'il mesure : la
-     * retroaction nuit-a-nuit reste entiere, donc `independence` ne bouge pas d'un iota.
+     * Realigning the mean of an estimator does not make it independent of what it measures: the
+     * night-to-night feedback stays whole, so `independence` does not move one iota.
      */
     @Test
-    fun `correction appliquee - le denominateur reste CIRCULAR`() {
+    fun `applied correction - the denominator stays CIRCULAR`() {
         val accel = accelMask()
         val fit = MaskFusion.fitCorrection((0 until 6).map { 460.0 - it to 470.0 - it })
 
@@ -219,13 +219,13 @@ class MaskFusionTest {
         assertThat(corrected.independence).isEqualTo(DenominatorIndependence.CIRCULAR)
         assertThat(corrected.tstMin).isGreaterThan(accel.tstMin)
         assertThat(corrected.wasoMin).isCloseTo(corrected.sptMin - corrected.tstMin, within(1e-9))
-        // Le denominateur publie suit la correction dans le meme rapport que le TST brut.
+        // The published denominator follows the correction in the same ratio as the raw TST.
         assertThat(corrected.analysableTstMin / accel.analysableTstMin)
             .isCloseTo(corrected.tstMin / accel.tstMin, within(1e-9))
     }
 
     @Test
-    fun `correction invalide - le masque est renvoye intact`() {
+    fun `invalid correction - the mask is returned intact`() {
         val accel = accelMask()
 
         val out = MaskFusion.applyCorrection(accel, MaskFusion.fitCorrection(listOf(400.0 to 440.0)))
@@ -235,7 +235,7 @@ class MaskFusionTest {
     }
 
     @Test
-    fun `correction - le TST corrige ne depasse jamais le SPT`() {
+    fun `correction - the corrected TST never exceeds the SPT`() {
         val accel = accelMask()
         val huge = TstCorrection(alpha = 2.0, beta = 0.0, nNights = 6, valid = true)
 

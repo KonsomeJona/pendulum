@@ -7,25 +7,25 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Primitives numeriques partagees du module `algo`.
+ * Shared numeric primitives of the `algo` module.
  *
- * Trois regles valables pour TOUT ce fichier, et sur lesquelles le reste de la chaine s'appuie :
+ * Three rules valid for THE WHOLE of this file, and on which the rest of the chain relies:
  *
- *  1. **Politique NaN — un `NaN` est un echantillon ABSENT, jamais une valeur.** Tous les
- *     reducteurs (mediane, percentile, MAD, moyennes/RMS glissants) l'ignorent et normalisent
- *     par le nombre d'echantillons reellement valides. Un reducteur qui ne voit aucune valeur
- *     valide renvoie `NaN` — l'appelant doit tester, jamais propager en aveugle. C'est ce qui
- *     permet a l'etape 0 de marquer les trous par `NaN` sans avoir a fabriquer des zeros
- *     (un zero serait une valeur, et un zero dans une enveloppe tirerait le plancher vers le bas).
+ *  1. **NaN policy — a `NaN` is an ABSENT sample, never a value.** All the reducers (median,
+ *     percentile, MAD, moving means/RMS) ignore it and normalise by the number of genuinely valid
+ *     samples. A reducer that sees no valid value returns `NaN` — the caller must test, never
+ *     propagate blindly. That is what lets step 0 mark the holes with `NaN` without having to
+ *     manufacture zeros (a zero would be a value, and a zero in an envelope would pull the floor
+ *     downwards).
  *
- *  2. **Aucune allocation dans les boucles chaudes.** Les fonctions qui tournent sur 1,44 x 10^6
- *     echantillons prennent un `dst` et un `scratch` fournis par l'appelant. Les surcharges
- *     confortables qui allouent existent, mais ne doivent pas etre appelees dans une boucle.
+ *  2. **No allocation in the hot loops.** The functions that run over 1.44 x 10^6 samples take a
+ *     `dst` and a `scratch` supplied by the caller. The convenience overloads that allocate do
+ *     exist, but must not be called inside a loop.
  *
- *  3. **Determinisme strict.** Aucun pivot aleatoire dans le quickselect (mediane de trois),
- *     aucun parcours dependant de l'ordre d'une table de hachage, aucune horloge. Meme entree
- *     -> meme sortie au bit pres, sur toute JVM (les accumulations se font en `Double`, dont
- *     l'arithmetique IEEE-754 est reproductible).
+ *  3. **Strict determinism.** No random pivot in the quickselect (median of three), no traversal
+ *     depending on the order of a hash table, no clock. Same input -> same output down to the bit,
+ *     on any JVM (the accumulations are done in `Double`, whose IEEE-754 arithmetic is
+ *     reproducible).
  */
 object Numeric {
 
@@ -34,9 +34,9 @@ object Numeric {
     // ------------------------------------------------------------------
 
     /**
-     * Copie dans [dst] les valeurs non-`NaN` de `src[from until to]`. Renvoie le nombre copie.
-     * C'est l'etape prealable a tout percentile : on ne trie jamais le signal en place, et on
-     * ne veut pas payer un test `isNaN` a chaque comparaison du quickselect.
+     * Copies into [dst] the non-`NaN` values of `src[from until to]`. Returns the number copied.
+     * This is the preliminary step to any percentile: we never sort the signal in place, and we do
+     * not want to pay an `isNaN` test at every quickselect comparison.
      */
     fun compactValid(src: FloatArray, from: Int, to: Int, dst: FloatArray): Int {
         var m = 0
@@ -48,20 +48,20 @@ object Numeric {
     }
 
     /**
-     * Quickselect en place : apres l'appel, `a[k]` porte la k-ieme plus petite valeur de
-     * `a[0 until size]`, tout ce qui est a gauche lui est <= et tout ce qui est a droite >=.
+     * In-place quickselect: after the call, `a[k]` holds the k-th smallest value of
+     * `a[0 until size]`, everything to its left is <= it and everything to its right >=.
      *
-     * Pivot par mediane de trois (premier, milieu, dernier) : deterministe, et suffisant contre
-     * le cas pathologique qui nous menace reellement ici — une fenetre de plancher deja triee
-     * ou quasi constante (nuit tres calme), ou un pivot naif degenererait en O(n^2).
+     * Pivot by median of three (first, middle, last): deterministic, and sufficient against the
+     * pathological case that really threatens us here — an already sorted or near-constant floor
+     * window (very quiet night), where a naive pivot would degenerate into O(n^2).
      */
     fun selectInPlace(a: FloatArray, size: Int, k: Int): Float {
-        require(size > 0 && k in 0 until size) { "k=$k hors de [0,$size)" }
+        require(size > 0 && k in 0 until size) { "k=$k outside [0,$size)" }
         var lo = 0
         var hi = size - 1
         while (lo < hi) {
             val mid = lo + (hi - lo) / 2
-            // Mediane de trois, triee sur place : a[lo] <= a[mid] <= a[hi].
+            // Median of three, sorted in place: a[lo] <= a[mid] <= a[hi].
             if (a[mid] < a[lo]) swap(a, mid, lo)
             if (a[hi] < a[lo]) swap(a, hi, lo)
             if (a[hi] < a[mid]) swap(a, hi, mid)
@@ -87,15 +87,15 @@ object Numeric {
     }
 
     /**
-     * Percentile d'un tampon **deja compacte** (aucun `NaN`), avec interpolation lineaire entre
-     * les deux statistiques d'ordre encadrantes (convention « linear » de numpy / R type 7).
+     * Percentile of an **already compacted** buffer (no `NaN`), with linear interpolation between
+     * the two bracketing order statistics ("linear" convention of numpy / R type 7).
      *
-     * L'interpolation n'est pas cosmetique : le plancher de bruit est un p25 puis une mediane sur
-     * une fenetre de 6 000 echantillons, et un percentile a rang entier ferait sauter la sortie
-     * par paliers a chaque entree/sortie d'echantillon dans la fenetre glissante. Le seuil, qui
-     * en derive par multiplication par 8, heriterait de ces sauts.
+     * The interpolation is not cosmetic: the noise floor is a p25 then a median over a window of
+     * 6 000 samples, and a percentile at integer rank would make the output jump in steps at each
+     * sample entering/leaving the sliding window. The threshold, which derives from it by
+     * multiplication by 8, would inherit those jumps.
      *
-     * @param p percentile dans [0, 100].
+     * @param p percentile in [0, 100].
      */
     fun percentileOfCompact(buf: FloatArray, size: Int, p: Double): Float {
         if (size <= 0) return Float.NaN
@@ -105,51 +105,51 @@ object Numeric {
         val frac = h - lo
         val vLo = selectInPlace(buf, size, lo)
         if (frac == 0.0 || lo + 1 >= size) return vLo
-        // Apres selectInPlace(lo), tout ce qui est a droite de `lo` lui est >= : la statistique
-        // d'ordre lo+1 est donc simplement le minimum de la partie droite. Pas de second tri.
+        // After selectInPlace(lo), everything to the right of `lo` is >= it: the order statistic
+        // lo+1 is therefore simply the minimum of the right-hand part. No second sort.
         var vHi = buf[lo + 1]
         for (i in lo + 2 until size) if (buf[i] < vHi) vHi = buf[i]
         return (vLo + frac * (vHi - vLo)).toFloat()
     }
 
-    /** Percentile de `v[from until to]`, `NaN` ignores. [scratch] doit contenir `to - from` cases. */
+    /** Percentile of `v[from until to]`, `NaN`s ignored. [scratch] must hold `to - from` cells. */
     fun percentile(v: FloatArray, from: Int, to: Int, p: Double, scratch: FloatArray): Float {
         val m = compactValid(v, from, to, scratch)
         return percentileOfCompact(scratch, m, p)
     }
 
-    /** Surcharge confortable — **alloue**, ne pas utiliser dans une boucle chaude. */
+    /** Convenience overload — **allocates**, do not use in a hot loop. */
     fun percentile(v: FloatArray, p: Double): Float =
         percentile(v, 0, v.size, p, FloatArray(v.size))
 
-    /** Mediane de `v[from until to]`, `NaN` ignores. */
+    /** Median of `v[from until to]`, `NaN`s ignored. */
     fun median(v: FloatArray, from: Int, to: Int, scratch: FloatArray): Float =
         percentile(v, from, to, 50.0, scratch)
 
-    /** Surcharge confortable — **alloue**. */
+    /** Convenience overload — **allocates**. */
     fun median(v: FloatArray): Float = percentile(v, 50.0)
 
-    /** Mediane d'un `DoubleArray` (utilisee hors boucle chaude : estimation de `fs`, calibration). */
+    /** Median of a `DoubleArray` (used outside hot loops: `fs` estimation, calibration). */
     fun median(v: DoubleArray): Double {
         if (v.isEmpty()) return Double.NaN
         val f = FloatArray(v.size)
-        // On passe par des Float : toutes les grandeurs concernees (fs, gains) tiennent
-        // largement dans 24 bits de mantisse, et cela evite de dupliquer le quickselect.
+        // We go through Floats: all the quantities concerned (fs, gains) fit comfortably in
+        // 24 bits of mantissa, and this avoids duplicating the quickselect.
         var m = 0
         for (d in v) if (!d.isNaN()) f[m++] = d.toFloat()
         return percentileOfCompact(f, m, 50.0).toDouble()
     }
 
     /**
-     * Mediane ponderee : plus petite valeur dont le cumul des poids atteint la moitie du total.
-     * Sert a `fs_session` (etape 0), ou chaque bloc pese son nombre d'echantillons — un bloc de
-     * 512 echantillons contraint `fs` bien mieux qu'un bloc de 30.
+     * Weighted median: the smallest value whose cumulated weights reach half the total.
+     * Used for `fs_session` (step 0), where each block weighs its number of samples — a block of
+     * 512 samples constrains `fs` much better than a block of 30.
      *
-     * Convention : borne inferieure (« lower weighted median »), pas d'interpolation. Un `fs`
-     * interpole entre deux blocs n'aurait aucun sens physique.
+     * Convention: lower bound ("lower weighted median"), no interpolation. An `fs` interpolated
+     * between two blocks would have no physical meaning.
      */
     fun weightedMedian(values: DoubleArray, weights: DoubleArray): Double {
-        require(values.size == weights.size) { "tailles differentes" }
+        require(values.size == weights.size) { "different sizes" }
         if (values.isEmpty()) return Double.NaN
         val idx = values.indices.sortedBy { values[it] }
         var total = 0.0
@@ -164,56 +164,56 @@ object Numeric {
     }
 
     /**
-     * MAD normalisee : `1,4826 x mediane(|v - mediane(v)|)`. Le facteur ramene la MAD sur
-     * l'ecart-type d'une gaussienne, ce qui la rend comparable a un sigma sans heriter de sa
-     * sensibilite aux valeurs extremes.
+     * Normalised MAD: `1.4826 x median(|v - median(v)|)`. The factor brings the MAD back onto the
+     * standard deviation of a Gaussian, which makes it comparable to a sigma without inheriting
+     * its sensitivity to extreme values.
      *
-     * @param scratch au moins `to - from` cases ; reutilise pour les deux passes.
+     * @param scratch at least `to - from` cells; reused for both passes.
      */
     fun mad(v: FloatArray, from: Int, to: Int, scratch: FloatArray): Float {
         val m = compactValid(v, from, to, scratch)
         if (m == 0) return Float.NaN
         val med = percentileOfCompact(scratch, m, 50.0)
-        // percentileOfCompact a permute `scratch`, mais on n'a besoin que des valeurs, pas de
-        // l'ordre : on ecrase chaque case par son ecart absolu a la mediane.
+        // percentileOfCompact has permuted `scratch`, but we only need the values, not the order:
+        // we overwrite each cell with its absolute deviation from the median.
         for (i in 0 until m) scratch[i] = abs(scratch[i] - med)
         return 1.4826f * percentileOfCompact(scratch, m, 50.0)
     }
 
-    /** Surcharge confortable — **alloue**. */
+    /** Convenience overload — **allocates**. */
     fun mad(v: FloatArray): Float = mad(v, 0, v.size, FloatArray(v.size))
 
     // ------------------------------------------------------------------
-    // Fenetres glissantes
+    // Sliding windows
     // ------------------------------------------------------------------
 
     /**
-     * Decoupe d'une fenetre centree de [win] echantillons autour de `i`.
-     * `win` pair : la case supplementaire va a droite. Fixe une fois pour toutes ici pour que
-     * tous les modules (enveloppe, plancher, masque) partagent exactement la meme convention —
-     * un decalage d'un demi-echantillon entre l'enveloppe et le plancher deplacerait les fronts.
+     * Cut-out of a centred window of [win] samples around `i`.
+     * `win` even: the extra cell goes to the right. Fixed once and for all here so that all the
+     * modules (envelope, floor, mask) share exactly the same convention — a half-sample offset
+     * between the envelope and the floor would shift the edges.
      */
     fun halfLeft(win: Int): Int = (win - 1) / 2
 
     fun halfRight(win: Int): Int = win - 1 - halfLeft(win)
 
     /**
-     * Moyenne glissante centree sur `[from, to)`, fenetre de [win] echantillons **tronquee aux
-     * bornes** et normalisee par le nombre d'echantillons valides (pas par [win]).
+     * Centred moving mean over `[from, to)`, window of [win] samples **truncated at the bounds**
+     * and normalised by the number of valid samples (not by [win]).
      *
-     * Somme courante en `Double` : O(n) quel que soit [win]. La derive d'arrondi d'une somme
-     * courante sur 1,44 x 10^6 additions reste ~1e-10 en relatif sur des valeurs de l'ordre du g,
-     * trois ordres de grandeur sous la resolution du capteur (0,49 mg) — et elle est
-     * **deterministe**, ce qui est la seule propriete qui compte pour la non-regression.
+     * Running sum in `Double`: O(n) whatever [win]. The rounding drift of a running sum over
+     * 1.44 x 10^6 additions stays ~1e-10 in relative terms on values of the order of a g, three
+     * orders of magnitude below the sensor resolution (0.49 mg) — and it is **deterministic**,
+     * which is the only property that counts for non-regression.
      */
     fun movingMean(src: FloatArray, from: Int, to: Int, win: Int, dst: FloatArray) {
-        require(win >= 1) { "win doit etre >= 1" }
+        require(win >= 1) { "win must be >= 1" }
         val hl = halfLeft(win)
         val hr = halfRight(win)
         var sum = 0.0
         var count = 0
         var lo = from
-        var hi = from - 1 // dernier index inclus deja ajoute
+        var hi = from - 1 // last inclusive index already added
         for (i in from until to) {
             val wantLo = max(from, i - hl)
             val wantHi = min(to - 1, i + hr)
@@ -232,14 +232,14 @@ object Numeric {
     }
 
     /**
-     * RMS glissant centre : `sqrt(moyenne_glissante(src^2))`. C'est l'enveloppe de l'etape 2.
+     * Centred moving RMS: `sqrt(moving_mean(src^2))`. This is the envelope of step 2.
      *
-     * On somme les carres en `Double` et non les valeurs : sur une magnitude L2 deja positive,
-     * le RMS et la moyenne different, et c'est bien le RMS que la specification demande
-     * (energie, pas amplitude moyenne).
+     * We sum the squares in `Double` and not the values: on an already positive L2 magnitude, the
+     * RMS and the mean differ, and it is indeed the RMS that the specification asks for (energy,
+     * not mean amplitude).
      */
     fun movingRms(src: FloatArray, from: Int, to: Int, win: Int, dst: FloatArray) {
-        require(win >= 1) { "win doit etre >= 1" }
+        require(win >= 1) { "win must be >= 1" }
         val hl = halfLeft(win)
         val hr = halfRight(win)
         var sum = 0.0
@@ -259,22 +259,22 @@ object Numeric {
                 if (!v.isNaN()) { sum -= v.toDouble() * v.toDouble(); count-- }
                 lo++
             }
-            // La somme courante peut devenir tres legerement negative par annulation
-            // catastrophique quand tous les carres retires valent leur propre somme.
+            // The running sum can become very slightly negative through catastrophic cancellation
+            // when all the squares removed are worth their own sum.
             dst[i] = if (count > 0) sqrt(max(0.0, sum / count)).toFloat() else Float.NaN
         }
     }
 
     /**
-     * Mediane glissante centree. **O(n x win)** : reservee aux petites fenetres (typiquement le
-     * critere de morphologie WASM 3.2.1-d, `win = 25` a 50 Hz). Ne pas l'utiliser pour le plancher
-     * de bruit, dont la fenetre fait 6 000 echantillons — c'est exactement pour cela que
-     * [NoiseFloor] evalue sur une grille a pas, et non a chaque echantillon.
+     * Centred moving median. **O(n x win)**: reserved for small windows (typically the WASM
+     * 3.2.1-d morphology criterion, `win = 25` at 50 Hz). Do not use it for the noise floor, whose
+     * window is 6 000 samples — that is exactly why [NoiseFloor] evaluates on a stepped grid, and
+     * not at every sample.
      *
-     * @param scratch au moins [win] cases.
+     * @param scratch at least [win] cells.
      */
     fun movingMedian(src: FloatArray, from: Int, to: Int, win: Int, dst: FloatArray, scratch: FloatArray) {
-        require(win >= 1 && scratch.size >= win) { "scratch trop petit" }
+        require(win >= 1 && scratch.size >= win) { "scratch too small" }
         val hl = halfLeft(win)
         val hr = halfRight(win)
         for (i in from until to) {
@@ -286,10 +286,10 @@ object Numeric {
     }
 
     /**
-     * Percentile par fenetre **non chevauchante** de [winSamples] echantillons.
-     * Une valeur par fenetre, la derniere pouvant etre tronquee. `p = 95` par defaut : c'est la
-     * forme dont le masque d'immobilite et le rapport de qualite ont besoin (« quel est le niveau
-     * haut de cette epoque ? »), a distinguer de la crete, trop sensible a un unique artefact.
+     * Percentile per **non-overlapping** window of [winSamples] samples.
+     * One value per window, the last one possibly truncated. `p = 95` by default: that is the form
+     * the immobility mask and the quality report need ("what is the high level of this epoch?"),
+     * to be distinguished from the peak, too sensitive to a single artefact.
      */
     fun percentileByWindow(
         src: FloatArray,
@@ -299,7 +299,7 @@ object Numeric {
         p: Double = 95.0,
         scratch: FloatArray = FloatArray(winSamples),
     ): FloatArray {
-        require(winSamples >= 1) { "winSamples doit etre >= 1" }
+        require(winSamples >= 1) { "winSamples must be >= 1" }
         val n = max(0, to - from)
         val nWin = ceil(n.toDouble() / winSamples).toInt()
         val out = FloatArray(nWin)
@@ -312,21 +312,21 @@ object Numeric {
         return out
     }
 
-    /** Raccourci lisible du cas dominant. */
+    /** Readable shortcut for the dominant case. */
     fun p95ByWindow(src: FloatArray, winSamples: Int): FloatArray =
         percentileByWindow(src, 0, src.size, winSamples, 95.0)
 
     // ------------------------------------------------------------------
-    // Divers
+    // Miscellaneous
     // ------------------------------------------------------------------
 
-    /** Nombre d'echantillons correspondant a [sec] a [fsHz], au minimum 1. */
+    /** Number of samples corresponding to [sec] at [fsHz], at least 1. */
     fun samples(sec: Double, fsHz: Double): Int = max(1, Math.round(sec * fsHz).toInt())
 
     /**
-     * Pente des moindres carres de `y` sur `x`, sans ordonnee a l'origine imposee.
-     * Utilisee pour la derive d'horloge (§3.4) et pour l'autocalibration (§3.3).
-     * Renvoie `NaN` si la variance de `x` est nulle (points confondus).
+     * Least-squares slope of `y` on `x`, with no imposed intercept.
+     * Used for the clock drift (§3.4) and for the autocalibration (§3.3).
+     * Returns `NaN` if the variance of `x` is zero (coincident points).
      */
     fun slope(x: DoubleArray, y: DoubleArray): Double {
         require(x.size == y.size)

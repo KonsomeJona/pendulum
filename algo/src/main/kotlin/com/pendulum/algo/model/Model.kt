@@ -1,18 +1,19 @@
 package com.pendulum.algo.model
 
 /**
- * Types partages du module `algo`. Transcription de `docs/fr/ALGO-v2.md` §4.1.
+ * Shared types of the `algo` module. Transcription of `docs/workings/ALGO-v2.md` §4.1.
  *
- * Regles du module :
- *  - fonctions pures, aucune I/O, aucune horloge murale, `fs` toujours explicite ;
- *  - aucun `import android.*` ;
- *  - **aucune dependance vers `:format`**. L'entree est [SampleBlock], une interface minimale ;
- *    l'adaptateur au-dessus de `com.pendulum.format.DecodedBlock` vit dans `:phone`. Cela garde le
- *    module testable sans le codec, permet d'injecter du synthetique, et — surtout — permet a
- *    `algo` de **revalider** les timestamps sans heriter des garanties (absentes) du CRC de bloc.
+ * Module rules:
+ *  - pure functions, no I/O, no wall clock, `fs` always explicit;
+ *  - no `import android.*`;
+ *  - **no dependency on `:format`**. The input is [SampleBlock], a minimal interface; the adapter
+ *    on top of `com.pendulum.format.DecodedBlock` lives in `:phone`. This keeps the module
+ *    testable without the codec, allows synthetic data to be injected, and — above all — allows
+ *    `algo` to **revalidate** the timestamps without inheriting the (absent) guarantees of the
+ *    block CRC.
  */
 
-/** Entree minimale. Amplitudes en g. */
+/** Minimal input. Amplitudes in g. */
 interface SampleBlock {
     val tFirstNs: Long
     val tLastNs: Long
@@ -22,7 +23,7 @@ interface SampleBlock {
     val z: FloatArray
 }
 
-/** Implementation triviale, utilisee par le generateur synthetique et les adaptateurs. */
+/** Trivial implementation, used by the synthetic generator and the adapters. */
 data class SimpleBlock(
     override val tFirstNs: Long,
     override val tLastNs: Long,
@@ -49,7 +50,7 @@ data class SimpleBlock(
     }
 }
 
-/** Signal tri-axial sur grille uniforme. `NaN` = echantillon absent. */
+/** Tri-axial signal on a uniform grid. `NaN` = missing sample. */
 class TriAxial(
     val fsHz: Double,
     val t0Ns: Long,
@@ -58,8 +59,8 @@ class TriAxial(
     val z: FloatArray,
 ) {
     init {
-        require(x.size == y.size && y.size == z.size) { "axes de tailles differentes" }
-        require(fsHz > 0.0) { "fsHz doit etre > 0" }
+        require(x.size == y.size && y.size == z.size) { "axes of different sizes" }
+        require(fsHz > 0.0) { "fsHz must be > 0" }
     }
 
     val n: Int get() = x.size
@@ -68,12 +69,12 @@ class TriAxial(
 
     fun tMsRel(i: Int): Long = Math.round(i * 1000.0 / fsHz)
 
-    /** Index de la grille correspondant a un instant relatif, borne a `[0, n]`. */
+    /** Grid index matching a relative instant, clamped to `[0, n]`. */
     fun indexOfMsRel(msRel: Long): Int =
         Math.round(msRel * fsHz / 1000.0).toInt().coerceIn(0, n)
 }
 
-/** Signal scalaire sur la meme grille uniforme. */
+/** Scalar signal on the same uniform grid. */
 class Signal1D(val fsHz: Double, val t0Ns: Long, val v: FloatArray) {
     val n: Int get() = v.size
 
@@ -81,8 +82,8 @@ class Signal1D(val fsHz: Double, val t0Ns: Long, val v: FloatArray) {
 }
 
 /**
- * Enveloppe a deux echelles. La grossiere porte la detection (elle annule l'ondulation a 2f) ;
- * la fine ne sert qu'au recalage des fronts d'un evenement deja detecte.
+ * Two-scale envelope. The coarse one carries the detection (it cancels the ripple at 2f); the fine
+ * one only serves to realign the edges of an already detected event.
  */
 data class DualEnvelope(
     val coarse: Signal1D,
@@ -92,24 +93,24 @@ data class DualEnvelope(
 )
 
 enum class GapKind {
-    /** Assez court pour etre interpole sans artefact. */
+    /** Short enough to be interpolated without artefact. */
     MICRO,
 
-    /** Trop long pour interpoler, trop court pour rompre le segment : zone aveugle. */
+    /** Too long to interpolate, too short to break the segment: blind zone. */
     BLIND,
 
-    /** Rupture de segment : l'etat des filtres est perdu, la serie est cassee. */
+    /** Segment break: the filter state is lost, the series is broken. */
     SEGMENT_BREAK,
 }
 
 data class Gap(val fromIdx: Int, val toIdx: Int, val kind: GapKind, val durationSec: Double)
 
-/** Intervalle continu et analysable. Bornes en index de la grille uniforme, `toIdx` exclu. */
+/** Continuous, analysable interval. Bounds as uniform-grid indices, `toIdx` excluded. */
 data class Segment(val fromIdx: Int, val toIdx: Int) {
     val length: Int get() = toIdx - fromIdx
 }
 
-// --- Integrite (etape -1) ---
+// --- Integrity (step -1) ---
 
 enum class IntegrityViolation {
     BAD_COUNT,
@@ -130,7 +131,7 @@ data class IntegrityReport(
     val blocksRejected: Int,
     val byViolation: Map<IntegrityViolation, Int>,
     val rejectedFraction: Double,
-    /** Vrai si le motif de rejets evoque une desynchronisation du decodeur, pas du bruit. */
+    /** True if the pattern of rejections suggests a decoder desynchronisation, not noise. */
     val decodeSuspect: Boolean,
 ) {
     val acceptable: Boolean get() = rejectedFraction <= 0.01 && !decodeSuspect
@@ -148,13 +149,13 @@ data class FsEstimate(
     val fsSessionHz: Double,
     val fsNominalHz: Double,
     val blocksRejected: Int,
-    /** Derive de `SensorEvent.timestamp` par rapport a l'horloge murale, en ppm. */
+    /** Drift of `SensorEvent.timestamp` relative to the wall clock, in ppm. */
     val clockDriftPpm: Double,
     val clockDriftSuspect: Boolean,
 )
 
 data class Timeline(
-    /** Grille uniforme a `targetFsHz`, `NaN` dans les trous. */
+    /** Uniform grid at `targetFsHz`, `NaN` in the gaps. */
     val signal: TriAxial,
     val gaps: List<Gap>,
     val segments: List<Segment>,
@@ -163,32 +164,32 @@ data class Timeline(
     val offBody: List<Segment>,
     val integrity: IntegrityReport,
     val analysableSec: Double,
-    /** La session s'arrete sans marqueur de fin propre (montre morte, kill). */
+    /** The session stops without a clean end marker (dead watch, kill). */
     val truncated: Boolean,
 )
 
-// --- Evenements ---
+// --- Events ---
 
 object ClmFlags {
     const val POSTURAL = 1 shl 0
     const val GROSS_BODY = 1 shl 1
 
-    /** Depasse `clmMaxSec` : casse la serie, n'est jamais un CLM. */
+    /** Exceeds `clmMaxSec`: breaks the series, is never a CLM. */
     const val LM_LONG = 1 shl 2
     const val TRUNCATED = 1 shl 3
     const val IN_BLIND_ZONE = 1 shl 4
     const val FLOOR_EXTRAPOLATED = 1 shl 5
     const val TRANSMITTED_SUSPECT = 1 shl 6
 
-    /** Le seuil etait domine par le plancher absolu. */
+    /** The threshold was dominated by the absolute floor. */
     const val ABS_FLOOR_LIMITED = 1 shl 7
 
-    /** Le seuil etait domine par le terme de calibration. */
+    /** The threshold was dominated by the calibration term. */
     const val CAL_FLOOR_LIMITED = 1 shl 8
     const val DURING_WAKE = 1 shl 9
     const val OFF_BODY = 1 shl 10
 
-    /** Serie dont l'IMI median tombe dans la bande apneique. */
+    /** Series whose median IMI falls in the apnoeic band. */
     const val RESP_SUSPECT = 1 shl 11
 }
 
@@ -217,17 +218,17 @@ data class PostureChange(val atIdx: Int, val atMsRel: Long, val deltaDeg: Float,
 enum class SeriesRule { AASM_V3, WASM_2016 }
 
 /**
- * Que faire d'un CLM precede d'un intervalle trop court.
- * C'est **le** parametre qui separe reellement les deux jeux de regles (Ferri 2015) :
- * WASM rompt la serie, AASM est muette et l'on saute l'evenement.
+ * What to do with a CLM preceded by too short an interval.
+ * This is **the** parameter that really separates the two rule sets (Ferri 2015):
+ * WASM breaks the series, AASM is silent and the event is skipped.
  */
 enum class ShortImiPolicy { BREAK_SERIES, SKIP_LATER }
 
 data class PlmSeries(
     val rule: SeriesRule,
-    /** Index dans la liste des [Clm] retenus. */
+    /** Indices into the list of retained [Clm]. */
     val clmIndices: IntArray,
-    /** Taille = `clmIndices.size - 1`. */
+    /** Size = `clmIndices.size - 1`. */
     val imiSec: FloatArray,
     val truncatedAtStart: Boolean,
     val truncatedAtEnd: Boolean,
@@ -252,15 +253,15 @@ data class PlmSeries(
     }
 }
 
-// --- Masque ---
+// --- Mask ---
 
 enum class Stage { WAKE, SLEEP, LIGHT, DEEP, REM, AWAKE_IN_BED, OUT_OF_BED, UNKNOWN }
 
 enum class MaskSource { ACCEL_IMMOBILITY, HEALTH_CONNECT, DIARY, FUSED }
 
 /**
- * D'ou vient le denominateur, et est-il circulaire ? Pilote ce que l'interface a le droit
- * d'afficher : un resultat principal ne peut jamais reposer sur [CIRCULAR].
+ * Where the denominator comes from, and is it circular? Drives what the interface is allowed to
+ * display: a primary result can never rest on [CIRCULAR].
  */
 enum class DenominatorIndependence { INDEPENDENT_HC, INDEPENDENT_DIARY, SPT_QUASI_INDEPENDENT, CIRCULAR }
 
@@ -268,7 +269,7 @@ data class SleepWindow(val startMsRel: Long, val endMsRel: Long, val stage: Stag
     val durationMin: Double get() = (endMsRel - startMsRel) / 60_000.0
 }
 
-/** Journal de sommeil manuel : denominateur totalement independant du signal. */
+/** Manual sleep diary: denominator completely independent of the signal. */
 data class DiaryWindow(val bedTimeMsRel: Long, val riseTimeMsRel: Long)
 
 data class SleepMask(
@@ -277,7 +278,9 @@ data class SleepMask(
     val sptMin: Double,
     val tstMin: Double,
     val wasoMin: Double,
-    /** TST ∩ segments valides ∩ hors zones aveugles ∩ hors off-body. C'est le vrai denominateur. */
+    /**
+     * TST ∩ valid segments ∩ outside blind zones ∩ outside off-body. This is the real denominator.
+     */
     val analysableTstMin: Double,
     val analysableSptMin: Double,
     val corrected: Boolean,
@@ -320,15 +323,15 @@ data class NightCalibration(
     val floorCalG: Float,
     val snrCal: Float,
     val gainSource: GainSource,
-    /** Le gain s'ecarte de la nuit de reference au-dela de la tolerance : nuit non comparable. */
+    /** The gain deviates from the reference night beyond tolerance: night not comparable. */
     val outlierVsBaseline: Boolean,
 )
 
-// --- Resultats ---
+// --- Results ---
 
 enum class FloorMode { BILATERAL, CAUSAL_LAGGED }
 
-/** Ce que l'analyse autorise a publier. Evalue par le code, jamais par l'utilisateur. */
+/** What the analysis allows to be published. Evaluated by the code, never by the user. */
 enum class PublicationGate { FULL, TRUNCATED_NO_TREND, NO_PLMI }
 
 data class PiResult(
@@ -339,19 +342,19 @@ data class PiResult(
 )
 
 /**
- * Rythme fondamental estime par deconvolution des harmoniques de l'intervalle inter-mouvements
- * (`SPEC-v2.md` §5). C'est la **metrique de suivi** du produit : elle n'a pas de denominateur,
- * donc pas de circularite, et sa variabilite nuit a nuit publiee est douze fois moindre que
- * celle du compte horaire.
+ * Fundamental rhythm estimated by deconvolution of the harmonics of the inter-movement interval
+ * (`SPEC-v2.md` §5). This is the product's **tracking metric**: it has no denominator, hence no
+ * circularity, and its published night-to-night variability is twelve times lower than that of
+ * the hourly count.
  *
- * @param fundamentalSec periode fondamentale `exp(mu)`, en secondes.
- * @param muLog moyenne du log de l'intervalle fondamental, en nats.
- * @param sigmaLog ecart-type du log.
- * @param missRate taux de manques estime. Sortie **aussi importante que la periode** : un taux
- *   qui saute d'une nuit a l'autre signale que les deux nuits ne sont pas comparables, et un taux
- *   proche de 0,5 avec un pic fondamental faible evoque une alternance gauche/droite.
- * @param harmonicWeights poids des composantes 1x, 2x, 3x… du melange.
- * @param alternationSuspect vrai si le profil des poids evoque une alternance entre les jambes.
+ * @param fundamentalSec fundamental period `exp(mu)`, in seconds.
+ * @param muLog mean of the log of the fundamental interval, in nats.
+ * @param sigmaLog standard deviation of the log.
+ * @param missRate estimated miss rate. An output **as important as the period**: a rate that
+ *   jumps from one night to the next signals that the two nights are not comparable, and a rate
+ *   close to 0.5 with a weak fundamental peak suggests a left/right alternation.
+ * @param harmonicWeights weights of the 1x, 2x, 3x… components of the mixture.
+ * @param alternationSuspect true if the weight profile suggests an alternation between the legs.
  */
 data class RhythmResult(
     val fundamentalSec: Double,
@@ -458,7 +461,7 @@ data class NightAnalysis(
     val postures: List<PostureChange>,
     val masks: Map<MaskSource, SleepMask>,
     val agreement: MaskAgreement?,
-    /** Quatre lignes : 2 jeux de regles x 2 masques. */
+    /** Four rows: 2 rule sets x 2 masks. */
     val results: List<PlmiResult>,
     val plmiLowerBound: Double,
     val plmiUpperBound: Double,

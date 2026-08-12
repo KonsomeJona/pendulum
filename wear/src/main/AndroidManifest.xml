@@ -3,9 +3,9 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
-    <!-- Capteur haute cadence. Cette permission qualifie AUSSI le foreground service de type
-         health, sans invite runtime et sans restriction while-in-use : c'est ce qui rend legale
-         la reprise apres reboot, qui part de l'arriere-plan. -->
+    <!-- High sampling rate sensor. This permission ALSO qualifies the health-type foreground
+         service, with no runtime prompt and no while-in-use restriction: that is what makes the
+         restart after reboot legal, since it starts from the background. -->
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -14,23 +14,23 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- NE PAS declarer BODY_SENSORS : elle est soumise au while-in-use, elle casserait la
-         reprise depuis l'arriere-plan, et aucun capteur corporel n'est lu.
-         NE PAS declarer INTERNET : son absence est une garantie verifiable — rien de ce qui est
-         enregistre ici ne peut quitter la paire montre/telephone.
-         NE PAS declarer SCHEDULE_EXACT_ALARM : voir Watchdog.kt, le compromis est assume.
-         Repli uniquement si le demarrage du FGS health etait refuse sur un appareil :
+    <!-- DO NOT declare BODY_SENSORS: it is subject to while-in-use, it would break the restart
+         from the background, and no body sensor is read.
+         DO NOT declare INTERNET: its absence is a verifiable guarantee — nothing recorded here
+         can leave the watch/phone pair.
+         DO NOT declare SCHEDULE_EXACT_ALARM: see Watchdog.kt, the trade-off is accepted.
+         Fallback only if starting the health FGS were refused on a device:
          <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" /> -->
 
     <!--
-      `icon` pointe sur l'icone adaptative et **non plus** sur `@drawable/ic_pendulum`. Ce vecteur
-      24 dp est concu pour la petite icone de notification — blanc sur transparent, sans fond, sans
-      zone de securite — et le lanceur de Wear OS applique un masque circulaire : un trait blanc
-      sans fond y devenait un point. `ic_pendulum` reste, et sert exactement a ce pour quoi il est
-      fait : `setSmallIcon` dans `RecordingService`.
+      `icon` points at the adaptive icon and **no longer** at `@drawable/ic_pendulum`. That 24 dp
+      vector is designed for the small notification icon — white on transparent, no background, no
+      safe zone — and the Wear OS launcher applies a circular mask: a white stroke with no
+      background became a dot there. `ic_pendulum` stays, and serves exactly what it is made for:
+      `setSmallIcon` in `RecordingService`.
 
-      Effet de bord voulu : l'exigence de qualite WO-V15 demande que l'icone de l'ecran de
-      demarrage soit identique a celle du lanceur, ce que l'icone adaptative satisfait toute seule.
+      Intended side effect: the WO-V15 quality requirement asks that the splash screen icon be
+      identical to the launcher one, which the adaptive icon satisfies on its own.
     -->
     <application
         android:allowBackup="false"
@@ -40,8 +40,8 @@
         android:supportsRtl="false"
         android:theme="@style/Theme.Pendulum">
 
-        <!-- L'application depend du module telephone (contexte du soir, ingestion) : elle n'est
-             pas autonome, et le declarer evite de la faire passer pour telle. -->
+        <!-- The application depends on the phone module (evening context, ingestion): it is not
+             standalone, and declaring so avoids passing it off as such. -->
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="false" />
@@ -65,15 +65,15 @@
             android:stopWithTask="false" />
 
         <!--
-          Reception Data Layer cote montre : accuses, demandes de balayage, demandes de demarrage.
+          Data Layer reception on the watch side: acknowledgements, sweep requests, start requests.
 
-          **Pas d'`android:permission`, et c'est mesure.** Le symetrique exact du service du module
-          `:phone` : la ligne `android:permission="…BIND_WEARABLE_LISTENER"` qui etait ici
-          interdisait toute livraison, parce que Play Services ne demande pas cette permission et
-          ne peut donc pas la detenir, quel que soit le `protectionLevel` sous lequel on la
-          definirait soi-meme. Le refus est silencieux pour l'application. Ce qui protege le
-          service a sa place est le filtre d'UID de la bibliotheque, qui refuse tout appelant qui
-          n'est pas GMS avant que `onDataChanged` ne soit atteint. `BANC-ESSAI.md` §12.1.
+          **No `android:permission`, and that is measured.** The exact mirror of the `:phone`
+          module's service: the `android:permission="…BIND_WEARABLE_LISTENER"` line that used to be
+          here forbade every delivery, because Play Services does not request that permission and
+          therefore cannot hold it, whatever `protectionLevel` one might define it under oneself.
+          The refusal is silent as far as the application is concerned. What protects the service
+          in its place is the library's UID filter, which rejects any caller that is not GMS before
+          `onDataChanged` is reached. `BENCH-LOG.md` §12.1.
         -->
         <service
             android:name="com.pendulum.wear.transfer.AckObserver"
@@ -94,10 +94,10 @@
             </intent-filter>
 
             <!--
-              Demande de demarrage venue du telephone. Le service tente `startForegroundService`
-              et retombe sur une notification quand Android le refuse — il est demarre par GMS,
-              donc depuis l'arriere-plan, ou Android 12 interdit de demarrer un service de premier
-              plan hors exemptions.
+              Start request coming from the phone. The service attempts `startForegroundService`
+              and falls back to a notification when Android refuses it — it is started by GMS, so
+              from the background, where Android 12 forbids starting a foreground service outside
+              the exemptions.
             -->
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />

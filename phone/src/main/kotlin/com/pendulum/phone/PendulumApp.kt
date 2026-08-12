@@ -11,25 +11,24 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * Point d'entree du processus.
+ * Entry point of the process.
  *
- * Deux gestes au demarrage, et un seul est evident.
+ * Two acts at start-up, and only one of them is obvious.
  *
- * 1. **Le chien de garde** est (re)planifie. Un travail periodique WorkManager survit aux
- *    redemarrages, mais pas a une desinstallation de mise a jour ni a un effacement de donnees :
- *    le reposer a chaque lancement coute une requete et evite qu'une session ouverte reste
- *    ouverte pour toujours.
+ * 1. **The watchdog** is (re)scheduled. A periodic WorkManager job survives reboots, but neither
+ *    an uninstall of updates nor a data erasure: laying it down again at every launch costs one
+ *    request and prevents an open session from staying open for ever.
  *
- * 2. **La detection d'un changement de parametres.** Si le profil actif en base ne correspond
- *    plus au hash que le code sait produire — cas d'une mise a jour de l'application qui a
- *    change une valeur par defaut de `:algo` — alors les nuits deja en base ont ete calculees
- *    avec un algorithme que cette version ne reproduit pas. Le garde-fou 3 impose le rescore de
- *    **toutes** les nuits depuis le brut ; c'est ici qu'il est declenche, parce que c'est le
- *    seul endroit qui s'execute une fois par lancement et pas une fois par nuit.
+ * 2. **The detection of a parameter change.** If the profile active in the database no longer
+ *    matches the hash the code knows how to produce — the case of an application update that has
+ *    changed a default value of `:algo` — then the nights already in the database were computed
+ *    with an algorithm this version does not reproduce. Guard rail 3 mandates the rescore of
+ *    **all** the nights from the raw data; this is where it is triggered, because this is the
+ *    only place that runs once per launch and not once per night.
  *
- * C'est aussi la raison pour laquelle les chunks bruts ne sont jamais supprimes automatiquement.
- * Le jour ou l'algorithme change — et il changera — la campagne passee ne vaut que ce que le
- * rescore peut en tirer.
+ * It is also the reason why the raw chunks are never deleted automatically. The day the
+ * algorithm changes — and it will — the past campaign is worth only what the rescore can draw
+ * from it.
  */
 class PendulumApp : Application() {
 
@@ -45,8 +44,8 @@ class PendulumApp : Application() {
             if (active != null && active.paramsHash != AnalysisParams.DEFAULT.paramsHash) {
                 Log.i(
                     TAG,
-                    "parametres modifies (${active.paramsHash} -> ${AnalysisParams.DEFAULT.paramsHash}) : " +
-                        "rescore de toutes les nuits depuis le brut",
+                    "parameters changed (${active.paramsHash} -> ${AnalysisParams.DEFAULT.paramsHash}): " +
+                        "rescore of all the nights from the raw data",
                 )
                 WorkScheduler.enqueueRescoreAll(this@PendulumApp)
             }

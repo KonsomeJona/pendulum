@@ -11,27 +11,25 @@ import com.pendulum.wear.transfer.SyncWorker
 import java.util.Calendar
 
 /**
- * Reprise apres redemarrage de la montre ou remplacement de l'application.
+ * Resume after a reboot of the watch or a replacement of the application.
  *
- * Le demarrage d'un service de premier plan depuis `BOOT_COMPLETED` est interdit aux types
- * `dataSync`, `camera`, `mediaPlayback`, `phoneCall`, `mediaProjection` et `microphone` pour une
- * application ciblant Android 15 ou plus. `health` n'est pas sur cette liste : c'est ce qui rend
- * ce chemin legal, et c'est aussi la raison pour laquelle le service est de ce type.
+ * Starting a foreground service from `BOOT_COMPLETED` is forbidden to the `dataSync`, `camera`,
+ * `mediaPlayback`, `phoneCall`, `mediaProjection` and `microphone` types for an application
+ * targeting Android 15 or later. `health` is not on that list: that is what makes this path
+ * legal, and it is also the reason the service is of that type.
  *
- * **Cinq conditions, pas une.** Ne tester que la fenetre de quatorze heures redemarre un
- * enregistrement a huit heures du matin, sur le chargeur, apres un reboot nocturne — et pollue
- * la nuit exactement comme on cherche a l'eviter. Quand les conditions ne sont pas reunies, on
- * ne reprend pas, mais on **finalise** : la session passe a `CLOSED` avec `stopReason = CRASH`
- * et le reliquat part vers le telephone. Ne rien faire laisserait une session `OPEN` pour
- * toujours du cote du telephone.
+ * **Five conditions, not one.** Testing only the fourteen-hour window restarts a recording at
+ * eight in the morning, on the charger, after a night-time reboot — and pollutes the night
+ * exactly as we are trying to avoid. When the conditions are not met, we do not resume, but we do
+ * **finalise**: the session moves to `CLOSED` with `stopReason = CRASH` and the remainder leaves
+ * for the phone. Doing nothing would leave a session `OPEN` for ever on the phone side.
  *
- * **Angle mort connu.** Si la montre a un code de verrouillage, `BOOT_COMPLETED` n'est diffuse
- * qu'apres deverrouillage et le stockage credential-encrypted est inaccessible avant : une
- * montre qui redemarre a 3 h **au poignet** reste verrouillee jusqu'au matin, donc aucune
- * reprise n'a lieu. `directBootAware` n'est deliberement pas utilise — il imposerait de deplacer
- * les chunks vers un stockage device-encrypted, plus expose et plus complexe, pour un gain
- * incertain. Tant que ce delai n'est pas mesure, c'est l'arret propre sur batterie faible qui
- * reste la principale protection contre la perte d'une nuit.
+ * **Known blind spot.** If the watch has a lock code, `BOOT_COMPLETED` is only broadcast after
+ * unlocking and credential-encrypted storage is inaccessible before that: a watch that reboots at
+ * 3 a.m. **on the wrist** stays locked until morning, so no resume takes place. `directBootAware`
+ * is deliberately not used — it would force moving the chunks to device-encrypted storage, more
+ * exposed and more complex, for an uncertain gain. Until that delay is measured, it is the clean
+ * shutdown on low battery that remains the main protection against losing a night.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -43,34 +41,34 @@ class BootReceiver : BroadcastReceiver() {
 
         val marker = SessionStore(context).readMarker()
         if (marker == null) {
-            // Rien en cours : on relance quand meme le rattrapage, un reliquat non acquitte peut
-            // dormir sur le disque depuis la veille.
+            // Nothing in progress: the catch-up is kicked off anyway, an unacknowledged remainder
+            // may have been sleeping on the disk since the day before.
             SyncWorker.enqueue(context)
             return
         }
 
         if (shouldResume(context, marker, System.currentTimeMillis())) {
-            Log.i(TAG, "reprise de la session ${marker.sessionHex}")
+            Log.i(TAG, "resuming session ${marker.sessionHex}")
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, RecordingService::class.java).setAction(RecordingService.ACTION_RESUME),
             )
             Watchdog.start(context)
         } else {
-            Log.i(TAG, "pas de reprise : finalisation de ${marker.sessionHex}")
+            Log.i(TAG, "no resume: finalising ${marker.sessionHex}")
             SyncWorker.enqueue(context, marker.sessionHex)
         }
     }
 
     private fun shouldResume(context: Context, m: SessionMarker, nowMs: Long): Boolean {
-        if (m.estPerimee(nowMs)) return false
+        if (m.isStale(nowMs)) return false
 
         val cal = Calendar.getInstance().apply { timeInMillis = nowMs }
         val localMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         if (localMinutes >= m.stopAtLocalMinutes) return false
 
-        // Sur le chargeur, la nuit est finie par definition : la reprendre reviendrait a
-        // enregistrer un plan de travail.
+        // On the charger the night is over by definition: resuming it would amount to recording
+        // a worktop.
         val bm = context.getSystemService(BatteryManager::class.java)
         if (bm?.isCharging == true) return false
 

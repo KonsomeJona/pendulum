@@ -15,19 +15,24 @@ import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
 
 /**
- * Sonde du Data Layer, cote telephone, executee **dans le processus `com.pendulum`**.
+ * Data Layer probe, phone side, run **inside the `com.pendulum` process**.
  *
- * Pourquoi une instrumentation et pas des taps : le telephone du banc reel est un appareil du
- * quotidien, verrouille par un code. `uiautomator` ne voit alors que le verrou, `am start` ne
- * demarre meme pas le processus (« Requires permission not exported »), et l'assistant du soir
- * est hors d'atteinte. `am instrument`, lui, ne passe pas par le verrou : le runner demarre dans
- * le processus de l'application, avec son UID, donc avec l'identite que GMS controle.
+ * Why an instrumentation and not taps: the real bench's phone is an everyday device, locked by a
+ * PIN. `uiautomator` then sees nothing but the lock, `am start` does not even start the process
+ * ("Requires permission not exported"), and the evening form is out of reach. `am instrument`
+ * does not go through the lock: the runner starts inside the application's process, with its UID,
+ * hence with the identity GMS checks.
  *
- * Chaque sonde ecrit un marqueur `BANC_*` dans logcat sous l'etiquette `BANC` : ssh via Tailscale
- * ne propage pas les codes de sortie, et la sortie standard d'un test JUnit ne remonte pas dans le
- * flux d'`am instrument`. On lit logcat, jamais `$?`.
+ * Every probe writes a `BANC_*` marker to logcat under the `BANC` tag: ssh over Tailscale does not
+ * propagate exit codes, and the standard output of a JUnit test does not surface in the
+ * `am instrument` stream. Read logcat, never `$?`.
  *
- * Se deploie par `tools/banc/datalayer.sh`.
+ * Deployed by `tools/banc/datalayer.sh`.
+ *
+ * The test method names, the log markers and the keys of the log lines stay in French: the first
+ * are typed as sub-commands and the others are quoted word for word in
+ * `docs/workings/BENCH-LOG.md`, a dated log whose whole value is being an exact trace. The prose,
+ * the Kotlin identifiers and the free text of the messages were translated.
  */
 @RunWith(AndroidJUnit4::class)
 class BancDataLayer {
@@ -42,9 +47,9 @@ class BancDataLayer {
         Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(path).build()
 
     /**
-     * Les deux lectures que le §7.1 oppose : `connectedNodes`, qui lit une configuration, et
-     * `getCapability(FILTER_REACHABLE)`, qui teste une portee. Les afficher cote a cote est tout
-     * l'objet du §3 du banc reel.
+     * The two readings §7.1 sets against each other: `connectedNodes`, which reads a
+     * configuration, and `getCapability(FILTER_REACHABLE)`, which tests a scope. Displaying them
+     * side by side is the whole point of §3 of the real bench.
      */
     @Test
     fun noeuds() {
@@ -70,84 +75,88 @@ class BancDataLayer {
     }
 
     /**
-     * Publie **exactement** l'item que produit `EveningContextSealer.publier` : meme chemin, meme
-     * charge utile, meme `setUrgent()`. La difference volontaire est que la ligne `night_context`
-     * n'est **pas** ecrite : elle est scellee par declencheur SQLite, donc irreversible, et le
-     * banc n'a pas a laisser une soiree fausse dans la base d'un appareil du quotidien. Ce qui est
-     * mesure ici est le transport, pas le formulaire.
+     * Publishes **exactly** the item `ContextPublication.put` produces: same path, same payload,
+     * same `setUrgent()`. The deliberate difference is that the `night_context` row is **not**
+     * written: it is sealed by an SQLite trigger, hence irreversible, and the bench has no business
+     * leaving a false evening in the database of an everyday device. What is measured here is the
+     * transport, not the form.
      */
     @Test
     fun publierContexte() {
-        val cle = WirePaths.nightKey(System.currentTimeMillis())
-        val requete = PutDataRequest.create(WirePaths.context(cle))
+        val key = WirePaths.nightKey(System.currentTimeMillis())
+        val request = PutDataRequest.create(WirePaths.context(key))
             .setData(System.currentTimeMillis().toString().toByteArray())
             .setUrgent()
-        val item = Tasks.await(Wearable.getDataClient(ctx).putDataItem(requete), 30, TimeUnit.SECONDS)
-        log("BANC_CONTEXTE_PUBLIE cle=$cle uri=${item.uri}")
+        val item = Tasks.await(Wearable.getDataClient(ctx).putDataItem(request), 30, TimeUnit.SECONDS)
+        log("BANC_CONTEXTE_PUBLIE cle=$key uri=${item.uri}")
     }
 
-    /** Le ménage : sans lui, la montre de l'utilisateur reste debloquee pour la soiree du banc. */
+    /** The clean-up: without it, the user's watch stays unblocked for the bench's evening. */
     @Test
     fun retirerContexte() {
-        val cle = WirePaths.nightKey(System.currentTimeMillis())
+        val key = WirePaths.nightKey(System.currentTimeMillis())
         val n = Tasks.await(
-            Wearable.getDataClient(ctx).deleteDataItems(uri(WirePaths.context(cle))),
+            Wearable.getDataClient(ctx).deleteDataItems(uri(WirePaths.context(key))),
             30, TimeUnit.SECONDS,
         )
-        log("BANC_CONTEXTE_RETIRE cle=$cle supprimes=$n")
+        log("BANC_CONTEXTE_RETIRE cle=$key supprimes=$n")
     }
 
     /**
-     * Health Connect en API 37. Le §3 du banc emulateur note que `READ_HEALTH_DATA_IN_BACKGROUND`
-     * et `READ_HEALTH_DATA_HISTORY` n'existent pas avant l'API 35, et que le banc y exercait donc
-     * la branche degradee `BACKGROUND_READ_UNAVAILABLE`. Ici on lit ce que le produit lit.
+     * Health Connect on API 37. §3 of the emulator bench notes that
+     * `READ_HEALTH_DATA_IN_BACKGROUND` and `READ_HEALTH_DATA_HISTORY` do not exist before API 35,
+     * and that the bench therefore exercised the degraded `BACKGROUND_READ_UNAVAILABLE` branch
+     * there. Here we read what the product reads.
      */
     @Test
     fun sante() {
-        val statut = androidx.health.connect.client.HealthConnectClient.getSdkStatus(ctx)
-        log("BANC_HC_SDK_STATUS $statut")
-        val lecteur = com.pendulum.phone.health.SleepReader(ctx)
-        val dispo = kotlinx.coroutines.runBlocking { lecteur.availability() }
-        log("BANC_HC_AVAILABILITY $dispo")
+        val status = androidx.health.connect.client.HealthConnectClient.getSdkStatus(ctx)
+        log("BANC_HC_SDK_STATUS $status")
+        val reader = com.pendulum.phone.health.SleepReader(ctx)
+        val availability = kotlinx.coroutines.runBlocking { reader.availability() }
+        log("BANC_HC_AVAILABILITY $availability")
         val pm = ctx.packageManager
         for (p in listOf(
             "android.permission.health.READ_SLEEP",
             "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND",
             "android.permission.health.READ_HEALTH_DATA_HISTORY",
         )) {
-            val existe = runCatching { pm.getPermissionInfo(p, 0) != null }.getOrDefault(false)
-            val accordee = pm.checkPermission(p, ctx.packageName) ==
+            val defined = runCatching { pm.getPermissionInfo(p, 0) != null }.getOrDefault(false)
+            val granted = pm.checkPermission(p, ctx.packageName) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
-            log("BANC_HC_PERM $p declaree_par_la_plateforme=$existe accordee=$accordee")
+            log("BANC_HC_PERM $p declaree_par_la_plateforme=$defined accordee=$granted")
         }
     }
 
     /**
-     * Le diviseur de temps reellement compile dans **cet** APK.
+     * The time divisor actually compiled into **this** APK.
      *
-     * Rien dans le code ne peut verifier que les deux moities du banc ont recu la meme valeur :
-     * `EchelleTemps` est un objet par module, alimente par une propriete Gradle, et deux
-     * invocations distinctes de `gradlew` produiraient sans un mot deux applications a des
-     * echelles differentes. La verification est donc **externe** : on lit la valeur des deux
-     * cotes et on les compare. Son jumeau est `BancDataLayer#echelle` cote montre.
+     * Nothing in the code can check that the two halves of the bench received the same value:
+     * `TimeScaling` is one object per module, fed by a Gradle property, and two distinct `gradlew`
+     * invocations would silently produce two applications at different scales. The check is
+     * therefore **external**: the value is read on both sides and the two are compared. Its twin
+     * is `BancDataLayer#echelle` on the watch side.
      */
     @Test
     fun echelle() {
-        val d = com.pendulum.phone.temps.Durees.ACTIVES
+        val d = com.pendulum.phone.time.Durations.ACTIVE
+        // The **keys** of this line stay as they are: they are quoted word for word in
+        // `docs/workings/BENCH-LOG.md`, which is a dated log. Only the Kotlin field names,
+        // invisible in the output, followed the renaming.
         log(
-            "BANC_ECHELLE diviseur=${com.pendulum.phone.temps.EchelleTemps.DIVISEUR} " +
-                "abandonLectureMs=${d.abandonLectureMs} ageMaxNuitMs=${d.ageMaxNuitMs} " +
-                "silenceAvantStaleMs=${d.silenceAvantStaleMs}",
+            "BANC_ECHELLE diviseur=${com.pendulum.phone.time.TimeScaling.DIVISOR} " +
+                "abandonLectureMs=${d.readGiveUpMs} ageMaxNuitMs=${d.maxNightAgeMs} " +
+                "silenceAvantStaleMs=${d.silenceBeforeStaleMs}",
         )
     }
 
     /**
-     * Les lignes que l'ingestion a ecrites, lues **dans la base** et non deduites des fichiers.
+     * The rows ingestion has written, read **from the database** and not inferred from the files.
      *
-     * C'est la moitie telephone de l'invariant : `AckBuilder.build` ne recoit que les index
-     * `complete=1` de cette table, donc ce qui n'est pas ici ne peut pas etre acquitte, donc ne
-     * peut pas etre efface de la montre. Le `sqlite3` de la ligne de commande n'existe pas sur
-     * cet appareil ; la lecture passe donc par le meme `openHelper` que le produit.
+     * This is the phone half of the invariant: `AckBuilder.build` only receives the `complete=1`
+     * indices of this table, so what is not here cannot be acknowledged, so it cannot be erased
+     * from the watch. The command-line `sqlite3` does not exist on this device; the read therefore
+     * goes through the same `openHelper` as the product.
      */
     @Test
     fun base() {
@@ -182,60 +191,60 @@ class BancDataLayer {
     }
 
     /**
-     * Le menage de fin de banc : la nuit fabriquee, ses chunks en base et ses fichiers.
+     * The end-of-bench clean-up: the manufactured night, its chunks in the database and its files.
      *
-     * Elle est passee par `-e session <hex>` plutot que devinee : effacer « la derniere nuit »
-     * d'une base qui est celle d'un appareil du quotidien serait une regle qui se trompe un jour.
-     * La suppression de `night_session` emporte les lignes `chunk` par cle etrangere en cascade.
+     * It is passed through `-e session <hex>` rather than guessed: erasing "the last night" from a
+     * database that belongs to an everyday device would be a rule that gets it wrong one day.
+     * Deleting `night_session` takes the `chunk` rows with it by cascading foreign key.
      */
     @Test
     fun purgerBanc() {
         val hex = InstrumentationRegistry.getArguments().getString("session")
         if (hex.isNullOrBlank()) {
-            log("BANC_PURGE_FAIL aucune session passee par -e session <hex>")
+            log("BANC_PURGE_FAIL no session passed through -e session <hex>")
             return
         }
         val db = com.pendulum.phone.db.PendulumDatabase.get(ctx).openHelper.writableDatabase
-        val avant = db.query("SELECT count(*) FROM chunk WHERE sessionHex='$hex'")
+        val before = db.query("SELECT count(*) FROM chunk WHERE sessionHex='$hex'")
             .use { if (it.moveToFirst()) it.getInt(0) else -1 }
         db.execSQL("DELETE FROM night_session WHERE sessionHex='$hex'")
-        val apres = db.query("SELECT count(*) FROM chunk WHERE sessionHex='$hex'")
+        val after = db.query("SELECT count(*) FROM chunk WHERE sessionHex='$hex'")
             .use { if (it.moveToFirst()) it.getInt(0) else -1 }
-        val dossier = java.io.File(java.io.File(ctx.filesDir, "chunks"), hex)
-        val fichiers = dossier.listFiles()?.size ?: 0
-        val efface = dossier.deleteRecursively()
-        // L'accuse est publie par le telephone et reste dans le magasin une fois la nuit finie :
-        // il est un etat, pas un evenement, et rien ne le retire.
+        val folder = java.io.File(java.io.File(ctx.filesDir, "chunks"), hex)
+        val fileCount = folder.listFiles()?.size ?: 0
+        val erased = folder.deleteRecursively()
+        // The acknowledgement is published by the phone and stays in the store once the night is
+        // over: it is a state, not an event, and nothing removes it.
         val ack = Tasks.await(
             Wearable.getDataClient(ctx)
                 .deleteDataItems(uri(WirePaths.ack(hex)), DataClient.FILTER_LITERAL),
             30, TimeUnit.SECONDS,
         )
-        log("BANC_PURGE hex=$hex chunks_avant=$avant chunks_apres=$apres " +
-            "fichiers=$fichiers dossier_efface=$efface item_ack=$ack")
+        log("BANC_PURGE hex=$hex chunks_avant=$before chunks_apres=$after " +
+            "fichiers=$fileCount dossier_efface=$erased item_ack=$ack")
     }
 
     /**
-     * La livraison symetrique de `BancDataLayer#livrerSonde` cote montre : telephone -> montre,
-     * sous le prefixe `/pendulum/ack/` que `AckObserver` declare dans son filtre.
+     * The symmetric delivery of `BancDataLayer#livrerSonde` on the watch side: phone -> watch,
+     * under the `/pendulum/ack/` prefix `AckObserver` declares in its filter.
      *
-     * Charge utile illisible, donc `Ack.decode` leve et `AckObserver` journalise « accuse
-     * illisible » : aucun fichier n'est efface sur la montre, aucun item supprime. La seule chose
-     * que cette sonde etablit est que GMS a pu se lier — ou qu'il ne l'a pas pu.
+     * Unreadable payload, so `Ack.decode` throws and `AckObserver` logs "unreadable ack": no file
+     * is erased on the watch, no item deleted. The only thing this probe establishes is that GMS
+     * was able to bind — or that it was not.
      */
     @Test
     fun livrerSonde() {
         val path = WirePaths.ack("ba0c0000000000000000000000000000")
-        val charge = "BANC-SONDE-${System.currentTimeMillis()}".toByteArray()
+        val payload = "BANC-SONDE-${System.currentTimeMillis()}".toByteArray()
         val item = Tasks.await(
             Wearable.getDataClient(ctx)
-                .putDataItem(PutDataRequest.create(path).setData(charge).setUrgent()),
+                .putDataItem(PutDataRequest.create(path).setData(payload).setUrgent()),
             30, TimeUnit.SECONDS,
         )
-        log("BANC_SONDE_PUBLIEE uri=${item.uri} ${charge.size}o")
+        log("BANC_SONDE_PUBLIEE uri=${item.uri} ${payload.size}o")
     }
 
-    /** Retire l'item de [livrerSonde]. */
+    /** Removes the item from [livrerSonde]. */
     @Test
     fun retirerSonde() {
         val n = Tasks.await(
@@ -247,13 +256,13 @@ class BancDataLayer {
     }
 
     /**
-     * Les permissions declarees par les composants de l'application, et leur existence reelle sur
-     * l'appareil. C'est la lecture qui manquait au §11.5.6 : une permission qu'un composant exige
-     * et que personne ne definit interdit **toute** liaison, en silence.
+     * The permissions declared by the application's components, and their real existence on the
+     * device. This is the reading that was missing in §11.5.6: a permission a component requires
+     * and that nobody defines forbids **every** binding, silently.
      *
-     * La sonde lit aussi ce que GMS **demande**, parce que c'est la que se joue la question :
-     * une permission d'installation n'est accordee qu'aux paquets qui la declarent en
-     * `<uses-permission>`, quel que soit son `protectionLevel`.
+     * The probe also reads what GMS **requests**, because that is where the question is settled: an
+     * install-time permission is only granted to packages that declare it in `<uses-permission>`,
+     * whatever its `protectionLevel`.
      */
     @Test
     fun permissionsDesComposants() {
@@ -264,103 +273,105 @@ class BancDataLayer {
                 android.content.pm.PackageManager.GET_RECEIVERS or
                 android.content.pm.PackageManager.GET_ACTIVITIES,
         )
-        val composants = (infos.services.orEmpty().map { it.name to it.permission }) +
+        val components = (infos.services.orEmpty().map { it.name to it.permission }) +
             (infos.receivers.orEmpty().map { it.name to it.permission }) +
             (infos.activities.orEmpty().map { it.name to it.permission })
-        for ((nom, perm) in composants) {
+        for ((name, perm) in components) {
             if (perm == null) continue
-            val existe = runCatching { pm.getPermissionInfo(perm, 0) }.isSuccess
-            log("BANC_PERM_COMPOSANT $nom exige=$perm definie_sur_l_appareil=$existe")
+            val defined = runCatching { pm.getPermissionInfo(perm, 0) }.isSuccess
+            log("BANC_PERM_COMPOSANT $name exige=$perm definie_sur_l_appareil=$defined")
         }
 
-        val cible = "com.google.android.gms.permission.BIND_WEARABLE_LISTENER"
-        log("BANC_PERM_CIBLE definie=" + runCatching { pm.getPermissionInfo(cible, 0) }.isSuccess)
+        val target = "com.google.android.gms.permission.BIND_WEARABLE_LISTENER"
+        log("BANC_PERM_CIBLE definie=" + runCatching { pm.getPermissionInfo(target, 0) }.isSuccess)
         val gms = pm.getPackageInfo(
             "com.google.android.gms",
             android.content.pm.PackageManager.GET_PERMISSIONS,
         )
-        val demandees = gms.requestedPermissions.orEmpty()
-        log("BANC_PERM_GMS demandees=${demandees.size} demande_la_cible=${cible in demandees.toSet()}")
+        val requested = gms.requestedPermissions.orEmpty()
+        log("BANC_PERM_GMS demandees=${requested.size} demande_la_cible=${target in requested.toSet()}")
     }
 
     /**
-     * La surface d'attaque de `PendulumListenerService` quand il ne porte plus `android:permission`.
+     * The attack surface of `PendulumListenerService` once it no longer carries
+     * `android:permission`.
      *
-     * Deux questions, deux mesures. **Se lier** : le `onBind` de `WearableListenerService` est
-     * `final` et ne controle rien — il rend son binder a qui presente l'une de sept actions. **Se
-     * faire livrer** : chacune des onze methodes de l'interface AIDL passe par le meme filtre, qui
-     * compare `Binder.getCallingUid()` a l'UID des services Google Play et refuse tout le reste.
+     * Two questions, two measurements. **Binding**: `WearableListenerService`'s `onBind` is `final`
+     * and checks nothing — it hands its binder to whoever presents one of seven actions. **Being
+     * delivered to**: each of the eleven methods of the AIDL interface goes through the same
+     * filter, which compares `Binder.getCallingUid()` against the Google Play services UID and
+     * refuses everything else.
      *
-     * Cette sonde exerce le second depuis un processus qui n'est pas GMS — le sien. Un refus ici
-     * ne prouve pas qu'une application tierce serait refusee pour la meme raison ; il prouve que
-     * le filtre existe, qu'il s'execute, et qu'il refuse un UID qui n'est pas celui de GMS.
+     * This probe exercises the second from a process that is not GMS — its own. A refusal here does
+     * not prove that a third-party application would be refused for the same reason; it proves that
+     * the filter exists, that it runs, and that it refuses a UID that is not GMS's.
      */
     @Test
     fun surfaceDeLiaison() {
         val intent = android.content.Intent("com.google.android.gms.wearable.BIND_LISTENER")
             .setClassName(ctx, "com.pendulum.phone.ingest.PendulumListenerService")
-        val verrou = java.util.concurrent.CountDownLatch(1)
+        val latch = java.util.concurrent.CountDownLatch(1)
         var binder: android.os.IBinder? = null
         val conn = object : android.content.ServiceConnection {
             override fun onServiceConnected(n: android.content.ComponentName?, b: android.os.IBinder?) {
                 binder = b
-                verrou.countDown()
+                latch.countDown()
             }
 
             override fun onServiceDisconnected(n: android.content.ComponentName?) = Unit
         }
-        val lie = ctx.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
-        verrou.await(20, TimeUnit.SECONDS)
-        log("BANC_LIAISON bindService=$lie binder_rendu=${binder != null}")
+        val bound = ctx.bindService(intent, conn, android.content.Context.BIND_AUTO_CREATE)
+        latch.await(20, TimeUnit.SECONDS)
+        log("BANC_LIAISON bindService=$bound binder_rendu=${binder != null}")
 
         val b = binder
         if (b != null) {
-            val methode = b.javaClass.methods.firstOrNull {
+            val method = b.javaClass.methods.firstOrNull {
                 it.parameterTypes.size == 1 &&
                     it.parameterTypes[0].name == "com.google.android.gms.common.data.DataHolder"
             }
-            log("BANC_LIAISON_METHODE ${methode?.name ?: "introuvable"}")
-            if (methode != null) {
-                val vide = com.google.android.gms.common.data.DataHolder.empty(0)
-                val issue = runCatching { methode.invoke(b, vide) }
+            log("BANC_LIAISON_METHODE ${method?.name ?: "not found"}")
+            if (method != null) {
+                val empty = com.google.android.gms.common.data.DataHolder.empty(0)
+                val outcome = runCatching { method.invoke(b, empty) }
                 log("BANC_LIAISON_APPEL uid=${android.os.Process.myUid()} " +
-                    "exception=${issue.exceptionOrNull()?.cause?.javaClass?.simpleName ?: "aucune"}")
+                    "exception=${outcome.exceptionOrNull()?.cause?.javaClass?.simpleName ?: "none"}")
             }
         }
         ctx.unbindService(conn)
     }
 
     /**
-     * Le verdict de la porte P1, calcule par le code du produit et non par le banc.
+     * The P1 gate verdict, computed by the product's code and not by the bench.
      *
-     * `PorteP1` et `PorteP1Exporter` sont l'ecran « Reglages › Mesure » et son export CSV. Les
-     * appeler ici plutot que de piloter l'ecran est impose par le meme mur que le reste : le
-     * telephone est verrouille par un code. Le fichier est ecrit dans le stockage prive et se
-     * rapatrie par `run-as com.pendulum cat files/banc-porte-p1.csv`.
+     * `P1Gate` and `P1GateExporter` are the "Settings › Measurement" screen and its CSV export.
+     * Calling them here rather than steering the screen is imposed by the same wall as the rest:
+     * the phone is locked by a PIN. The file is written to private storage and fetched back with
+     * `run-as com.pendulum cat files/banc-porte-p1.csv`.
      */
     @Test
     fun porteP1() = kotlinx.coroutines.runBlocking {
         val db = com.pendulum.phone.db.PendulumDatabase.get(ctx)
         val sessions = db.nightDao().all()
         log("BANC_P1_SESSIONS n=${sessions.size}")
-        val verdicts = sessions.map { com.pendulum.phone.ui.model.PorteP1.de(it) }
+        val verdicts = sessions.map { com.pendulum.phone.ui.model.P1Gate.of(it) }
         for (v in verdicts) {
-            log("BANC_P1_NUIT hex=${v.sessionHex} soiree=${v.soiree} verdict=${v.verdict}")
-            for (c in v.criteres) {
-                log("BANC_P1_CRITERE ${c.libelle} valeur=${c.valeur} seuil=${c.seuil} etat=${c.etat}")
+            log("BANC_P1_NUIT hex=${v.sessionHex} soiree=${v.evening} verdict=${v.verdict}")
+            for (c in v.criteria) {
+                log("BANC_P1_CRITERE ${c.label} valeur=${c.value} seuil=${c.threshold} etat=${c.state}")
             }
         }
-        val campagne = com.pendulum.phone.ui.model.PorteP1.campagne(verdicts)
+        val campaign = com.pendulum.phone.ui.model.P1Gate.campaign(verdicts)
         log(
-            "BANC_P1_CAMPAGNE examinees=${campagne.nuitsExaminees} conformes=${campagne.nuitsConformes} " +
-                "serieMax=${campagne.serieMax} franchie=${campagne.franchie}",
+            "BANC_P1_CAMPAGNE examinees=${campaign.nightsExamined} conformes=${campaign.compliantNights} " +
+                "serieMax=${campaign.longestStreak} franchie=${campaign.crossed}",
         )
         val f = java.io.File(ctx.filesDir, "banc-porte-p1.csv")
-        f.outputStream().use { com.pendulum.phone.export.PorteP1Exporter.exportCsv(ctx, it) }
+        f.outputStream().use { com.pendulum.phone.export.P1GateExporter.exportCsv(ctx, it) }
         log("BANC_P1_CSV ${f.absolutePath} ${f.length()}o")
     }
 
-    /** Ce que la base porte pour une nuit, champ par champ — le detail que `porteP1` resume. */
+    /** What the database carries for one night, field by field — the detail `porteP1` summarises. */
     @Test
     fun detailNuit() = kotlinx.coroutines.runBlocking {
         val db = com.pendulum.phone.db.PendulumDatabase.get(ctx)
@@ -375,7 +386,7 @@ class BancDataLayer {
         log("BANC_NUIT_FIN")
     }
 
-    /** Tout ce que le magasin porte sous `/pendulum`, vu du telephone. */
+    /** Everything the store carries under `/pendulum`, seen from the phone. */
     @Test
     fun listerItems() {
         val buf = Tasks.await(

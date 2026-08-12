@@ -1,18 +1,18 @@
 name: CI
 
-# Ce qui tourne à chaque poussée, dans l'ordre de coût croissant : les tests JVM d'abord,
-# parce qu'ils portent l'algorithme et qu'ils sont rapides ; l'assemblage Android ensuite ;
-# les tests instrumentés en dernier, parce qu'ils démarrent un émulateur.
+# What runs on every push, in order of increasing cost: the JVM tests first, because they carry the
+# algorithm and they are fast; the Android assembly next; the instrumented tests last, because they
+# boot an emulator.
 #
-# Un point de méthode : le projet a longtemps toléré **nommément** un échec, T6, par une étape qui
-# lisait les rapports XML et vérifiait que rien d'autre n'était rouge. Cette exception n'existe plus
-# — T6 passe depuis que son dénominateur a été redéfini et que le sous-comptage qu'il écartait est
-# devenu une grandeur publiée et surveillée, T22 (docs/07-validation.md §4.1). **Aucun test n'est
-# plus toléré rouge.**
+# A point of method: the project tolerated one failure **by name** for a long time, T6, through a
+# step that read the XML reports and checked that nothing else was red. That exception no longer
+# exists — T6 passes since its denominator was redefined and since the under-count it excluded
+# became a published, monitored quantity, T22 (docs/07-validation.md §4.1). **No test is tolerated
+# red any more.**
 #
-# Ce qui reste de cette étape, et qui n'était pas l'exception, c'est la garde qui échoue quand Gradle
-# n'a produit **aucun** rapport : c'est le cas d'une erreur de compilation, que la lecture des seuls
-# rapports XML laisserait passer pour un succès silencieux.
+# What remains of that step, and what was never the exception, is the guard that fails when Gradle
+# has produced **no** report at all: that is the case of a compilation error, which reading the XML
+# reports alone would let through as a silent success.
 
 on:
   push:
@@ -40,22 +40,22 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # `continue-on-error` plutôt qu'un `|| true` : la step reste visiblement rouge dans
-      # l'interface, mais le job continue jusqu'à la vérification qui suit, laquelle décide.
-      # Un `|| true` cacherait aussi bien une erreur de compilation qu'un test rouge.
+      # `continue-on-error` rather than a `|| true`: the step stays visibly red in the interface,
+      # but the job carries on to the check that follows, which is the one that decides. A
+      # `|| true` would hide a compilation error just as well as a red test.
       - name: Run unit tests
         id: tests
         continue-on-error: true
         run: ./gradlew :format:test :algo:test --console=plain --continue
 
-      # C'est cette étape qui décide, et non le code de retour de Gradle. Elle échoue si un test est
-      # rouge, et aussi — ce qui compte autant — si Gradle a échoué sans produire de rapport, cas où
-      # un `|| true` naïf aurait laissé passer une erreur de compilation pour un succès.
+      # This is the step that decides, and not Gradle's exit code. It fails if a test is red, and
+      # also — which matters just as much — if Gradle failed without producing a report, the case
+      # where a naive `|| true` would have let a compilation error through as a success.
       #
-      # Le glob est **restreint** ici : `:format` et `:algo` sont des modules Kotlin purs, leur
-      # tâche s'appelle `test` et leurs rapports sortent dans `build/test-results/test/`. Le
-      # nommer explicitement fait de ce job une garde de son propre périmètre : si `:format:test`
-      # cesse de tourner, ce job le dit, au lieu de compter les rapports d'un autre job.
+      # The glob is **restricted** here: `:format` and `:algo` are pure Kotlin modules, their task
+      # is called `test` and their reports come out in `build/test-results/test/`. Naming it
+      # explicitly makes this job a guard over its own scope: if `:format:test` stops running, this
+      # job says so, instead of counting another job's reports.
       - name: Check the tests ran, and that all of them passed
         run: python3 tools/ci/verifier-tests.py '*/build/test-results/test/*.xml'
 
@@ -84,27 +84,27 @@ jobs:
       - name: Assemble debug
         run: ./gradlew :wear:assembleDebug :phone:assembleDebug --console=plain
 
-      # Les tests JVM des deux modules **Android**, qui ne tournaient dans aucun pipeline.
+      # The JVM tests of the two **Android** modules, which ran in no pipeline at all.
       #
-      # Le job d'a cote ne lance que `:format:test` et `:algo:test` : ce sont des modules Kotlin
-      # purs, dont la tache s'appelle `test` et dont les rapports sortent dans
-      # `build/test-results/test/`. Un module Android n'a pas de tache `test` — il a
-      # `testDebugUnitTest`, et ses rapports sortent dans `test-results/testDebugUnitTest/`.
-      # Le glob de verification ne les voyait donc pas, et l'omission etait invisible des deux
-      # cotes : rien n'echouait, et le total affiche restait juste pour les modules qu'il
-      # comptait. Plus de deux cents tests ne s'executaient nulle part.
+      # The job next door only launches `:format:test` and `:algo:test`: those are pure Kotlin
+      # modules, whose task is called `test` and whose reports come out in
+      # `build/test-results/test/`. An Android module has no `test` task — it has
+      # `testDebugUnitTest`, and its reports come out in `test-results/testDebugUnitTest/`. The
+      # verification glob therefore never saw them, and the omission was invisible from both
+      # sides: nothing failed, and the displayed total stayed correct for the modules it did
+      # count. More than two hundred tests were running nowhere.
       #
-      # Meme mecanique que le job JVM : `continue-on-error` pour que l'etape reste rouge a l'oeil
-      # sans arreter le job, et une verification qui decide a partir des rapports.
+      # Same mechanism as the JVM job: `continue-on-error` so the step stays red to the eye
+      # without stopping the job, and a check that decides from the reports.
       #
-      # `:sleepwriter` est ajouté parce que ses 16 tests n'étaient lancés nulle part. C'est un outil
-      # de banc qui n'est jamais publié, mais il partage `:format` avec le produit.
+      # `:sleepwriter` is added because its 16 tests were launched nowhere. It is a bench tool that
+      # is never published, but it shares `:format` with the product.
       #
-      # `testSourceADebugUnitTest` et non `test` : `test` est un agrégat qui dépend de **toutes**
-      # les variantes — deux saveurs × deux types de build — soit quatre compilations et 64
-      # exécutions pour 16 tests qui vivent tous dans le `src/test/` partagé. Les deux saveurs ne
-      # diffèrent que par un `applicationIdSuffix` et deux chaînes ; aucun test ne les distingue.
-      # C'est exactement le raisonnement déjà appliqué à lint plus bas (`lintSourceADebug`).
+      # `testSourceADebugUnitTest` and not `test`: `test` is an aggregate that depends on **all**
+      # the variants — two flavours x two build types — that is four compilations and 64 runs for
+      # 16 tests that all live in the shared `src/test/`. The two flavours differ only by an
+      # `applicationIdSuffix` and two strings; no test tells them apart. This is exactly the
+      # reasoning already applied to lint further down (`lintSourceADebug`).
       - name: Run Android unit tests
         id: android-tests
         continue-on-error: true
@@ -113,43 +113,48 @@ jobs:
             :wear:testDebugUnitTest :phone:testDebugUnitTest \
             :sleepwriter:testSourceADebugUnitTest
 
-      # Les variantes **release** portent `EchelleReleaseTest`, le garde-fou qui assure qu'aucune
-      # compilation de banc — celle où le temps est comprimé d'un facteur 300 — ne parte en
-      # production. Il ne s'exécutait dans aucun pipeline : il vit dans le source set `testRelease`,
-      # que `testDebugUnitTest` ne touche pas. Le seul test qui protège de « la nuit périme au bout
-      # de deux minutes chez l'utilisateur » ne tournait jamais.
+      # The **release** variants carry the guard rail that makes sure no bench build — the one
+      # where time is compressed by a factor of 300 — ever ships to production. It ran in no
+      # pipeline: it lives in the `testRelease` source set, which `testDebugUnitTest` does not
+      # touch. The only test that protects against "the night expires after two minutes on the
+      # user's device" never ran at all.
       #
-      # Étape séparée, et filtrée, pour deux raisons :
-      #  - `testReleaseUnitTest` ne compile pas seulement `src/testRelease/`, il rejoue aussi tout
-      #    `src/test/` — soit ~320 tests déjà verts quelques secondes plus tôt en debug — pour en
-      #    gagner 6. Le filtre ne garde que ce que la variante release apporte réellement.
-      #  - un filtre `--tests` s'applique à **toutes** les tâches de test de l'invocation, et Gradle
-      #    échoue si l'une d'elles ne trouve aucune correspondance. Il ne peut donc pas cohabiter
-      #    avec l'invocation debug ci-dessus. Groupé ici parce que `:wear` **et** `:phone` ont bien
-      #    chacun un `src/testRelease/.../EchelleReleaseTest.kt` : si l'un des deux perd ce fichier,
-      #    ce n'est pas le filtre qu'il faut relâcher, c'est le garde-fou qu'il faut remettre.
+      # A separate step, and a filtered one, for two reasons:
+      #  - `testReleaseUnitTest` does not only compile `src/testRelease/`, it also replays the
+      #    whole of `src/test/` — some ~320 tests that were green in debug a few seconds earlier —
+      #    to gain 6. The filter keeps only what the release variant actually brings.
+      #  - a `--tests` filter applies to **every** test task of the invocation, and Gradle fails if
+      #    one of them finds no match. It therefore cannot cohabit with the debug invocation above.
+      #    Grouped here because `:wear` **and** `:phone` do each have their release-variant guard
+      #    rail: if either loses its file, it is not the filter that should be relaxed, it is the
+      #    guard rail that should be put back.
+      #
+      # Two patterns and not one, because the two modules name their guard rail differently —
+      # `ReleaseScaleTest` on the watch, `ReleaseTimeScalingTest` on the phone. A `--tests` filter
+      # is a union across the patterns, so each task still matches at least one and neither is
+      # silently skipped.
       - name: Run the release-variant guard-rail tests
         continue-on-error: true
         run: |
           ./gradlew --console=plain --continue \
             :wear:testReleaseUnitTest :phone:testReleaseUnitTest \
-            --tests '*EchelleReleaseTest'
+            --tests '*ReleaseScaleTest' --tests '*ReleaseTimeScalingTest'
 
-      # Glob par défaut : **toutes** les variantes de tâche — `testDebugUnitTest`,
-      # `testReleaseUnitTest`, variantes de saveur. Un glob nommant une seule variante est
-      # exactement ce qui a laissé plus de deux cents tests hors CI sans que rien ne le dise.
+      # Default glob: **all** the task variants — `testDebugUnitTest`, `testReleaseUnitTest`,
+      # flavour variants. A glob naming a single variant is exactly what left more than two hundred
+      # tests out of CI without anything saying so.
       - name: Check the Android tests ran, and that all of them passed
         run: python3 tools/ci/verifier-tests.py
 
-      # Lint ne tournait dans **aucun** pipeline. `lintVitalRelease`, que `bundleRelease` déclenche,
-      # ne joue que les règles de sévérité FATAL : la seule erreur réelle que ce projet ait eue de
-      # lint — un appel de notification que lint croyait non gardé — est de sévérité ERROR, et elle
-      # a donc vécu dans l'arbre sans que rien ne puisse la dire.
+      # Lint ran in **no** pipeline. `lintVitalRelease`, which `bundleRelease` triggers, only plays
+      # the rules of FATAL severity: the one real lint error this project ever had — a notification
+      # call that lint believed unguarded — is of ERROR severity, and it therefore lived in the
+      # tree without anything being able to say so.
       #
-      # `lintDebug` et non `lint` : la tâche `lint` joue toutes les variantes, ce qui double le
-      # temps sans rien apprendre de plus ici. `--continue` pour voir les trois modules d'un coup
-      # plutôt que de s'arrêter au premier, ce qui avait laissé `:phone` non linté pendant que
-      # `:wear` bloquait la chaîne.
+      # `lintDebug` and not `lint`: the `lint` task plays every variant, which doubles the time
+      # without teaching anything more here. `--continue` to see the three modules at once rather
+      # than stopping at the first, which had left `:phone` unlinted while `:wear` was blocking the
+      # chain.
       - name: Lint the three Android modules
         run: ./gradlew :wear:lintDebug :phone:lintDebug :sleepwriter:lintSourceADebug --console=plain --continue
 
@@ -169,10 +174,10 @@ jobs:
           path: '*/build/reports/tests/*'
           retention-days: 14
 
-      # 7 jours et non 14 : ces APK pesent ~21 Mo par execution et ne servent qu'a essayer une
-      # branche avant fusion. Les artefacts qui comptent — ceux qu'on installe — sont attaches a
-      # une **release**, et ceux-la n'expirent jamais. Confondre les deux est le moyen le plus
-      # simple de remplir le quota de stockage avec des fichiers que personne ne rouvrira.
+      # 7 days and not 14: these APKs weigh ~21 MB per run and only serve to try a branch out
+      # before merging. The artefacts that matter — the ones people install — are attached to a
+      # **release**, and those never expire. Confusing the two is the simplest way to fill the
+      # storage quota with files nobody will reopen.
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
@@ -183,9 +188,9 @@ jobs:
   instrumented-tests:
     name: Guard-rail tests on an emulator
     runs-on: ubuntu-latest
-    # Ces tests vérifient ce qu'aucun test JVM ne peut atteindre : que l'interface assemblée
-    # refuse bien d'agréger sous trois nuits, que l'avertissement dit toujours que ce n'est pas
-    # une application de santé officielle, et que la hiérarchie des grandeurs tient.
+    # These tests check what no JVM test can reach: that the assembled interface really does refuse
+    # to aggregate below three nights, that the warning still says this is not an official health
+    # application, and that the hierarchy of quantities holds.
     steps:
       - uses: actions/checkout@v4
 
@@ -225,30 +230,28 @@ jobs:
   wear-instrumented-tests:
     name: Component permissions on a watch emulator
     runs-on: ubuntu-latest
-    # **Pas sur les pull requests.** Ce job démarre un émulateur Wear OS — 10 à 15 minutes — pour
-    # exécuter *une* méthode de test. Ce qu'elle observe, un `android:permission` de manifeste,
-    # ne change que par une modification manuelle du manifeste ; il n'existe aucun chemin par
-    # lequel un changement de code Kotlin le fasse apparaître. Payer ce coût à chaque poussée sur
-    # chaque branche revient à re-vérifier, dizaines de fois par jour, un fichier que personne n'a
-    # touché — et c'est le job le plus instable du fichier, donc celui dont l'échec finit par être
-    # ignoré, ce qui vaut moins que pas de test du tout.
+    # **Not on pull requests.** This job boots a Wear OS emulator — 10 to 15 minutes — to run *one*
+    # test method. What it observes, a manifest `android:permission`, only changes through a manual
+    # edit of the manifest; there is no path by which a Kotlin code change makes it appear. Paying
+    # that cost on every push to every branch amounts to re-checking, dozens of times a day, a file
+    # nobody has touched — and it is the most unstable job in this file, so the one whose failure
+    # ends up being ignored, which is worth less than no test at all.
     #
-    # Il reste **automatisé**, et il reste bloquant : sur `push` de `main` — donc sur toute fusion,
-    # avant qu'un tag ne puisse être posé — et à la demande. La fenêtre ouverte est celle d'une
-    # pull request qui casserait le manifeste et serait fusionnée avant que le job ne le dise :
-    # elle est fermée à la fusion, avant publication. Ne pas remettre `pull_request` par réflexe
-    # sans avoir d'abord un défaut réel qu'une pull request aurait introduit.
+    # It stays **automated**, and it stays blocking: on `push` to `main` — so on every merge,
+    # before a tag can be laid down — and on demand. The window left open is that of a pull request
+    # that would break the manifest and be merged before the job says so: it is closed at the
+    # merge, before publication. Do not put `pull_request` back by reflex without first having a
+    # real defect that a pull request would have introduced.
     if: github.event_name != 'pull_request'
-    # `PermissionsDesComposantsTest` côté montre vérifie qu'aucun composant n'exige une permission
-    # qu'aucun paquet ne définit. Ce n'est pas une précaution abstraite : les deux
-    # `WearableListenerService` ont porté une telle permission, Android refusait à Play Services de
-    # les démarrer, et **toute l'ingestion était morte** — sans exception, sans message, avec pour
-    # seule trace une ligne `Permission Denial` dans le journal système.
+    # `ComponentPermissionsTest` on the watch side checks that no component requires a permission
+    # that no package defines. This is not an abstract precaution: both `WearableListenerService`
+    # carried such a permission, Android refused to let Play Services start them, and **the whole
+    # of ingestion was dead** — no exception, no message, with a single `Permission Denial` line in
+    # the system log as its only trace.
     #
-    # Le test existait et sa propre KDoc disait qu'il « se lance à la main sur une montre réelle,
-    # faute d'émulateur de montre en CI ». C'est ce job. À surveiller : les images Wear OS sont plus
-    # lentes à démarrer que les images téléphone, et c'est le job le plus susceptible d'être
-    # instable de tout ce fichier.
+    # The test existed and its own KDoc said it "is run by hand on a real watch, for want of a
+    # watch emulator in CI". This is that job. To watch out for: Wear OS images are slower to boot
+    # than phone images, and this is the job most likely to be unstable in the whole file.
     steps:
       - uses: actions/checkout@v4
 

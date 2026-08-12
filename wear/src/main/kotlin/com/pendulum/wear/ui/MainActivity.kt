@@ -10,24 +10,25 @@ import androidx.core.content.ContextCompat
 import com.pendulum.wear.record.RecordingService
 
 /**
- * L'unique activite. Elle n'enregistre rien, ne calcule rien et ne survit a rien : tout ce qui
- * compte vit dans le service. Son seul role est d'afficher six compteurs et de porter deux
- * boutons — et de ne pas etre allumee la nuit.
+ * The one and only activity. It records nothing, computes nothing and survives nothing: everything
+ * that matters lives in the service. Its only role is to display six counters and to carry two
+ * buttons — and not to be switched on during the night.
  *
- * Pas d'`AmbientModeSupport`, pas de `keepScreenOn`, pas d'always-on. Une activite always-on
- * laisserait l'ecran en mode ambiant toute la nuit, eclairerait la cheville sous la couette,
- * serait tuee a la premiere pression memoire, et couterait l'ecran en plus du capteur — pour
- * une protection *inferieure* a celle d'un service de premier plan `health`.
+ * No `AmbientModeSupport`, no `keepScreenOn`, no always-on. An always-on activity would leave the
+ * screen in ambient mode all night, would light up the ankle under the duvet, would be killed at
+ * the first memory pressure, and would cost the screen on top of the sensor — for protection
+ * *lower* than that of a `health` foreground service.
  */
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // La demande de `POST_NOTIFICATIONS` vivait ici, avec un rappel vide. Elle est descendue
-        // dans `RecordRoute`, ou son resultat peut relancer le preflight : accorder la permission
-        // laissait le bloqueur affiche, et il fallait tuer l'application pour qu'il disparaisse.
-        // Le moment de la demande n'a pas change — a l'ouverture, et non au START.
+        // The `POST_NOTIFICATIONS` request used to live here, with an empty callback. It has moved
+        // down into `RecordRoute`, where its result can re-run the preflight: granting the
+        // permission left the blocker displayed, and the application had to be killed for it to
+        // disappear. The moment of the request has not changed — when the screen opens, not at
+        // START.
         setContent {
             PendulumTheme {
                 RecordRoute(

@@ -19,8 +19,8 @@ So the rule is stronger than a warning: **the interface refuses to conclude.** B
 nights nothing is aggregated, nothing is drawn, and nothing can be exported — not as advice, but as
 code that has no branch producing the value.
 
-This document is derived from [`fr/UX.md`](fr/UX.md), with one substantive change recorded in
-[`fr/SPEC-v2.md`](fr/SPEC-v2.md) §5: the quantity tracked over time is no longer the hourly count.
+This document is derived from [`workings/UX.md`](workings/UX.md), with one substantive change recorded in
+[`workings/SPEC-v2.md`](workings/SPEC-v2.md) §5: the quantity tracked over time is no longer the hourly count.
 See §4.5. Everything else in the display logic transfers unchanged.
 
 ---
@@ -144,7 +144,7 @@ No phone-side service, no persistent notification.
 > shift work — someone on nights goes to bed at 09:00 — and for anyone who changes time zone without
 > changing habits. In both cases the clock asserts the opposite of what the database knows.
 >
-> So the state comes from a **persisted state machine** (`ui/home/AccueilModel.kt`), reading
+> So the state comes from a **persisted state machine** (`ui/home/HomeModel.kt`), reading
 > `night_session.state` (`OPEN`, `STALE`, `CLOSED`, `TRUNCATED`), whether the night has been
 > analysed, and whether the evening context is sealed for the current evening. Persisted state is
 > consulted *before* the clock, always: an `OPEN` session at 15:00 is an `OPEN` session, whether it
@@ -450,7 +450,7 @@ product rests on.
 
 ### 4.5 What changed with the metric, and what is still open
 
-[`fr/SPEC-v2.md`](fr/SPEC-v2.md) §5 changed the tracked quantity after `UX.md` was written. The
+[`workings/SPEC-v2.md`](workings/SPEC-v2.md) §5 changed the tracked quantity after `UX.md` was written. The
 display logic above is unaffected; the plotted quantity is not.
 
 | Use | Quantity | Why |
@@ -581,7 +581,7 @@ All are at or above 4.4:1 against the plot background, beyond the 3:1 required f
 The structural neutral was `#7C8695` / `#666F7D`. It carries the tertiary text role as well as the axes,
 and in that role it measured 4.28:1 on the elevated surface — under the 4.5:1 that WCAG 1.4.3 asks of
 body text, on the sheet where every column header uses it. It is now measured rather than assumed:
-`ContrasteTexteTest` holds every text role against every surface it can land on, **including the
+`TextContrastTest` holds every text role against every surface it can land on, **including the
 window background declared in `res/values/themes.xml`**. That last one is not a formality: the phone
 module declared no `android:theme` at all, so Android applied `Theme.DeviceDefault.Light.DarkActionBar`
 and its light window background showed through wherever the composition painted none — which made the

@@ -12,22 +12,22 @@ import kotlin.math.sqrt
 import kotlin.math.tan
 
 /**
- * Biquad en **forme directe II transposee**, `Double` en interne, `Float` en interface.
+ * Biquad in **transposed direct form II**, `Double` internally, `Float` at the interface.
  *
- * Deux points non negociables, tous deux issus du piege n° 3 de la v1 :
+ * Two non-negotiable points, both stemming from pitfall no. 3 of v1:
  *
- *  - **L'objet est `stateful` et le filtrage est en flux.** Filtrer bloc par bloc en repartant
- *    d'un etat nul a chaque bloc injecte un transitoire d'etablissement toutes les ~10 s (taille
- *    d'un bloc de 512 echantillons a 50 Hz). Ce transitoire est **periodique** : il produit dans
- *    l'enveloppe une modulation reguliere que l'etape 6 lit comme une serie PLM parfaite. C'est
- *    le faux positif le plus insidieux de toute la chaine, parce qu'il ressemble exactement au
- *    signal recherche. Un segment se filtre en **un seul passage**, du premier au dernier
- *    echantillon, quelle que soit la fragmentation des blocs en amont.
- *  - **DFII transposee et non DFI** : elle minimise l'excursion des variables d'etat, ce qui
- *    compte ici parce que le passe-bas gravite (fc/fs = 0,15/50 = 0,003) a ses poles tres proches
- *    du cercle unite.
+ *  - **The object is `stateful` and the filtering is streaming.** Filtering block by block,
+ *    restarting from a null state at each block, injects a settling transient every ~10 s (the
+ *    size of a 512-sample block at 50 Hz). That transient is **periodic**: it produces in the
+ *    envelope a regular modulation that step 6 reads as a perfect PLM series. It is the most
+ *    insidious false positive of the whole chain, because it looks exactly like the signal being
+ *    looked for. A segment is filtered in **a single pass**, from the first to the last sample,
+ *    whatever the block fragmentation upstream.
+ *  - **Transposed DFII and not DFI**: it minimises the excursion of the state variables, which
+ *    matters here because the gravity low-pass (fc/fs = 0.15/50 = 0.003) has its poles very close
+ *    to the unit circle.
  *
- * Recurrence : `y = b0*x + s1 ; s1' = b1*x - a1*y + s2 ; s2' = b2*x - a2*y`.
+ * Recurrence: `y = b0*x + s1 ; s1' = b1*x - a1*y + s2 ; s2' = b2*x - a2*y`.
  */
 class Biquad(val b0: Double, val b1: Double, val b2: Double, val a1: Double, val a2: Double) {
 
@@ -40,12 +40,12 @@ class Biquad(val b0: Double, val b1: Double, val b2: Double, val a1: Double, val
     }
 
     /**
-     * Initialise l'etat au **regime stationnaire d'une entree constante** [dcValue].
+     * Initialises the state to the **steady-state regime of a constant input** [dcValue].
      *
-     * Sans cela, le passe-bas gravite demarre a 0 alors que son entree vaut ~1 g : il produit un
-     * transitoire de la taille de la gravite, soit 1 000 mg, quand un CLM en fait 30 a 200.
+     * Without this, the gravity low-pass starts at 0 while its input is ~1 g: it produces a
+     * transient the size of gravity, i.e. 1 000 mg, when a CLM is 30 to 200.
      *
-     * Regime permanent : `y = x*(b0+b1+b2)/(1+a1+a2)`, d'ou `s1 = (b1+b2)*x - (a1+a2)*y` et
+     * Steady state: `y = x*(b0+b1+b2)/(1+a1+a2)`, hence `s1 = (b1+b2)*x - (a1+a2)*y` and
      * `s2 = b2*x - a2*y`.
      */
     fun resetToDc(dcValue: Float) {
@@ -56,7 +56,7 @@ class Biquad(val b0: Double, val b1: Double, val b2: Double, val a1: Double, val
         s2 = b2 * x - a2 * y
     }
 
-    /** Gain a frequence nulle. Vaut 1 pour un passe-bas normalise, 0 pour un passe-haut. */
+    /** Gain at zero frequency. Equals 1 for a normalised low-pass, 0 for a high-pass. */
     fun dcGain(): Double {
         val den = 1.0 + a1 + a2
         return if (abs(den) < 1e-12) 0.0 else (b0 + b1 + b2) / den
@@ -75,39 +75,39 @@ class Biquad(val b0: Double, val b1: Double, val b2: Double, val a1: Double, val
         return dst
     }
 
-    /** Etat opaque pour le mode incrementiel : `[s1, s2]`. */
+    /** Opaque state for the incremental mode: `[s1, s2]`. */
     fun snapshot(): DoubleArray = doubleArrayOf(s1, s2)
 
     fun restore(state: DoubleArray) {
-        require(state.size == 2) { "etat biquad de taille ${state.size}" }
+        require(state.size == 2) { "biquad state of size ${state.size}" }
         s1 = state[0]
         s2 = state[1]
     }
 
     /**
-     * Module du pole le plus lent. `1 - r` mesure la vitesse d'oubli du filtre ; c'est ce qui
-     * fixe le temps d'etablissement, donc la valeur de `settleSec`.
+     * Modulus of the slowest pole. `1 - r` measures the filter's rate of forgetting; that is what
+     * sets the settling time, hence the value of `settleSec`.
      */
     internal fun poleRadius(): Double {
         val disc = a1 * a1 - 4.0 * a2
         return if (disc >= 0.0) {
             max(abs((-a1 + sqrt(disc)) / 2.0), abs((-a1 - sqrt(disc)) / 2.0))
         } else {
-            sqrt(abs(a2)) // poles complexes conjugues : module = sqrt(a2)
+            sqrt(abs(a2)) // complex conjugate poles: modulus = sqrt(a2)
         }
     }
 }
 
-/** Cascade de sections biquad. Un filtre d'ordre N > 2 n'existe que sous cette forme. */
+/** Cascade of biquad sections. A filter of order N > 2 only exists in this form. */
 class BiquadCascade(internal val stages: List<Biquad>, val fsHz: Double) {
 
     fun reset() = stages.forEach { it.reset() }
 
     /**
-     * Initialise toutes les sections au regime stationnaire de [dcValue]. La valeur DC propagee
-     * a la section suivante est celle que la section courante produit en regime permanent : pour
-     * une cascade passe-haut, elle tombe a 0 des la premiere section, ce qui est exactement le
-     * comportement voulu (le canal mouvement demarre « degravite »).
+     * Initialises all the sections to the steady-state regime of [dcValue]. The DC value
+     * propagated to the next section is the one the current section produces in steady state: for
+     * a high-pass cascade, it drops to 0 from the very first section, which is exactly the
+     * intended behaviour (the movement channel starts out "gravity-free").
      */
     fun resetToDc(dcValue: Float) {
         var dc = dcValue
@@ -131,19 +131,19 @@ class BiquadCascade(internal val stages: List<Biquad>, val fsHz: Double) {
     fun snapshot(): Array<DoubleArray> = Array(stages.size) { stages[it].snapshot() }
 
     fun restore(state: Array<DoubleArray>) {
-        require(state.size == stages.size) { "cascade de taille differente" }
+        require(state.size == stages.size) { "cascade of different size" }
         for (i in stages.indices) stages[i].restore(state[i])
     }
 
     val stageCount: Int get() = stages.size
 
     /**
-     * Temps d'etablissement a 1 % (5 constantes de temps) du pole le plus lent.
+     * Settling time to 1 % (5 time constants) of the slowest pole.
      *
-     * Sert a **verifier** `settleSec` / `warmupSec`, pas a les remplacer : la specification fige
-     * ces deux durees (§6.1) pour que le denominateur du PLMI ne bouge pas quand on ajuste un
-     * coude de filtre. Une cascade dont `settlingTimeSec` depasse `warmupSec` est une erreur de
-     * reglage, pas une raison d'allonger le warmup silencieusement.
+     * Serves to **verify** `settleSec` / `warmupSec`, not to replace them: the specification
+     * freezes those two durations (§6.1) so that the PLMI denominator does not move when a filter
+     * corner is adjusted. A cascade whose `settlingTimeSec` exceeds `warmupSec` is a settings
+     * error, not a reason to silently lengthen the warmup.
      */
     val settlingTimeSec: Double
         get() {
@@ -157,30 +157,30 @@ class BiquadCascade(internal val stages: List<Biquad>, val fsHz: Double) {
 }
 
 /**
- * Conception de filtres de Butterworth par transformation bilineaire avec **prewarping** du coude.
+ * Butterworth filter design by bilinear transform with **prewarping** of the corner.
  *
- * Les coefficients sont TOUJOURS calcules a partir du `fs` reel passe en argument, jamais du
- * `nominalRateHz` de l'entete (§3.4, premier point). En pratique l'etape 0 ramene le signal sur
- * une grille a 50,000 Hz exactement, donc `fs` reel vaut `targetFsHz` — mais la dependance reste
- * explicite dans la signature : le jour ou l'on choisirait de ne pas reechantillonner, le
- * compilateur obligerait a fournir la bonne valeur.
+ * The coefficients are ALWAYS computed from the real `fs` passed as an argument, never from the
+ * header's `nominalRateHz` (§3.4, first point). In practice step 0 brings the signal back onto a
+ * grid at exactly 50.000 Hz, so the real `fs` equals `targetFsHz` — but the dependency stays
+ * explicit in the signature: the day we chose not to resample, the compiler would force us to
+ * supply the right value.
  */
 object Filters {
 
     /**
-     * Facteurs quadratiques normalises du polynome de Butterworth d'ordre [order] :
-     * `s^2 + alpha_k*s + 1`, avec `alpha_k = 2*cos((2k+1)*pi/(2N))`.
-     * Ordre 2 -> {sqrt(2)} ; ordre 4 -> {1,8478 ; 0,7654}.
+     * Normalised quadratic factors of the Butterworth polynomial of order [order]:
+     * `s^2 + alpha_k*s + 1`, with `alpha_k = 2*cos((2k+1)*pi/(2N))`.
+     * Order 2 -> {sqrt(2)} ; order 4 -> {1.8478 ; 0.7654}.
      */
     private fun alphas(order: Int): DoubleArray {
-        require(order >= 2 && order % 2 == 0) { "ordre pair >= 2 attendu, recu $order" }
+        require(order >= 2 && order % 2 == 0) { "even order >= 2 expected, got $order" }
         val n = order / 2
         return DoubleArray(n) { k -> 2.0 * cos(PI * (2 * k + 1) / (2.0 * order)) }
     }
 
     private fun prewarp(fsHz: Double, fcHz: Double): Double {
-        require(fsHz > 0.0) { "fsHz doit etre > 0" }
-        require(fcHz > 0.0 && fcHz < fsHz / 2.0) { "fc=$fcHz hors bande utile pour fs=$fsHz" }
+        require(fsHz > 0.0) { "fsHz must be > 0" }
+        require(fcHz > 0.0 && fcHz < fsHz / 2.0) { "fc=$fcHz outside the usable band for fs=$fsHz" }
         return tan(PI * fcHz / fsHz)
     }
 
@@ -211,26 +211,26 @@ object Filters {
     }
 
     /**
-     * Passe-bande = passe-haut d'ordre [order] **suivi** du passe-bas d'ordre [order], et non une
-     * transformation passe-bande d'ordre 2N.
+     * Bandpass = high-pass of order [order] **followed by** the low-pass of order [order], and not
+     * a bandpass transformation of order 2N.
      *
-     * Ce n'est pas une approximation : la specification decrit le canal mouvement comme
-     * « ButterBP(0,5 - 8,0 Hz, ordre 2 **par section**) » (§2, etape 1) et regle les deux coudes
-     * independamment (§6.1). Avec un rapport fHigh/fLow = 16 les deux coudes n'interagissent pas ;
-     * en revanche la forme cascadee laisse regler l'ordre du passe-haut seul (`hpOrder`, 2 ou 4),
-     * qui est exactement le compromis de §1.2 : +19 dB de rejection a 0,25 Hz contre une sonnerie
-     * de posture allongee de 2 s a 4 s.
+     * This is not an approximation: the specification describes the movement channel as
+     * "ButterBP(0.5 - 8.0 Hz, order 2 **per section**)" (§2, step 1) and sets the two corners
+     * independently (§6.1). With a ratio fHigh/fLow = 16 the two corners do not interact; the
+     * cascaded form on the other hand allows setting the order of the high-pass alone (`hpOrder`,
+     * 2 or 4), which is exactly the trade-off of §1.2: +19 dB of rejection at 0.25 Hz against a
+     * lying-posture ringing of 2 s to 4 s.
      */
     fun butterBandpass(fsHz: Double, fLowHz: Double, fHighHz: Double, order: Int = 2): BiquadCascade {
-        require(fLowHz < fHighHz) { "fLow doit etre < fHigh" }
+        require(fLowHz < fHighHz) { "fLow must be < fHigh" }
         val hp = butterHighpass(fsHz, fLowHz, order)
         val lp = butterLowpass(fsHz, fHighHz, order)
         return BiquadCascade(hp.stages + lp.stages, fsHz)
     }
 
     /**
-     * Module de la reponse en frequence de la cascade, en lineaire. Uniquement destine aux tests
-     * et au diagnostic : ne pas l'appeler dans la chaine.
+     * Magnitude of the cascade's frequency response, on a linear scale. Intended only for tests
+     * and diagnostics: do not call it in the chain.
      */
     fun magnitudeAt(c: BiquadCascade, fHz: Double): Double {
         val w = 2.0 * PI * fHz / c.fsHz
@@ -255,34 +255,34 @@ object Filters {
     }
 }
 
-/** Sortie de l'etape 1 : les deux chemins paralleles. */
+/** Output of step 1: the two parallel paths. */
 data class GravitySplit(val gravity: TriAxial, val linear: TriAxial)
 
 /**
- * Etape 1 — separation gravite / mouvement par **deux chemins paralleles**, jamais par
- * soustraction. `a - LP(a)` serait mathematiquement un passe-haut valide, mais l'interet n'est
- * pas mathematique : `g_chapeau` devient un signal de premiere classe, consomme par le detecteur
- * de posture (§3.1), la caracteristique `tilt` de chaque evenement (etape 5), le masque
- * d'immobilite (§3.6) et l'autocalibration (§3.3).
+ * Step 1 — gravity / movement separation by **two parallel paths**, never by subtraction.
+ * `a - LP(a)` would mathematically be a valid high-pass, but the point is not mathematical:
+ * `g_hat` becomes a first-class signal, consumed by the posture detector (§3.1), the `tilt`
+ * characteristic of each event (step 5), the immobility mask (§3.6) and the autocalibration
+ * (§3.3).
  */
 object Gravity {
 
     /**
-     * @param raw grille uniforme de l'etape 0 (`NaN` dans les trous).
-     * @param segments segments continus ; les filtres sont reinitialises a l'etat stationnaire a
-     *   chaque frontiere de segment, et **jamais** entre deux blocs a l'interieur d'un segment.
-     * @param settleSec duree de la moyenne d'amorcage (§6.1, `settleSec = 2,0 s`).
+     * @param raw uniform grid from step 0 (`NaN` in the holes).
+     * @param segments continuous segments; the filters are reinitialised to the steady state at
+     *   each segment boundary, and **never** between two blocks inside a segment.
+     * @param settleSec duration of the priming average (§6.1, `settleSec = 2.0 s`).
      *
-     * Traitement des `NaN` a l'interieur d'un segment (trous BLIND de 0,10 a 2,0 s) :
-     *  - **canal mouvement : on injecte 0**. Un trou n'est pas un mouvement ; injecter la derniere
-     *    valeur y creerait un palier que le passe-haut lirait comme un echelon.
-     *  - **canal gravite : on maintient la derniere valeur**. La gravite est persistante ;
-     *    injecter 0 ferait plonger `g_chapeau` vers l'origine et fabriquerait un faux changement
-     *    de posture de 90 degres a chaque micro-trou.
+     * Handling of `NaN` inside a segment (BLIND holes of 0.10 to 2.0 s):
+     *  - **movement channel: 0 is injected**. A hole is not a movement; injecting the last value
+     *    there would create a plateau that the high-pass would read as a step.
+     *  - **gravity channel: the last value is held**. Gravity is persistent; injecting 0 would
+     *    make `g_hat` plunge towards the origin and manufacture a false 90-degree posture change
+     *    at every micro-hole.
      *
-     * La sortie reste definie (non-`NaN`) dans le trou : c'est volontaire. L'exclusion se fait par
-     * les **zones aveugles** de la ligne de temps, pas en propageant des `NaN` qui detruiraient
-     * l'etat des filtres pour tout le reste du segment.
+     * The output stays defined (non-`NaN`) inside the hole: this is deliberate. Exclusion is done
+     * through the **blind zones** of the timeline, not by propagating `NaN`s that would destroy
+     * the filter state for the whole rest of the segment.
      */
     fun split(
         raw: TriAxial,
@@ -311,8 +311,8 @@ object Gravity {
             if (seg.length <= 0) continue
             for (a in 0..2) {
                 val src = axesIn[a]
-                // Moyenne des `settleSec` premieres secondes du segment, NaN exclus : c'est la
-                // valeur DC dont partent les deux filtres.
+                // Mean of the segment's first `settleSec` seconds, NaN excluded: that is the DC
+                // value the two filters start from.
                 var sum = 0.0
                 var cnt = 0
                 val settleEnd = minOf(seg.toIdx, seg.fromIdx + settle)
@@ -353,7 +353,7 @@ object Gravity {
         )
     }
 
-    /** `g_chapeau / ||g_chapeau||`. `NaN` la ou la norme est nulle ou indefinie. */
+    /** `g_hat / ||g_hat||`. `NaN` wherever the norm is zero or undefined. */
     fun unitVectors(gravity: TriAxial): TriAxial {
         val n = gravity.n
         val ux = FloatArray(n); val uy = FloatArray(n); val uz = FloatArray(n)
@@ -370,13 +370,13 @@ object Gravity {
     }
 
     /**
-     * Angle entre deux vecteurs, en degres.
+     * Angle between two vectors, in degrees.
      *
-     * Calcul par `atan2(||a x b||, a.b)` et non par `acos(a.b/(|a||b|))` : pour deux vecteurs
-     * presque colineaires — le cas dominant, puisqu'on compare `g_chapeau` a lui-meme decale de
-     * 2 s — l'argument de l'`acos` vaut `1 - epsilon` et l'annulation catastrophique fait perdre
-     * la moitie des chiffres significatifs. Or `minExcursionDeg` vaut 1,5 degre : c'est
-     * exactement dans cette zone que la precision doit tenir.
+     * Computed by `atan2(||a x b||, a.b)` and not by `acos(a.b/(|a||b|))`: for two nearly
+     * collinear vectors — the dominant case, since we compare `g_hat` with itself shifted by
+     * 2 s — the argument of the `acos` is `1 - epsilon` and catastrophic cancellation loses half
+     * the significant digits. And `minExcursionDeg` is 1.5 degree: it is exactly in that zone that
+     * the precision has to hold.
      */
     fun angleDeg(ax: Float, ay: Float, az: Float, bx: Float, by: Float, bz: Float): Float {
         val axd = ax.toDouble(); val ayd = ay.toDouble(); val azd = az.toDouble()
@@ -391,7 +391,7 @@ object Gravity {
         return Math.toDegrees(atan2(cross, dot)).toFloat()
     }
 
-    /** Variante de confort : angle entre les echantillons `i` et `j` d'un meme champ de gravite. */
+    /** Convenience variant: angle between samples `i` and `j` of the same gravity field. */
     fun angleDeg(g: TriAxial, i: Int, j: Int): Float =
         angleDeg(g.x[i], g.y[i], g.z[i], g.x[j], g.y[j], g.z[j])
 }

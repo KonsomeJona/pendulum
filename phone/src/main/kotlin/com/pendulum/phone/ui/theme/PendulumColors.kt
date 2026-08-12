@@ -8,40 +8,38 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * Les roles de couleur de Pendulum, en dur, dans les deux themes.
+ * Pendulum's colour roles, hard-coded, in both themes.
  *
- * ### Pourquoi une palette a la main plutot que Material You
+ * ### Why a hand-made palette rather than Material You
  *
- * `dynamicColorScheme()` derive les couleurs du fond d'ecran. Ce serait joli et ce serait faux :
- * une capture d'ecran montree a un medecin, ou un PDF imprime, ne peut pas dependre du fond
- * d'ecran de l'appareil. Deux telephones doivent produire **le meme graphe**. La palette est donc
- * figee et les tokens de graphe en descendent (`ChartTokens`).
+ * `dynamicColorScheme()` derives the colours from the wallpaper. That would be pretty and it would
+ * be wrong: a screenshot shown to a doctor, or a printed PDF, cannot depend on the device's
+ * wallpaper. Two phones must produce **the same chart**. The palette is therefore fixed and the
+ * chart tokens descend from it (`ChartTokens`).
  *
- * ### La regle semantique, qui est la seule vraiment non negociable ici
+ * ### The semantic rule, which is the only truly non-negotiable one here
  *
- * [error] et [success] ne decrivent **jamais** un resultat de sante. Un rythme court n'est pas
- * rouge, un rythme long n'est pas vert, un compte horaire eleve n'est pas rouge. Ces deux
- * couleurs ne servent qu'aux etats **techniques** : transfert, permission, appairage, integrite
- * de fichier, stockage. Colorer un resultat, c'est le transformer en verdict — et ce produit
- * mesure, il ne juge pas.
+ * [error] and [success] **never** describe a health result. A short rhythm is not red, a long
+ * rhythm is not green, a high hourly count is not red. Those two colours serve only **technical**
+ * states: transfer, permission, pairing, file integrity, storage. Colouring a result turns it into
+ * a verdict — and this product measures, it does not judge.
  *
- * Le corollaire pratique : tout ce qui est « situation » et non « panne » (nuit sans
- * hypnogramme, nuit courte, montre non portee) s'affiche en [attention], jamais en [error].
+ * The practical corollary: everything that is a "situation" and not a "failure" (a night without a
+ * hypnogram, a short night, a watch not worn) is shown in [attention], never in [error].
  *
- * ### Et la couleur n'est jamais seule (P6)
+ * ### And colour is never alone (P6)
  *
- * Aucune information de cet ecran n'est portee par la seule teinte. Les trois etats de nuit sont
- * disque plein / disque cercle / cercle creux ; les trois lignes du graphe de nuit sont pleine /
- * tiretee / pointillee ; les stades de sommeil sont d'abord une position verticale ; REM et les
- * trous sont haches. Test de recette : passer chaque capture en niveaux de gris, rien ne doit
- * disparaitre.
+ * No information on these screens is carried by hue alone. The three night states are a filled
+ * disc / a circled disc / an empty circle; the three lines of the night chart are solid / dashed /
+ * dotted; the sleep stages are first of all a vertical position; REM and the gaps are hatched.
+ * Acceptance test: put every screenshot into greyscale, nothing must disappear.
  */
 @Immutable
 data class PendulumColors(
     val background: Color,
     val surface: Color,
     val surfaceElevated: Color,
-    /** Fond des bandes inactives des graphes : « ici, rien n'est compte ». */
+    /** Background of the inactive bands of the charts: "here, nothing is counted". */
     val surfaceMuted: Color,
     val outline: Color,
     val textPrimary: Color,
@@ -49,22 +47,22 @@ data class PendulumColors(
     val textTertiary: Color,
     val accent: Color,
     val onAccent: Color,
-    /** Qualite degradee, resultat provisoire, desaccord de masques. Jamais une panne. */
+    /** Degraded quality, provisional result, disagreement between masks. Never a failure. */
     val attention: Color,
-    /** REM, seconde regle de comptage en superposition. */
+    /** REM, second counting rule drawn on top. */
     val secondSignal: Color,
-    /** Echec **technique** uniquement. Jamais un resultat de sante. */
+    /** A **technical** failure only. Never a health result. */
     val error: Color,
-    /** Transfert reussi **uniquement**. Jamais un resultat de sante. */
+    /** A successful transfer **only**. Never a health result. */
     val success: Color,
     val isDark: Boolean,
 ) {
     companion object {
         /**
-         * Sombre par defaut, et force au premier lancement : `isSystemInDarkTheme()` est
-         * volontairement ignore tant que l'utilisateur n'a pas choisi. Le motif est le contexte
-         * d'usage, pas la mode — cette application se consulte a 7 h du matin, dans le noir, une
-         * seule main, et un ecran clair a ce moment-la est agressif.
+         * Dark by default, and forced on first launch: `isSystemInDarkTheme()` is deliberately
+         * ignored until the user has chosen. The reason is the context of use, not fashion — this
+         * application is consulted at 7 am, in the dark, with one hand, and a light screen at that
+         * moment is aggressive.
          */
         val Dark = PendulumColors(
             background = Color(0xFF0E1116),
@@ -74,10 +72,10 @@ data class PendulumColors(
             outline = Color(0xFF2A313C),
             textPrimary = Color(0xFFE6EAF0),
             textSecondary = Color(0xFFA3ADBB),
-            // #7C8695 jusqu'ici, et sous le seuil : 4,28:1 sur [surfaceElevated], qui est le fond
-            // de la feuille « valeurs » — ou toutes les en-tetes de colonne sont dans ce role.
-            // Mesure par `ContrasteTexteTest`, jamais par un oeil : un gris a 4,28:1 se lit
-            // « discret », pas « non conforme ».
+            // #7C8695 until now, and below the threshold: 4.28:1 on [surfaceElevated], which is the
+            // background of the "values" sheet — where every column header sits in this role.
+            // Measured by `TextContrastTest`, never by an eye: a grey at 4.28:1 reads as
+            // "discreet", not as "non-compliant".
             textTertiary = Color(0xFF818B9B),
             accent = Color(0xFF6FB2FF),
             onAccent = Color(0xFF0B1017),
@@ -89,9 +87,9 @@ data class PendulumColors(
         )
 
         /**
-         * Clair — et c'est aussi la palette de l'export. Un PDF sombre est illisible imprime, et
-         * l'export doit ressembler a l'ecran sans etre l'ecran : memes formes, meme typographie,
-         * memes fonctions de dessin, tokens differents.
+         * Light — and this is also the export palette. A dark PDF is illegible in print, and the
+         * export must look like the screen without being the screen: same shapes, same typography,
+         * same drawing functions, different tokens.
          */
         val Light = PendulumColors(
             background = Color(0xFFF7F8FA),
@@ -101,9 +99,9 @@ data class PendulumColors(
             outline = Color(0xFFD8DDE4),
             textPrimary = Color(0xFF12161C),
             textSecondary = Color(0xFF4C5663),
-            // #666F7D jusqu'ici : 4,48:1 sur [surfaceMuted]. La meme regle que dans la palette
-            // sombre, et pour la meme raison — [ThemeMode.Light] est un theme d'ecran declare,
-            // pas seulement la palette de l'export.
+            // #666F7D until now: 4.48:1 on [surfaceMuted]. The same rule as in the dark palette,
+            // and for the same reason — [ThemeMode.Light] is a declared screen theme, not merely
+            // the export palette.
             textTertiary = Color(0xFF646D7A),
             accent = Color(0xFF1E63C8),
             onAccent = Color(0xFFFFFFFF),
@@ -116,17 +114,17 @@ data class PendulumColors(
     }
 
     /**
-     * Material 3 sert de porteur de tokens et de bibliotheque de composants, pas de systeme de
-     * couleur : on lui donne nos valeurs.
+     * Material 3 serves as a token carrier and a component library, not as a colour system: we give
+     * it our values.
      *
-     * Deux points a noter dans cette projection :
+     * Two points worth noting in this projection:
      *
-     * - `surfaceVariant`/`surfaceContainer*` sont tous ramenes a [surface] ou [surfaceElevated].
-     *   L'elevation tonale empilee de M3 est illisible en sombre et ne survit pas a
-     *   l'impression ; ici une carte est une surface **plus une bordure 1 dp**, ce qui donne la
-     *   meme image a l'ecran et sur le papier.
-     * - `error` est bien branche sur notre [error], mais aucun composant portant un resultat de
-     *   sante n'utilise le role `error` de M3. La contrainte est en amont, dans les ecrans.
+     * - `surfaceVariant`/`surfaceContainer*` are all brought back to [surface] or
+     *   [surfaceElevated]. The stacked tonal elevation of M3 is illegible in dark and does not
+     *   survive printing; here a card is a surface **plus a 1 dp border**, which gives the same
+     *   image on screen and on paper.
+     * - `error` is indeed wired to our [error], but no component carrying a health result uses M3's
+     *   `error` role. The constraint is upstream, in the screens.
      */
     fun toMaterialScheme(): ColorScheme {
         val base = if (isDark) darkColorScheme() else lightColorScheme()
@@ -150,7 +148,7 @@ data class PendulumColors(
             surfaceContainerHighest = surfaceElevated,
             surfaceContainerLow = surface,
             surfaceContainerLowest = background,
-            surfaceTint = Color.Transparent, // pas d'elevation tonale : voir plus haut
+            surfaceTint = Color.Transparent, // no tonal elevation: see above
             outline = outline,
             outlineVariant = outline,
             error = error,

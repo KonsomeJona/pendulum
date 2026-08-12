@@ -1,31 +1,31 @@
 package com.pendulum.phone.ingest
 
 /**
- * La conversion entre l'horloge murale et la ligne de temps du capteur.
+ * The conversion between the wall clock and the sensor timeline.
  *
- * ### Pourquoi ce n'est pas une soustraction
+ * ### Why this is not a subtraction
  *
- * Trois horloges cohabitent, et l'en-tete de chunk les enregistre toutes les trois exactement
- * parce qu'elles ne sont pas interchangeables :
+ * Three clocks live side by side, and the chunk header records all three precisely because they
+ * are not interchangeable:
  *
- *  - `startWallMs` — horloge murale, sujette au changement d'heure et a la resynchronisation NTP ;
- *  - `startElapsedRealtimeNs` — temps depuis le boot, monotone ;
- *  - `firstEventTimestampNs` — `SensorEvent.timestamp`, qui n'est **pas** garanti egal a
- *    `elapsedRealtimeNanos` : certains constructeurs en excluent le temps de suspend.
+ *  - `startWallMs` — wall clock, subject to daylight-saving changes and to NTP resynchronisation;
+ *  - `startElapsedRealtimeNs` — time since boot, monotonic;
+ *  - `firstEventTimestampNs` — `SensorEvent.timestamp`, which is **not** guaranteed to equal
+ *    `elapsedRealtimeNanos`: some manufacturers exclude suspend time from it.
  *
- * Tout ce que produit `:algo` est date en millisecondes **relatives a la ligne de temps du
- * capteur**. Health Connect, lui, date en horloge murale UTC. Les deux ne se rapprochent que par
- * l'ancrage ci-dessous. Faire la difference de deux horloges murales — par exemple « debut de la
- * session de sommeil moins `startWallMs` » — donnerait un decalage silencieux de plusieurs
- * minutes des que l'horloge du telephone se resynchronise pendant la nuit, et un decalage d'une
- * heure entiere la nuit du changement d'heure. Un hypnogramme decale d'une heure ne leve aucune
- * exception : il produit simplement un aPLM-i faux.
+ * Everything `:algo` produces is timestamped in milliseconds **relative to the sensor timeline**.
+ * Health Connect, for its part, timestamps in UTC wall clock. The two only come together through
+ * the anchoring below. Taking the difference of two wall clocks — for instance "start of the sleep
+ * session minus `startWallMs`" — would give a silent offset of several minutes as soon as the
+ * phone's clock resynchronises during the night, and an offset of a whole hour on the night of the
+ * daylight-saving change. A hypnogram shifted by an hour raises no exception: it simply produces a
+ * wrong aPLM-i.
  *
- * @param startWallMs horloge murale a l'ouverture du **premier** chunk.
- * @param firstEventTimestampNs `SensorEvent.timestamp` du premier echantillon du premier chunk.
- * @param timelineT0Ns `tFirstNs` du premier bloc effectivement decode. Il peut differer de
- *   [firstEventTimestampNs] si les tout premiers blocs ont ete rejetes par le controle
- *   d'integrite — d'ou deux champs et non un.
+ * @param startWallMs wall clock at the opening of the **first** chunk.
+ * @param firstEventTimestampNs `SensorEvent.timestamp` of the first sample of the first chunk.
+ * @param timelineT0Ns `tFirstNs` of the first block actually decoded. It can differ from
+ *   [firstEventTimestampNs] if the very first blocks were rejected by the integrity check — hence
+ *   two fields and not one.
  */
 data class TimeAnchor(
     val startWallMs: Long,
@@ -33,12 +33,12 @@ data class TimeAnchor(
     val timelineT0Ns: Long,
 ) {
 
-    /** Decalage, en millisecondes, entre l'origine de la ligne de temps et `startWallMs`. */
+    /** Offset, in milliseconds, between the origin of the timeline and `startWallMs`. */
     private val t0OffsetMs: Long get() = (timelineT0Ns - firstEventTimestampNs) / 1_000_000L
 
-    /** Horloge murale (epoch ms) -> millisecondes relatives a la ligne de temps. */
+    /** Wall clock (epoch ms) -> milliseconds relative to the timeline. */
     fun toMsRel(wallMs: Long): Long = (wallMs - startWallMs) - t0OffsetMs
 
-    /** Millisecondes relatives -> horloge murale. Pour l'affichage et l'export uniquement. */
+    /** Relative milliseconds -> wall clock. For display and export only. */
     fun toWallMs(msRel: Long): Long = startWallMs + msRel + t0OffsetMs
 }

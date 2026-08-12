@@ -28,9 +28,9 @@ class ClmDetectorTest {
     )
 
     @Test
-    @DisplayName("un mouvement synthetique simple est detecte et correctement date")
+    @DisplayName("a simple synthetic movement is detected and correctly dated")
     fun simpleMovement() {
-        // Plancher 5 mg -> Theta_on = max(8x5, 20, 0) = 40 mg, Theta_off = max(2.5x5, 6.25) = 12.5 mg.
+        // Floor 5 mg -> Theta_on = max(8x5, 20, 0) = 40 mg, Theta_off = max(2.5x5, 6.25) = 12.5 mg.
         val m = quietMagnitude(60.0)
         burst(m, startSec = 10.0, durSec = 2.0, ampG = 0.15f)
 
@@ -48,10 +48,10 @@ class ClmDetectorTest {
     }
 
     @Test
-    @DisplayName("deux bouffees separees de moins de 0,5 s fusionnent en un seul mouvement")
+    @DisplayName("two bursts less than 0.5 s apart merge into a single movement")
     fun closeBurstsMerge() {
-        // §1.5-iv : aucune etape de fusion dediee. C'est la definition de l'offset (rester sous
-        // Theta_off pendant 0,5 s) qui empeche mecaniquement deux evenements d'etre plus proches.
+        // §1.5-iv: no dedicated merge step. It is the definition of the offset (staying below
+        // Theta_off for 0.5 s) that mechanically prevents two events from being any closer.
         val m = quietMagnitude(60.0)
         burst(m, startSec = 10.0, durSec = 1.0, ampG = 0.15f)
         burst(m, startSec = 11.3, durSec = 1.0, ampG = 0.15f)
@@ -64,7 +64,7 @@ class ClmDetectorTest {
     }
 
     @Test
-    @DisplayName("deux bouffees separees de plus de 0,5 s restent deux mouvements")
+    @DisplayName("two bursts more than 0.5 s apart stay two movements")
     fun distantBurstsStaySeparate() {
         val m = quietMagnitude(60.0)
         burst(m, startSec = 10.0, durSec = 1.0, ampG = 0.15f)
@@ -78,7 +78,7 @@ class ClmDetectorTest {
     }
 
     @Test
-    @DisplayName("un mouvement de plus de 10 s est marque LM_LONG et n'est jamais un CLM")
+    @DisplayName("a movement longer than 10 s is flagged LM_LONG and is never a CLM")
     fun longMovementIsNeverAClm() {
         val m = quietMagnitude(60.0)
         burst(m, startSec = 10.0, durSec = 12.0, ampG = 0.15f)
@@ -93,25 +93,24 @@ class ClmDetectorTest {
     }
 
     @Test
-    @DisplayName("une sonnerie breve de type matelas est rejetee par le critere de morphologie")
+    @DisplayName("a short mattress ring is rejected by the morphology criterion")
     fun mattressRingRejectedByMorphology() {
-        // §3.2 : une vibration transmise a une crete elevee mais aucune periode de 0,5 s dont la
-        // mediane depasse Theta_off. Le tilt ne bouge pas non plus -> TRANSMITTED_SUSPECT.
+        // §3.2: a transmitted vibration has a high peak but no 0.5 s period whose median exceeds
+        // Theta_off. The tilt does not move either -> TRANSMITTED_SUSPECT.
         //
-        // La sonnerie fait 0,15 s, pas 0,25 s, et ce n'est pas un detail de confort. Le critere
-        // WASM 3.2.1-d exige une fenetre de `morphologyWinSec = 0,50 s` **contenue dans
-        // l'evenement**, et il compare la mediane de `env_f` a `Theta_off = 0,3125 x Theta_on`.
-        // Or l'evenement detecte fait toujours ~0,24 s de plus que la sonnerie physique (le front
-        // montant est date sur `env_c`, dont la fenetre de 0,50 s est **centree** — §7.2 du dossier
-        // d'algorithme : « the coarse onset leads the physical start by up to 12 samples »), et
-        // `env_f` etale encore la sonnerie de 0,15 s de plus. Pour une sonnerie de 0,25 s
-        // (13 echantillons), l'evenement fait 26 echantillons, la seule fenetre de morphologie
-        // disponible est centree sur la sonnerie, et `env_f` y est non nul sur 21 echantillons
-        // sur 25 : la mediane vaut alors 0,785 x la crete de `env_c`, tres au-dessus du rapport
-        // d'hysteresis 0,3125. Le critere ne peut donc **jamais** rejeter une sonnerie de 0,25 s,
-        // quelle que soit son amplitude — la conclusion de §3.2 (« une sonnerie de 0,3 s a une
-        // crete elevee mais une mediane sur 0,5 s faible ») ne vaut que sous ~0,17 s.
-        // 0,15 s reste dans la plage 0,05-0,40 s de la famille 4 du tableau §5.2.
+        // The ring lasts 0.15 s, not 0.25 s, and that is not a detail of convenience. The WASM
+        // 3.2.1-d criterion requires a `morphologyWinSec = 0.50 s` window **contained within the
+        // event**, and it compares the median of `env_f` against `Theta_off = 0.3125 x Theta_on`.
+        // But the detected event is always ~0.24 s longer than the physical ring (the rising edge
+        // is dated on `env_c`, whose 0.50 s window is **centred** — §7.2 of the algorithm dossier:
+        // "the coarse onset leads the physical start by up to 12 samples"), and `env_f` spreads
+        // the ring by a further 0.15 s. For a 0.25 s ring (13 samples), the event is 26 samples
+        // long, the only morphology window available is centred on the ring, and `env_f` is
+        // non-zero over 21 samples out of 25: the median then reaches 0.785 x the peak of `env_c`,
+        // far above the 0.3125 hysteresis ratio. The criterion can therefore **never** reject a
+        // 0.25 s ring, whatever its amplitude — the conclusion of §3.2 ("a 0.3 s ring has a high
+        // peak but a low median over 0.5 s") only holds below ~0.17 s.
+        // 0.15 s stays inside the 0.05-0.40 s range of family 4 in the §5.2 table.
         val m = quietMagnitude(60.0)
         burst(m, startSec = 10.0, durSec = 0.15, ampG = 0.30f, rampSec = 0.05)
 
@@ -125,10 +124,10 @@ class ClmDetectorTest {
     }
 
     @Test
-    @DisplayName("un changement de posture ne produit aucun CLM")
+    @DisplayName("a posture change produces no CLM")
     fun postureProducesNoClm() {
-        // Le transitoire de posture est 5 a 30 fois plus gros qu'un CLM et dure exactement la bonne
-        // duree pour etre compte : sans le detecteur de posture, il serait compte comme un CLM.
+        // The posture transient is 5 to 30 times larger than a CLM and lasts exactly the right
+        // duration to be counted: without the posture detector it would be counted as a CLM.
         val n = samples(60.0)
         val gravity = rotatingGravity(n, startSec = 30.0, durSec = 1.0, deg = 90.0)
         val m = quietMagnitude(60.0)
@@ -146,7 +145,7 @@ class ClmDetectorTest {
     }
 
     @Test
-    @DisplayName("sans l'entree posture, le meme transitoire n'est plus arrete que par le tilt")
+    @DisplayName("without the posture input, the same transient is stopped by tilt alone")
     fun sameTransientWithoutPostureInput() {
         val n = samples(60.0)
         val gravity = rotatingGravity(n, startSec = 30.0, durSec = 1.0, deg = 90.0)
@@ -155,8 +154,8 @@ class ClmDetectorTest {
 
         val clms = detect(m, gravity, postures = emptyList())
 
-        // Sans l'entree posture il reste rejete, mais par le seul critere de tilt (GBM) : c'est la
-        // seconde ligne de defense, et elle ne couvre pas les rotations sous `postureDeg`.
+        // Without the posture input it is still rejected, but by the tilt criterion (GBM) alone:
+        // that is the second line of defence, and it does not cover rotations below `postureDeg`.
         assertThat(clms).hasSize(1)
         assertThat(clms.single().tiltChangeDeg).isGreaterThan(80f)
         assertThat(clms.single().reject).isEqualTo(ClmRejectReason.GROSS_BODY)

@@ -6,24 +6,23 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * La transformation horizontale, partagee entre le graphe de nuit et l'hypnogramme.
+ * The horizontal transform, shared between the night chart and the hypnogram.
  *
- * ### Pourquoi c'est un objet hisse dans le parent et pas un etat interne a chaque graphe
+ * ### Why this is an object hoisted into the parent and not a state internal to each chart
  *
- * Les deux graphes doivent rester alignes au pixel : un mouvement marque a 02:14 dans le graphe
- * du haut doit tomber exactement au-dessus du stade N2 dans l'hypnogramme du bas. Deux etats de
- * zoom independants derivent des qu'un geste est perdu, et le desalignement qui en resulte est
- * un mensonge visuel — il fait lire un mouvement dans le mauvais stade.
+ * The two charts must stay aligned to the pixel: a movement marked at 02:14 in the upper chart must
+ * fall exactly above stage N2 in the hypnogram below. Two independent zoom states drift as soon as
+ * a gesture is lost, and the resulting misalignment is a visual lie — it makes a movement be read
+ * in the wrong stage.
  *
- * Un seul proprietaire de l'interaction, donc : le graphe de nuit gere les gestes,
- * l'hypnogramme ne fait que lire.
+ * A single owner of the interaction, therefore: the night chart handles the gestures, the hypnogram
+ * only reads.
  *
- * ### Pourquoi des `mutableFloatStateOf`
+ * ### Why `mutableFloatStateOf`
  *
- * Un pincement modifie [scale] soixante fois par seconde. Si ces valeurs vivaient dans l'etat de
- * l'ecran, toute la hierarchie se recomposerait. En `@Stable` avec des etats flottants lus
- * uniquement dans le `Canvas`, seule la phase de dessin est invalidee : pas de recomposition,
- * pas de remesure.
+ * A pinch changes [scale] sixty times a second. If these values lived in the screen's state, the
+ * whole hierarchy would recompose. Being `@Stable` with float states read only inside the `Canvas`,
+ * only the drawing phase is invalidated: no recomposition, no remeasure.
  */
 @Stable
 class XTransform(
@@ -31,15 +30,15 @@ class XTransform(
     val t1Ms: Long,
     val zoomMax: Float = 480f,
 ) {
-    /** 1 = nuit entiere. 480 = une minute visible sur huit heures. */
+    /** 1 = the whole night. 480 = one minute visible out of eight hours. */
     var scale by mutableFloatStateOf(1f)
         private set
 
-    /** Debut de la fenetre visible, en fraction 0..1 de la nuit. */
+    /** Start of the visible window, as a fraction 0..1 of the night. */
     var offset by mutableFloatStateOf(0f)
         private set
 
-    /** Largeur de la zone de trace, en pixels. Ecrite par le `Canvas` a chaque dessin. */
+    /** Width of the plot area, in pixels. Written by the `Canvas` on every draw. */
     var widthPx by mutableFloatStateOf(1f)
 
     private val spanMs: Float get() = (t1Ms - t0Ms).toFloat().coerceAtLeast(1f)
@@ -54,14 +53,14 @@ class XTransform(
         return t0Ms + (u * spanMs).toLong()
     }
 
-    /** Fraction visible de la nuit, en 0..1. Sert a choisir le niveau de la pyramide. */
-    val fenetre: ClosedFloatingPointRange<Float> get() = offset..(offset + 1f / scale)
+    /** Visible fraction of the night, in 0..1. Used to choose the level of the pyramid. */
+    val visibleWindow: ClosedFloatingPointRange<Float> get() = offset..(offset + 1f / scale)
 
     fun applyPinch(centroidX: Float, panX: Float, zoom: Float) {
-        val avant = offset + (centroidX / widthPx) / scale
+        val underFinger = offset + (centroidX / widthPx) / scale
         scale = (scale * zoom).coerceIn(1f, zoomMax)
-        // On garde le point sous le doigt immobile, puis on applique le deplacement.
-        offset = avant - (centroidX / widthPx) / scale - (panX / widthPx) / scale
+        // We keep the point under the finger still, then apply the pan.
+        offset = underFinger - (centroidX / widthPx) / scale - (panX / widthPx) / scale
         clamp()
     }
 
@@ -71,7 +70,7 @@ class XTransform(
     }
 
     private fun clamp() {
-        val largeur = 1f / scale
-        offset = offset.coerceIn(0f, (1f - largeur).coerceAtLeast(0f))
+        val visibleWidth = 1f / scale
+        offset = offset.coerceIn(0f, (1f - visibleWidth).coerceAtLeast(0f))
     }
 }

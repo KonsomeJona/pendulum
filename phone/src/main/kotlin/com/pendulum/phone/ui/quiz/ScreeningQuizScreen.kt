@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.common.Paragraphe
+import com.pendulum.phone.ui.common.Paragraph
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
@@ -28,37 +28,38 @@ import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 /**
- * Les trois issues possibles. Aucune echelle de severite : l'IRLS est sous copyright, exclue.
+ * The three possible outcomes. No severity scale: the IRLS is under copyright, excluded.
  *
- * Le titre est un **identifiant de ressource** et non une chaine : un constructeur d'`enum` n'a pas
- * de `Context`, et le resoudre ici figerait la langue au chargement de la classe.
+ * The title is a **resource identifier** and not a string: an `enum` constructor has no `Context`,
+ * and resolving it here would freeze the language at the moment the class is loaded.
  */
-enum class IssueQuestionnaire(@StringRes val titre: Int) {
-    COMPATIBLE(R.string.quiz_outcome_consistent),
-    NON_COMPATIBLE(R.string.quiz_outcome_not_consistent),
-    INCOMPLET(R.string.quiz_outcome_incomplete),
+enum class QuizOutcome(@StringRes val title: Int) {
+    CONSISTENT(R.string.quiz_outcome_consistent),
+    NOT_CONSISTENT(R.string.quiz_outcome_not_consistent),
+    INCOMPLETE(R.string.quiz_outcome_incomplete),
 }
 
 /**
- * Le questionnaire de depistage.
+ * The screening questionnaire.
  *
- * ### Aucun score en gros
+ * ### No score in large type
  *
- * L'issue est une phrase, pas un nombre. Un score affiche en grand se compare, se suit dans le
- * temps et finit par etre traite comme une mesure — alors que c'est un depistage a trois issues.
+ * The outcome is a sentence, not a number. A score displayed large gets compared, gets tracked
+ * over time and ends up being treated as a measurement — whereas this is a screening with three
+ * outcomes.
  *
- * ### Il ne remplace pas la mesure, et la mesure ne le remplace pas
+ * ### It does not replace the measurement, and the measurement does not replace it
  *
- * L'en-tete le dit explicitement : ce questionnaire porte sur ce qui est ressenti **a l'eveil**,
- * la montre mesure ce qui se passe **pendant le sommeil**. Les deux se completent. Le diagnostic
- * du syndrome des jambes sans repos est clinique et repose sur les symptomes, pas sur un capteur.
+ * The header says it explicitly: this questionnaire is about what is felt **while awake**, the
+ * watch measures what happens **during sleep**. The two complement each other. The diagnosis of
+ * restless legs syndrome is clinical and rests on the symptoms, not on a sensor.
  */
 @Composable
 fun ScreeningQuizScreen(
-    issue: IssueQuestionnaire?,
-    onOui: () -> Unit,
-    onNon: () -> Unit,
-    onRevoir: () -> Unit,
+    outcome: QuizOutcome?,
+    onYes: () -> Unit,
+    onNo: () -> Unit,
+    onReview: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
@@ -68,36 +69,36 @@ fun ScreeningQuizScreen(
     ) {
         Text(stringResource(R.string.quiz_title), style = PendulumType.titleL, color = c.textPrimary)
 
-        if (issue == null) {
+        if (outcome == null) {
             PendulumCard {
-                Paragraphe(stringResource(R.string.quiz_header))
+                Paragraph(stringResource(R.string.quiz_header))
                 Spacer(Modifier.height(Spacing.m.dp))
-                Paragraphe(stringResource(R.string.quiz_single_question), couleur = c.textPrimary)
+                Paragraph(stringResource(R.string.quiz_single_question), color = c.textPrimary)
                 Spacer(Modifier.height(Spacing.m.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm.dp)) {
-                    Button(onClick = onOui, shape = PendulumShapes.button) { Text(stringResource(R.string.quiz_yes)) }
-                    OutlinedButton(onClick = onNon, shape = PendulumShapes.button) { Text(stringResource(R.string.quiz_no)) }
+                    Button(onClick = onYes, shape = PendulumShapes.button) { Text(stringResource(R.string.quiz_yes)) }
+                    OutlinedButton(onClick = onNo, shape = PendulumShapes.button) { Text(stringResource(R.string.quiz_no)) }
                 }
             }
         } else {
             PendulumCard {
-                // Titre neutre, aucune couleur alarmante : c'est un depistage, pas un verdict.
-                Text(stringResource(issue.titre), style = PendulumType.bodyEmph, color = c.textPrimary)
+                // Neutral title, no alarming colour: this is a screening, not a verdict.
+                Text(stringResource(outcome.title), style = PendulumType.bodyEmph, color = c.textPrimary)
                 Spacer(Modifier.height(Spacing.s.dp))
-                // L'avertissement s'affiche sur les **trois** issues, et la reponse negative s'y
-                // ajoute au lieu de le remplacer. Le remplacement etait le defaut : le seul chemin
-                // ou l'avertissement disparaissait etait le chemin rassurant, c'est-a-dire celui
-                // ou il faut le plus rappeler que ce depistage ne conclut rien et que cinq
-                // criteres cliniques restent a verifier par un medecin.
-                if (issue == IssueQuestionnaire.NON_COMPATIBLE) {
-                    Paragraphe(stringResource(R.string.quiz_answer_no))
+                // The warning is displayed on **all three** outcomes, and the negative answer is
+                // added to it instead of replacing it. Replacement was the defect: the only path
+                // where the warning disappeared was the reassuring path, that is, the one where it
+                // most needs to be recalled that this screening concludes nothing and that five
+                // clinical criteria remain to be verified by a doctor.
+                if (outcome == QuizOutcome.NOT_CONSISTENT) {
+                    Paragraph(stringResource(R.string.quiz_answer_no))
                     Spacer(Modifier.height(Spacing.s.dp))
                 }
-                Paragraphe(stringResource(R.string.quiz_outcome_body))
+                Paragraph(stringResource(R.string.quiz_outcome_body))
                 Spacer(Modifier.height(Spacing.s.dp))
                 Text(stringResource(R.string.quiz_outcome_export), style = PendulumType.caption, color = c.textTertiary)
                 Spacer(Modifier.height(Spacing.s.dp))
-                TextButton(onClick = onRevoir) { Text(stringResource(R.string.quiz_review)) }
+                TextButton(onClick = onReview) { Text(stringResource(R.string.quiz_review)) }
             }
         }
     }
@@ -105,10 +106,10 @@ fun ScreeningQuizScreen(
 
 @Preview(name = "Questionnaire — single question", widthDp = 411, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
-private fun ApercuQuestion() = PendulumTheme { ScreeningQuizScreen(null, {}, {}, {}) }
+private fun PreviewQuestion() = PendulumTheme { ScreeningQuizScreen(null, {}, {}, {}) }
 
 @Preview(name = "Questionnaire — outcome consistent", widthDp = 411, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
-private fun ApercuIssue() = PendulumTheme {
-    ScreeningQuizScreen(IssueQuestionnaire.COMPATIBLE, {}, {}, {})
+private fun PreviewOutcome() = PendulumTheme {
+    ScreeningQuizScreen(QuizOutcome.CONSISTENT, {}, {}, {})
 }

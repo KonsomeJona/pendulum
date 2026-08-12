@@ -1,22 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  La capacite que le telephone cherche pour savoir si cette montre porte l'application.
+  The capability the phone looks for to know whether this watch carries the application.
 
-  Sans ce fichier, `CapabilityClient.getCapability("pendulum_watch_app", FILTER_REACHABLE)` ne
-  trouve aucun noeud **meme sur une montre ou l'application tourne**, et l'assistant du telephone
-  conclut « application absente » en proposant de l'installer une seconde fois. Trois lignes de
-  XML pour la moitie montre d'une detection dont l'autre moitie etait deja ecrite.
+  Without this file, `CapabilityClient.getCapability("pendulum_watch_app", FILTER_REACHABLE)` finds
+  no node **even on a watch where the application is running**, and the phone onboarding concludes
+  "application missing" and offers to install it a second time. Three lines of XML for the watch
+  half of a detection whose other half was already written.
 
-  Le `tools:keep` est **critique** et n'est pas une precaution de style : le reducteur de
-  ressources ne voit aucune reference Kotlin vers ce tableau — c'est Google Play Services qui le
-  lit, par son nom, a l'installation — donc il le supprime. Le symptome apparait alors
-  uniquement en release, et il est silencieux : la detection cesse de fonctionner sans qu'aucun
-  message ne soit produit. `isMinifyEnabled` vaut `false` aujourd'hui dans les deux modules, ce
-  qui rend l'oubli invisible jusqu'au jour ou il passera a `true`.
+  The `tools:keep` is **critical** and is not a stylistic precaution: the resource shrinker sees no
+  Kotlin reference to this array — it is Google Play Services that reads it, by its name, at
+  install time — so it removes it. The symptom then appears only in release, and it is silent:
+  detection stops working without any message being produced. `isMinifyEnabled` is `false` today in
+  both modules, which keeps the omission invisible until the day it turns `true`.
 
-  Les deux noms sont volontairement distincts (`pendulum_watch_app` ici, `pendulum_phone_app` cote
-  telephone) : chaque cote cherche celui d'en face, et un nom partage rendrait chaque appareil
-  capable de se detecter lui-meme.
+  The two names are deliberately distinct (`pendulum_watch_app` here, `pendulum_phone_app` on the
+  phone side): each side looks for the one opposite, and a shared name would make every device
+  capable of detecting itself.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
     tools:keep="@array/android_wear_capabilities">

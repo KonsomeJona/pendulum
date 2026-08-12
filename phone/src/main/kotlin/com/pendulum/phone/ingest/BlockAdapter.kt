@@ -5,37 +5,35 @@ import com.pendulum.format.ChunkFormat
 import com.pendulum.format.DecodedBlock
 
 /**
- * L'adaptateur `DecodedBlock` -> `SampleBlock`. **C'est lui qui permet a `:algo` de ne dependre
- * de rien**, et il vit ici pour cette raison precise : si `:algo` connaissait
- * `com.pendulum.format.DecodedBlock`, la chaine de traitement serait liee a un format de fichier
- * binaire qui n'a rien a voir avec du traitement du signal, et le generateur synthetique — qui
- * alimente la chaine avec une verite terrain connue par construction — devrait fabriquer des
- * fichiers au lieu de fabriquer des echantillons.
+ * The `DecodedBlock` -> `SampleBlock` adapter. **It is what lets `:algo` depend on nothing**, and
+ * it lives here for that precise reason: if `:algo` knew about `com.pendulum.format.DecodedBlock`,
+ * the processing chain would be tied to a binary file format that has nothing to do with signal
+ * processing, and the synthetic generator — which feeds the chain with a ground truth known by
+ * construction — would have to manufacture files instead of manufacturing samples.
  *
- * ### La conversion d'unite, qui n'est pas un detail
+ * ### The unit conversion, which is not a detail
  *
- * `DecodedBlock` rend des **m/s²** : `ChunkReader` dequantifie avec `ChunkFormat.toMs2`.
- * `SampleBlock` attend des **g** (« Amplitudes en g », `Model.kt`). Le facteur est 9,80665.
+ * `DecodedBlock` gives back **m/s²**: `ChunkReader` dequantises with `ChunkFormat.toMs2`.
+ * `SampleBlock` expects **g** ("Amplitudes in g", `Model.kt`). The factor is 9.80665.
  *
- * Oublier cette division ne provoque aucune erreur : la chaine tourne, produit des enveloppes,
- * detecte des evenements. Simplement, tous les seuils absolus de l'algorithme — le plancher de
- * bruit a 0,020 g, la tolerance de gravite 0,80-1,20 g, le jerk impossible a 8 g — sont
- * franchis d'un facteur 9,8, c'est-a-dire jamais franchis dans un sens et toujours dans
- * l'autre. Le symptome serait « le detecteur ne trouve rien » ou « tout est rejete », et rien
- * dans les traces ne pointerait vers une unite. C'est le genre de bug qui coute une campagne de
- * mesure entiere.
+ * Forgetting this division causes no error: the chain runs, produces envelopes, detects events.
+ * It is simply that every absolute threshold of the algorithm — the noise floor at 0.020 g, the
+ * gravity tolerance 0.80-1.20 g, the impossible jerk at 8 g — is out by a factor of 9.8, that is,
+ * never crossed in one direction and always crossed in the other. The symptom would be "the
+ * detector finds nothing" or "everything is rejected", and nothing in the traces would point at a
+ * unit. This is the kind of bug that costs a whole measurement campaign.
  */
 object BlockAdapter {
 
-    /** 1 g en m/s². Valeur exacte du SI, la meme que celle utilisee a la quantification. */
+    /** 1 g in m/s². The exact SI value, the same one used at quantisation. */
     const val G_IN_MS2 = ChunkFormat.G_IN_MS2
 
     /**
-     * Copie defensive : les tableaux du bloc source sont laisses intacts.
+     * Defensive copy: the source block's arrays are left untouched.
      *
-     * A utiliser dans les tests et partout ou le `DecodedBlock` sert encore apres. Sur une nuit
-     * entiere, preferer [adoptInPlace] : 1,5 million d'echantillons x 3 axes x 4 octets font
-     * ~19 Mo, et les dupliquer double la pointe memoire pour rien.
+     * To be used in tests and everywhere the `DecodedBlock` is still needed afterwards. Over a
+     * whole night, prefer [adoptInPlace]: 1.5 million samples x 3 axes x 4 bytes make ~19 MB, and
+     * duplicating them doubles the memory peak for nothing.
      */
     fun copyOf(block: DecodedBlock): SampleBlock = AdaptedBlock(
         tFirstNs = block.tFirstNs,
@@ -47,12 +45,12 @@ object BlockAdapter {
     )
 
     /**
-     * Convertit **sur place** les tableaux du bloc et les reutilise tels quels.
+     * Converts the block's arrays **in place** and reuses them as they are.
      *
-     * Contrat, a respecter faute de quoi les valeurs sont divisees deux fois : le
-     * [DecodedBlock] passe ici **ne doit plus etre lu ensuite**. C'est vrai par construction
-     * dans le seul appelant reel, [SessionReassembler], qui consomme le flux de
-     * `ChunkReader.forEachBlock` et jette chaque bloc apres l'avoir adapte.
+     * The contract, to be honoured on pain of dividing the values twice: the [DecodedBlock] passed
+     * in here **must not be read again afterwards**. That holds by construction in the only real
+     * caller, [SessionReassembler], which consumes the stream of `ChunkReader.forEachBlock` and
+     * discards every block once it has adapted it.
      */
     fun adoptInPlace(block: DecodedBlock): SampleBlock {
         val n = block.sampleCount
@@ -66,13 +64,13 @@ object BlockAdapter {
     }
 
     /**
-     * `suspectTimebase` n'est **pas** transmis, et c'est voulu.
+     * `suspectTimebase` is **not** carried over, and that is deliberate.
      *
-     * `SampleBlock` n'a pas de champ pour lui, et le lui ajouter serait un mauvais echange :
-     * `:algo` revalide de toute facon la base de temps a l'etape −1 (`Integrity.check`), sur les
-     * memes criteres, parce qu'il ne peut pas heriter d'une garantie qu'un CRC de bloc ne donne
-     * pas. Faire remonter le drapeau ferait croire a une information supplementaire la ou il n'y
-     * a qu'un doublon — et masquerait le fait que la revalidation est faite en aval.
+     * `SampleBlock` has no field for it, and adding one would be a bad trade: `:algo` revalidates
+     * the timebase anyway at step −1 (`Integrity.check`), on the same criteria, because it cannot
+     * inherit a guarantee that a block CRC does not give. Carrying the flag up would suggest extra
+     * information where there is only a duplicate — and would hide the fact that the revalidation
+     * is done downstream.
      */
     private class AdaptedBlock(
         override val tFirstNs: Long,

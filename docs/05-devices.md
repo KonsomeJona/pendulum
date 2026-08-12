@@ -13,10 +13,10 @@ This document says which device to use for that second role, why the choice matt
 it appears to, and — most importantly — **how to verify a candidate source before writing a single
 line of integration code**.
 
-The comparison reflects the state of things in mid-2026 and is translated from
-[`fr/SOURCES-SOMMEIL.md`](fr/SOURCES-SOMMEIL.md), keeping its verification marks intact. Several
+The comparison reflects the state of things in mid-2026 and is condensed from
+[`workings/SLEEP-SOURCES.md`](workings/SLEEP-SOURCES.md), keeping its verification marks intact. Several
 rows are marked unverified. That is not hedging: it means the claim was never confirmed against a
-primary source, and §7 lists every one of them — the French original lists thirteen, one by one,
+primary source, and §7 lists every one of them — the working document lists thirteen, one by one,
 and is the place to look before trusting anything here marked `[?]`.
 
 ---

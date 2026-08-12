@@ -21,198 +21,199 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.text.texte
-import com.pendulum.phone.ui.model.ErreurPendulum
-import com.pendulum.phone.ui.chart.EtatPoint
-import com.pendulum.phone.ui.chart.GrapheTendance
-import com.pendulum.phone.ui.common.BandeauProfilPersonnalise
+import com.pendulum.phone.ui.text.text
+import com.pendulum.phone.ui.model.PendulumError
+import com.pendulum.phone.ui.chart.PointState
+import com.pendulum.phone.ui.chart.TrendChart
+import com.pendulum.phone.ui.common.CustomProfileBanner
 import com.pendulum.phone.ui.common.BlockingState
-import com.pendulum.phone.ui.common.BoutonMotive
+import com.pendulum.phone.ui.common.ReasonedButton
 import com.pendulum.phone.ui.common.CollectionProgress
 import com.pendulum.phone.ui.common.DataTableSheet
 import com.pendulum.phone.ui.common.ErrorCard
 import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.MetricHeadline
-import com.pendulum.phone.ui.common.Paragraphe
+import com.pendulum.phone.ui.common.Paragraph
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.PositionBox
 import com.pendulum.phone.ui.common.StatusStrip
-import com.pendulum.phone.ui.common.formaterValeur
-import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.common.formatValue
+import com.pendulum.phone.ui.model.Aggregate
 import com.pendulum.phone.ui.model.Mapping
-import com.pendulum.phone.ui.model.MotifRefus
-import com.pendulum.phone.ui.model.NuitUi
-import com.pendulum.phone.ui.model.TendanceUiState
-import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.model.RefusalReason
+import com.pendulum.phone.ui.model.NightUi
+import com.pendulum.phone.ui.model.TrendUiState
+import com.pendulum.phone.ui.text.resolve
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 /**
- * L'ecran Tendance : destination de depart, et le premier ecran concu du produit.
+ * The Trend screen: the start destination, and the first screen designed for this product.
  *
- * ### Ce qu'il n'est plus
+ * ### What it no longer is
  *
- * La destination de depart. Elle l'etait, et l'accueil melangeait alors le geste quotidien et la
- * lecture d'un resultat statistique — deux regimes cognitifs incompatibles sur le meme ecran. La
- * carte « ce soir » est partie avec, vers `ui/home/HomeScreen.kt` : cet ecran-ci ne porte plus
- * que la lecture.
+ * The start destination. It was, and the home screen then mixed the daily gesture with the reading
+ * of a statistical result — two incompatible cognitive regimes on the same screen. The "tonight"
+ * card went with it, to `ui/home/HomeScreen.kt`: this screen now carries nothing but the reading.
  *
- * ### Ce qu'il affiche, dans cet ordre, et pourquoi cet ordre
+ * ### What it shows, in this order, and why this order
  *
- * 1. La bande d'etat du reveil — ou en est la nuit d'hier.
- * 2. Le **rythme fondamental en secondes**, avec son intervalle et son `n` sur la ligne suivante.
- *    C'est la grandeur suivie depuis `SPEC-v2.md` §5 : douze fois plus stable d'une nuit a
- *    l'autre que le compte horaire, et sans denominateur.
- * 3. Le **compte horaire au second rang**, avec sa phrase de position et son seuil de 15/h.
- *    Il reste parce que c'est la langue des somnologues, mais il ne pilote plus le suivi.
- * 4. Le graphe.
- * 5. Les regles actives, le compteur de nuits, le questionnaire, le rapport.
+ * 1. The waking status strip — where last night has got to.
+ * 2. The **fundamental rhythm in seconds**, with its interval and its `n` on the following line.
+ *    It is the quantity tracked since `SPEC-v2.md` §5: twelve times more stable from night
+ *    to night than the hourly count, and without a denominator.
+ * 3. The **hourly count in second place**, with its position sentence and its 15/h threshold.
+ *    It stays because it is the language of sleep physicians, but it no longer drives the tracking.
+ * 4. The chart.
+ * 5. The active rules, the night counter, the questionnaire, the report.
  *
- * ### Ce qu'il n'affiche jamais
+ * ### What it never shows
  *
- * Sous trois nuits eligibles : rien. Pas de mediane, pas de categorie, pas de graphe — **pas
- * meme un graphe vide avec ses axes**, parce qu'un axe vide invite l'oeil a imaginer la courbe
- * qui manque. Le refus est une branche a part entiere, pas un etat degrade de l'ecran complet.
+ * Below three eligible nights: nothing. No median, no category, no chart — **not even an empty
+ * chart with its axes**, because an empty axis invites the eye to imagine the curve that is
+ * missing. The refusal is a branch in its own right, not a degraded state of the complete screen.
  */
 @Composable
 fun TrendScreen(
-    etat: TendanceUiState,
-    onNuit: (String) -> Unit,
-    /** La liste des nuits, ou mene le compteur « N nights recorded … (see Nights) ». */
-    onNuits: () -> Unit,
-    onComparer: () -> Unit,
+    state: TrendUiState,
+    onNight: (String) -> Unit,
+    /** The night list, where the "N nights recorded ... (see Nights)" counter leads. */
+    onNights: () -> Unit,
+    onCompare: () -> Unit,
     onQuestionnaire: () -> Unit,
     onExport: () -> Unit,
-    onActionReveil: () -> Unit,
-    /** Le bouton de la carte de situation Health Connect : ouvrir Health Connect, ou les reglages. */
-    onSituationSommeil: () -> Unit,
+    onWakingAction: () -> Unit,
+    /** The button on the Health Connect situation card: open Health Connect, or the settings. */
+    onSleepSituation: () -> Unit,
     /**
-     * Vrai quand le systeme a cesse d'afficher la boite de permission. La carte de sommeil change
-     * alors de promesse : elle n'annonce plus une demande — qui ne montrerait plus rien — mais le
-     * passage par l'ecran de Health Connect, seul geste qui reste.
+     * True when the system has stopped showing the permission dialog. The sleep card then changes
+     * its promise: it no longer announces a request — which would show nothing any more — but the
+     * trip through the Health Connect screen, the only gesture left.
      */
-    permissionEtouffee: Boolean = false,
+    permissionSuppressed: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
-    var valeursOuvertes by remember { mutableStateOf(false) }
+    var valuesOpen by remember { mutableStateOf(false) }
 
     PendulumScreen(modifier) {
-        when (etat) {
-            TendanceUiState.Chargement -> Unit
+        when (state) {
+            TrendUiState.Loading -> Unit
 
-            is TendanceUiState.Refus -> {
-                StatusStrip(etat.reveil, onActionReveil)
-                // La situation de la source de sommeil passe **avant** le refus : une permission
-                // jamais accordee se repare maintenant, pas apres six nuits scorees sur le seul
-                // masque accelerometrique.
-                etat.situationSommeil?.let { ErrorCard(carteSommeil(it, permissionEtouffee), onAction = onSituationSommeil) }
-                RefusCard(etat, onNuit)
-                // L'export est visible mais desactive, avec son motif ecrit sur le bouton :
-                // jamais un bouton actif qui echoue.
+            is TrendUiState.Refusal -> {
+                StatusStrip(state.waking, onWakingAction)
+                // The sleep source situation comes **before** the refusal: a permission that was
+                // never granted is repaired now, not after six nights scored on the accelerometric
+                // mask alone.
+                state.sleepSituation?.let { ErrorCard(sleepCard(it, permissionSuppressed), onAction = onSleepSituation) }
+                RefusalCard(state, onNight)
+                // The export is visible but disabled, with its reason written on the button:
+                // never an active button that fails.
                 //
-                // La porte de l'export est le **compte de nuits eligibles**, la meme qu'en
-                // `Pret.exportPossible`. Un rythme que le modele a refuse ne retire aucune nuit,
-                // et le rapport est precisement l'endroit ou ce refus doit etre ecrit : le
-                // desactiver ici priverait le medecin du document qui l'explique.
-                BoutonMotive(
-                    libelle = stringResource(R.string.trend_report),
-                    motifIndisponible = if (etat.motif == MotifRefus.RYTHME_NON_AJUSTE) {
+                // The gate for the export is the **eligible night count**, the same one as in
+                // `Ready.exportPossible`. A rhythm the model refused removes no night, and the
+                // report is precisely where that refusal has to be written: disabling it here
+                // would deprive the doctor of the very document that explains it.
+                ReasonedButton(
+                    label = stringResource(R.string.trend_report),
+                    unavailableReason = if (state.reason == RefusalReason.RHYTHM_NOT_FITTED) {
                         null
                     } else {
-                        stringResource(R.string.export_unavailable, Aggregat.MIN_NUITS_AGREGAT)
+                        stringResource(R.string.export_unavailable, Aggregate.MIN_NIGHTS_AGGREGATE)
                     },
                     onClick = onExport,
                 )
             }
 
-            is TendanceUiState.Pret -> {
-                StatusStrip(etat.reveil, onActionReveil)
+            is TrendUiState.Ready -> {
+                StatusStrip(state.waking, onWakingAction)
 
-                etat.situationSommeil?.let { ErrorCard(carteSommeil(it, permissionEtouffee), onAction = onSituationSommeil) }
+                state.sleepSituation?.let { ErrorCard(sleepCard(it, permissionSuppressed), onAction = onSleepSituation) }
 
-                BandeauProfilPersonnalise(etat.profilPersonnalise)
-                if (etat.hashsMelanges) {
-                    PendulumCard { Paragraphe(stringResource(R.string.trend_mixed_hashes), couleur = c.attention) }
+                CustomProfileBanner(state.customProfile)
+                if (state.mixedHashes) {
+                    PendulumCard { Paragraph(stringResource(R.string.trend_mixed_hashes), color = c.attention) }
                 }
 
                 PendulumCard {
-                    etat.bandeauProvisoire?.let {
-                        Paragraphe(it.resoudre(), couleur = c.attention)
-                        // Le nombre de nuits demande depend de la position de l'intervalle, et un
-                        // nombre nu ne se discute pas : son motif est chiffre et sourcé, y compris
-                        // quand la source manque — le regime bas dit que 14 est un compromis.
+                    state.provisionalBanner?.let {
+                        Paragraph(it.resolve(), color = c.attention)
+                        // The number of nights asked for depends on the position of the interval,
+                        // and a bare number cannot be argued with: its reason is quantified and
+                        // sourced, including when the source is missing — the low regime says that
+                        // 14 is a compromise.
                         Text(
-                            etat.motifNuitsRequises.resoudre(),
+                            state.requiredNightsReason.resolve(),
                             style = PendulumType.caption,
                             color = c.textTertiary,
                         )
                         Spacer(Modifier.height(Spacing.sm.dp))
                     }
 
-                    // Niveau 1 et 2 de la hierarchie d'affichage : la grandeur suivie, son
-                    // intervalle, son n. Seul site d'usage de metricXL dans l'application.
+                    // Levels 1 and 2 of the display hierarchy: the quantity tracked, its interval,
+                    // its n. The only place metricXL is used in the application.
                     MetricHeadline(
-                        resultat = etat.rythme,
-                        libelle = stringResource(R.string.trend_rhythm_label),
-                        qualificatif = etat.periodiciteQualifiee,
+                        result = state.rhythm,
+                        label = stringResource(R.string.trend_rhythm_label),
+                        qualifier = state.qualifiedPeriodicity,
                     )
 
-                    if (!etat.rythme.icCalibre) {
-                        // Ce que l'intervalle est reellement sous six nuits, avec la mesure qui le
-                        // dit. Un intervalle mal calibre affiche sans reserve serait le defaut le
-                        // plus embarrassant de ce produit — c'est l'intervalle qui porte tout.
+                    if (!state.rhythm.ciCalibrated) {
+                        // What the interval really is below six nights, with the measurement that
+                        // says so. A badly calibrated interval displayed without reservation would
+                        // be the most embarrassing defect in this product — it is the interval
+                        // that carries everything.
                         Spacer(Modifier.height(Spacing.s.dp))
-                        Paragraphe(stringResource(R.string.trend_interval_uncalibrated_note), couleur = c.textTertiary)
+                        Paragraph(stringResource(R.string.trend_interval_uncalibrated_note), color = c.textTertiary)
                     }
 
                     Spacer(Modifier.height(Spacing.sm.dp))
-                    Paragraphe(stringResource(R.string.trend_rhythm_no_threshold))
+                    Paragraph(stringResource(R.string.trend_rhythm_no_threshold))
 
                     Spacer(Modifier.height(Spacing.m.dp))
 
-                    // Second rang : le compte horaire. Meme regle P2 — valeur, intervalle et n
-                    // dans la meme ligne — mais a la taille du corps de texte.
+                    // Second rank: the hourly count. Same P2 rule — value, interval and n on the
+                    // same line — but at body text size.
                     Text(
                         stringResource(
                             R.string.trend_count_second_rank,
-                            Math.round(etat.compte.mediane).toInt(),
-                            Math.round(etat.compte.ciBas).toInt(),
-                            Math.round(etat.compte.ciHaut).toInt(),
-                            etat.compte.nuits,
+                            Math.round(state.count.median).toInt(),
+                            Math.round(state.count.ciLow).toInt(),
+                            Math.round(state.count.ciHigh).toInt(),
+                            state.count.nights,
                         ),
                         style = PendulumType.bodyNum,
                         color = c.textSecondary,
                     )
                     Text(stringResource(R.string.trend_count_label), style = PendulumType.caption, color = c.textTertiary)
                     Spacer(Modifier.height(Spacing.s.dp))
-                    Paragraphe(stringResource(R.string.trend_count_note))
+                    Paragraph(stringResource(R.string.trend_count_note))
 
                     Spacer(Modifier.height(Spacing.sm.dp))
-                    // La phrase de position, cadre neutre dans les cinq cas.
-                    etat.position.phrase()?.let { PositionBox(it.resoudre()) }
+                    // The position sentence, a neutral frame in all five cases.
+                    state.position.sentence()?.let { PositionBox(it.resolve()) }
 
-                    // **Le seuil de 15/h, etiquete, juste sous la phrase qui l'invoque.**
+                    // **The 15/h threshold, labelled, right under the sentence that invokes it.**
                     //
-                    // C'est le meilleur rapport gain/effort de tout l'ecran, et ce n'est pas une
-                    // opinion : sur 1 618 adultes, ajouter a une borne de reference une mention du
-                    // type « beaucoup de medecins ne s'inquietent pas avant cette valeur » fait
-                    // tomber la demande de contact urgent de 55,8 % a 34,7 % sur des valeurs
-                    // quasi normales (Zikmund-Fisher, JMIR 2018). Une ligne nue a 15 est
-                    // exactement le meme dispositif qu'une borne nue sur un compte rendu de
-                    // biologie. La legende porte en plus l'ecart PSG / actimetrie de cheville.
+                    // It is the best benefit/effort ratio on the whole screen, and that is not an
+                    // opinion: over 1 618 adults, adding to a reference bound a mention along the
+                    // lines of "many doctors are not concerned below this value" brings the
+                    // request for urgent contact down from 55.8 % to 34.7 % on near-normal values
+                    // (Zikmund-Fisher, JMIR 2018). A bare line at 15 is exactly the same device as
+                    // a bare bound on a laboratory report. The caption additionally carries the
+                    // PSG / ankle actigraphy gap.
                     Spacer(Modifier.height(Spacing.s.dp))
-                    Paragraphe(stringResource(R.string.chart_threshold_15_legend), couleur = c.textTertiary)
+                    Paragraph(stringResource(R.string.chart_threshold_15_legend), color = c.textTertiary)
 
                     Spacer(Modifier.height(Spacing.s.dp))
                     Text(
                         stringResource(
                             R.string.trend_dispersion,
-                            formaterValeur(etat.rythme.dispersion, etat.rythme.grandeur),
-                            stringResource(etat.rythme.grandeur.unite),
+                            formatValue(state.rhythm.dispersion, state.rhythm.quantity),
+                            stringResource(state.rhythm.quantity.unit),
                         ),
                         style = PendulumType.caption,
                         color = c.textTertiary,
@@ -220,62 +221,62 @@ fun TrendScreen(
                 }
 
                 PendulumCard {
-                    GrapheTendance(
-                        spec = etat.graphe,
-                        onNuit = onNuit,
-                        onValeurs = { valeursOuvertes = true },
+                    TrendChart(
+                        spec = state.chart,
+                        onNight = onNight,
+                        onValues = { valuesOpen = true },
                     )
                 }
 
                 PendulumCard {
-                    LigneAction(
+                    ActionRow(
                         stringResource(R.string.trend_compare),
                         stringResource(R.string.trend_compare_subtitle),
-                        onComparer,
+                        onCompare,
                     )
                 }
 
                 PendulumCard {
-                    InlineValue(stringResource(R.string.trend_counting_rule), etat.regle.resoudre())
-                    InlineValue(stringResource(R.string.trend_sleep_mask), etat.masque.resoudre())
-                    InlineValue(stringResource(R.string.trend_movements_awake), Mapping.compteLisible(etat.plmw))
+                    InlineValue(stringResource(R.string.trend_counting_rule), state.rule.resolve())
+                    InlineValue(stringResource(R.string.trend_sleep_mask), state.mask.resolve())
+                    InlineValue(stringResource(R.string.trend_movements_awake), Mapping.readableCount(state.plmw))
                     InlineValue(
                         stringResource(R.string.trend_periodicity),
-                        // Jamais l'indice nu : un qualificatif, ou rien.
-                        etat.periodiciteQualifiee?.resoudre() ?: "—",
+                        // Never the bare index: a qualifier, or nothing.
+                        state.qualifiedPeriodicity?.resolve() ?: "—",
                         note = stringResource(R.string.trend_periodicity_note),
                     )
                     InlineValue(
                         stringResource(R.string.trend_missed_rate),
-                        etat.tauxManques?.let { "${Math.round(it * 100)}%" } ?: Mapping.TIRET,
+                        state.missRate?.let { "${Math.round(it * 100)}%" } ?: Mapping.DASH,
                         note = stringResource(R.string.trend_missed_rate_note),
                     )
                 }
 
                 PendulumCard {
-                    // Le compteur porte « (see Nights) » dans son texte, et il se cliquait sans
-                    // rien faire. Une ligne qui annonce ou aller et qui n'y va pas apprend a ne
-                    // plus essayer les autres.
-                    LigneAction(
+                    // The counter carries "(see Nights)" in its text, and it could be tapped
+                    // without doing anything. A row that announces where to go and does not go
+                    // there teaches you not to try the others.
+                    ActionRow(
                         stringResource(
                             R.string.waking_counter,
-                            etat.nuitsEnregistrees,
-                            etat.nuitsEligibles,
-                            etat.nuitsEcartees,
+                            state.recordedNights,
+                            state.eligibleNights,
+                            state.excludedNights,
                         ),
                         null,
-                        onNuits,
+                        onNights,
                     )
-                    LigneAction(
+                    ActionRow(
                         stringResource(R.string.trend_questionnaire),
-                        etat.questionnaireEtat.resoudre(),
+                        state.questionnaireState.resolve(),
                         onQuestionnaire,
                     )
                 }
 
-                BoutonMotive(
-                    libelle = stringResource(R.string.trend_report),
-                    motifIndisponible = if (etat.exportPossible) null else stringResource(R.string.export_unavailable, Aggregat.MIN_NUITS_AGREGAT),
+                ReasonedButton(
+                    label = stringResource(R.string.trend_report),
+                    unavailableReason = if (state.exportPossible) null else stringResource(R.string.export_unavailable, Aggregate.MIN_NIGHTS_AGGREGATE),
                     onClick = onExport,
                 )
 
@@ -284,103 +285,103 @@ fun TrendScreen(
         }
     }
 
-    if (valeursOuvertes && etat is TendanceUiState.Pret) {
+    if (valuesOpen && state is TrendUiState.Ready) {
         DataTableSheet(
-            colonnes = listOf(
+            columns = listOf(
                 stringResource(R.string.trend_table_date),
                 stringResource(R.string.trend_table_rhythm),
                 stringResource(R.string.trend_table_state),
             ),
-            lignes = etat.graphe.points.map {
+            rows = state.chart.points.map {
                 listOf(
-                    formaterJourCourt(it.dateMs),
-                    "${Math.round(it.valeur)} s",
-                    stringResource(etatLisible(it.etat)),
+                    formatShortDay(it.dateMs),
+                    "${Math.round(it.value)} s",
+                    stringResource(readableState(it.state)),
                 )
             },
-            onFermer = { valeursOuvertes = false },
+            onClose = { valuesOpen = false },
         )
     }
 }
 
 /**
- * Le refus d'agreger, dans ses deux motifs.
+ * The refusal to aggregate, in its two reasons.
  *
- * La raison est donnee **en chiffres** et non en consigne. L'utilisateur vise est technicien : le
- * chiffre « une nuit sur trois » le convainc, « veuillez patienter » l'agace et le pousse a
- * chercher un contournement.
+ * The reason is given **in figures** and not as an instruction. The intended user is a technician:
+ * the figure "one night in three" convinces them, "please wait" irritates them and pushes them to
+ * look for a way round.
  *
- * Les deux motifs partagent la meme forme et ne partagent rien d'autre. Le second —
- * [MotifRefus.RYTHME_NON_AJUSTE] — est le plus frequent : le modele refuse de publier une periode
- * que les intervalles n'identifient pas, 18 fois sur 20 sur des nuits simulees. Le presenter avec
- * le compteur de nuits ferait lire « il manque des nuits » a quelqu'un qui en a neuf, et le
- * presenter en rouge ferait lire une panne la ou le produit fait exactement ce qu'on lui demande.
+ * The two reasons share the same shape and share nothing else. The second —
+ * [RefusalReason.RHYTHM_NOT_FITTED] — is the more frequent: the model refuses to publish a period
+ * that the intervals do not identify, 18 times out of 20 on simulated nights. Presenting it with
+ * the night counter would make somebody who has nine of them read "nights are missing", and
+ * presenting it in red would make a breakdown out of the product doing exactly what it is asked to.
  *
- * Le lien vers le detail d'une nuit reste actif dans les deux cas : c'est la que vit le chiffre
- * par nuit, et le technicien doit pouvoir verifier que sa mesure a fonctionne.
+ * The link to a night's detail stays active in both cases: that is where the per-night figure
+ * lives, and the technician has to be able to check that their measurement worked.
  */
 @Composable
-private fun RefusCard(etat: TendanceUiState.Refus, onNuit: (String) -> Unit) {
+private fun RefusalCard(state: TrendUiState.Refusal, onNight: (String) -> Unit) {
     val c = LocalPendulumColors.current
-    val rythme = etat.motif == MotifRefus.RYTHME_NON_AJUSTE
+    val rhythm = state.reason == RefusalReason.RHYTHM_NOT_FITTED
     BlockingState(
-        titre = stringResource(
-            if (rythme) R.string.trend_rhythm_refusal_title else R.string.trend_refusal_title,
+        title = stringResource(
+            if (rhythm) R.string.trend_rhythm_refusal_title else R.string.trend_refusal_title,
         ),
-        corps = stringResource(
-            if (rythme) R.string.trend_rhythm_refusal_body else R.string.trend_refusal_body,
+        body = stringResource(
+            if (rhythm) R.string.trend_rhythm_refusal_body else R.string.trend_refusal_body,
         ),
         action = stringResource(
-            if (rythme) R.string.trend_rhythm_refusal_action else R.string.trend_refusal_action,
+            if (rhythm) R.string.trend_rhythm_refusal_action else R.string.trend_refusal_action,
         ),
-        entete = {
+        header = {
             Column(
                 Modifier.fillMaxWidth().padding(bottom = Spacing.m.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     stringResource(
-                        if (rythme) R.string.trend_rhythm_counter else R.string.trend_nights_counter,
-                        etat.nuitsAcquises,
-                        etat.nuitsRequises,
+                        if (rhythm) R.string.trend_rhythm_counter else R.string.trend_nights_counter,
+                        state.acquiredNights,
+                        state.requiredNights,
                     ),
                     style = PendulumType.titleL,
                     color = c.textPrimary,
                 )
                 Spacer(Modifier.height(Spacing.s.dp))
-                CollectionProgress(etat.nuitsAcquises, etat.nuitsRequises)
+                CollectionProgress(state.acquiredNights, state.requiredNights)
             }
         },
-        pied = {
+        footer = {
             Text(
                 stringResource(
-                    if (rythme) R.string.trend_rhythm_refusal_list else R.string.trend_refusal_list,
+                    if (rhythm) R.string.trend_rhythm_refusal_list else R.string.trend_refusal_list,
                 ),
                 style = PendulumType.label,
                 color = c.textTertiary,
             )
-            etat.nuitsEnregistrees.forEach { n -> LigneNuitCompacte(n, onNuit) }
+            state.recordedNights.forEach { n -> CompactNightRow(n, onNight) }
         },
     )
 }
 
 @Composable
-private fun LigneNuitCompacte(n: NuitUi, onNuit: (String) -> Unit) {
+private fun CompactNightRow(n: NightUi, onNight: (String) -> Unit) {
     val c = LocalPendulumColors.current
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable { onNuit(n.sessionHex) }
+            .clickable { onNight(n.sessionHex) }
             .padding(vertical = Spacing.s.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(n.dateLisible, style = PendulumType.body, color = c.textPrimary)
-        Text(n.sommeilLisible, style = PendulumType.bodyNum, color = c.textSecondary)
+        Text(n.readableDate, style = PendulumType.body, color = c.textPrimary)
+        Text(n.readableSleep, style = PendulumType.bodyNum, color = c.textSecondary)
     }
 }
 
 @Composable
-private fun LigneAction(titre: String, sousTitre: String?, onClick: () -> Unit) {
+private fun ActionRow(title: String, subtitle: String?, onClick: () -> Unit) {
     val c = LocalPendulumColors.current
     Column(
         Modifier
@@ -388,57 +389,57 @@ private fun LigneAction(titre: String, sousTitre: String?, onClick: () -> Unit) 
             .clickable(onClick = onClick)
             .padding(vertical = Spacing.s.dp),
     ) {
-        Text(titre, style = PendulumType.body, color = c.textPrimary)
-        sousTitre?.let { Text(it, style = PendulumType.caption, color = c.textTertiary) }
+        Text(title, style = PendulumType.body, color = c.textPrimary)
+        subtitle?.let { Text(it, style = PendulumType.caption, color = c.textTertiary) }
     }
 }
 
 /**
- * L'etat d'une nuit dans la colonne « State » de la feuille de valeurs.
+ * A night's state in the "State" column of the values sheet.
  *
- * Il s'ecrivait `it.etat.name.lowercase()`, ce qui peignait a l'ecran le nom de la constante
- * Kotlin — donc `masque_accelero` et `ecartee`, deux mots francais dans une interface anglaise, et
- * trois chaines qu'aucun `values-fr/` n'aurait pu atteindre.
+ * It used to be written `it.state.name.lowercase()`, which painted the name of the Kotlin constant
+ * onto the screen — so `masque_accelero` and `ecartee`, two French words in an English interface,
+ * and three strings that no `values-fr/` could ever have reached.
  */
 @StringRes
-private fun etatLisible(etat: EtatPoint): Int = when (etat) {
-    EtatPoint.ELIGIBLE -> R.string.trend_table_state_eligible
-    EtatPoint.MASQUE_ACCELERO -> R.string.trend_table_state_accel_mask
-    EtatPoint.ECARTEE -> R.string.trend_table_state_excluded
+private fun readableState(state: PointState): Int = when (state) {
+    PointState.ELIGIBLE -> R.string.trend_table_state_eligible
+    PointState.ACCEL_MASKED -> R.string.trend_table_state_accel_mask
+    PointState.EXCLUDED -> R.string.trend_table_state_excluded
 }
 
-private fun formaterJourCourt(ms: Long): String {
-    val jours = ms / 86_400_000L
-    val z = jours + 719468
+private fun formatShortDay(ms: Long): String {
+    val days = ms / 86_400_000L
+    val z = days + 719468
     val era = (if (z >= 0) z else z - 146096) / 146097
     val doe = z - era * 146097
     val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
     val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
     val mp = (5 * doy + 2) / 153
     val d = doy - (153 * mp + 2) / 5 + 1
-    val mois = if (mp < 10) mp + 3 else mp - 9
-    return "%02d/%02d".format(d, mois)
+    val month = if (mp < 10) mp + 3 else mp - 9
+    return "%02d/%02d".format(d, month)
 }
 
 // -----------------------------------------------------------------------------------------
-// Apercus
+// Previews
 // -----------------------------------------------------------------------------------------
 
 
 /**
- * La carte de sommeil, adaptee a ce que le systeme accepte encore de faire.
+ * The sleep card, adapted to what the system still agrees to do.
  *
- * Tant que la boite de permission peut s'afficher, la carte d'origine convient : son bouton la
- * demande, et c'est le geste le plus court. Une fois la boite etouffee — deux refus, puis un
- * silence definitif — ce bouton ment : il ne montrerait plus rien. La carte dit alors ou aller et
- * son bouton y emmene.
+ * As long as the permission dialog can be shown, the original card is right: its button asks for
+ * the permission, and that is the shortest gesture. Once the dialog has been suppressed — two
+ * refusals, then a definitive silence — that button lies: it would show nothing any more. The card
+ * then says where to go and its button takes you there.
  *
- * La cause reste la meme, seule la marche a suivre change : c'est pourquoi le code de situation
- * (`E-HC-02`) et le titre ne bougent pas.
+ * The cause stays the same, only the procedure changes: that is why the situation code (`E-HC-02`)
+ * and the title do not move.
  */
-private fun carteSommeil(base: ErreurPendulum, etouffee: Boolean): ErreurPendulum =
-    if (!etouffee) base
+private fun sleepCard(base: PendulumError, suppressed: Boolean): PendulumError =
+    if (!suppressed) base
     else base.copy(
-        action = texte(R.string.error_hc_02_action_manuelle),
-        bouton = texte(R.string.error_hc_02_button_manuel),
+        action = text(R.string.error_hc_02_action_manuelle),
+        button = text(R.string.error_hc_02_button_manuel),
     )

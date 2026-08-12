@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Icone unique : lanceur et petite icone de notification. Monochrome, sans degrade :
-     la petite icone de notification est de toute facon reduite a un masque alpha. -->
+<!-- A single icon: launcher and small notification icon. Monochrome, no gradient:
+     the small notification icon is reduced to an alpha mask anyway. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"

@@ -4,92 +4,90 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/** Ou le dessin part : un ecran (sombre par defaut) ou une page de PDF (claire, en points). */
+/** Where the drawing goes: a screen (dark by default) or a PDF page (light, in points). */
 enum class RenderTarget { Screen, Print }
 
 /**
- * Tout ce dont les trois fonctions de dessin ont besoin, et rien d'autre.
+ * Everything the three drawing functions need, and nothing else.
  *
- * ### Pourquoi ce sont des parametres et pas des constantes
+ * ### Why these are parameters and not constants
  *
- * Les memes fonctions `DrawScope.drawXxx()` dessinent l'ecran et la page PDF (`UX.md` §8.3). Si
- * une couleur ou une epaisseur etait codee en dur dans la fonction de dessin, l'export
- * divergerait de l'ecran le jour ou l'un des deux changerait — et personne ne le verrait avant
- * qu'un medecin ait le papier en main. En passant un jeu de tokens, il n'existe **qu'un seul**
- * code de rendu et le theme est une donnee.
+ * The same `DrawScope.drawXxx()` functions draw the screen and the PDF page (`UX.md` §8.3). If a
+ * colour or a stroke width were hard-coded inside the drawing function, the export would diverge
+ * from the screen the day one of the two changed — and nobody would see it before a doctor had the
+ * paper in hand. By passing a set of tokens, there is **only one** rendering code and the theme is
+ * data.
  *
- * ### Les quatre teintes, et pas cinq
+ * ### The four hues, and not five
  *
- * Bleu (donnee), ambre (qualite/attention), violet (second signal, REM), gris (structure). Aucune
- * paire rouge-vert : toutes les distinctions restent lisibles en deuteranopie et protanopie, et
- * de toute facon aucune n'est portee par la seule couleur (P6).
+ * Blue (data), amber (quality/attention), violet (second signal, REM), grey (structure). No
+ * red-green pair: every distinction stays legible under deuteranopia and protanopia, and in any
+ * case none is carried by colour alone (P6).
  *
- * Les epaisseurs sont en unites de dessin abstraites : le `DrawScope` d'un Canvas Compose les
- * recoit deja converties en pixels par l'appelant, celui d'une page PDF en points. La regle
- * minimale est 1,5 dp a l'ecran / 0,6 pt a l'export — en dessous, un trait disparait a
- * l'impression.
+ * The stroke widths are in abstract drawing units: the `DrawScope` of a Compose Canvas receives
+ * them already converted into pixels by the caller, that of a PDF page into points. The minimum
+ * rule is 1.5 dp on screen / 0.6 pt on export — below that, a line disappears in print.
  */
 @Immutable
 data class ChartTokens(
     val target: RenderTarget,
 
-    // --- fonds
+    // --- backgrounds
     val plotBackground: Color,
-    /** Bandes hors sommeil, voie « hypnogramme indisponible ». */
+    /** Bands outside sleep, and the "hypnogram unavailable" lane. */
     val mutedBand: Color,
 
-    // --- roles de donnee
-    /** Enveloppe, points de nuit, ligne de mediane. */
+    // --- data roles
+    /** Envelope, night points, median line. */
     val primaryData: Color,
-    /** Drapeaux, desaccord des masques, anneau « masque accelero ». */
+    /** Flags, disagreement between masks, the "accelerometer mask" ring. */
     val attention: Color,
-    /** REM, seconde regle superposee. */
+    /** REM, second rule drawn on top. */
     val secondSignal: Color,
-    /** Plancher de bruit, axes, nuits ecartees. */
+    /** Noise floor, axes, excluded nights. */
     val structural: Color,
 
     /**
-     * Etat **technique** tenu, et rien d'autre. La jauge de batterie de la bande de metrologie
-     * quand la montre a tenu la nuit.
+     * A **technical** state that was met, and nothing else. The battery gauge of the metrology band
+     * when the watch lasted the night.
      *
-     * ### Le seul usage autorise du couple rouge-vert dans un graphe
+     * ### The only authorised use of the red-green pair in a chart
      *
-     * La regle du projet est que [PendulumColors.error] et [PendulumColors.success] ne decrivent
-     * **jamais** un resultat de sante : un rythme court n'est pas rouge, un compte horaire eleve
-     * n'est pas rouge. Elle ne dit pas qu'ils ne servent a rien — elle dit a quoi. Transfert,
-     * permission, appairage, integrite de fichier, stockage : des etats d'appareil. « La batterie
-     * a tenu la nuit » en est un, au meme titre que « le fichier est complet », et c'est
-     * precisement pour cela que la bande de metrologie est isolee du reste du dessin.
+     * The project's rule is that [PendulumColors.error] and [PendulumColors.success] **never**
+     * describe a health result: a short rhythm is not red, a high hourly count is not red. That
+     * rule does not say they are useless — it says what they are for. Transfer, permission,
+     * pairing, file integrity, storage: device states. "The battery lasted the night" is one of
+     * them, on the same footing as "the file is complete", and that is precisely why the metrology
+     * band is kept apart from the rest of the drawing.
      *
-     * Les quatre teintes de donnee restent sans paire rouge-vert, et la distinction ici n'est de
-     * toute facon **pas portee par la couleur seule** (P6) : la jauge tenue est un aplat plein, la
-     * jauge non tenue est hachuree, et le chiffre est ecrit a cote dans les deux cas. En niveaux
-     * de gris, rien ne se perd.
+     * The four data hues stay free of any red-green pair, and the distinction here is in any case
+     * **not carried by colour alone** (P6): the gauge that was met is a solid fill, the gauge that
+     * was not is hatched, and the figure is written beside it in both cases. In greyscale, nothing
+     * is lost.
      */
     val technicalOk: Color,
 
-    /** Etat **technique** non tenu. Voir [technicalOk] pour ce que ce couple a le droit de coder. */
+    /** A **technical** state not met. See [technicalOk] for what this pair is allowed to encode. */
     val technicalFail: Color,
 
-    // --- texte
+    // --- text
     val axisText: Color,
     val annotationText: Color,
 
     /**
-     * Taille du texte d'axe, **en sp et non en pixels**, contrairement a tous les autres
-     * scalaires de cette classe.
+     * Size of the axis text, **in sp and not in pixels**, unlike every other scalar of this class.
      *
-     * La distinction n'est pas cosmetique : les traits et les motifs de pointilles sont
-     * consommes par des primitives de `DrawScope`, qui travaillent en pixels, d'ou leur
-     * multiplication par la densite ici. Le texte, lui, part dans un `TextStyle` sous la forme
-     * `axisTextSize.sp`, et c'est le systeme de typographie qui applique la densite. La
-     * multiplier ici aussi l'appliquait **deux fois** : sur un ecran a densite 2,75, un 11 sp
-     * demande devenait 83 px, et toutes les graduations se chevauchaient au point de rendre
-     * les trois graphes illisibles. Defaut invisible en previsualisation, trouve sur capture reelle.
+     * The distinction is not cosmetic: the strokes and the dash patterns are consumed by
+     * `DrawScope` primitives, which work in pixels, hence their multiplication by the density here.
+     * The text, on the other hand, leaves in a `TextStyle` as `axisTextSize.sp`, and it is the
+     * typography system that applies the density. Multiplying it here as well applied it **twice**:
+     * on a screen at density 2.75, a requested 11 sp became 83 px, and every tick overlapped to the
+     * point of making the three charts illegible. A defect invisible in preview, found on a real
+     * screenshot.
      */
     val axisTextSize: Float,
 
-    // --- traits
+    // --- strokes
     val strokeThin: Float,
     val strokeNormal: Float,
     val strokeBold: Float,
@@ -97,59 +95,58 @@ data class ChartTokens(
     val dashNoiseFloor: FloatArray,
     val dashReference: FloatArray,
 
-    // --- remplissages translucides
+    // --- translucent fills
     //
-    // Trois de ces quatre valeurs sont sous contrainte d'accessibilite et non de gout : WCAG 1.4.11
-    // impose 3:1 aux objets graphiques, et un aplat translucide compose sur le fond du graphe perd
-    // tres vite ce contraste sans que l'oeil le signale. Les valeurs ci-dessous sont mesurees par
-    // `ContrasteGraphesTest`, sur les deux cibles — l'export clair est le cas contraignant, parce
-    // qu'un bleu fonce a 55 % sur un fond presque blanc tombe a 2,3:1.
-    /** Remplissage de la bande d'intervalle. **Exempte** : ce sont ses bornes qui informent. */
+    // Three of these four values are under an accessibility constraint and not a matter of taste:
+    // WCAG 1.4.11 requires 3:1 for graphical objects, and a translucent fill composited over the
+    // chart background loses that contrast very quickly without the eye noticing. The values below
+    // are measured by `ChartContrastTest`, on both targets — the light export is the binding case,
+    // because a dark blue at 55 % over an almost white background falls to 2.3:1.
+    /** Fill of the interval band. **Exempt**: it is its bounds that inform. */
     val ciBandAlpha: Float,
     val seriesBarAlpha: Float,
     val thresholdAlpha: Float,
-    /** Voie « masque accelerometrique » de l'hypnogramme : elle porte l'etat mobile/immobile. */
+    /** The hypnogram's "accelerometer mask" lane: it carries the moving/still state. */
     val maskLaneAlpha: Float,
 ) {
     companion object {
 
         /**
-         * Opacite des deux bornes tiretees de la bande d'intervalle.
+         * Opacity of the two dashed bounds of the interval band.
          *
-         * Elles sont **le porteur reel** de l'information « voici l'intervalle » : c'est donc
-         * elles, et non le remplissage, qui doivent tenir le 3:1 de WCAG 1.4.11. Mesure dans
-         * `ContrasteGraphesTest` — 3,7:1 sur le fond sombre a cette valeur, contre 1,3:1 pour le
-         * remplissage. Constante nommee plutot que litterale au point d'appel, parce que c'est
-         * une valeur sous contrainte d'accessibilite et non un reglage esthetique.
+         * They are the **real carrier** of the information "here is the interval": it is therefore
+         * they, and not the fill, that must hold the 3:1 of WCAG 1.4.11. Measured in
+         * `ChartContrastTest` — 3.7:1 on the dark background at this value, against 1.3:1 for the
+         * fill. A named constant rather than a literal at the call site, because this is a value
+         * under an accessibility constraint and not an aesthetic setting.
          */
-        const val BORNES_IC_ALPHA = 0.75f
+        const val CI_BOUNDS_ALPHA = 0.75f
 
         /**
-         * Opacite des graduations horizontales. Volontairement basse et **volontairement
-         * exemptee** du 3:1 : la valeur est portee par le texte d'axe, la ligne n'est qu'un guide
-         * pour l'oeil. Une graduation au meme contraste que la donnee ferait un quadrillage qui
-         * concurrence la courbe.
+         * Opacity of the horizontal ticks. Deliberately low and **deliberately exempt** from the
+         * 3:1: the value is carried by the axis text, the line is only a guide for the eye. A tick
+         * at the same contrast as the data would make a grid that competes with the curve.
          */
-        const val GRADUATION_ALPHA = 0.22f
+        const val TICK_ALPHA = 0.22f
 
         /**
-         * Hauteur de la gouttiere qui separe la physiologie de la metrologie, en dp.
+         * Height of the gutter that separates physiology from metrology, in dp.
          *
-         * **Anormalement large, et c'est tout l'objet.** Les voies de l'hypnogramme sont separees
-         * de 4 dp ; celle-ci vaut cinq fois plus et porte en son milieu un filet dur pleine
-         * largeur. Une separation de la meme epaisseur que les autres se lirait comme une voie de
-         * plus du meme graphe, et l'oeil chercherait alors une correlation entre la batterie et
-         * les mouvements — entre lesquels il n'y en a aucune.
+         * **Abnormally wide, and that is the whole point.** The lanes of the hypnogram are 4 dp
+         * apart; this one is five times as much and carries a hard full-width rule down its middle.
+         * A separation of the same thickness as the others would read as one more lane of the same
+         * chart, and the eye would then look for a correlation between the battery and the
+         * movements — between which there is none.
          */
-        const val GOUTTIERE_DP = 20f
+        const val GUTTER_DP = 20f
 
         /**
-         * `density` convertit des dp en pixels a l'ecran ; a l'export, l'appelant passe le
-         * facteur points/dp de la page. Une seule echelle, un seul chemin.
+         * `density` converts dp into pixels on screen; on export, the caller passes the page's
+         * points-per-dp factor. One scale, one path.
          */
         fun of(colors: PendulumColors, target: RenderTarget, density: Float = 1f): ChartTokens {
             val screen = target == RenderTarget.Screen
-            // 1,5 dp a l'ecran, 0,6 pt a l'export : les minimas de UX.md §4.
+            // 1.5 dp on screen, 0.6 pt on export: the minima of UX.md §4.
             val thin = (if (screen) 1.0f else 0.4f) * density
             val normal = (if (screen) 1.5f else 0.6f) * density
             val bold = (if (screen) 2.0f else 0.9f) * density
@@ -165,7 +162,7 @@ data class ChartTokens(
                 technicalFail = colors.error,
                 axisText = colors.textTertiary,
                 annotationText = colors.textSecondary,
-                // Pas de `* density` : la valeur est en sp, voir la KDoc du champ.
+                // No `* density`: the value is in sp, see the field's KDoc.
                 axisTextSize = if (screen) 11f else 8f,
                 strokeThin = thin,
                 strokeNormal = normal,
@@ -174,11 +171,11 @@ data class ChartTokens(
                 dashNoiseFloor = floatArrayOf(2f * density, 3f * density),
                 dashReference = floatArrayOf(6f * density, 4f * density),
                 ciBandAlpha = 0.14f,
-                // 0,35 et 0,55 mesuraient 2,05:1 et 3,37:1 sur l'ecran sombre, 1,67:1 et 2,34:1
-                // a l'export clair — soit trois valeurs sous le seuil de 3:1 sur quatre. 0,75 est
-                // le plancher mesure qui tient sur les deux cibles (5,3:1 en sombre, 3,4:1 en
-                // clair). La distinction entre le seuil d'onset et l'enveloppe reste portee par
-                // le tirete, pas par l'opacite — ce qui est de toute facon la regle P6.
+                // 0.35 and 0.55 measured 2.05:1 and 3.37:1 on the dark screen, 1.67:1 and 2.34:1 on
+                // the light export — that is, three of four values below the 3:1 threshold. 0.75 is
+                // the measured floor that holds on both targets (5.3:1 in dark, 3.4:1 in light).
+                // The distinction between the onset threshold and the envelope stays carried by the
+                // dash, not by the opacity — which is the P6 rule anyway.
                 seriesBarAlpha = 0.75f,
                 thresholdAlpha = 0.75f,
                 maskLaneAlpha = 0.85f,
@@ -186,8 +183,8 @@ data class ChartTokens(
         }
     }
 
-    // `FloatArray` dans une data class : equals/hashCode generes comparent les references. Ces
-    // tokens ne servent jamais de cle, mais on redefinit pour ne pas laisser un piege dormir.
+    // `FloatArray` in a data class: the generated equals/hashCode compare references. These tokens
+    // are never used as a key, but we redefine them so as not to leave a trap sleeping.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is ChartTokens) return false

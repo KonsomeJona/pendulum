@@ -7,77 +7,78 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * La base.
+ * The database.
  *
- * ### `fallbackToDestructiveMigration` est interdit ici, et ce n'est pas une preference de style
+ * ### `fallbackToDestructiveMigration` is forbidden here, and this is not a matter of style
  *
- * L'appel n'apparait nulle part et ne doit jamais apparaitre. La raison est dans la nature de ce
- * qui est stocke : les tables derivees (`sleep_window`, `clm_event`, `plm_result`) se
- * reconstruisent en rejouant l'analyse, mais `night_session`, `chunk`, `night_context`,
- * `hc_snapshot` et `questionnaire_response` ne se reconstruisent pas — ce sont les seules traces
- * de nuits qui ont eu lieu une fois. Or **l'algorithme changera** : c'est le seul postulat sur
- * lequel ce projet peut compter. Le jour ou il change, la valeur de la campagne passee tient
- * entierement dans la possibilite de la rescorer depuis le brut. Une migration destructive
- * transforme cette campagne en rien, silencieusement, a la premiere installation d'une version
- * dont le numero de schema a bouge.
+ * The call appears nowhere and must never appear. The reason lies in the nature of what is stored:
+ * the derived tables (`sleep_window`, `clm_event`, `plm_result`) are rebuilt by replaying the
+ * analysis, but `night_session`, `chunk`, `night_context`, `hc_snapshot` and
+ * `questionnaire_response` are not rebuilt — they are the only traces of nights that happened
+ * once. And **the algorithm will change**: that is the only postulate this project can count on.
+ * The day it changes, the value of the past campaign lies entirely in the possibility of rescoring
+ * it from the raw data. A destructive migration turns that campaign into nothing, silently, at the
+ * first installation of a version whose schema number has moved.
  *
- * En pratique : toute evolution passe par une `Migration` explicite passee a `addMigrations`, et
- * le schema est exporte dans `phone/schemas/` (`room.schemaLocation`) pour que la migration soit
- * verifiable plutot que crue sur parole. `exportSchema = true` reste vrai **meme maintenant que
- * la base est en v1 et qu'il n'y a plus une seule migration** : c'est l'export d'aujourd'hui qui
- * rendra verifiable la migration de demain, et il ne se retrouve pas apres coup.
+ * In practice: every evolution goes through an explicit `Migration` passed to `addMigrations`, and
+ * the schema is exported into `phone/schemas/` (`room.schemaLocation`) so that the migration is
+ * verifiable rather than taken on trust. `exportSchema = true` stays true **even now that the
+ * database is at v1 and there is not a single migration left**: it is today's export that will
+ * make tomorrow's migration verifiable, and it cannot be produced after the fact.
  *
- * ### La version est repartie a 1 le 7 aout 2026, et les quatre migrations ont ete retirees
+ * ### The version went back to 1 on 7 August 2026, and the four migrations were removed
  *
- * La base portait `version = 5` et quatre migrations (1→2, 2→3, 3→4, 4→5). Aucune n'a jamais
- * tourne ailleurs que sur l'appareil de developpement : **l'application n'a ete installee chez
- * personne**, il n'existe aucune base a migrer, nulle part. Quatre migrations qui racontent les
- * hesitations du schema se paient a chaque relecture et surtout a chaque migration suivante —
- * chacune est un chemin de plus a tenir juste — sans proteger la moindre donnee. La premiere
- * installation reelle creera donc une base v1, qui est la forme d'aujourd'hui.
+ * The database carried `version = 5` and four migrations (1 -> 2, 2 -> 3, 3 -> 4, 4 -> 5). None of
+ * them ever ran anywhere other than on the development device: **the application has been
+ * installed on nobody's phone**, there is no database to migrate, anywhere. Four migrations that
+ * recount the hesitations of the schema are paid for at every re-reading and above all at every
+ * subsequent migration — each one is one more path to keep correct — without protecting a single
+ * piece of data. The first real installation will therefore create a v1 database, which is today's
+ * shape.
  *
- * Ce qui a ete retire, resume ici pour qu'on n'ait pas a fouiller l'historique :
+ * What was removed, summarised here so that nobody has to dig through the history:
  *
- *  - **v1 → v2** : `night_context` cesse d'etre cle par `sessionHex` et l'est par la cle de nuit
- *    (`AAAA-MM-JJ`, bascule a midi) ; `night_session` gagne la meme colonne et son index. Le
- *    defaut corrige : le scellement **precede** la nuit, donc au moment du formulaire du soir il
- *    n'existait aucun `sessionHex` a ecrire, et le garde-fou 1 etait litteralement impossible a
- *    satisfaire. La forme corrigee est celle du schema actuel.
- *  - **v2 → v3** : la vue `comparable_night` expose `rhythmValid`. L'interface affichait
- *    `fundamentalSec` sans savoir que `:algo` avait refuse l'ajustement — un refus rend un nombre
- *    fini, donc indiscernable d'un resultat accepte.
- *  - **v3 → v4** : creation de `telemetry_point`. La telemetrie arrivait dans le bloc `TLM!` des
- *    chunks et l'ingestion la jetait apres verification du CRC.
- *  - **v4 → v5** : retrait de `respiratoryConfidence` de `plm_result`. La colonne portait un enum
- *    a trois valeurs dont une fermait la porte de publication, et rien ne l'alimentait : la valeur
- *    ecrite etait `MEDIUM`, en dur, pour toutes les nuits. Une porte qui ne s'est jamais fermee
- *    est pire qu'une porte absente — elle se documente comme une protection.
+ *  - **v1 -> v2**: `night_context` stops being keyed by `sessionHex` and is keyed by the night key
+ *    (`YYYY-MM-DD`, rolling over at noon); `night_session` gains the same column and its index.
+ *    The defect fixed: the sealing **precedes** the night, so at the time of the evening form there
+ *    was no `sessionHex` to write, and guard rail 1 was literally impossible to satisfy. The fixed
+ *    shape is that of the current schema.
+ *  - **v2 -> v3**: the `comparable_night` view exposes `rhythmValid`. The interface displayed
+ *    `fundamentalSec` without knowing that `:algo` had refused the fit — a refusal returns a finite
+ *    number, hence one indistinguishable from an accepted result.
+ *  - **v3 -> v4**: creation of `telemetry_point`. The telemetry arrived in the `TLM!` block of the
+ *    chunks and ingestion threw it away after checking the CRC.
+ *  - **v4 -> v5**: removal of `respiratoryConfidence` from `plm_result`. The column carried a
+ *    three-valued enum of which one value closed the publication gate, and nothing fed it: the
+ *    value written was `MEDIUM`, hard-coded, for every night. A gate that has never closed is worse
+ *    than an absent gate — it documents itself as a protection.
  *
- * Deux regles nees de ces migrations **survivent a leur retrait**, parce qu'elles vaudront le jour
- * de la premiere vraie migration :
+ * Two rules born of those migrations **survive their removal**, because they will hold on the day
+ * of the first real migration:
  *
- *  1. **Une migration ne perd jamais une colonne du brut.** Renommer, oui ; recopier dans une
- *     table neuve, oui ; supprimer une colonne de `chunk`, de `telemetry_point` ou de
- *     `night_context`, non — ce sont les seules donnees que rien ne permet de reconstituer.
- *  2. **On ne recree une vue que si on la change**, et quand on la recree on la construit depuis
- *     [ComparableNightSql.SQL] avec `trim()`. Room ne compare pas une vue champ par champ : il
- *     compare son **texte** a celui, normalise, qu'a genere son processeur d'annotations. Le
- *     litteral commence par un saut de ligne et douze espaces d'indentation, et ces treize
- *     caracteres ont suffi, le 3 aout 2026, a rendre inouvrable toute base deja installee —
- *     `fallbackToDestructiveMigration` etant absent, l'exception remontait jusqu'au premier ecran
- *     qui lisait quelque chose. Le banc sur materiel reel l'a vu ; la suite de tests, non.
+ *  1. **A migration never loses a column of raw data.** Renaming, yes; copying into a fresh table,
+ *     yes; deleting a column of `chunk`, of `telemetry_point` or of `night_context`, no — those are
+ *     the only data that nothing allows to be reconstituted.
+ *  2. **A view is recreated only when it is changed**, and when it is recreated it is built from
+ *     [ComparableNightSql.SQL] with `trim()`. Room does not compare a view field by field: it
+ *     compares its **text** with the normalised text its annotation processor generated. The
+ *     literal starts with a line break and twelve spaces of indentation, and those thirteen
+ *     characters were enough, on 3 August 2026, to make every already installed database
+ *     impossible to open — `fallbackToDestructiveMigration` being absent, the exception travelled
+ *     up to the first screen that read anything. The bench on real hardware saw it; the test suite
+ *     did not.
  *
- * `MigrationTest` disparait avec les migrations : il n'avait plus d'objet. Ce qui le remplace est
- * `ImmuabiliteTest`, qui couvre un trou bien plus grave et que rien ne couvrait — les declencheurs
- * ci-dessous. Les schemas exportes `2.json`, `3.json` et `4.json` sont supprimes ; `1.json` est
- * regenere par la compilation.
+ * `MigrationTest` disappears along with the migrations: it no longer had a subject. What replaces
+ * it is `ImmutabilityTest`, which covers a far more serious hole that nothing covered — the
+ * triggers below. The exported schemas `2.json`, `3.json` and `4.json` are deleted; `1.json` is
+ * regenerated by the compilation.
  *
- * ### Les declencheurs
+ * ### The triggers
  *
- * Room ne modelise pas les declencheurs SQLite. Ceux qui rendent `night_context` append-only sont
- * donc poses a la main dans [Callback.onCreate] **et** dans [Callback.onOpen] (avec
- * `IF NOT EXISTS`) : `onCreate` seul ne suffirait pas, une migration future recreant la table
- * emporterait ses declencheurs sans que rien ne le signale.
+ * Room does not model SQLite triggers. The ones that make `night_context` append-only are
+ * therefore laid down by hand in [Callback.onCreate] **and** in [Callback.onOpen] (with
+ * `IF NOT EXISTS`): `onCreate` alone would not be enough, a future migration recreating the table
+ * would carry its triggers away without anything signalling it.
  */
 @Database(
     entities = [
@@ -122,16 +123,16 @@ abstract class PendulumDatabase : RoomDatabase() {
 
         private fun build(context: Context): PendulumDatabase =
             Room.databaseBuilder(context, PendulumDatabase::class.java, NAME)
-                // Les cles etrangeres ne sont PAS actives par defaut dans SQLite. Sans cette
-                // ligne, `onDelete = CASCADE` est decoratif et supprimer une nuit laisserait
-                // ses chunks et ses resultats en base, rattaches a rien.
+                // Foreign keys are NOT enabled by default in SQLite. Without this line,
+                // `onDelete = CASCADE` is decorative and deleting a night would leave its chunks
+                // and its results in the database, attached to nothing.
                 .addCallback(Callback)
-                // Aucun `.addMigrations(...)` : la base est en v1 et aucune version anterieure
-                // n'existe sur aucun appareil. La ligne reviendra avec la premiere migration.
-                // Volontairement absent : .fallbackToDestructiveMigration()
+                // No `.addMigrations(...)`: the database is at v1 and no earlier version exists on
+                // any device. The line will come back with the first migration.
+                // Deliberately absent: .fallbackToDestructiveMigration()
                 .build()
 
-        /** Pour les tests instrumentes, qui doivent pouvoir repartir d'une base vide. */
+        /** For the instrumented tests, which must be able to start again from an empty database. */
         internal fun resetInstanceForTests() {
             instance = null
         }
@@ -151,21 +152,20 @@ abstract class PendulumDatabase : RoomDatabase() {
 }
 
 /**
- * Les declencheurs qui rendent le contexte du soir non modifiable.
+ * The triggers that make the evening context non-modifiable.
  *
- * Le DAO n'expose ni `@Update` ni `@Delete` — mais un DAO se modifie en une ligne, et le jour ou
- * quelqu'un (moi, dans six mois, avec une bonne raison) en ajoute un, il n'y aura aucun echec
- * pour le lui rappeler. Un declencheur, si : `RAISE(ABORT)` fait echouer la transaction, et le
- * message dit pourquoi.
+ * The DAO exposes neither `@Update` nor `@Delete` — but a DAO can be modified in one line, and the
+ * day someone (me, in six months, with a good reason) adds one, there will be no failure to remind
+ * them. A trigger will: `RAISE(ABORT)` makes the transaction fail, and the message says why.
  *
- * C'est la traduction en SQL du garde-fou 1 : la dose et le contexte sont scelles **avant** que
- * la montre n'accepte de demarrer, et le mode de defaillance a empecher n'est pas la fraude,
- * c'est la retouche de bonne foi au reveil, apres avoir vu le chiffre.
+ * This is guard rail 1 translated into SQL: the dose and the context are sealed **before** the
+ * watch agrees to start, and the failure mode to prevent is not fraud, it is the good-faith
+ * touch-up on waking, after seeing the figure.
  *
- * Rien de tout cela n'est verifie par Room, dont la validation de schema ignore entierement les
- * declencheurs : c'est `ImmuabiliteTest` (test instrumente) qui pose la question, en tentant les
- * ecritures interdites sur la vraie base et en verifiant qu'apres une ouverture normale les trois
- * declencheurs sont bien dans `sqlite_master`.
+ * None of this is checked by Room, whose schema validation ignores triggers entirely: it is
+ * `ImmutabilityTest` (an instrumented test) that asks the question, by attempting the forbidden
+ * writes on the real database and by checking that after a normal opening the three triggers are
+ * indeed in `sqlite_master`.
  */
 private fun createTriggers(db: SupportSQLiteDatabase) {
     db.execSQL(
@@ -173,7 +173,7 @@ private fun createTriggers(db: SupportSQLiteDatabase) {
         CREATE TRIGGER IF NOT EXISTS night_context_no_update
         BEFORE UPDATE ON night_context
         BEGIN
-            SELECT RAISE(ABORT, 'night_context est scelle : aucune modification apres coup');
+            SELECT RAISE(ABORT, 'night_context is sealed: no modification after the fact');
         END
         """.trimIndent()
     )
@@ -182,7 +182,7 @@ private fun createTriggers(db: SupportSQLiteDatabase) {
         CREATE TRIGGER IF NOT EXISTS night_context_no_delete
         BEFORE DELETE ON night_context
         BEGIN
-            SELECT RAISE(ABORT, 'night_context est scelle : suppression interdite (voir eraseEverything)');
+            SELECT RAISE(ABORT, 'night_context is sealed: deletion forbidden (see eraseEverything)');
         END
         """.trimIndent()
     )
@@ -191,23 +191,23 @@ private fun createTriggers(db: SupportSQLiteDatabase) {
         CREATE TRIGGER IF NOT EXISTS hc_snapshot_no_update
         BEFORE UPDATE ON hc_snapshot
         BEGIN
-            SELECT RAISE(ABORT, 'hc_snapshot est un journal : on ajoute une lecture, on n en corrige pas');
+            SELECT RAISE(ABORT, 'hc_snapshot is a log: a reading is added, it is not corrected');
         END
         """.trimIndent()
     )
 }
 
 /**
- * Suppression totale, y compris les chunks bruts.
+ * Total deletion, including the raw chunks.
  *
- * Trois raisons de ne pas se contenter d'un `DELETE FROM night_session` :
- *  - les fichiers de chunks vivent sur le disque, pas en base ;
- *  - les declencheurs append-only refusent le `DELETE` sur `night_context` et doivent etre
- *    retires puis remis, faute de quoi l'effacement echoue a moitie ;
- *  - `VACUUM` est necessaire pour que les pages liberees ne restent pas lisibles dans le fichier
- *    de base. Sans lui, « tout effacer » laisse le contenu recuperable dans les pages libres.
+ * Three reasons not to settle for a `DELETE FROM night_session`:
+ *  - the chunk files live on the disk, not in the database;
+ *  - the append-only triggers refuse the `DELETE` on `night_context` and must be dropped and then
+ *    put back, failing which the erasure only half succeeds;
+ *  - `VACUUM` is necessary so that the freed pages do not stay readable in the database file.
+ *    Without it, "erase everything" leaves the content recoverable in the free pages.
  *
- * L'appelant efface les fichiers **avant** d'appeler ceci : voir la KDoc de [MaintenanceDao].
+ * The caller erases the files **before** calling this: see the KDoc of [MaintenanceDao].
  */
 suspend fun PendulumDatabase.eraseEverything() {
     val db = openHelper.writableDatabase
@@ -222,6 +222,6 @@ suspend fun PendulumDatabase.eraseEverything() {
     } finally {
         createTriggers(db)
     }
-    // Hors transaction, et c'est indispensable : VACUUM echoue a l'interieur d'une transaction.
+    // Outside a transaction, and this is indispensable: VACUUM fails inside a transaction.
     db.execSQL("VACUUM")
 }

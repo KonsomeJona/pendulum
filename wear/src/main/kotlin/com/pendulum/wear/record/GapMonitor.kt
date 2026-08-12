@@ -1,36 +1,36 @@
 package com.pendulum.wear.record
 
 /**
- * Surveillance de l'integrite temporelle de l'acquisition, et decision d'auto-degradation.
- * **Pur** : que des `Long` de nanosecondes en entree, donc entierement testable en JVM.
+ * Monitoring of the acquisition's timing integrity, and the auto-degradation decision.
+ * **Pure**: nothing but nanosecond `Long`s as input, so entirely testable on the JVM.
  *
- * > **Un trou se mesure sur les ecarts de `SensorEvent.timestamp`. Jamais sur l'heure d'arrivee.**
+ * > **A gap is measured on `SensorEvent.timestamp` differences. Never on arrival time.**
  *
- * C'est la seule regle de ce fichier qui ne se negocie pas. En mode batche les echantillons
- * arrivent par salves : trente secondes de silence puis 1 500 evenements livres d'un coup, ce
- * n'est pas un trou, c'est le fonctionnement nominal. Une regle fondee sur l'heure de livraison
- * — l'`elapsedRealtimeNanos` entre deux `onSensorChanged` — se declenche donc **en permanence**
- * dans le cas nominal. Et comme l'escalade repond aux trous en prenant un `PARTIAL_WAKE_LOCK`,
- * une telle regle ne produit pas seulement un faux positif dans un journal : elle transforme
- * silencieusement chaque nuit en nuit sous wake lock, depense 65 % de la batterie, et invalide
- * la mesure d'autonomie que la premiere phase de test existe precisement pour obtenir. La panne
- * ressemble alors a « le batching ne marche pas sur cet appareil » alors que ce qui ne marche
- * pas, c'est le moniteur.
+ * This is the one rule in this file that is not negotiable. In batched mode the samples arrive
+ * in bursts: thirty seconds of silence then 1,500 events delivered at once is not a gap, it is
+ * nominal operation. A rule founded on delivery time — the `elapsedRealtimeNanos` between two
+ * `onSensorChanged` calls — therefore fires **permanently** in the nominal case. And since the
+ * escalation answers gaps by taking a `PARTIAL_WAKE_LOCK`, such a rule does not merely produce a
+ * false positive in a log: it silently turns every night into a night under wake lock, spends
+ * 65 % of the battery, and invalidates the battery-life measurement that the first test phase
+ * exists precisely to obtain. The failure then looks like "batching does not work on this
+ * device" when what does not work is the monitor.
  *
- * Deux signaux admissibles, tous deux calcules sur les timestamps capteur :
- *  - **intra-lot** : ecart entre echantillons consecutifs superieur a 3 fois la periode nominale ;
- *  - **fenetre** : deficit du nombre d'echantillons sur 60 s de temps capteur glissantes
- *    (`recus < 0,95 x attendus`), ce qui rattrape un trou tombant entre deux lots sans jamais
- *    regarder l'heure a laquelle les lots sont arrives.
+ * Two admissible signals, both computed on sensor timestamps:
+ *  - **intra-batch**: interval between consecutive samples greater than 3 times the nominal
+ *    period;
+ *  - **window**: sample-count deficit over a sliding 60 s of sensor time
+ *    (`received < 0.95 x expected`), which catches a gap falling between two batches without
+ *    ever looking at the time at which the batches arrived.
  */
 class GapMonitor(rateHz: Int) {
 
     private var periodNs: Long = 1_000_000_000L / rateHz
 
-    /** Un trou compte pour l'escalade au-dela de 3 s : en deca, le signal reste exploitable. */
+    /** A gap counts towards the escalation beyond 3 s: below that, the signal stays usable. */
     private val bigGapNs = 3_000_000_000L
 
-    private val escalationWindowNs = 600_000_000_000L // 10 min de temps capteur
+    private val escalationWindowNs = 600_000_000_000L // 10 min of sensor time
     private val measureWindowNs = 60_000_000_000L
 
     private var lastTsNs = 0L
@@ -38,102 +38,102 @@ class GapMonitor(rateHz: Int) {
     private var windowCount = 0
 
     /**
-     * Echantillons manquants **deja imputes** par le signal intra-lot dans la fenetre courante.
+     * Missing samples **already attributed** by the intra-batch signal in the current window.
      *
-     * Sans ce compteur, un meme trou physique etait compte deux fois : une fois a son arrivee par
-     * l'intra-lot, une seconde fois a la cloture de la fenetre, parce que les echantillons qu'il a
-     * emportes ressortent comme deficit. Consequence mesuree : `gapCount` et `gapTotalMs`
-     * doublaient sur ces trous, et surtout **deux** trous physiques dans une meme fenetre
-     * suffisaient a faire monter d'un palier la ou la regle en annonce trois.
+     * Without this counter, one and the same physical gap was counted twice: once on arrival by
+     * the intra-batch signal, a second time when the window closed, because the samples it
+     * carried away show up as a deficit. Measured consequence: `gapCount` and `gapTotalMs`
+     * doubled on those gaps, and above all **two** physical gaps within a single window were
+     * enough to climb one step where the rule announces three.
      *
-     * Ce n'etait pas une imprecision cosmetique. Chaque palier prend un `PARTIAL_WAKE_LOCK` :
-     * escalader une fois et demie trop vite, c'est passer la nuit sous wake lock, depenser 65 %
-     * de batterie, et invalider la mesure d'autonomie que la phase P1 existe pour obtenir — le
-     * cout exact que la KDoc de ce fichier dit vouloir eviter.
+     * This was not a cosmetic imprecision. Every step takes a `PARTIAL_WAKE_LOCK`: escalating one
+     * and a half times too fast means spending the night under wake lock, spending 65 % of the
+     * battery, and invalidating the battery-life measurement that phase P1 exists to obtain — the
+     * exact cost that this file's KDoc says it wants to avoid.
      *
-     * La fenetre reste ce que sa documentation annonce : **un rattrapage de ce que l'intra-lot ne
-     * peut pas voir** — un trou tombant entre deux lots — et non un amplificateur de ce qu'il a
-     * deja vu.
+     * The window stays what its documentation announces: **a catch-up for what the intra-batch
+     * signal cannot see** — a gap falling between two batches — and not an amplifier of what it
+     * has already seen.
      */
-    private var manquantsDejaComptes = 0
+    private var missingAlreadyCounted = 0
     private val bigGapTimestamps = ArrayDeque<Long>()
 
     /**
-     * Accumulateurs de la dispersion, en **microsecondes** et non en nanosecondes.
+     * Dispersion accumulators, in **microseconds** and not in nanoseconds.
      *
-     * Le choix d'unite n'est pas cosmetique : la variance se calcule par somme des carres, et un
-     * trou de 3 s vaut 3e9 ns, dont le carre est 9e18 — a un facteur 1,03 du plus grand `Long`.
-     * Un seul gros trou suffisait donc a faire deborder l'accumulateur et a rendre un ecart-type
-     * negatif sous la racine. En microsecondes le meme trou vaut 9e12, et une fenetre entiere de
-     * trous ne s'en approche pas.
+     * The choice of unit is not cosmetic: variance is computed as a sum of squares, and a 3 s gap
+     * is worth 3e9 ns, whose square is 9e18 — within a factor of 1.03 of the largest `Long`. A
+     * single big gap was therefore enough to overflow the accumulator and to put a negative value
+     * under the square root of the standard deviation. In microseconds the same gap is worth
+     * 9e12, and a whole window of gaps does not come close.
      */
     private var sumDtUs = 0L
     private var sumDtUs2 = 0L
     private var nbDt = 0
     private var maxDtUs = 0L
 
-    /** Nombre de trous detectes, tous signaux confondus. */
+    /** Number of gaps detected, all signals combined. */
     var gapCount: Int = 0
         private set
 
-    /** Duree cumulee manquante, en millisecondes. */
+    /** Cumulative missing duration, in milliseconds. */
     var gapTotalMs: Long = 0
         private set
 
-    /** Palier de degradation atteint, de 0 a 3. Ne redescend jamais. */
+    /** Degradation step reached, from 0 to 3. Never goes back down. */
     var step: Int = 0
         private set
 
-    /** `fs` reellement delivre sur la derniere fenetre de 60 s. 0 tant qu'aucune n'est close. */
+    /** `fs` actually delivered over the last 60 s window. 0 as long as none has closed. */
     var measuredRateHz: Double = 0.0
         private set
 
     /**
-     * Ecart-type des intervalles inter-echantillons sur la derniere fenetre close, en
-     * microsecondes. 0 tant qu'aucune fenetre n'est close.
+     * Standard deviation of the inter-sample intervals over the last closed window, in
+     * microseconds. 0 as long as no window has closed.
      *
-     * **La moyenne ne dit pas ce qu'on croit qu'elle dit.** [measuredRateHz] repond a « combien
-     * d'echantillons par seconde », et une cadence qui alterne 10 ms et 30 ms rend exactement
-     * 50 Hz — donc un `fs` parfait, donc `rateDeviates` faux, donc aucun signal nulle part. Or le
-     * format n'a pas de timestamp par echantillon : il **interpole lineairement** entre `tFirstNs`
-     * et `tLastNs`, et cette interpolation est fausse d'autant que les intervalles sont disperses.
-     * C'est donc la regularite, et non la moyenne, qui decide de la datation d'un mouvement.
+     * **The mean does not say what one believes it says.** [measuredRateHz] answers "how many
+     * samples per second", and a rate that alternates 10 ms and 30 ms yields exactly 50 Hz — so a
+     * perfect `fs`, so `rateDeviates` false, so no signal anywhere. Yet the format has no
+     * per-sample timestamp: it **interpolates linearly** between `tFirstNs` and `tLastNs`, and
+     * that interpolation is wrong in proportion to how dispersed the intervals are. So it is
+     * regularity, and not the mean, that decides how a movement is dated.
      *
-     * Mesure et non action : rien ici ne declenche d'escalade. La dispersion part au telephone
-     * dans la telemetrie, ou elle explique une datation, et c'est tout ce qu'on sait en faire
-     * aujourd'hui.
+     * A measurement and not an action: nothing here triggers an escalation. The dispersion goes
+     * to the phone in the telemetry, where it explains a dating, and that is all we know how to
+     * do with it today.
      */
     var jitterStdUs: Double = 0.0
         private set
 
     /**
-     * Pire intervalle entre deux echantillons consecutifs de la derniere fenetre close, en
-     * microsecondes. C'est la borne de l'erreur de datation dans cette fenetre, la ou
-     * [jitterStdUs] n'en donne que l'ordre de grandeur.
+     * Worst interval between two consecutive samples in the last closed window, in microseconds.
+     * It is the bound on the dating error within that window, where [jitterStdUs] only gives its
+     * order of magnitude.
      */
     var maxIntervalUs: Long = 0
         private set
 
-    /** Dernier `SensorEvent.timestamp` vu. 0 avant le premier echantillon et apres une
-     *  re-inscription du capteur. Il ancre la telemetrie sur la base de temps des echantillons. */
+    /** Last `SensorEvent.timestamp` seen. 0 before the first sample and after a sensor
+     *  re-registration. It anchors the telemetry on the samples' time base. */
     val lastTimestampNs: Long get() = lastTsNs
 
     /**
-     * Vrai quand `fs` mesure s'ecarte de plus de 5 % du nominal. La cadence demandee n'est pas
-     * la cadence delivree — 50 Hz sort couramment a 50,3 ou 52,6 Hz — et une autre application
-     * qui demarre une seance d'exercice en pleine nuit peut la changer. Un `fs` faux decale tous
-     * les filtres et toutes les durees de mouvement de la chaine d'analyse.
+     * True when the measured `fs` deviates by more than 5 % from the nominal. The requested rate
+     * is not the delivered rate — 50 Hz commonly comes out at 50.3 or 52.6 Hz — and another
+     * application starting an exercise session in the middle of the night can change it. A wrong
+     * `fs` shifts every filter and every movement duration of the analysis chain.
      */
     var rateDeviates: Boolean = false
         private set
 
-    /** Palier a appliquer, consomme par le service. `null` tant qu'il n'y a rien de nouveau. */
+    /** Step to apply, consumed by the service. `null` as long as there is nothing new. */
     var pendingStep: Int? = null
         private set
 
     /**
-     * @return vrai si un trou precede cet echantillon, auquel cas le bloc qui commence ici
-     *   doit porter `FLAG_GAP_BEFORE`.
+     * @return true if a gap precedes this sample, in which case the block starting here must
+     *   carry `FLAG_GAP_BEFORE`.
      */
     fun onSample(tsNs: Long): Boolean {
         if (lastTsNs == 0L) {
@@ -143,11 +143,11 @@ class GapMonitor(rateHz: Int) {
             return false
         }
 
-        // Horodatage qui recule. Les couches capteur d'Android le font parfois en mode batche, et
-        // le laisser passer corrompt tout ce qui suit : `spanNs` devient negatif a la cloture,
-        // donc `expected` aussi, donc la comparaison de deficit ne se declenche plus jamais — et
-        // `windowStartNs` repart dans le passe, ce dont la fenetre suivante ne se remet pas.
-        // L'echantillon est ignore plutot que corrige : on ne sait pas ou il devrait aller.
+        // A timestamp going backwards. Android's sensor layers do it sometimes in batched mode,
+        // and letting it through corrupts everything that follows: `spanNs` becomes negative when
+        // the window closes, so `expected` does too, so the deficit comparison never fires again
+        // — and `windowStartNs` restarts in the past, which the next window does not recover
+        // from. The sample is ignored rather than corrected: we do not know where it should go.
         if (tsNs <= lastTsNs) return false
 
         val dt = tsNs - lastTsNs
@@ -165,7 +165,7 @@ class GapMonitor(rateHz: Int) {
             gapHere = true
             gapCount++
             gapTotalMs += (dt - periodNs) / 1_000_000
-            manquantsDejaComptes += ((dt - periodNs) / periodNs).toInt()
+            missingAlreadyCounted += ((dt - periodNs) / periodNs).toInt()
             if (dt >= bigGapNs) recordBigGap(tsNs)
         }
 
@@ -175,16 +175,16 @@ class GapMonitor(rateHz: Int) {
         return gapHere
     }
 
-    /** Apres une re-inscription du capteur a une autre cadence. */
+    /** After a sensor re-registration at a different rate. */
     fun onRateChanged(rateHz: Int) {
         periodNs = 1_000_000_000L / rateHz
-        // La continuite temporelle est rompue par la re-inscription : on repart proprement
-        // plutot que de compter un trou qu'on a provoque nous-memes.
+        // The re-registration breaks time continuity: we restart cleanly rather than count a gap
+        // that we caused ourselves.
         lastTsNs = 0L
         windowStartNs = 0L
         windowCount = 0
-        manquantsDejaComptes = 0
-        raz()
+        missingAlreadyCounted = 0
+        reset()
     }
 
     fun consumePendingStep(): Int? = pendingStep.also { pendingStep = null }
@@ -193,12 +193,12 @@ class GapMonitor(rateHz: Int) {
         val spanNs = tsNs - windowStartNs
         measuredRateHz = windowCount * 1e9 / spanNs
         if (nbDt > 0) {
-            val moyenne = sumDtUs.toDouble() / nbDt
-            // `coerceAtLeast(0.0)` : la variance calculee par difference de moments peut sortir
-            // legerement negative par annulation quand tous les intervalles sont identiques, et
-            // une racine de negatif rendrait NaN — c'est-a-dire un ecart-type illisible pile dans
-            // le cas le plus sain qui soit.
-            val variance = (sumDtUs2.toDouble() / nbDt - moyenne * moyenne).coerceAtLeast(0.0)
+            val mean = sumDtUs.toDouble() / nbDt
+            // `coerceAtLeast(0.0)`: the variance computed as a difference of moments can come out
+            // slightly negative through cancellation when all the intervals are identical, and a
+            // square root of a negative would give NaN — that is, an unreadable standard
+            // deviation in precisely the healthiest case there is.
+            val variance = (sumDtUs2.toDouble() / nbDt - mean * mean).coerceAtLeast(0.0)
             jitterStdUs = Math.sqrt(variance)
             maxIntervalUs = maxDtUs
         }
@@ -207,36 +207,36 @@ class GapMonitor(rateHz: Int) {
 
         val expected = (spanNs / periodNs).toInt()
 
-        // Le deficit **inexplique** : ce que la fenetre constate, moins ce que l'intra-lot a deja
-        // impute. `coerceAtLeast(0)` n'est pas une precaution de style — sans lui, un capteur qui
-        // delivre un peu plus vite que sa cadence nominale (51 Hz demandes a 50) rend
-        // `windowCount > expected`, donc un `missing` negatif, donc un `gapTotalMs` qui
-        // **diminue**. Le compteur de temps perdu se mettait a en regagner.
-        val manquantsNonVus = (expected - windowCount - manquantsDejaComptes).coerceAtLeast(0)
-        if (manquantsNonVus > 0.05 * expected) {
-            val missingNs = manquantsNonVus * periodNs
+        // The **unexplained** deficit: what the window observes, minus what the intra-batch signal
+        // has already attributed. `coerceAtLeast(0)` is not a stylistic precaution — without it, a
+        // sensor delivering slightly faster than its nominal rate (51 Hz delivered for 50
+        // requested) yields `windowCount > expected`, so a negative `missing`, so a `gapTotalMs`
+        // that **decreases**. The lost-time counter started winning time back.
+        val missingUnseen = (expected - windowCount - missingAlreadyCounted).coerceAtLeast(0)
+        if (missingUnseen > 0.05 * expected) {
+            val missingNs = missingUnseen * periodNs
             gapCount++
             gapTotalMs += missingNs / 1_000_000
-            // Un deficit de fenetre superieur a 3 s vaut un gros trou : il est simplement
-            // reparti autrement dans le temps, pas moins reel.
+            // A window deficit greater than 3 s is worth a big gap: it is simply spread
+            // differently over time, no less real.
             if (missingNs >= bigGapNs) recordBigGap(tsNs)
         }
 
         windowStartNs = tsNs
         windowCount = 0
-        manquantsDejaComptes = 0
-        raz()
+        missingAlreadyCounted = 0
+        reset()
     }
 
-    /** Vide les accumulateurs de dispersion. La fenetre suivante ne doit rien devoir a la precedente. */
-    private fun raz() {
+    /** Empties the dispersion accumulators. The next window must owe nothing to the previous. */
+    private fun reset() {
         sumDtUs = 0
         sumDtUs2 = 0
         nbDt = 0
         maxDtUs = 0
     }
 
-    /** Trois gros trous dans une fenetre glissante de 10 min font monter d'un palier. */
+    /** Three big gaps within a sliding 10 min window climb one step. */
     private fun recordBigGap(tsNs: Long) {
         bigGapTimestamps.addLast(tsNs)
         while (bigGapTimestamps.isNotEmpty() && tsNs - bigGapTimestamps.first() > escalationWindowNs) {
@@ -245,17 +245,17 @@ class GapMonitor(rateHz: Int) {
         if (bigGapTimestamps.size >= 3 && step < 3) {
             step++
             pendingStep = step
-            // Le compteur repart a zero : le palier suivant se merite sur les dix minutes qui
-            // suivent, sinon les memes trous declencheraient les trois paliers d'affilee.
+            // The counter restarts at zero: the next step is earned over the ten minutes that
+            // follow, otherwise the same gaps would trigger all three steps in a row.
             //
-            // Objection connue et ecartee : apres l'escalade il faut trois trous **nouveaux**, ce
-            // qui freine la montee quand le materiel lache franchement — quatre gros trous en
-            // cinq minutes ne produisent qu'un palier. C'est assume. Chaque palier prend un wake
-            // lock supplementaire, et le cout d'escalader trop vite est une nuit entiere de
-            // batterie plus une mesure d'autonomie invalidee ; le cout d'escalader trop lentement
-            // est quelques trous de plus dans un signal que l'analyse sait deja marquer. Les deux
-            // ne se valent pas. Si une campagne reelle montre l'inverse, c'est ici qu'il faudra
-            // revenir — avec la mesure, pas avec l'intuition.
+            // Known objection, and rejected: after the escalation three **new** gaps are needed,
+            // which slows the climb when the hardware fails outright — four big gaps in five
+            // minutes only produce one step. That is accepted. Every step takes one more wake
+            // lock, and the cost of escalating too fast is a whole night of battery plus an
+            // invalidated battery-life measurement; the cost of escalating too slowly is a few
+            // more gaps in a signal that the analysis already knows how to flag. The two are not
+            // equivalent. If a real campaign shows the opposite, this is where to come back — with
+            // the measurement, not with intuition.
             bigGapTimestamps.clear()
         }
     }

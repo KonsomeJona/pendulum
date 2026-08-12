@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Couche avant de l'icone adaptative. **Viewport 108, tout le trace dans le cercle central de
-  66 dp.**
+  Foreground layer of the adaptive icon. **Viewport 108, the whole drawing inside the central
+  66 dp circle.**
 
-  Les 18 dp de marge sur chaque bord ne sont pas de la coquetterie : le masque appartient au
-  constructeur, pas a nous — cercle, squircle, goutte, cercle strict sur Wear OS — et le lanceur
-  applique en plus un decalage de parallaxe. Tout ce qui sort du cercle de 66 dp peut disparaitre
-  sur un appareil qu'on n'a pas teste. La verification tient en une ligne : la distance de chaque
-  point au centre (54, 54) doit rester sous 33.
+  The 18 dp of margin on each edge are not fussiness: the mask belongs to the manufacturer, not
+  to us — circle, squircle, teardrop, strictly a circle on Wear OS — and the launcher applies a
+  parallax offset on top of that. Anything leaving the 66 dp circle can disappear on a device we
+  have not tested. The check fits on one line: the distance from every point to the centre
+  (54, 54) must stay under 33.
 
-    pivot  (54, 27)              distance 27
-    lentille  centre (69,4 ; 69,3) rayon 9,5   distance 21,7 + 9,5 = 31,2
-    arc  bas (54, 72)            distance 18
+    pivot  (54, 27)                    distance 27
+    bob  centre (69.4, 69.3) radius 9.5  distance 21.7 + 9.5 = 31.2
+    arc  bottom (54, 72)               distance 18
 
-  Le dessin est un pendule ecarte de 20 degres, avec l'arc de sa course. Le choix du sujet n'est
-  pas decoratif : la periode d'un pendule ne depend pas de l'amplitude de son ecart, et c'est
-  exactement l'argument du produit — le rythme entre les mouvements est stable la ou leur compte
-  ne l'est pas. L'arc porte l'amplitude, la tige porte la periode.
+  The drawing is a pendulum displaced by 20 degrees, with the arc of its travel. The subject is
+  not decorative: the period of a pendulum does not depend on the amplitude of its displacement,
+  and that is exactly the product's argument — the rhythm between movements is stable where
+  their count is not. The arc carries the amplitude, the rod carries the period.
 
-  Aucune ombre, aucun degrade, aucun masque pre-applique : le lanceur s'en charge, et un asset
-  qui les embarque se retrouve avec deux ombres.
+  No shadow, no gradient, no pre-applied mask: the launcher takes care of that, and an asset that
+  ships them ends up with two shadows.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -27,8 +27,8 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- L'arc de course, en retrait : c'est l'amplitude, et l'amplitude est ce que le produit
-         ecarte au profit de la periode. Il doit se lire, pas dominer. -->
+    <!-- The arc of travel, held back: it is the amplitude, and amplitude is what the product
+         sets aside in favour of the period. It has to read, not dominate. -->
     <path
         android:pathData="M38.61,69.29 A45,45 0 0 0 69.39,69.29"
         android:strokeAlpha="0.55"
@@ -36,19 +36,19 @@
         android:strokeLineCap="round"
         android:strokeWidth="3" />
 
-    <!-- La tige. -->
+    <!-- The rod. -->
     <path
         android:pathData="M54,27 L69.39,69.29"
         android:strokeColor="#6FB2FF"
         android:strokeLineCap="round"
         android:strokeWidth="5" />
 
-    <!-- Le pivot. -->
+    <!-- The pivot. -->
     <path
         android:fillColor="#6FB2FF"
         android:pathData="M54,27 m-4.5,0 a4.5,4.5 0 1,0 9,0 a4.5,4.5 0 1,0 -9,0" />
 
-    <!-- La lentille. -->
+    <!-- The bob. -->
     <path
         android:fillColor="#6FB2FF"
         android:pathData="M69.39,69.29 m-9.5,0 a9.5,9.5 0 1,0 19,0 a9.5,9.5 0 1,0 -19,0" />

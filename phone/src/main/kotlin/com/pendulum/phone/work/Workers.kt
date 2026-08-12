@@ -7,7 +7,7 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.pendulum.format.wire.WirePaths
-import com.pendulum.phone.data.PublicationContexte
+import com.pendulum.phone.data.ContextPublication
 import com.pendulum.phone.db.ChunkEntity
 import com.pendulum.phone.db.HcSnapshotEntity
 import com.pendulum.phone.db.PendulumDatabase
@@ -16,42 +16,42 @@ import com.pendulum.phone.health.SleepReader
 import com.pendulum.phone.ingest.ChunkStore
 import com.pendulum.phone.ingest.SessionReassembler
 import com.pendulum.format.ChunkReader
-import com.pendulum.phone.temps.Durees
+import com.pendulum.phone.time.Durations
 import java.time.ZoneId
 
 internal const val KEY_SESSION = "sessionHex"
 
 /**
- * Marque une lecture Health Connect declenchee **hors echelle** — chargeur branche, retour au
- * premier plan. Elle lit tout de suite, ne replanifie rien, et ne consomme pas l'echelle.
+ * Marks a Health Connect read triggered **outside the ladder** — charger plugged in, return to the
+ * foreground. It reads at once, reschedules nothing, and does not consume the ladder.
  */
-internal const val KEY_OPPORTUNISTE = "opportuniste"
+internal const val KEY_OPPORTUNISTIC = "opportuniste"
 
-/** La soiree visee par une republication de contexte, au format de `WirePaths.nightKey`. */
-internal const val KEY_CLE_NUIT = "cleDeNuit"
+/** The evening targeted by a context republication, in the format of `WirePaths.nightKey`. */
+internal const val KEY_NIGHT_KEY = "cleDeNuit"
 
 /**
- * L'instant du scellement, qui **est** la charge utile de l'item de contexte.
+ * The instant of the sealing, which **is** the payload of the context item.
  *
- * Il voyage dans les donnees d'entree du worker et n'est jamais relu en base : c'est ce qui rend
- * le rejeu strictement identique a la tentative en ligne, donc dedoublonnable par le Data Layer.
+ * It travels in the input data of the worker and is never re-read from the database: that is what
+ * makes the replay strictly identical to the online attempt, hence deduplicable by the Data Layer.
  */
-internal const val KEY_SCELLE_A = "scelleAMs"
+internal const val KEY_SEALED_AT = "scelleAMs"
 
 private const val TAG = "PendulumWork"
 
 /**
- * Reconciliation disque <-> base, en tete de chaine.
+ * Disk <-> database reconciliation, at the head of the chain.
  *
- * Le service de reception ecrit le fichier **puis** la ligne. Entre les deux, le processus peut
- * mourir : Google Play Services demarre et tue ce service librement, et un telephone sous
- * pression memoire pendant la nuit n'a rien d'exotique. Il reste alors un fichier valide dont
- * la base ignore l'existence — donc un chunk jamais acquitte, que la montre garde indefiniment,
- * et qui manque au reassemblage.
+ * The receiving service writes the file **then** the row. Between the two, the process can die:
+ * Google Play Services starts and kills this service freely, and a phone under memory pressure
+ * during the night is nothing exotic. What remains is a valid file whose existence the database
+ * knows nothing about — hence a chunk never acknowledged, which the watch keeps indefinitely, and
+ * which is missing from the reassembly.
  *
- * Ce worker relit le repertoire, reinsere ce qui manque (`INSERT OR IGNORE`, donc sans risque),
- * et remet la base d'accord avec le disque. Il ne supprime jamais rien : un fichier inconnu est
- * une donnee a recuperer, pas un dechet.
+ * This worker re-reads the directory, re-inserts what is missing (`INSERT OR IGNORE`, so without
+ * risk), and brings the database back into agreement with the disk. It never deletes anything: an
+ * unknown file is data to recover, not waste.
  */
 class IngestWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
 
@@ -84,21 +84,21 @@ class IngestWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) 
             )
             recovered++
         }
-        if (recovered > 0) Log.i(TAG, "$hex : $recovered chunk(s) recuperes sur disque")
+        if (recovered > 0) Log.i(TAG, "$hex: $recovered chunk(s) recovered from disk")
         return Result.success(workDataOf(KEY_SESSION to hex))
     }
 }
 
 /**
- * L'analyse au reveil. **Elle ne depend pas de Health Connect** : elle tourne avec le masque
- * accelerometrique, immediatement.
+ * The analysis on waking. **It does not depend on Health Connect**: it runs with the accelerometer
+ * mask, immediately.
  *
- * C'est la decision qui rend le reste supportable. L'hypnogramme arrive quand le fournisseur le
- * decide — parfois huit heures plus tard — et faire attendre l'analyse produirait une
- * application qui, au reveil, n'a rien a dire. Le masque accelerometrique a le droit d'exister
- * et de s'afficher ; il n'a pas le droit de porter le resultat principal, parce que le
- * denominateur y est derive du meme signal que le numerateur. `RescoreWorker` ajoute le second
- * bras, non circulaire, des que l'hypnogramme est la.
+ * This is the decision that makes the rest bearable. The hypnogram arrives when the provider
+ * decides — sometimes eight hours later — and making the analysis wait would produce an
+ * application that, on waking, has nothing to say. The accelerometer mask is allowed to exist and
+ * to be displayed; it is not allowed to carry the main result, because the denominator there is
+ * derived from the same signal as the numerator. `RescoreWorker` adds the second, non-circular
+ * arm, as soon as the hypnogram is there.
  */
 class AnalyzeWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
 
@@ -109,21 +109,21 @@ class AnalyzeWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p)
             val ok = AnalysisRunner.analyse(applicationContext, hex, params)
             if (ok) Result.success(workDataOf(KEY_SESSION to hex)) else Result.success()
         } catch (t: Throwable) {
-            Log.e(TAG, "analyse de $hex echouee", t)
-            // `retry` et non `failure` : une analyse qui echoue sur un manque de memoire
-            // reussira peut-etre quand le telephone sera au calme. Les chunks, eux, sont la.
+            Log.e(TAG, "analysis of $hex failed", t)
+            // `retry` and not `failure`: an analysis that fails on a lack of memory may well
+            // succeed when the phone is quiet. The chunks, for their part, are there.
             Result.retry()
         }
     }
 }
 
 /**
- * La lecture Health Connect, avec son echelle de reprise ([FetchSchedule]).
+ * The Health Connect read, with its retry ladder ([FetchSchedule]).
  *
- * **Aucune contrainte `requiresCharging`.** C'est un piege identifie : combinee a un telephone
- * qu'on ne recharge pas systematiquement le matin, elle produit un worker qui ne s'execute
- * jamais et une nuit qui n'a jamais son denominateur — sans le moindre message d'erreur. La
- * lecture coute une requete a un fournisseur local ; elle ne merite aucune contrainte.
+ * **No `requiresCharging` constraint.** It is an identified trap: combined with a phone that is not
+ * systematically recharged in the morning, it produces a worker that never runs and a night that
+ * never gets its denominator — without the slightest error message. The read costs one query to a
+ * local provider; it deserves no constraint.
  */
 class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
 
@@ -135,26 +135,26 @@ class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
         val endMs = session.endWallMs ?: session.plannedStopWallMs
         val attempts = db.hcSnapshotDao().attemptCount(hex)
         val now = System.currentTimeMillis()
-        val opportuniste = inputData.getBoolean(KEY_OPPORTUNISTE, false)
+        val opportunistic = inputData.getBoolean(KEY_OPPORTUNISTIC, false)
 
-        if (opportuniste) {
-            // Hors echelle : on lit maintenant si la fenetre est ouverte et si la derniere lecture
-            // n'est pas trop proche, et on ne replanifie rien. L'echelle continue de son cote,
-            // pilotee par ses propres rangs — les deux chemins ne se marchent pas dessus parce que
-            // le compte des tentatives ignore les lignes opportunistes.
-            if (!FetchSchedule.opportunisteAdmissible(endMs, now, db.hcSnapshotDao().latest(hex)?.fetchedAtMs)) {
+        if (opportunistic) {
+            // Outside the ladder: we read now if the window is open and if the last read is not too
+            // close, and we reschedule nothing. The ladder carries on separately, driven by its
+            // own rungs — the two paths do not tread on each other because the attempt count
+            // ignores the opportunistic rows.
+            if (!FetchSchedule.opportunisticAllowed(endMs, now, db.hcSnapshotDao().latest(hex)?.fetchedAtMs)) {
                 return Result.success()
             }
         } else {
             when (val plan = FetchSchedule.plan(attempts, endMs, now)) {
                 is FetchSchedule.Plan.GiveUp -> {
-                    Log.i(TAG, "$hex : abandon de la lecture sommeil (${plan.reason})")
+                    Log.i(TAG, "$hex: giving up on the sleep read (${plan.reason})")
                     return Result.success()
                 }
                 is FetchSchedule.Plan.Retry -> {
                     if (plan.delayMs > 0) {
-                        // Pas encore l'heure : on se replanifie et on rend la main. Attendre dans
-                        // le worker tiendrait un `wakelock` pendant des heures pour ne rien faire.
+                        // Not time yet: we reschedule ourselves and hand back. Waiting inside the
+                        // worker would hold a `wakelock` for hours doing nothing.
                         WorkScheduler.scheduleSleepFetch(applicationContext, hex, plan.delayMs)
                         return Result.success()
                     }
@@ -162,16 +162,16 @@ class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
             }
         }
 
-        val rangJournalise = if (opportuniste) FetchSchedule.INDEX_OPPORTUNISTE else attempts
+        val loggedRung = if (opportunistic) FetchSchedule.OPPORTUNISTIC_INDEX else attempts
 
         val reader = SleepReader(applicationContext)
         val availability = reader.availability()
         if (availability != SleepReader.Availability.READY) {
-            Log.i(TAG, "$hex : Health Connect indisponible ($availability)")
-            // On journalise quand meme la tentative : sans ligne, l'echelle n'avance pas et on
-            // reessaierait indefiniment au meme rang.
-            appendSnapshot(db, hex, rangJournalise, null, availability.name)
-            if (!opportuniste) {
+            Log.i(TAG, "$hex: Health Connect unavailable ($availability)")
+            // We log the attempt anyway: without a row, the ladder does not advance and we would
+            // retry indefinitely at the same rung.
+            appendSnapshot(db, hex, loggedRung, null, availability.name)
+            if (!opportunistic) {
                 WorkScheduler.scheduleNextSleepFetch(applicationContext, hex, endMs, attempts + 1)
             }
             return Result.success()
@@ -181,14 +181,14 @@ class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
         val reading = reader.read(
             windowStartMs = session.startWallMs,
             windowEndMs = endMs,
-            // TODO(source-preferee) : ce `null` fait retomber la selection sur l'heuristique de
-            // `SleepSourceSelector` (couverture, puis nombre de stades). L'ecran de reglages affiche
-            // une source preferee, mais rien ne la persiste encore — il n'y a aucun DataStore dans
-            // le module. Tant que ce chemin n'existe pas, le reglage est decoratif, et le dire ici
-            // vaut mieux que de laisser croire qu'il est honore.
+            // TODO(preferred-source): this `null` makes the selection fall back on the heuristic of
+            // `SleepSourceSelector` (coverage, then number of stages). The settings screen displays
+            // a preferred source, but nothing persists it yet — there is no DataStore in the
+            // module. As long as that path does not exist, the setting is decorative, and saying so
+            // here is better than letting it be believed that it is honoured.
             preferredPackage = null,
         )
-        appendSnapshot(db, hex, rangJournalise, reading, reading?.verdict ?: "LECTURE_IMPOSSIBLE")
+        appendSnapshot(db, hex, loggedRung, reading, reading?.verdict ?: "READ_FAILED")
 
         val chosen = reading?.selection?.chosen
         val rescore = FetchSchedule.shouldRescore(
@@ -200,11 +200,11 @@ class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
             currentStageCount = chosen?.stages?.size ?: 0,
         )
 
-        // On continue l'echelle **meme apres un succes** : un fournisseur peut reecrire une
-        // session deja publiee, et la nuit lue a T+1 h differer de la meme nuit a T+8 h. Une
-        // lecture opportuniste, elle, ne replanifie rien : elle s'ajoute a l'echelle sans la
-        // deplacer, sinon un branchement de chargeur reculerait le rang suivant.
-        if (!opportuniste) {
+        // We carry on with the ladder **even after a success**: a provider can rewrite an already
+        // published session, and the night read at T+1 h differ from the same night at T+8 h. An
+        // opportunistic read, for its part, reschedules nothing: it adds itself to the ladder
+        // without moving it, otherwise plugging in a charger would push back the next rung.
+        if (!opportunistic) {
             WorkScheduler.scheduleNextSleepFetch(applicationContext, hex, endMs, attempts + 1)
         }
 
@@ -244,33 +244,33 @@ class SleepFetchWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
     }
 
     /**
-     * Trace lisible de **tout** ce que Health Connect a renvoye, y compris les sessions
-     * ecartees. Jamais reparse (voir la KDoc de `hc_snapshot.selectedStagesCsv`) : elle existe
-     * pour qu'une nuit anormale soit explicable six mois plus tard.
+     * Readable trace of **everything** Health Connect returned, including the excluded sessions.
+     * Never reparsed (see the KDoc of `hc_snapshot.selectedStagesCsv`): it exists so that an
+     * abnormal night is explainable six months later.
      */
     private fun traceOf(reading: SleepReader.Reading?): String {
         if (reading == null) return "{}"
         return buildString {
-            append("""{"candidats":[""")
+            append("""{"candidates":[""")
             reading.allCandidates.forEachIndexed { i, c ->
                 if (i > 0) append(',')
                 append(
-                    """{"paquet":"${c.packageName}","id":"${c.recordId}","debut":${c.startMs},""" +
-                        """"fin":${c.endMs},"modifie":${c.lastModifiedMs},"stades":${c.stages.size},""" +
-                        """"typesDistincts":${c.distinctStageTypes}}"""
+                    """{"package":"${c.packageName}","id":"${c.recordId}","start":${c.startMs},""" +
+                        """"end":${c.endMs},"modified":${c.lastModifiedMs},"stages":${c.stages.size},""" +
+                        """"distinctTypes":${c.distinctStageTypes}}"""
                 )
             }
-            append("""],"retenu":"${reading.selection.chosen?.recordId ?: ""}",""")
-            append(""""motif":"${reading.selection.reason}","verdict":"${reading.verdict}"}""")
+            append("""],"chosen":"${reading.selection.chosen?.recordId ?: ""}",""")
+            append(""""reason":"${reading.selection.reason}","verdict":"${reading.verdict}"}""")
         }
     }
 }
 
 /**
- * Le rescore d'une nuit : exactement la meme analyse, avec l'hypnogramme desormais disponible.
+ * The rescore of a night: exactly the same analysis, with the hypnogram now available.
  *
- * Il partage tout son code avec [AnalyzeWorker] et c'est voulu — deux chemins de calcul
- * differents pour la meme nuit finiraient par diverger, et l'ecart serait attribue au sommeil.
+ * It shares all its code with [AnalyzeWorker] and that is intended — two different computation
+ * paths for the same night would end up diverging, and the gap would be attributed to sleep.
  */
 class RescoreWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
 
@@ -281,23 +281,22 @@ class RescoreWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p)
             AnalysisRunner.analyse(applicationContext, hex, params)
             Result.success()
         } catch (t: Throwable) {
-            Log.e(TAG, "rescore de $hex echoue", t)
+            Log.e(TAG, "rescore of $hex failed", t)
             Result.retry()
         }
     }
 }
 
 /**
- * Le rescore de **toutes** les nuits, depuis le brut.
+ * The rescore of **every** night, from the raw data.
  *
- * Declenche par tout changement de parametre. C'est la moitie executive du garde-fou 3 : la
- * tendance refuse de melanger deux `paramsHash`, donc changer un parametre sans tout recalculer
- * viderait la tendance de tous ses points anterieurs. Recalculer est la seule reponse qui
- * conserve la campagne.
+ * Triggered by any parameter change. It is the executive half of guard rail 3: the trend refuses
+ * to mix two `paramsHash`, so changing a parameter without recomputing everything would empty the
+ * trend of all its earlier points. Recomputing is the only answer that preserves the campaign.
  *
- * Les nuits sont traitees de la plus ancienne a la plus recente, parce que l'etalon de gain de
- * reference est celui de la premiere nuit : la recalculer en dernier ferait analyser toutes les
- * autres avec une reference perimee.
+ * The nights are processed from the oldest to the most recent, because the gain reference used as
+ * baseline is that of the first night: recomputing it last would have all the others analysed with
+ * an out-of-date reference.
  */
 class RescoreAllWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
 
@@ -310,29 +309,28 @@ class RescoreAllWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
                 AnalysisRunner.analyse(applicationContext, hex, params)
             } catch (t: Throwable) {
                 failures++
-                Log.e(TAG, "rescore global : $hex echoue", t)
+                Log.e(TAG, "global rescore: $hex failed", t)
             }
         }
-        // Un echec partiel laisse deux hashs en base. `TrendDao.distinctHashes()` le rend
-        // visible, et l'interface doit le dire plutot que de tracer une tendance amputee.
+        // A partial failure leaves two hashes in the database. `TrendDao.distinctHashes()` makes it
+        // visible, and the interface must say so rather than draw a truncated trend.
         return if (failures == 0) Result.success() else Result.retry()
     }
 }
 
 /**
- * Le chien de garde des sessions restees ouvertes.
+ * The watchdog for sessions left open.
  *
- * La montre peut mourir sans jamais publier de fermeture : batterie vide non detectee, kill
- * systeme, arrachage du bracelet. L'item `/pendulum/session` reste alors `OPEN` pour toujours, et
- * sans ce worker la nuit ne serait jamais analysee — pas parce qu'elle est inexploitable, mais
- * parce que personne ne dit qu'elle est finie.
+ * The watch can die without ever publishing a close: undetected flat battery, system kill, strap
+ * torn off. The `/pendulum/session` item then stays `OPEN` for ever, and without this worker the
+ * night would never be analysed — not because it is unusable, but because nobody says it is over.
  *
- * Deux paliers, et le second declenche l'analyse :
- *  - plus de 45 min sans nouveau chunk -> `STALE`. La montre s'est tue ; elle peut revenir.
- *  - plus de 14 h depuis le debut -> `TRUNCATED`, **et on analyse ce qu'on a**.
+ * Two tiers, and the second triggers the analysis:
+ *  - more than 45 min with no new chunk -> `STALE`. The watch has fallen silent; it may come back.
+ *  - more than 14 h since the start -> `TRUNCATED`, **and we analyse what we have**.
  *
- * Ce n'est jamais un etat final : si des chunks arrivent apres coup (montre rechargee), la
- * chaine repasse et rescorer donne le meme resultat que si tout etait arrive a l'heure.
+ * It is never a final state: if chunks arrive after the fact (watch recharged), the chain runs
+ * again and rescoring gives the same result as if everything had arrived on time.
  */
 class WatchdogWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
 
@@ -341,7 +339,7 @@ class WatchdogWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
         val now = System.currentTimeMillis()
 
         for (s in db.nightDao().openOrStale()) {
-            when (etatSuivant(s.state, s.startWallMs, s.lastChunkArrivalMs, now)) {
+            when (nextState(s.state, s.startWallMs, s.lastChunkArrivalMs, now)) {
                 "TRUNCATED" -> {
                     db.nightDao().setState(s.sessionHex, "TRUNCATED")
                     WorkScheduler.enqueueNightChain(applicationContext, s.sessionHex)
@@ -354,110 +352,110 @@ class WatchdogWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p
     }
 
     companion object {
-        val STALE_MS = Durees.ACTIVES.silenceAvantStaleMs
-        val MAX_NIGHT_MS = Durees.ACTIVES.ageMaxNuitMs
+        val STALE_MS = Durations.ACTIVE.silenceBeforeStaleMs
+        val MAX_NIGHT_MS = Durations.ACTIVE.maxNightAgeMs
 
         /**
-         * Les deux paliers, isoles de la base et de l'horloge. **Pur**, donc testable.
+         * The two tiers, isolated from the database and from the clock. **Pure**, therefore
+         * testable.
          *
-         * L'ordre des deux branches est le contrat : `TRUNCATED` l'emporte sur `STALE`, parce
-         * qu'une nuit de plus de quatorze heures doit etre analysee meme si des chunks
-         * continuent d'arriver. L'ecrire dans un `when` au fond d'une coroutine qui lit
-         * `System.currentTimeMillis()` rendait cette priorite indemontrable autrement qu'en
-         * relisant le code.
+         * The order of the two branches is the contract: `TRUNCATED` wins over `STALE`, because a
+         * night of more than fourteen hours must be analysed even if chunks keep arriving. Writing
+         * it in a `when` deep inside a coroutine that reads `System.currentTimeMillis()` made that
+         * priority impossible to demonstrate other than by re-reading the code.
          *
-         * @return le nouvel etat, ou `null` si rien ne change.
+         * @return the new state, or `null` if nothing changes.
          */
-        fun etatSuivant(
-            etat: String,
+        fun nextState(
+            state: String,
             startWallMs: Long,
             lastChunkArrivalMs: Long,
             nowMs: Long,
             staleMs: Long = STALE_MS,
-            ageMaxMs: Long = MAX_NIGHT_MS,
+            maxAgeMs: Long = MAX_NIGHT_MS,
         ): String? = when {
-            nowMs - startWallMs > ageMaxMs -> "TRUNCATED"
-            etat == "OPEN" && lastChunkArrivalMs > 0 && nowMs - lastChunkArrivalMs > staleMs -> "STALE"
+            nowMs - startWallMs > maxAgeMs -> "TRUNCATED"
+            state == "OPEN" && lastChunkArrivalMs > 0 && nowMs - lastChunkArrivalMs > staleMs -> "STALE"
             else -> null
         }
     }
 }
 
 /**
- * La republication du contexte du soir — l'outbox de la seule porte du produit.
+ * The republication of the evening context — the outbox of the only gate of the product.
  *
- * ### Ce qu'il repare
+ * ### What it repairs
  *
- * `sceller()` ecrit le contexte en base, **irreversiblement**, puis pose l'item que `Preflight`
- * attend. Le put echoue quand les services Google Play sont indisponibles, et il n'echoue pas
- * quand la montre est eteinte ou hors de portee : `putDataItem` ecrit dans le magasin repliquee
- * local, la synchronisation vient ensuite et toute seule. Il n'y a donc rien a brancher sur la
- * reconnexion de la montre — ce n'est pas le mode de defaillance.
+ * `seal()` writes the context into the database, **irreversibly**, then puts the item that
+ * `Preflight` waits for. The put fails when Google Play services are unavailable, and it does not
+ * fail when the watch is switched off or out of range: `putDataItem` writes into the local
+ * replicated store, the synchronisation comes afterwards and on its own. So there is nothing to
+ * hook onto the reconnection of the watch — that is not the failure mode.
  *
- * Le mode de defaillance reel est celui-ci : une seconde d'indisponibilite, un contexte scelle et
- * immuable en base, un item qui n'est entre nulle part, et une montre qui refuse d'enregistrer
- * cette nuit-la pour toujours (`IssueId.CONTEXT_NOT_SEALED` est un blocage dur). Aucun recours
- * utilisateur : la base refuse de sceller deux fois.
+ * The real failure mode is this one: one second of unavailability, a context sealed and immutable
+ * in the database, an item that has entered nowhere, and a watch that refuses to record that night
+ * for ever (`IssueId.CONTEXT_NOT_SEALED` is a hard blocker). No user recourse: the database
+ * refuses to seal twice.
  *
- * ### Pourquoi WorkManager plutot qu'une table
+ * ### Why WorkManager rather than a table
  *
- * La file **est** l'outbox : elle persiste au redemarrage du telephone et porte deja le repli
- * exponentiel. Une table Room d'outbox serait de toute facon impossible ici — la table de contexte
- * est rendue immuable par deux declencheurs SQLite, on ne peut donc pas y marquer un etat de
- * publication.
+ * The queue **is** the outbox: it survives a phone restart and already carries the exponential
+ * backoff. A Room outbox table would be impossible here anyway — the context table is made
+ * immutable by two SQLite triggers, so a publication state cannot be marked in it.
  *
- * Reposer est sans risque et sans cout : un `putDataItem` de charge utile identique est
- * dedoublonne par le Data Layer. C'est la meme propriete dont se sert `AckBuilder`.
+ * Putting again is riskless and costless: a `putDataItem` with an identical payload is
+ * deduplicated by the Data Layer. It is the same property `AckBuilder` relies on.
  */
-class PublicationContexteWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
+class ContextPublicationWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
 
     override suspend fun doWork(): Result {
-        val cleDeNuit = inputData.getString(KEY_CLE_NUIT) ?: return Result.failure()
-        val scelleA = inputData.getLong(KEY_SCELLE_A, 0L)
-        return issue(cleDeNuit, System.currentTimeMillis()) {
-            PublicationContexte.poser(applicationContext, cleDeNuit, scelleA)
+        val nightKey = inputData.getString(KEY_NIGHT_KEY) ?: return Result.failure()
+        val sealedAt = inputData.getLong(KEY_SEALED_AT, 0L)
+        return outcomeOf(nightKey, System.currentTimeMillis()) {
+            ContextPublication.put(applicationContext, nightKey, sealedAt)
         }
     }
 
     companion object {
 
         /**
-         * L'issue d'une tentative de republication, horloge et Data Layer en parametres.
+         * The outcome of a republication attempt, clock and Data Layer as parameters.
          *
-         * ### Le garde-fou d'arret
+         * ### The stopping guard rail
          *
-         * Une nuit passee ne se rattrape pas. Tant que la soiree visee **est** la soiree courante,
-         * reposer l'item a un sens : la montre attend, et elle interroge activement le magasin.
-         * Des que la cle de nuit a bascule, l'item ne debloquerait plus rien — la montre reclame
-         * celui de la soiree en cours — et un worker qui continue de reessayer ne fait plus que
-         * consommer de la batterie en promettant un rattrapage qui n'aura pas lieu.
+         * A past night cannot be caught up. As long as the targeted evening **is** the current
+         * evening, putting the item again makes sense: the watch is waiting, and it actively
+         * queries the store. As soon as the night key has rolled over, the item would no longer
+         * unblock anything — the watch asks for the one of the current evening — and a worker that
+         * keeps retrying does nothing but consume battery while promising a catch-up that will not
+         * happen.
          *
-         * `success` et non `failure` pour cet abandon, comme `FetchSchedule.GiveUp` : le travail a
-         * fait ce qu'il avait a faire, il s'arrete parce que son objet a disparu, et le marquer en
-         * echec ferait remonter une alarme la ou il n'y a rien a alarmer.
+         * `success` and not `failure` for this giving up, like `FetchSchedule.GiveUp`: the work has
+         * done what it had to do, it stops because its object has disappeared, and marking it as a
+         * failure would raise an alarm where there is nothing to be alarmed about.
          *
-         * @param cleVisee la soiree pour laquelle le contexte a ete scelle.
-         * @param maintenantMs l'horloge en parametre : c'est elle qui decide entre reposer et
-         *   abandonner, et la lire au fond de la fonction rendait cette bifurcation intestable.
-         * @param zone fuseau explicite, pour la meme raison que dans `WirePaths.nightKey` : la
-         *   bascule a midi est le coeur de ce garde-fou, un fuseau implicite la rendrait
-         *   dependante de la machine qui execute le test.
-         * @param poser la pose de l'item, `true` si elle a abouti.
+         * @param targetKey the evening for which the context was sealed.
+         * @param nowMs the clock as a parameter: it is what decides between putting again and
+         *   giving up, and reading it from deep inside the function made that branch untestable.
+         * @param zone explicit time zone, for the same reason as in `WirePaths.nightKey`: the noon
+         *   rollover is the heart of this guard rail, an implicit zone would make it depend on the
+         *   machine running the test.
+         * @param put the put of the item, `true` if it succeeded.
          */
-        fun issue(
-            cleVisee: String,
-            maintenantMs: Long,
+        fun outcomeOf(
+            targetKey: String,
+            nowMs: Long,
             zone: ZoneId = ZoneId.systemDefault(),
-            poser: () -> Boolean,
+            put: () -> Boolean,
         ): ListenableWorker.Result {
-            if (cleVisee != WirePaths.nightKey(maintenantMs, zone)) {
-                Log.i(TAG, "republication de $cleVisee abandonnee : la soiree est passee")
+            if (targetKey != WirePaths.nightKey(nowMs, zone)) {
+                Log.i(TAG, "republication of $targetKey abandoned: the evening has passed")
                 return ListenableWorker.Result.success()
             }
-            // `retry` et non `failure` : le repli exponentiel est tout l'interet de la file, et
-            // `failure` retirerait le travail au premier echec — c'est-a-dire exactement le defaut
-            // qu'on repare.
-            return if (poser()) ListenableWorker.Result.success() else ListenableWorker.Result.retry()
+            // `retry` and not `failure`: the exponential backoff is the whole point of the queue,
+            // and `failure` would remove the work on the first failure — that is to say exactly the
+            // defect we are repairing.
+            return if (put()) ListenableWorker.Result.success() else ListenableWorker.Result.retry()
         }
     }
 }

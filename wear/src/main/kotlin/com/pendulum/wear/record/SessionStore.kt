@@ -4,7 +4,7 @@ import android.content.Context
 import com.pendulum.format.wire.StopReason
 import com.pendulum.format.wire.sessionHexToBytes
 import com.pendulum.format.wire.toSessionHex
-import com.pendulum.wear.temps.Durees
+import com.pendulum.wear.time.Durations
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -13,32 +13,32 @@ import java.util.TimeZone
 import java.util.UUID
 
 /**
- * Marqueur de session active et sidecar de metriques.
+ * Active-session marker and metrics sidecar.
  *
- * `active_session.json` est la **seule** trace qui survit a un kill du processus. Sans lui, une
- * montre qui redemarre a 3 h ne sait pas qu'une nuit etait en cours, et le telephone ne sait pas
- * qu'il faut attendre la suite. Il est ecrit atomiquement (`tmp` + `fsync` + `rename`) : un
- * marqueur a moitie ecrit serait pire que pas de marqueur du tout, puisqu'il ferait echouer la
- * reprise en la faisant croire possible.
+ * `active_session.json` is the **only** trace that survives a kill of the process. Without it, a
+ * watch that reboots at 3 a.m. does not know a night was in progress, and the phone does not know
+ * it should wait for the rest. It is written atomically (`tmp` + `fsync` + `rename`): a
+ * half-written marker would be worse than no marker at all, since it would make the resume fail
+ * after having made it look possible.
  *
- * Le sidecar, lui, n'est pas critique : il porte ce qui explique la nuit apres coup (trous,
- * batterie minute par minute, off-body, `fs` reellement mesure). Il est reecrit en entier a
- * chaque mise a jour — quelques kilo-octets toutes les minutes, ce qui est negligeable devant
- * les 300 o/s du signal.
+ * The sidecar, for its part, is not critical: it carries what explains the night after the fact
+ * (gaps, battery minute by minute, off-body, the `fs` actually measured). It is rewritten in full
+ * at every update — a few kilobytes every minute, which is negligible next to the 300 B/s of the
+ * signal.
  */
 class SessionStore(context: Context) {
 
     private val filesDir: File = context.filesDir
     private val markerFile = File(filesDir, "active_session.json")
 
-    /** Racine des chunks : un sous-repertoire par session. */
+    /** Root of the chunks: one subdirectory per session. */
     val chunksRoot: File = File(filesDir, "chunks")
 
     fun sessionDir(sessionHex: String): File = File(chunksRoot, sessionHex)
 
     fun sidecarFile(sessionHex: String): File = File(sessionDir(sessionHex), "sidecar.json")
 
-    // --- marqueur de session active ---
+    // --- active-session marker ---
 
     fun begin(marker: SessionMarker) = writeMarker(marker)
 
@@ -57,8 +57,8 @@ class SessionStore(context: Context) {
                 stopAtLocalMinutes = o.getInt("stopAtLocalMinutes"),
             )
         } catch (e: Exception) {
-            // Un marqueur illisible est un marqueur absent : on ne reprend pas une nuit sur la
-            // foi d'un fichier qu'on ne comprend pas.
+            // An unreadable marker is an absent marker: a night is not resumed on the strength of
+            // a file we do not understand.
             null
         }
     }
@@ -90,7 +90,7 @@ class SessionStore(context: Context) {
         writeAtomically(markerFile, o.toString())
     }
 
-    // --- sidecar de metriques ---
+    // --- metrics sidecar ---
 
     fun writeSidecar(sessionHex: String, s: Sidecar) {
         val dir = sessionDir(sessionHex)
@@ -116,9 +116,9 @@ class SessionStore(context: Context) {
     }
 
     /**
-     * Ecriture atomique : temporaire, `fsync`, puis `rename`. Le `rename` est atomique sur
-     * ext4/f2fs, donc le fichier vu par le prochain demarrage est soit l'ancien complet, soit le
-     * nouveau complet, jamais un melange des deux.
+     * Atomic write: temporary file, `fsync`, then `rename`. The `rename` is atomic on ext4/f2fs,
+     * so the file seen by the next start is either the old one complete or the new one complete,
+     * never a mixture of the two.
      */
     private fun writeAtomically(target: File, content: String) {
         target.parentFile?.mkdirs()
@@ -129,7 +129,7 @@ class SessionStore(context: Context) {
             it.fd.sync()
         }
         if (!tmp.renameTo(target)) {
-            // Repli : sur un rename refuse, mieux vaut un fichier ecrase qu'aucun fichier.
+            // Fallback: on a refused rename, an overwritten file is better than no file at all.
             target.delete()
             tmp.renameTo(target)
         }
@@ -155,9 +155,9 @@ class SessionStore(context: Context) {
 }
 
 /**
- * Contenu de `active_session.json`. Tout ce qu'il faut pour reprendre une nuit sans rien
- * deviner — y compris `lastChunkIndex`, dont la continuite fonde l'unicite `(sessionId, idx)`
- * cote telephone.
+ * Contents of `active_session.json`. Everything needed to resume a night without guessing
+ * anything — including `lastChunkIndex`, whose continuity is what founds the `(sessionId, idx)`
+ * uniqueness on the phone side.
  */
 data class SessionMarker(
     val sessionHex: String,
@@ -171,25 +171,25 @@ data class SessionMarker(
 ) {
 
     /**
-     * « Cette nuit est finie, quoi qu'en dise le marqueur. »
+     * "This night is over, whatever the marker says."
      *
-     * Les trois chemins de reprise — `BOOT_COMPLETED`, le chien de garde, et le redemarrage
-     * `START_STICKY` du service — posaient la meme question avec le meme couple de conditions
-     * recopie a la main, dont la seconde etait ecrite `14 * 3_600_000L` aux trois endroits. Trois
-     * copies d'un predicat de reprise, c'est trois occasions d'en corriger deux ; et un marqueur
-     * perime repris par un seul des trois chemins produit un enregistrement de plein jour dont
-     * rien ne dit qu'il n'aurait pas du exister.
+     * The three resume paths — `BOOT_COMPLETED`, the watchdog, and the `START_STICKY` restart of
+     * the service — asked the same question with the same pair of conditions copied out by hand,
+     * the second of which was written `14 * 3_600_000L` in all three places. Three copies of a
+     * resume predicate are three chances to fix only two of them; and a stale marker resumed by
+     * just one of the three paths produces a broad-daylight recording with nothing to say it
+     * should never have existed.
      *
-     * L'horloge est un parametre, comme dans `MachineAccueil` et `EveningViewModel` : la fonction
-     * est pure, donc les trois chemins partagent desormais un predicat qui a des tests.
+     * The clock is a parameter, as in `HomeMachine` and `EveningViewModel`: the function is
+     * pure, so the three paths now share a predicate that has tests.
      *
-     * @param ageMaxMs borne de securite pour le cas ou `plannedStopWallMs` serait lui-meme faux.
+     * @param ageMaxMs safety bound for the case where `plannedStopWallMs` would itself be wrong.
      */
-    fun estPerimee(nowMs: Long, ageMaxMs: Long = Durees.ACTIVES.ageMaxSessionMs): Boolean =
+    fun isStale(nowMs: Long, ageMaxMs: Long = Durations.ACTIVE.sessionMaxAgeMs): Boolean =
         nowMs >= plannedStopWallMs || nowMs >= startWallMs + ageMaxMs
 }
 
-/** Metriques de la nuit. Aucune n'est necessaire a la relecture des chunks : elles expliquent. */
+/** Metrics for the night. None is needed to read the chunks back: they explain. */
 data class Sidecar(
     val startWallMs: Long,
     val endWallMs: Long?,

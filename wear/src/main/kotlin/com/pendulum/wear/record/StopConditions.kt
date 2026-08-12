@@ -1,63 +1,63 @@
 package com.pendulum.wear.record
 
 import com.pendulum.format.wire.StopReason
-import com.pendulum.wear.temps.Banc
-import com.pendulum.wear.temps.Durees
+import com.pendulum.wear.time.Bench
+import com.pendulum.wear.time.Durations
 
 /**
- * Conditions d'arret automatique. **Pur** : l'etat est passe en entree, rien n'est lu du systeme
- * ici, donc les six branches et leurs anti-rebond sont testables en JVM.
+ * Automatic stop conditions. **Pure**: the state is passed in, nothing is read from the system
+ * here, so the six branches and their debounces are testable on the JVM.
  *
- * La premiere condition qui se presente gagne, et sa `stopReason` part dans le sidecar et dans
- * `/pendulum/session`. Chacune ferme la nuit **proprement** : le fichier courant est clos, la salve
- * finale est urgente. C'est la difference entre « la montre est morte a 3 h » et « la montre a
- * ferme a 3 h et tout envoye ».
+ * The first condition to present itself wins, and its `stopReason` goes into the sidecar and into
+ * `/pendulum/session`. Each one closes the night **cleanly**: the current file is closed, the
+ * final burst is urgent. That is the difference between "the watch died at 3 a.m." and "the watch
+ * closed at 3 a.m. and sent everything".
  *
- * **L'off-body n'arrete jamais rien** et n'apparait donc pas ici. La detection off-body repose
- * sur le PPG et le capacitif au poignet ; a la cheville son comportement n'est pas documente et
- * lit tres probablement « non porte » en permanence. S'y fier couperait chaque nuit a sa
- * premiere minute. Elle est journalisee (sidecar, `FLAG_OFF_BODY`) et jamais actionnee. Le vrai
- * detecteur de « montre retiree » est [wakeRatio], qui mesure la locomotion — c'est-a-dire
- * l'evenement qui interesse reellement (« la personne s'est levee »), pas un proxy non valide.
+ * **Off-body never stops anything** and therefore does not appear here. Off-body detection relies
+ * on the PPG and on wrist capacitance; at the ankle its behaviour is undocumented and it very
+ * probably reads "not worn" permanently. Trusting it would cut every night at its first minute.
+ * It is logged (sidecar, `FLAG_OFF_BODY`) and never acted upon. The real "watch removed" detector
+ * is [wakeRatio], which measures locomotion — that is, the event that actually matters ("the
+ * person has got up"), not an invalid proxy.
  */
 class StopConditions(
     private val startWallMs: Long,
-    /** Minutes depuis minuit local. Defaut 10:00. */
+    /** Minutes since local midnight. Default 10:00. */
     private val stopAtLocalMinutes: Int,
     /**
-     * Les trois durees, en parametres plutot que lues dans le catalogue au fond de [evaluate].
+     * The three durations, as parameters rather than read from the catalogue deep inside
+     * [evaluate].
      *
-     * Cette classe est pure et ses tests le sont aussi : ils affirment des bornes a la
-     * milliseconde pres (« 59 999 ms de charge continuent, 60 000 arretent »). Les faire dependre
-     * du diviseur de la variante compilee ferait echouer un test de logique metier parce qu'un
-     * banc a ete configure autrement — c'est-a-dire pour une raison qui n'a rien a voir avec ce
-     * qu'il verifie.
+     * This class is pure and so are its tests: they assert bounds to the millisecond ("59,999 ms
+     * of charging carries on, 60,000 stops"). Making them depend on the compiled variant's
+     * divisor would make a business-logic test fail because a bench has been configured
+     * differently — that is, for a reason that has nothing to do with what it checks.
      */
-    private val antiRebondChargeMs: Long = CHARGING_DEBOUNCE_MS,
-    private val dureeMaxMs: Long = MAX_DURATION_MS,
-    private val delaiMinAvantHeureButoirMs: Long = DELAI_MIN_AVANT_HEURE_BUTOIR_MS,
+    private val chargingDebounceMs: Long = CHARGING_DEBOUNCE_MS,
+    private val maxDurationMs: Long = MAX_DURATION_MS,
+    private val minDelayBeforeCutoffMs: Long = MIN_DELAY_BEFORE_CUTOFF_MS,
     /**
-     * Derogation de banc : ne pas arreter la nuit quand la montre est sur le chargeur. Voir
-     * [com.pendulum.wear.temps.Banc.IGNORER_CHARGEUR] — vaut `false` en release, ou la constante
-     * est connue a la compilation et la branche disparait.
+     * Bench override: do not stop the night when the watch is on the charger. See
+     * [com.pendulum.wear.time.Bench.IGNORE_CHARGER] — `false` in release, where the constant is
+     * known at compile time and the branch disappears.
      *
-     * Parametre et non lecture directe, comme les trois durees ci-dessus et pour la meme raison :
-     * les tests de cette classe affirment des bornes a la milliseconde et ne doivent pas dependre
-     * de la variante compilee.
+     * A parameter and not a direct read, like the three durations above and for the same reason:
+     * this class's tests assert bounds to the millisecond and must not depend on the compiled
+     * variant.
      */
-    private val ignorerChargeur: Boolean = Banc.IGNORER_CHARGEUR,
+    private val ignoreCharger: Boolean = Bench.IGNORE_CHARGER,
 ) {
 
     companion object {
-        /** Un chargeur magnetique produit de faux contacts brefs : 60 s de charge soutenue. */
-        val CHARGING_DEBOUNCE_MS = Durees.ACTIVES.antiRebondChargeMs
+        /** A magnetic charger produces brief false contacts: 60 s of sustained charging. */
+        val CHARGING_DEBOUNCE_MS = Durations.ACTIVE.chargingDebounceMs
 
-        val MAX_DURATION_MS = Durees.ACTIVES.dureeMaxSessionMs
+        val MAX_DURATION_MS = Durations.ACTIVE.sessionMaxDurationMs
 
-        /** Voir [evaluate] : l'heure butoir ne vaut que passe ce delai depuis le debut. */
-        val DELAI_MIN_AVANT_HEURE_BUTOIR_MS = Durees.ACTIVES.delaiMinAvantHeureButoirMs
+        /** See [evaluate]: the cut-off time only counts past this delay since the start. */
+        val MIN_DELAY_BEFORE_CUTOFF_MS = Durations.ACTIVE.minDelayBeforeCutoffMs
 
-        /** Fermeture propre *avant* que le systeme ne tue quoi que ce soit. */
+        /** A clean close *before* the system kills anything. */
         const val LOW_BATTERY_PCT = 5
 
         const val MIN_FREE_BYTES = 50L * 1024 * 1024
@@ -66,9 +66,9 @@ class StopConditions(
     private var chargingSinceMs = 0L
 
     /**
-     * @param localMinutes minutes depuis minuit, en heure locale.
-     * @param wakeRatio fraction des epoques de 30 s au-dessus du seuil de locomotion sur les
-     *   dix dernieres minutes, dans `0..1`.
+     * @param localMinutes minutes since midnight, in local time.
+     * @param wakeRatio fraction of the 30 s epochs above the locomotion threshold over the last
+     *   ten minutes, within `0..1`.
      */
     fun evaluate(
         nowMs: Long,
@@ -78,12 +78,12 @@ class StopConditions(
         localMinutes: Int,
         wakeRatio: Double,
     ): StopReason? {
-        // La derogation de banc s'applique **ici seulement** : le compteur d'anti-rebond continue
-        // de tourner, seul l'arret est retenu. Un banc qui ne compterait pas la charge ne testerait
-        // plus le meme code que la nuit.
+        // The bench override applies **here only**: the debounce counter keeps running, only the
+        // stop is withheld. A bench that did not count charging would no longer be testing the
+        // same code as a real night.
         if (isCharging) {
             if (chargingSinceMs == 0L) chargingSinceMs = nowMs
-            if (nowMs - chargingSinceMs >= antiRebondChargeMs && !ignorerChargeur) {
+            if (nowMs - chargingSinceMs >= chargingDebounceMs && !ignoreCharger) {
                 return StopReason.CHARGING
             }
         } else {
@@ -91,10 +91,10 @@ class StopConditions(
         }
 
         if (batteryPct in 0..LOW_BATTERY_PCT) return StopReason.LOW_BATTERY
-        if (nowMs - startWallMs >= dureeMaxMs) return StopReason.MAX_DURATION
-        // L'heure butoir ne vaut que si la nuit a commence avant elle : un enregistrement
-        // demarre a 11 h ne doit pas s'arreter a la milliseconde suivante.
-        if (localMinutes >= stopAtLocalMinutes && nowMs - startWallMs > delaiMinAvantHeureButoirMs) {
+        if (nowMs - startWallMs >= maxDurationMs) return StopReason.MAX_DURATION
+        // The cut-off time only counts if the night started before it: a recording begun at
+        // 11 a.m. must not stop at the very next millisecond.
+        if (localMinutes >= stopAtLocalMinutes && nowMs - startWallMs > minDelayBeforeCutoffMs) {
             return StopReason.TIME_LIMIT
         }
         if (wakeRatio > 0.80) return StopReason.WAKE_DETECTED
@@ -104,13 +104,13 @@ class StopConditions(
 }
 
 /**
- * Detection de reveil : plus de 80 % des epoques de 30 s au-dessus du seuil de locomotion sur
- * dix minutes glissantes. **Pur**, alimente par l'enveloppe RMS deja calculee pour l'apercu —
- * aucun calcul supplementaire dans la boucle capteur.
+ * Waking detection: more than 80 % of the 30 s epochs above the locomotion threshold over a
+ * sliding ten minutes. **Pure**, fed by the RMS envelope already computed for the preview — no
+ * extra computation in the sensor loop.
  */
 class WakeDetector {
 
-    /** RMS au-dela duquel une epoque compte comme locomotion, en m/s^2. */
+    /** RMS beyond which an epoch counts as locomotion, in m/s^2. */
     private val locomotionThreshold = 1.5
 
     private val epochs = ArrayDeque<Boolean>()
@@ -118,7 +118,7 @@ class WakeDetector {
     private var above = 0
     private var total = 0
 
-    /** Fraction d'epoques actives sur la fenetre, dans `0..1`. */
+    /** Fraction of active epochs over the window, within `0..1`. */
     var ratio: Double = 0.0
         private set
 
@@ -128,7 +128,7 @@ class WakeDetector {
         if (rms > locomotionThreshold) above++
         if (tsNs - epochStartNs >= 30_000_000_000L) {
             epochs.addLast(above > total / 2)
-            if (epochs.size > 20) epochs.removeFirst() // 20 epoques de 30 s = 10 min
+            if (epochs.size > 20) epochs.removeFirst() // 20 epochs of 30 s = 10 min
             ratio = if (epochs.isEmpty()) 0.0 else epochs.count { it }.toDouble() / epochs.size
             epochStartNs = tsNs
             above = 0

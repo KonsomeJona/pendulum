@@ -4,30 +4,30 @@ import com.pendulum.format.TelemetryPoint
 import com.pendulum.phone.db.TelemetryPointEntity
 
 /**
- * Le passage du bloc `TLM!` a la ligne de base.
+ * The step from the `TLM!` block to the database row.
  *
- * ### Pourquoi c'est une projection et pas une interpretation
+ * ### Why this is a projection and not an interpretation
  *
- * Aucune unite n'est convertie, aucun champ n'est renomme, aucune sentinelle n'est traduite en
- * `null`. La table est l'image du bloc, et c'est ce qui permet de relire une ligne de base a cote
- * de la KDoc de [TelemetryPoint] sans table de correspondance.
+ * No unit is converted, no field is renamed, no sentinel is translated into `null`. The table is
+ * the image of the block, and that is what makes it possible to read a database row next to the
+ * KDoc of [TelemetryPoint] with no correspondence table.
  *
- * La tentation inverse — convertir `batteryPct = 255` en `null`, les dixiemes de degre en degres,
- * les microsecondes en millisecondes — coute deux conventions au lieu d'une : celle du format et
- * celle de la base. Le jour ou elles divergent, la divergence porte sur des grandeurs qui decident
- * du seuil de detection, et rien ne la signale. Les sentinelles sont donc interpretees **au point
- * de lecture**, une seule fois, par `com.pendulum.phone.ui.model.Metrologie`.
+ * The opposite temptation — turning `batteryPct = 255` into `null`, tenths of a degree into
+ * degrees, microseconds into milliseconds — costs two conventions instead of one: that of the
+ * format and that of the database. The day they diverge, the divergence bears on quantities that
+ * decide the detection threshold, and nothing flags it. The sentinels are therefore interpreted
+ * **at the point of reading**, once and only once, by `com.pendulum.phone.ui.model.Metrology`.
  *
- * ### Ce que l'adaptateur ne fait pas
+ * ### What the adapter does not do
  *
- * Il ne filtre rien. Un point dont la batterie est illisible, dont le capteur off-body est absent
- * ou dont la cadence est nulle est ecrit tel quel : c'est un fait de la nuit, et une nuit dont on
- * ne garderait que les points exploitables serait une nuit dont on aurait efface les moments ou
- * la mesure a manque — exactement ceux qui expliquent le reste.
+ * It filters nothing. A point whose battery is unreadable, whose off-body sensor is absent or
+ * whose rate is zero is written as it is: it is a fact of the night, and a night from which only
+ * the usable points were kept would be a night whose moments of missing measurement had been
+ * erased — exactly the ones that explain the rest.
  */
 object TelemetryAdapter {
 
-    fun versEntite(sessionHex: String, p: TelemetryPoint): TelemetryPointEntity = TelemetryPointEntity(
+    fun toEntity(sessionHex: String, p: TelemetryPoint): TelemetryPointEntity = TelemetryPointEntity(
         sessionHex = sessionHex,
         elapsedRealtimeNs = p.elapsedRealtimeNs,
         sensorTsNs = p.sensorTsNs,
@@ -45,6 +45,6 @@ object TelemetryAdapter {
         charging = p.charging,
     )
 
-    fun versEntites(sessionHex: String, points: List<TelemetryPoint>): List<TelemetryPointEntity> =
-        points.map { versEntite(sessionHex, it) }
+    fun toEntities(sessionHex: String, points: List<TelemetryPoint>): List<TelemetryPointEntity> =
+        points.map { toEntity(sessionHex, it) }
 }

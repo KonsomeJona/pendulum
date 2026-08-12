@@ -3,12 +3,12 @@ package com.pendulum.phone.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.pendulum.phone.data.AppairageMontre
-import com.pendulum.phone.data.EtatAppairage
-import com.pendulum.phone.data.EtatMontre
-import com.pendulum.phone.data.EtatTendance
+import com.pendulum.phone.data.WatchPairing
+import com.pendulum.phone.data.PairingState
+import com.pendulum.phone.data.WatchState
+import com.pendulum.phone.data.TrendState
 import com.pendulum.phone.data.EveningContextSealer
-import com.pendulum.phone.data.SaisieDuSoir
+import com.pendulum.phone.data.EveningEntry
 import com.pendulum.phone.data.PendulumPreferences
 import com.pendulum.phone.data.PendulumRepository
 import com.pendulum.phone.data.WatchCommands
@@ -16,35 +16,34 @@ import com.pendulum.phone.DataEraser
 import com.pendulum.phone.export.NightExporter
 import com.pendulum.phone.export.ReportExporter
 import com.pendulum.phone.health.SleepReader
-import com.pendulum.phone.health.SourcesSommeil
-import com.pendulum.phone.ui.onboarding.RepriseAssistant
-import com.pendulum.phone.ui.chart.BandeMediane
-import com.pendulum.phone.ui.chart.EtatPoint
-import com.pendulum.phone.ui.chart.LigneReference
-import com.pendulum.phone.ui.chart.PointNuit
-import com.pendulum.phone.ui.chart.TendanceChartSpec
-import com.pendulum.phone.ui.home.AccueilUi
-import com.pendulum.phone.ui.home.MachineAccueil
-import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.model.CompteRendu
-import com.pendulum.phone.ui.model.EtatNuit
-import com.pendulum.phone.ui.model.MachineReveil
+import com.pendulum.phone.health.SleepSources
+import com.pendulum.phone.ui.onboarding.OnboardingResume
+import com.pendulum.phone.ui.chart.MedianBand
+import com.pendulum.phone.ui.chart.PointState
+import com.pendulum.phone.ui.chart.ReferenceLine
+import com.pendulum.phone.ui.chart.NightPoint
+import com.pendulum.phone.ui.chart.TrendChartSpec
+import com.pendulum.phone.ui.home.HomeUi
+import com.pendulum.phone.ui.home.HomeMachine
+import com.pendulum.phone.ui.model.Aggregate
+import com.pendulum.phone.ui.model.Feedback
+import com.pendulum.phone.ui.model.NightState
+import com.pendulum.phone.ui.model.WakingMachine
 import com.pendulum.phone.ui.model.Mapping
-import com.pendulum.phone.ui.model.NuitUi
+import com.pendulum.phone.ui.model.NightUi
 import com.pendulum.phone.ui.model.Situations
-import com.pendulum.phone.ui.nights.NuitDetailUi
-import com.pendulum.phone.ui.model.TendanceUiState
+import com.pendulum.phone.ui.nights.NightDetailUi
+import com.pendulum.phone.ui.model.TrendUiState
 import com.pendulum.phone.db.PendulumDatabase
 import com.pendulum.phone.db.QuestionnaireResponseEntity
-import com.pendulum.phone.export.ReportExporter as RapportExporteur
 import com.pendulum.phone.ui.export.ExportUi
-import com.pendulum.phone.ui.quiz.IssueQuestionnaire
-import com.pendulum.phone.ui.settings.RapportP1Ui
-import com.pendulum.phone.ui.settings.ReglagesUi
+import com.pendulum.phone.ui.quiz.QuizOutcome
+import com.pendulum.phone.ui.settings.P1ReportUi
+import com.pendulum.phone.ui.settings.SettingsUi
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.text.NomsDeFichier
+import com.pendulum.phone.ui.text.FileNames
 import com.pendulum.phone.ui.text.UiText
-import com.pendulum.phone.ui.text.texte
+import com.pendulum.phone.ui.text.text
 import com.pendulum.phone.work.WorkScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -58,610 +57,608 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 
 /**
- * Les ViewModels. Ils sont volontairement minces, et c'est le point.
+ * The ViewModels. They are deliberately thin, and that is the point.
  *
- * Tout ce qui decide quelque chose vit ailleurs et se teste sans Android : les seuils et les
- * estimateurs dans `ui/model/Aggregat.kt`, les criteres d'exclusion dans la vue SQL
- * `comparable_night`, la mise en forme dans `ui/model/Mapping.kt`. Ce qui reste ici est le
- * cablage — quel flux alimente quel ecran — plus la construction des `Spec` de graphe, qui doit
- * se faire en amont d'un `@Composable` pour que l'export PDF puisse reutiliser exactement les
- * memes objets.
+ * Everything that decides something lives elsewhere and is tested without Android: the thresholds
+ * and the estimators in `ui/model/Aggregate.kt`, the exclusion criteria in the SQL view
+ * `comparable_night`, the formatting in `ui/model/Mapping.kt`. What is left here is the wiring —
+ * which flow feeds which screen — plus the building of the chart `Spec`s, which has to happen
+ * upstream of a `@Composable` so that the PDF export can reuse exactly the same objects.
  *
- * `AndroidViewModel` plutot qu'une fabrique : le repository n'a besoin que du contexte
- * applicatif, et le projet n'a aucune injection de dependances. En introduire une pour brancher
- * trois ecrans ferait passer un changement d'architecture pour une correction de defaut.
+ * `AndroidViewModel` rather than a factory: the repository needs nothing but the application
+ * context, and the project has no dependency injection at all. Introducing one to wire three
+ * screens would pass off an architectural change as a defect fix.
  */
 
 /**
- * L'ecran Tendance.
+ * The Trend screen.
  *
- * La bascule entre [TendanceUiState.Refus] et [TendanceUiState.Pret] n'est pas un `if` sur un
- * booleen : elle depend de la **nullite** des agregats, que `Mapping.agregat` refuse de produire
- * sous trois nuits. Il n'existe donc aucun chemin par lequel un chiffre agrege pourrait
- * apparaitre plus tot, meme en se trompant de branche.
+ * The switch between [TrendUiState.Refusal] and [TrendUiState.Ready] is not an `if` on a boolean:
+ * it depends on the **nullity** of the aggregates, which `Mapping.aggregate` refuses to produce
+ * below three nights. There is therefore no path by which an aggregated figure could appear
+ * earlier, even by taking the wrong branch.
  */
 class TrendViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = PendulumRepository(app)
-    private val lecteur = SleepReader(app)
+    private val reader = SleepReader(app)
 
     /**
-     * Ce que Health Connect repond, relu a la demande.
+     * What Health Connect answers, re-read on demand.
      *
-     * Ce n'est pas un flux Room : la disponibilite et la liste des sources sont des appels
-     * suspendus vers un fournisseur systeme, sans notification de changement. On les relit a
-     * l'ouverture de l'ecran et au retour au premier plan — c'est-a-dire aux deux moments ou une
-     * permission vient d'etre accordee ailleurs.
+     * This is not a Room flow: availability and the list of sources are suspending calls to a
+     * system provider, with no change notification. They are re-read when the screen opens and
+     * when it comes back to the foreground — that is, at the two moments when a permission has
+     * just been granted elsewhere.
      */
-    private val _disponibiliteSante = MutableStateFlow<SleepReader.Availability?>(null)
-    private val _sourcesRecentes = MutableStateFlow<Int?>(null)
+    private val _healthAvailability = MutableStateFlow<SleepReader.Availability?>(null)
+    private val _recentSources = MutableStateFlow<Int?>(null)
 
     init {
-        relireLaSante()
+        rereadHealth()
     }
 
-    fun relireLaSante() {
+    fun rereadHealth() {
         viewModelScope.launch {
-            val disponibilite = lecteur.availability()
-            _disponibiliteSante.value = disponibilite
-            _sourcesRecentes.value = if (disponibilite == SleepReader.Availability.READY) {
-                lecteur.sourcesRecentes(System.currentTimeMillis())?.size
+            val availability = reader.availability()
+            _healthAvailability.value = availability
+            _recentSources.value = if (availability == SleepReader.Availability.READY) {
+                reader.recentSources(System.currentTimeMillis())?.size
             } else {
                 null
             }
         }
     }
 
-    val etat: StateFlow<TendanceUiState> = combine(
-        repo.observerTendance(),
-        _disponibiliteSante,
-        _sourcesRecentes,
-    ) { tendance, disponibilite, sources ->
-        tendance.versUiState(disponibilite, sources)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TendanceUiState.Chargement)
+    val state: StateFlow<TrendUiState> = combine(
+        repo.observeTrend(),
+        _healthAvailability,
+        _recentSources,
+    ) { trend, availability, sources ->
+        trend.toUiState(availability, sources)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TrendUiState.Loading)
 
-    private fun EtatTendance.versUiState(
-        disponibilite: SleepReader.Availability?,
-        sourcesRecentes: Int?,
-    ): TendanceUiState {
-        val r = rythme
-        val c = compte
+    private fun TrendState.toUiState(
+        availability: SleepReader.Availability?,
+        recentSources: Int?,
+    ): TrendUiState {
+        val r = rhythm
+        val c = count
 
-        // La bande d'etat du reveil : une fonction pure, alimentee par les faits que le
-        // repository a lus. Elle etait cablee sur `EtatReveil.Rien`, donc la bande n'etait jamais
-        // rendue et les cinq etats de `06-interface.md` §2.3 n'existaient qu'en apercu.
-        val reveil = MachineReveil.de(faitsReveil, System.currentTimeMillis()) { ms ->
-            Mapping.heureLisible(ms, faitsReveil?.zoneId ?: java.time.ZoneId.systemDefault().id)
+        // The waking status strip: a pure function, fed by the facts the repository has read. It
+        // was wired onto `WakingState.None`, so the strip was never rendered and the five states
+        // of `06-interface.md` §2.3 existed only in previews.
+        val waking = WakingMachine.of(wakingFacts, System.currentTimeMillis()) { ms ->
+            Mapping.readableTime(ms, wakingFacts?.zoneId ?: java.time.ZoneId.systemDefault().id)
         }
-        val situation = Situations.sommeil(disponibilite, sourcesRecentes, originesDerniereNuit)
+        val situation = Situations.sleep(availability, recentSources, lastNightOrigins)
 
-        // Aucun agregat n'existe, donc aucun graphe n'est construit. Pas meme un graphe vide avec
-        // ses axes — un axe vide invite l'oeil a imaginer la courbe qui manque, ce qui est
-        // exactement le contraire de ce que le refus veut dire.
+        // No aggregate exists, so no chart is built. Not even an empty chart with its axes — an
+        // empty axis invites the eye to imagine the curve that is missing, which is exactly the
+        // opposite of what the refusal means.
         //
-        // Deux causes menent ici et `Refus` les distingue par ses deux comptes : pas assez de
-        // nuits eligibles, ou assez de nuits mais trop peu d'ajustements de rythme acceptes. La
-        // seconde est la plus frequente et elle n'est pas une panne — voir `MotifRefus`.
+        // Two causes lead here and `Refusal` tells them apart by its two counts: not enough
+        // eligible nights, or enough nights but too few accepted rhythm fits. The second is the
+        // more frequent and it is not a breakdown — see `RefusalReason`.
         if (r == null || c == null) {
-            return TendanceUiState.Refus(
-                nuitsEligibles = nuitsEligibles,
-                nuitsRythmeAjuste = nuitsRythmeAjuste,
-                nuitsRequises = Aggregat.MIN_NUITS_AGREGAT,
-                nuitsEnregistrees = nuits,
-                reveil = reveil,
-                situationSommeil = situation,
-                sessionReveil = faitsReveil?.sessionHex,
+            return TrendUiState.Refusal(
+                eligibleNights = eligibleNights,
+                fittedRhythmNights = nightsWithFittedRhythm,
+                requiredNights = Aggregate.MIN_NIGHTS_AGGREGATE,
+                recordedNights = nights,
+                waking = waking,
+                sleepSituation = situation,
+                wakingSession = wakingFacts?.sessionHex,
             )
         }
 
-        return TendanceUiState.Pret(
-            rythme = r,
-            compte = c,
-            // La phrase de position s'applique au **compte horaire** et a lui seul : le rythme
-            // fondamental n'a pas de seuil publie transposable a une mesure de cheville.
-            position = Aggregat.position(c.ciBas, c.ciHaut, c.nuits),
-            periodiciteQualifiee = Aggregat.qualifierPeriodicite(periodiciteMediane, r.nuits),
-            tauxManques = tauxManquesMedian,
-            graphe = grapheTendance(r),
-            nuitsEnregistrees = nuitsEnregistrees,
-            nuitsEligibles = nuitsEligibles,
-            nuitsEcartees = nuitsEcartees,
-            regle = texte(R.string.settings_rule_aasm),
-            masque = texte(R.string.settings_health_connect),
-            // `mapNotNull` : une nuit sans denominateur ne porte pas ce taux, et l'inclure comme
-            // zero baisserait la moyenne d'autant. `null` quand il n'en reste aucune.
-            plmw = nuitsAgregeables.mapNotNull { it.plmiSpt }.takeIf { it.isNotEmpty() }?.average(),
-            reveil = reveil,
-            sessionReveil = faitsReveil?.sessionHex,
-            profilPersonnalise = profilPersonnalise,
-            hashsMelanges = hashsMelanges,
-            questionnaireEtat = texte(R.string.quiz_not_filled),
-            exportPossible = nuitsEligibles >= Aggregat.MIN_NUITS_AGREGAT,
-            situationSommeil = situation,
+        return TrendUiState.Ready(
+            rhythm = r,
+            count = c,
+            // The position sentence applies to the **hourly count** and to it alone: the
+            // fundamental rhythm has no published threshold transposable to an ankle measurement.
+            position = Aggregate.position(c.ciLow, c.ciHigh, c.nights),
+            qualifiedPeriodicity = Aggregate.qualifyPeriodicity(medianPeriodicity, r.nights),
+            missRate = medianMissRate,
+            chart = trendChart(r),
+            recordedNights = recordedNights,
+            eligibleNights = eligibleNights,
+            excludedNights = excludedNights,
+            rule = text(R.string.settings_rule_aasm),
+            mask = text(R.string.settings_health_connect),
+            // `mapNotNull`: a night without a denominator does not carry this rate, and including
+            // it as zero would lower the average by that much. `null` when none is left.
+            plmw = aggregatableNights.mapNotNull { it.plmiSpt }.takeIf { it.isNotEmpty() }?.average(),
+            waking = waking,
+            wakingSession = wakingFacts?.sessionHex,
+            customProfile = customProfile,
+            mixedHashes = mixedHashes,
+            questionnaireState = text(R.string.quiz_not_filled),
+            exportPossible = eligibleNights >= Aggregate.MIN_NIGHTS_AGGREGATE,
+            sleepSituation = situation,
         )
     }
 
     /**
-     * L'action de la bande d'etat du reveil, pour les quatre etats qui en portent une.
+     * The action of the waking status strip, for the four states that carry one.
      *
-     * Les quatre libelles disent des choses differentes — « Transfer now », « Try again now »,
-     * « Resume the transfer », « Run the analysis again » — et **demandent tous la meme chose** :
-     * que la nuit reparte dans la chaine du bouton de fin de nuit. Le balayage demande a la montre
-     * de pousser ce qu'elle detient encore ; la chaine reconcilie le disque, relit Health Connect,
-     * puis score. Un etat qui manque des chunks les recoit, un etat qui attend l'hypnogramme le
-     * redemande, une analyse en echec repart sur le brut conserve.
+     * The four labels say different things — "Transfer now", "Try again now", "Resume the
+     * transfer", "Run the analysis again" — and they **all ask for the same thing**: that the night
+     * go back into the chain of the end-of-night button. The sweep asks the watch to push whatever
+     * it still holds; the chain reconciles the disk, re-reads Health Connect, then scores. A state
+     * missing chunks receives them, a state waiting for the hypnogram asks for it again, a failed
+     * analysis starts again from the raw data that was kept.
      *
-     * On n'attend pas le succes du balayage : c'est le meme raisonnement qu'a l'accueil — la
-     * montre a peut-etre deja tout pousse, et subordonner l'analyse a sa joignabilite rendrait une
-     * nuit complete inexploitable parce que le bracelet est reste dans la salle de bain.
+     * The sweep's success is not waited for: it is the same reasoning as on the home screen — the
+     * watch may already have pushed everything, and making the analysis conditional on it being
+     * reachable would make a complete night unusable because the strap was left in the bathroom.
      */
-    fun relancerLeReveil(sessionHex: String) {
+    fun retryWaking(sessionHex: String) {
         viewModelScope.launch {
-            WatchCommands.demanderLeBalayage(getApplication())
-            WorkScheduler.enqueueFinDeNuit(getApplication(), sessionHex)
+            WatchCommands.requestSweep(getApplication())
+            WorkScheduler.enqueueEndOfNight(getApplication(), sessionHex)
         }
     }
 
     /**
-     * Le graphe de tendance.
+     * The trend chart.
      *
-     * **L'axe des X est calendaire et non ordinal** : une nuit se place a sa date reelle, donc une
-     * semaine sans mesure laisse un trou visible. C'est une information, pas un defaut — et c'est
-     * la moitie de la raison pour laquelle les points ne sont pas relies. Relier deux points
-     * separes de six jours affirmerait une trajectoire continue que la mesure ne soutient pas.
+     * **The X axis is calendar-based and not ordinal**: a night is placed at its real date, so a
+     * week without a measurement leaves a visible gap. That is information, not a defect — and it
+     * is half of the reason why the points are not joined up. Joining two points six days apart
+     * would assert a continuous trajectory that the measurement does not support.
      *
-     * Les nuits ecartees sont **tracees quand meme**, en cercle creux, a leur valeur, et exclues
-     * de tout calcul. Les cacher donnerait une image plus propre et une lecture fausse.
+     * Excluded nights are **plotted all the same**, as hollow circles, at their value, and left out
+     * of every computation. Hiding them would give a cleaner picture and a false reading.
      */
-    private fun EtatTendance.grapheTendance(r: Aggregat.Resultat): TendanceChartSpec {
-        // Une nuit sans ajustement accepte n'a pas de point : elle n'a pas de valeur du tout.
-        // C'est la meme regle qu'a la liste et au detail, portee par la nullite de `rythmeSec`.
-        val points = nuits
+    private fun TrendState.trendChart(r: Aggregate.Result): TrendChartSpec {
+        // A night without an accepted fit has no point: it has no value at all. It is the same
+        // rule as in the list and in the detail, carried by the nullity of `rhythmSec`.
+        val points = nights
             .mapNotNull { n ->
-                val valeur = n.rythmeSec ?: return@mapNotNull null
-                PointNuit(
+                val value = n.rhythmSec ?: return@mapNotNull null
+                NightPoint(
                     sessionHex = n.sessionHex,
                     dateMs = n.startWallMs,
-                    valeur = valeur.toFloat(),
-                    etat = when (n.etat) {
-                        EtatNuit.ELIGIBLE -> EtatPoint.ELIGIBLE
-                        EtatNuit.PROVISOIRE -> EtatPoint.MASQUE_ACCELERO
-                        EtatNuit.ECARTEE -> EtatPoint.ECARTEE
+                    value = value.toFloat(),
+                    state = when (n.state) {
+                        NightState.ELIGIBLE -> PointState.ELIGIBLE
+                        NightState.PROVISIONAL -> PointState.ACCEL_MASKED
+                        NightState.EXCLUDED -> PointState.EXCLUDED
                     },
                 )
             }
             .sortedBy { it.dateMs }
 
-        val premier = points.firstOrNull()?.dateMs ?: 0L
-        val dernier = points.lastOrNull()?.dateMs ?: premier
+        val first = points.firstOrNull()?.dateMs ?: 0L
+        val last = points.lastOrNull()?.dateMs ?: first
 
-        return TendanceChartSpec(
-            grandeur = Aggregat.Grandeur.RYTHME_SECONDES,
+        return TrendChartSpec(
+            quantity = Aggregate.Quantity.RHYTHM_SECONDS,
             points = points,
-            bandes = listOf(
-                BandeMediane(
-                    debutMs = premier,
-                    finMs = dernier,
-                    mediane = r.mediane.toFloat(),
-                    ciBas = r.ciBas.toFloat(),
-                    ciHaut = r.ciHaut.toFloat(),
-                    etiquette = null,
+            bands = listOf(
+                MedianBand(
+                    startMs = first,
+                    endMs = last,
+                    median = r.median.toFloat(),
+                    ciLow = r.ciLow.toFloat(),
+                    ciHigh = r.ciHigh.toFloat(),
+                    label = null,
                 ),
             ),
-            // Aucune ligne de reference sur le rythme : le seuil publie sur la periodicite est sur
-            // une autre echelle avec d'autres preuves derriere lui, et le transposer fabriquerait
-            // une frontiere clinique. Le seuil de 15/h appartient au compte horaire.
-            reference = null as LigneReference?,
-            premierJourMs = premier,
-            dernierJourMs = dernier,
-            // L'axe des X est calendaire, donc il lui faut un calendrier : les graduations sont
-            // des dates locales, pas des multiples de 86 400 000 ms. Sans fuseau, une nuit
-            // commencee a 23 h 14 s'etiquette au lendemain.
+            // No reference line on the rhythm: the published threshold on periodicity is on
+            // another scale with other evidence behind it, and transposing it would manufacture a
+            // clinical boundary. The 15/h threshold belongs to the hourly count.
+            reference = null as ReferenceLine?,
+            firstDayMs = first,
+            lastDayMs = last,
+            // The X axis is calendar-based, so it needs a calendar: the ticks are local dates, not
+            // multiples of 86 400 000 ms. Without a time zone, a night begun at 23:14 gets labelled
+            // on the following day.
             zoneId = zoneId,
             pivotMs = null,
-            // Un resume, pas une etiquette de bloc. Un `contentDescription` du type « graphe de
-            // tendance sur 9 nuits » apprend a un lecteur d'ecran qu'il existe un graphe et rien
-            // de ce qu'il contient. Le tableau de valeurs reste le chemin principal — aucun
-            // resume ne remplace des donnees — mais il ne doit pas etre le seul moyen de savoir
-            // qu'il y a quelque chose a y lire.
-            descriptionAccessible = descriptionDe(points, r),
+            // A summary, not a block label. A `contentDescription` such as "trend chart over 9
+            // nights" teaches a screen reader that a chart exists and nothing of what it contains.
+            // The value table remains the main path — no summary replaces data — but it must not
+            // be the only way of knowing there is something there to read.
+            accessibleDescription = descriptionOf(points, r),
         )
     }
 
-    private fun EtatTendance.descriptionDe(
-        points: List<PointNuit>,
-        r: Aggregat.Resultat,
+    private fun TrendState.descriptionOf(
+        points: List<NightPoint>,
+        r: Aggregate.Result,
     ): String {
         val res = getApplication<Application>().resources
         if (points.isEmpty()) return res.getString(R.string.chart_trend_description_empty)
-        val parHex = nuits.associateBy { it.sessionHex }
-        fun date(p: PointNuit) = parHex[p.sessionHex]?.dateLisible.orEmpty()
-        fun valeur(v: Float) = Math.round(v).toString()
+        val byHex = nights.associateBy { it.sessionHex }
+        fun date(p: NightPoint) = byHex[p.sessionHex]?.readableDate.orEmpty()
+        fun value(v: Float) = Math.round(v).toString()
         return res.getString(
             R.string.chart_trend_description,
             points.size,
             date(points.first()),
             date(points.last()),
-            Math.round(r.mediane).toString(),
-            valeur(points.minOf { it.valeur }),
-            valeur(points.maxOf { it.valeur }),
-            res.getString(Aggregat.Grandeur.RYTHME_SECONDES.unite),
+            Math.round(r.median).toString(),
+            value(points.minOf { it.value }),
+            value(points.maxOf { it.value }),
+            res.getString(Aggregate.Quantity.RHYTHM_SECONDS.unit),
         )
     }
 }
 
 /**
- * L'accueil.
+ * The home screen.
  *
- * ### L'horloge est un champ, pas un appel enfoui
+ * ### The clock is a field, not a buried call
  *
- * Elle sert a deux choses et a rien d'autre : la cle de nuit qui dit quel contexte est « celui de
- * ce soir », et l'heure locale qui **departage** la machine a etats quand la base laisse deux
- * lectures egalement plausibles. Les deux usages sont explicites, et la decision elle-meme vit
- * dans [MachineAccueil], pur et teste sur ses bornes.
+ * It serves two things and nothing else: the night key that says which context is "tonight's", and
+ * the local hour that **breaks the tie** for the state machine when the database leaves two equally
+ * plausible readings. Both uses are explicit, and the decision itself lives in [HomeMachine], pure
+ * and tested on its bounds.
  *
- * L'heure locale est relue a chaque emission plutot que figee : une session qui se ferme a 6 h du
- * matin doit changer l'ecran, et une application restee ouverte toute la nuit ne doit pas
- * continuer a proposer de preparer une nuit qui a eu lieu.
+ * The local hour is re-read on every emission rather than frozen: a session that closes at 6 am
+ * must change the screen, and an application left open all night must not go on offering to prepare
+ * a night that has already happened.
  */
 class HomeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = PendulumRepository(app)
-    private val lecteur = SleepReader(app)
+    private val reader = SleepReader(app)
 
-    private val _disponibiliteSante = MutableStateFlow<SleepReader.Availability?>(null)
+    private val _healthAvailability = MutableStateFlow<SleepReader.Availability?>(null)
 
     /**
-     * Relue a chaque reprise de l'ecran, et pas une seule fois : la permission se donne dans
-     * Health Connect, donc **hors de l'application**, et l'accueil est l'ecran sur lequel on
-     * revient en sortant.
+     * Re-read every time the screen resumes, and not just once: the permission is granted in Health
+     * Connect, hence **outside the application**, and the home screen is the one you come back to
+     * on the way out.
      */
-    fun relireLaSante() {
-        viewModelScope.launch { _disponibiliteSante.value = lecteur.availability() }
+    fun rereadHealth() {
+        viewModelScope.launch { _healthAvailability.value = reader.availability() }
     }
 
-    init { relireLaSante() }
+    init { rereadHealth() }
 
-    val etat: StateFlow<AccueilUi?> = combine(
-        repo.observerAccueil(horloge()),
-        _disponibiliteSante,
-    ) { source, sante ->
-        MachineAccueil.de(source, heureLocale())
-            .copy(situationSommeil = Situations.permissionSommeil(sante))
+    val state: StateFlow<HomeUi?> = combine(
+        repo.observeHome(clock()),
+        _healthAvailability,
+    ) { source, health ->
+        HomeMachine.of(source, localHour())
+            .copy(sleepSituation = Situations.sleepPermission(health))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
-     * Le bouton « fin de nuit », dans l'ordre, et l'ordre compte.
+     * The "end of night" button, in order, and the order matters.
      *
-     * Le balayage d'abord : il demande a la montre de pousser ce qu'elle detient encore, et c'est
-     * un message — donc il echoue franchement quand la montre est hors de portee, au lieu de
-     * s'inscrire dans un etat replique dont rien ne dirait s'il a ete lu. Les workers ensuite,
-     * qui reconcilient ce qui est arrive, lisent l'hypnogramme puis scorent.
+     * The sweep first: it asks the watch to push whatever it still holds, and it is a message — so
+     * it fails openly when the watch is out of range, instead of being recorded in a replicated
+     * state that would say nothing about whether it was read. The workers next, which reconcile
+     * what has arrived, read the hypnogram, then score.
      *
-     * On **n'attend pas** le succes du balayage pour enfiler la chaine : la montre a peut-etre
-     * deja tout pousse pendant la nuit, auquel cas il n'y a rien a ramener et tout a analyser.
-     * Subordonner l'analyse a la joignabilite de la montre rendrait une nuit complete
-     * inexploitable parce que le bracelet est reste dans la salle de bain.
+     * The sweep's success is **not waited for** before queueing the chain: the watch may already
+     * have pushed everything during the night, in which case there is nothing to fetch and
+     * everything to analyse. Making the analysis conditional on the watch being reachable would
+     * make a complete night unusable because the strap was left in the bathroom.
      */
-    fun finDeNuit(sessionHex: String) {
+    fun endOfNight(sessionHex: String) {
         viewModelScope.launch {
-            WatchCommands.demanderLeBalayage(getApplication())
-            WorkScheduler.enqueueFinDeNuit(getApplication(), sessionHex)
+            WatchCommands.requestSweep(getApplication())
+            WorkScheduler.enqueueEndOfNight(getApplication(), sessionHex)
         }
     }
 
     /**
-     * Demande le demarrage a la montre.
+     * Asks the watch to start.
      *
-     * Le resultat est **publie**, pas suppose. « La montre enregistre » et « la montre n'a rien
-     * recu » sont deux etats qu'un bouton silencieux rend identiques, et celui qui se couche en
-     * croyant le premier perd sa nuit — il ne s'en apercevra qu'au reveil, quand il n'y aura plus
-     * rien a rattraper.
+     * The outcome is **published**, not assumed. "The watch is recording" and "the watch received
+     * nothing" are two states that a silent button makes identical, and whoever goes to bed
+     * believing the first loses their night — they will only notice on waking, when there is
+     * nothing left to salvage.
      *
-     * L'ordre n'est envoye que si le contexte est scelle cote telephone. C'est une courtoisie
-     * d'interface et non le garde-fou : celui-ci est dans `RecordingService`, qui re-verifie le
-     * preflight avant de demarrer et refuse quelle que soit l'origine de la demande.
+     * The order is only sent if the context is sealed on the phone side. That is an interface
+     * courtesy and not the guard rail: the guard rail is in `RecordingService`, which re-checks the
+     * preflight before starting and refuses whatever the origin of the request.
      */
-    fun demarrerSurLaMontre() {
+    fun startOnWatch() {
         viewModelScope.launch {
-            _demarrage.value = if (WatchCommands.demanderLeDemarrage(getApplication())) {
-                CompteRendu(texte(R.string.tonight_start_requested), echec = false)
+            _startFeedback.value = if (WatchCommands.requestStart(getApplication())) {
+                Feedback(text(R.string.tonight_start_requested), failed = false)
             } else {
-                CompteRendu(texte(R.string.tonight_start_unreachable), echec = true)
+                Feedback(text(R.string.tonight_start_unreachable), failed = true)
             }
         }
     }
 
-    private val _demarrage = MutableStateFlow<CompteRendu?>(null)
+    private val _startFeedback = MutableStateFlow<Feedback?>(null)
 
     /**
-     * Le compte rendu de la derniere demande de demarrage, ou `null` quand il n'y a rien a dire.
+     * The feedback from the last start request, or `null` when there is nothing to say.
      *
-     * Il etait publie et **aucun composable ne le collectait** : les deux issues de la commande
-     * produisaient donc exactement le meme ecran. C'est le seul geste de l'application dont
-     * l'echec ne se constate qu'au matin, quand il n'y a plus rien a rattraper.
+     * It was published and **no composable collected it**: the two outcomes of the command
+     * therefore produced exactly the same screen. This is the application's only gesture whose
+     * failure is not found out until the morning, when there is nothing left to salvage.
      *
-     * L'ecran le consomme — voir [demarrageConsomme] — parce que c'est le resultat d'un geste et
-     * non un etat : une phrase qui resterait sous le bouton jusqu'au lendemain finirait par
-     * decrire une demande qui n'a plus rien a voir avec la nuit en cours.
+     * The screen consumes it — see [startFeedbackConsumed] — because it is the result of a gesture
+     * and not a state: a sentence that stayed under the button until the next day would end up
+     * describing a request that has nothing to do with the current night any more.
      */
-    val demarrage: StateFlow<CompteRendu?> = _demarrage
+    val startFeedback: StateFlow<Feedback?> = _startFeedback
 
-    fun demarrageConsomme() {
-        _demarrage.value = null
+    fun startFeedbackConsumed() {
+        _startFeedback.value = null
     }
 
     /**
-     * Garde-fou 2 : le devoilement, journalise et horodate.
+     * Guard rail 2: the reveal, logged and timestamped.
      *
-     * Un seul appel, aucune confirmation a demander avant. `NightDao.markRevealed` porte
-     * `WHERE revealedAtMs IS NULL`, donc rejouer le geste ne reecrit pas la date — la trace dit
-     * quand le chiffre a ete vu pour la premiere fois, pas quand l'ecran a ete rouvert.
+     * A single call, no confirmation to ask beforehand. `NightDao.markRevealed` carries
+     * `WHERE revealedAtMs IS NULL`, so replaying the gesture does not rewrite the date — the trace
+     * says when the figure was first seen, not when the screen was reopened.
      */
-    fun devoiler(sessionHex: String) {
-        viewModelScope.launch { repo.devoiler(sessionHex, horloge()) }
+    fun reveal(sessionHex: String) {
+        viewModelScope.launch { repo.reveal(sessionHex, clock()) }
     }
 
-    private fun horloge(): Long = System.currentTimeMillis()
+    private fun clock(): Long = System.currentTimeMillis()
 
-    private fun heureLocale(): Int =
-        java.time.Instant.ofEpochMilli(horloge()).atZone(java.time.ZoneId.systemDefault()).hour
+    private fun localHour(): Int =
+        java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.systemDefault()).hour
 }
 
 /**
- * Le formulaire du soir et son scellement.
+ * The evening form and its sealing.
  *
- * L'horloge est un parametre et non `System.currentTimeMillis()` appele au fond d'une fonction :
- * la cle de nuit bascule a midi, donc toute la logique de rattachement depend de l'heure qu'il
- * est, et une horloge cachee rend cette regle intestable.
+ * The clock is a parameter and not a `System.currentTimeMillis()` called deep inside a function:
+ * the night key rolls over at midday, so the whole attachment logic depends on what time it is, and
+ * a hidden clock makes that rule untestable.
  */
 class EveningViewModel(app: Application) : AndroidViewModel(app) {
 
     private val sealer = EveningContextSealer(app)
     private val prefs = PendulumPreferences(app)
 
-    /** Vrai des que le contexte de la soiree en cours est scelle — donc que la montre peut partir. */
-    val scelle: StateFlow<Boolean> = sealer
-        .observerSoireeCourante(horloge())
+    /** True as soon as the current evening's context is sealed — hence that the watch may start. */
+    val contextSealed: StateFlow<Boolean> = sealer
+        .observeCurrentEvening(clock())
         .map { it != null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    val repereDeSerrage: StateFlow<String> = prefs.repereDeSerrage
+    val strapReference: StateFlow<String> = prefs.strapReference
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     /**
-     * Resultat du scellement, consomme une fois par l'ecran puis remis a `null`.
+     * The result of the sealing, consumed once by the screen then reset to `null`.
      *
-     * [ResultatScellement.PublicationEchouee] n'est pas une erreur au sens habituel : le contexte
-     * **est** scelle, ce qui est l'essentiel et ce qui est irreversible. Seule la montre ne le sait
-     * pas encore, et c'est `PublicationContexteWorker` qui la rattrapera — pas le Data Layer. Ce
-     * dernier ne rattrape que ce qui est **entre dans le magasin** ; un put qui a echoue n'y est
-     * jamais entre. L'ecran doit le dire quand meme — annoncer un succes complet ferait chercher
-     * pendant dix minutes pourquoi START reste bloque, alors que le rejeu n'est pas instantane.
+     * [SealingResult.PublicationFailed] is not an error in the usual sense: the context **is**
+     * sealed, which is the essential part and the irreversible one. Only the watch does not know it
+     * yet, and it is `ContextPublicationWorker` that will catch it up — not the Data Layer. The
+     * latter only catches up what has **entered the store**; a put that failed never entered it.
+     * The screen must say so all the same — announcing a complete success would send somebody
+     * hunting for ten minutes for why START stays blocked, when the replay is not instantaneous.
      */
-    private val _resultat = MutableStateFlow<ResultatScellement?>(null)
-    val resultat: StateFlow<ResultatScellement?> = _resultat
+    private val _result = MutableStateFlow<SealingResult?>(null)
+    val result: StateFlow<SealingResult?> = _result
 
-    fun sceller(saisie: SaisieDuSoir) {
+    fun seal(entry: EveningEntry) {
         viewModelScope.launch {
-            val maintenant = horloge()
-            _resultat.value = try {
-                if (sealer.sceller(saisie, maintenant)) {
-                    // Le repere de serrage est retenu pour les soirs suivants : il doit etre
-                    // identique d'une nuit a l'autre, donc le retaper serait une occasion de
-                    // divergence plutot qu'une verification.
-                    prefs.poserRepereDeSerrage(saisie.bracelet)
-                    ResultatScellement.Scelle
+            val now = clock()
+            _result.value = try {
+                if (sealer.seal(entry, now)) {
+                    // The strap reference is kept for the following evenings: it has to be
+                    // identical from one night to the next, so retyping it would be an opportunity
+                    // to diverge rather than a check.
+                    prefs.setStrapReference(entry.strap)
+                    SealingResult.Sealed
                 } else {
-                    prefs.poserRepereDeSerrage(saisie.bracelet)
-                    ResultatScellement.PublicationEchouee
+                    prefs.setStrapReference(entry.strap)
+                    SealingResult.PublicationFailed
                 }
             } catch (e: Exception) {
-                // `OnConflictStrategy.ABORT` : sceller deux fois la meme soiree leve plutot que
-                // d'ecraser en silence. C'est le comportement voulu, et l'ecran doit dire
-                // laquelle des deux choses s'est produite.
-                ResultatScellement.DejaScelle
+                // `OnConflictStrategy.ABORT`: sealing the same evening twice throws rather than
+                // silently overwriting. That is the intended behaviour, and the screen must say
+                // which of the two things happened.
+                SealingResult.AlreadySealed
             }
         }
     }
 
-    fun resultatConsomme() {
-        _resultat.value = null
+    fun resultConsumed() {
+        _result.value = null
     }
 
-    private fun horloge(): Long = System.currentTimeMillis()
+    private fun clock(): Long = System.currentTimeMillis()
 }
 
-enum class ResultatScellement { Scelle, PublicationEchouee, DejaScelle }
+enum class SealingResult { Sealed, PublicationFailed, AlreadySealed }
 
 /**
- * Le detail d'une nuit.
+ * A night's detail.
  *
- * Il **lit enfin l'argument de route**. Le `night/{hex}` du graphe de navigation etait ignore :
- * quelle que soit la nuit sur laquelle on tapait, l'ecran affichait le meme jeu de demonstration —
- * 412 mouvements, sept controles qualite tous verts, une regle « algo 1.4.0 ».
+ * It **finally reads the route argument**. The `night/{hex}` of the navigation graph was ignored:
+ * whichever night was tapped, the screen displayed the same demonstration data set — 412 movements,
+ * seven quality checks all green, an "algo 1.4.0" rule.
  */
 class NightDetailViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = PendulumRepository(app)
 
-    private val _detail = MutableStateFlow<NuitDetailUi?>(null)
-    val detail: StateFlow<NuitDetailUi?> = _detail
+    private val _detail = MutableStateFlow<NightDetailUi?>(null)
+    val detail: StateFlow<NightDetailUi?> = _detail
 
-    fun charger(sessionHex: String) {
-        viewModelScope.launch { _detail.value = repo.detailDeNuit(sessionHex) }
+    fun load(sessionHex: String) {
+        viewModelScope.launch { _detail.value = repo.nightDetail(sessionHex) }
     }
 
     /**
-     * Garde-fou 2 : le devoilement, puis la relecture.
+     * Guard rail 2: the reveal, then the re-read.
      *
-     * La relecture n'est pas une precaution mais la seule facon de montrer le chiffre : le detail
-     * est un instantane charge une fois, pas un flux, et `revealedAtMs` fait partie de ce qu'il
-     * porte. `markRevealed` ne reecrit jamais une date deja posee, donc rejouer le geste est un
-     * no-op — la trace dit quand le chiffre a ete vu la premiere fois, pas combien de fois
-     * l'ecran a ete rouvert.
+     * The re-read is not a precaution but the only way of showing the figure: the detail is a
+     * snapshot loaded once, not a flow, and `revealedAtMs` is part of what it carries.
+     * `markRevealed` never rewrites a date already set, so replaying the gesture is a no-op — the
+     * trace says when the figure was first seen, not how many times the screen was reopened.
      */
-    fun devoiler(sessionHex: String) {
+    fun reveal(sessionHex: String) {
         viewModelScope.launch {
-            repo.devoiler(sessionHex, System.currentTimeMillis())
-            _detail.value = repo.detailDeNuit(sessionHex)
+            repo.reveal(sessionHex, System.currentTimeMillis())
+            _detail.value = repo.nightDetail(sessionHex)
         }
     }
 
     /**
-     * Garde-fou 3 : un parametre ne se regle pas nuit par nuit.
+     * Guard rail 3: a parameter is not set night by night.
      *
-     * Le bouton s'appelle « Apply to every night » et il n'en existe pas d'autre : `RescoreAllWorker`
-     * recalcule **toutes** les nuits depuis le brut, sous le hash courant. Il n'y a volontairement
-     * pas de variante « ne recalculer que les recentes » — une tendance a trois points dont deux
-     * ont ete calcules autrement n'est pas une tendance partielle, c'est un graphe faux.
+     * The button is called "Apply to every night" and there is no other: `RescoreAllWorker`
+     * recomputes **every** night from the raw data, under the current hash. There is deliberately
+     * no "only recompute the recent ones" variant — a three-point trend two of whose points were
+     * computed differently is not a partial trend, it is a false chart.
      *
-     * L'ecran ne se rafraichit pas dans la foulee, et c'est exact : le rescore est un travail de
-     * fond qui peut durer, et afficher un nouveau chiffre avant qu'il ne soit calcule apprendrait
-     * a lire des chiffres avant qu'ils ne soient vrais. La nuit se relit quand on y revient.
+     * The screen does not refresh straight after, and that is correct: the rescore is background
+     * work that can take a while, and displaying a new figure before it has been computed would
+     * teach you to read figures before they are true. The night is re-read when you come back to it.
      */
-    fun appliquerATout() {
+    fun applyToAll() {
         WorkScheduler.enqueueRescoreAll(getApplication())
     }
 
     /**
-     * Le rapport d'une nuit, ecrit dans l'`Uri` que l'utilisateur vient de designer.
+     * A night's report, written into the `Uri` the user has just designated.
      *
-     * Le flux vient de SAF et de nulle part ailleurs : l'application n'ecrit jamais dans un
-     * repertoire partage de sa propre initiative, et ne declare pas `INTERNET`. Voir la KDoc de
+     * The stream comes from SAF and from nowhere else: the application never writes into a shared
+     * directory of its own initiative, and does not declare `INTERNET`. See the KDoc of
      * [com.pendulum.phone.export.NightExporter].
      */
-    fun exporterRapport(sessionHex: String, uri: android.net.Uri, nom: String) {
+    fun exportReport(sessionHex: String, uri: android.net.Uri, name: String) {
         viewModelScope.launch {
-            ecrire(uri, nom) { ReportExporter.exportNight(getApplication(), sessionHex, it) }
+            write(uri, name) { ReportExporter.exportNight(getApplication(), sessionHex, it) }
         }
     }
 
-    /** Le paquet brut d'une nuit, meme chemin SAF. Voir [exporterRapport]. */
-    fun exporterPaquet(sessionHex: String, uri: android.net.Uri, nom: String) {
+    /** A night's raw bundle, same SAF path. See [exportReport]. */
+    fun exportBundle(sessionHex: String, uri: android.net.Uri, name: String) {
         viewModelScope.launch {
-            ecrire(uri, nom) { NightExporter.exportBundle(getApplication(), sessionHex, it) }
+            write(uri, name) { NightExporter.exportBundle(getApplication(), sessionHex, it) }
         }
     }
 
     /**
-     * Ce que la derniere des deux sorties a donne. Consomme par l'ecran, pas efface.
+     * What the last of the two exports gave. Consumed by the screen, not erased.
      *
-     * Les deux exports etaient parfaitement muets : ni succes, ni echec, ni trace. Le paquet brut
-     * est particulierement mal place pour l'etre — c'est la seule copie transportable d'une nuit,
-     * et un utilisateur qui croit l'avoir sortie avant d'effacer ses donnees perd le brut.
+     * Both exports were perfectly mute: no success, no failure, no trace. The raw bundle is
+     * particularly badly placed to be so — it is a night's only portable copy, and a user who
+     * believes they have got it out before erasing their data loses the raw signal.
      */
-    private val _ecriture = MutableStateFlow<CompteRendu?>(null)
-    val ecriture: StateFlow<CompteRendu?> = _ecriture
+    private val _feedback = MutableStateFlow<Feedback?>(null)
+    val feedback: StateFlow<Feedback?> = _feedback
 
     /**
-     * L'ecriture, et les deux facons dont elle echouait en silence.
+     * The write, and the two ways in which it used to fail silently.
      *
-     * Le `runCatching` **jetait** son exception, et le `?.` avalait un flux nul : un `Uri` que le
-     * fournisseur refuse d'ouvrir rendait exactement le meme resultat qu'une ecriture reussie,
-     * c'est-a-dire rien. Le flux nul est donc converti en exception, et le `isSuccess` decide.
+     * The `runCatching` **threw** its exception, and the `?.` swallowed a null stream: a `Uri` that
+     * the provider refuses to open gave exactly the same result as a successful write, that is,
+     * nothing. The null stream is therefore turned into an exception, and `isSuccess` decides.
      */
-    private suspend fun ecrire(
+    private suspend fun write(
         uri: android.net.Uri,
-        nom: String,
-        bloc: suspend (java.io.OutputStream) -> Unit,
+        name: String,
+        block: suspend (java.io.OutputStream) -> Unit,
     ) {
-        val ecrit = withContext(Dispatchers.IO) {
+        val written = withContext(Dispatchers.IO) {
             runCatching {
-                val flux = getApplication<Application>().contentResolver.openOutputStream(uri)
-                    ?: error("le fournisseur n'a pas ouvert de flux pour $uri")
-                flux.use { bloc(it) }
+                val stream = getApplication<Application>().contentResolver.openOutputStream(uri)
+                    ?: error("the provider opened no stream for $uri")
+                stream.use { block(it) }
             }.isSuccess
         }
-        _ecriture.value = if (ecrit) {
-            CompteRendu(texte(R.string.export_written, nom), echec = false)
+        _feedback.value = if (written) {
+            Feedback(text(R.string.export_written, name), failed = false)
         } else {
-            CompteRendu(texte(R.string.export_failed), echec = true)
+            Feedback(text(R.string.export_failed), failed = true)
         }
     }
 }
 
-/** La liste des nuits. Rien a decider : la vue SQL a deja annote, [Mapping] a deja traduit. */
+/** The night list. Nothing to decide: the SQL view has already annotated, [Mapping] has already
+ *  translated. */
 class NightsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = PendulumRepository(app)
 
-    val nuits: StateFlow<List<NuitUi>> = repo.observerNuits()
+    val nights: StateFlow<List<NightUi>> = repo.observeNights()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
 
 /**
- * L'assistant de premier lancement.
+ * The first-launch onboarding.
  *
- * ### Ce qu'il repare
+ * ### What it repairs
  *
- * `OnboardingPager` existait, complet, et **n'avait aucun appelant**. La consequence n'etait pas
- * cosmetique : le seul `rememberLauncherForActivityResult` de l'application vivait dans cet ecran
- * inatteignable, donc aucun chemin utilisateur n'accordait jamais les permissions Health Connect.
- * Chaque nuit etait alors scoree par le seul masque accelerometrique — la circularite
- * numerateur/denominateur que tout le projet existe pour eviter — sans qu'aucun ecran ne le dise.
+ * `OnboardingPager` existed, complete, and **had no caller at all**. The consequence was not
+ * cosmetic: the application's only `rememberLauncherForActivityResult` lived in that unreachable
+ * screen, so no user path ever granted the Health Connect permissions. Every night was then scored
+ * by the accelerometric mask alone — the numerator/denominator circularity that the whole project
+ * exists to avoid — without any screen saying so.
  *
- * ### L'etat de l'appairage est un flux, pas une lecture
+ * ### The pairing state is a flow, not a read
  *
- * `AppairageMontre.observer` s'abonne a `CapabilityClient` : l'etape 3 se coche d'elle-meme quand
- * l'application apparait sur la montre, pendant que l'utilisateur est encore en train de
- * l'installer. `WhileSubscribed` garantit que l'abonnement au Data Layer s'arrete des que l'ecran
- * part — un ecouteur Wearable oublie survit au composable, pas au ViewModel.
+ * `WatchPairing.observe` subscribes to `CapabilityClient`: step 3 ticks itself when the app appears
+ * on the watch, while the user is still installing it. `WhileSubscribed` guarantees that the Data
+ * Layer subscription stops as soon as the screen leaves — a forgotten Wearable listener outlives
+ * the composable, not the ViewModel.
  */
 class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = PendulumPreferences(app)
-    private val lecteur = SleepReader(app)
+    private val reader = SleepReader(app)
 
-    /** `null` tant que la premiere lecture du DataStore n'a pas abouti : on ne compose rien. */
-    val etape: StateFlow<Int?> = prefs.etapeAssistant
+    /** `null` until the first DataStore read has completed: nothing is composed until then. */
+    val step: StateFlow<Int?> = prefs.onboardingStep
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val montre: StateFlow<EtatMontre> = AppairageMontre.observer(app)
+    val watch: StateFlow<WatchState> = WatchPairing.observe(app)
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            EtatMontre(EtatAppairage.AUCUNE_MONTRE),
+            WatchState(PairingState.NO_WATCH),
         )
 
-    val sourcePreferee: StateFlow<String?> = prefs.sourceSommeilPreferee
+    val preferredSource: StateFlow<String?> = prefs.preferredSleepSource
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val repereDeSerrage: StateFlow<String> = prefs.repereDeSerrage
+    val strapReference: StateFlow<String> = prefs.strapReference
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
-    /** `null` tant que Health Connect n'a pas ete interroge : l'ecran n'affiche alors rien. */
-    private val _sante = MutableStateFlow<EtatSante?>(null)
-    val sante: StateFlow<EtatSante?> = _sante
+    /** `null` until Health Connect has been queried: the screen then displays nothing. */
+    private val _health = MutableStateFlow<HealthState?>(null)
+    val health: StateFlow<HealthState?> = _health
 
-    /** Dernier resultat d'une tentative d'ouverture du magasin sur la montre, consomme une fois. */
+    /** Last result of an attempt to open the store on the watch, consumed once. */
     private val _installation = MutableStateFlow<Boolean?>(null)
     val installation: StateFlow<Boolean?> = _installation
 
     /**
-     * L'etape est ecrite a la **sortie** de la page, et jamais a l'entree : une etape commencee
-     * puis abandonnee n'est pas une etape franchie.
+     * The step is written on **leaving** the page, and never on entering it: a step begun and then
+     * abandoned is not a step crossed.
      */
-    fun franchir(page: Int) {
+    fun crossStep(page: Int) {
         viewModelScope.launch {
-            prefs.poserEtapeAssistant(RepriseAssistant.etapeApres(page, etape.value ?: 0))
+            prefs.setOnboardingStep(OnboardingResume.stepAfter(page, step.value ?: 0))
         }
     }
 
     /**
-     * Relit Health Connect : sa disponibilite, puis les sources des sept derniers jours.
+     * Re-reads Health Connect: its availability, then the sources of the last seven days.
      *
-     * Appele a l'ouverture de l'etape 4 **et** au retour de la demande de permission. Sans le
-     * second appel, l'ecran resterait sur `PERMISSIONS_MISSING` juste apres que l'utilisateur les
-     * a accordees, ce qui se lit comme un refus.
+     * Called when step 4 opens **and** on return from the permission request. Without the second
+     * call, the screen would stay on `PERMISSIONS_MISSING` just after the user has granted them,
+     * which reads as a refusal.
      */
-    fun relireLaSante() {
+    fun rereadHealth() {
         viewModelScope.launch {
-            val disponibilite = lecteur.availability()
-            _sante.value = EtatSante(
-                disponibilite = disponibilite,
-                sources = if (disponibilite == SleepReader.Availability.READY) {
-                    lecteur.sourcesRecentes(System.currentTimeMillis())
+            val availability = reader.availability()
+            _health.value = HealthState(
+                availability = availability,
+                sources = if (availability == SleepReader.Availability.READY) {
+                    reader.recentSources(System.currentTimeMillis())
                 } else {
                     null
                 },
@@ -670,232 +667,231 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Le choix de la source, ecrit dans les preferences.
+     * The choice of source, written into the preferences.
      *
-     * C'est le reglage que `SleepFetchWorker` lit et que personne n'ecrivait. Il ne s'agit pas
-     * d'un confort : quand deux applications publient des sessions qui se chevauchent, le
-     * denominateur depend de celle qu'on lit, et un denominateur qui change d'une nuit a l'autre
-     * fabrique une tendance qui n'existe pas.
+     * It is the setting that `SleepFetchWorker` reads and that nobody wrote. It is not a
+     * convenience: when two applications publish overlapping sessions, the denominator depends on
+     * which one is read, and a denominator that changes from one night to the next manufactures a
+     * trend that does not exist.
      */
-    fun choisirSource(paquet: String) {
-        viewModelScope.launch { prefs.poserSourceSommeilPreferee(paquet) }
+    fun chooseSource(pkg: String) {
+        viewModelScope.launch { prefs.setPreferredSleepSource(pkg) }
     }
 
-    /** Le repere de serrage, saisi a l'etape 5 et jusqu'ici jete. */
-    fun poserLeRepere(repere: String) {
-        viewModelScope.launch { prefs.poserRepereDeSerrage(repere) }
+    /** The strap reference, entered at step 5 and until now thrown away. */
+    fun setStrapReference(reference: String) {
+        viewModelScope.launch { prefs.setStrapReference(reference) }
     }
 
-    fun installerSurLaMontre() {
+    fun installOnWatch() {
         viewModelScope.launch {
-            _installation.value = AppairageMontre.ouvrirLeMagasinSurLaMontre(getApplication())
+            _installation.value = WatchPairing.openStoreOnWatch(getApplication())
         }
     }
 
-    fun installationConsommee() {
+    fun installationConsumed() {
         _installation.value = null
     }
 }
 
 /**
- * Ce que l'etape 4 sait de Health Connect.
+ * What step 4 knows about Health Connect.
  *
- * @param sources `null` quand la question n'a pas de sens — Health Connect absent, trop ancien,
- *   ou permissions non accordees. Une liste vide, elle, est une reponse : rien n'ecrit de
- *   sommeil sur ce telephone, et l'ecran doit alors aider plutot que rester muet.
+ * @param sources `null` when the question makes no sense — Health Connect absent, too old, or
+ *   permissions not granted. An empty list, on the other hand, is an answer: nothing writes sleep
+ *   on this phone, and the screen must then help rather than stay silent.
  */
-data class EtatSante(
-    val disponibilite: SleepReader.Availability,
-    val sources: List<SourcesSommeil.Observee>?,
+data class HealthState(
+    val availability: SleepReader.Availability,
+    val sources: List<SleepSources.Observed>?,
 )
 
 /**
- * Le rapport de la porte P1.
+ * The P1 gate report.
  *
- * Un instantane, charge une fois : le rapport repond a une question qui ne bouge pas pendant
- * qu'on la lit — combien de nuits d'affilee sont restees dans les trois criteres. Un flux ferait
- * recomposer la conclusion pendant la lecture des lignes qui la justifient.
+ * A snapshot, loaded once: the report answers a question that does not move while it is being read
+ * — how many nights in a row stayed within the three criteria. A flow would make the conclusion
+ * recompose while the rows that justify it are being read.
  *
- * `null` tant que la lecture n'a pas abouti, et l'ecran n'affiche alors rien : la meme regle qu'a
- * l'accueil et au detail de nuit. Un rapport qui s'ouvre sur « 0 nuit sur 3 » puis se remplit
- * apprend a lire un verdict avant qu'il ne soit vrai.
+ * `null` until the read has completed, and the screen then displays nothing: the same rule as on
+ * the home screen and in a night's detail. A report that opens on "0 nights out of 3" and then
+ * fills in teaches you to read a verdict before it is true.
  */
-class RapportP1ViewModel(app: Application) : AndroidViewModel(app) {
+class P1ReportViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = PendulumRepository(app)
 
-    private val _rapport = MutableStateFlow<RapportP1Ui?>(null)
-    val rapport: StateFlow<RapportP1Ui?> = _rapport
+    private val _report = MutableStateFlow<P1ReportUi?>(null)
+    val report: StateFlow<P1ReportUi?> = _report
 
     init {
-        viewModelScope.launch { _rapport.value = repo.rapportP1() }
+        viewModelScope.launch { _report.value = repo.p1Report() }
     }
 }
 
 /**
- * Les reglages.
+ * The settings.
  *
- * Plusieurs lignes affichent encore un tiret plutot qu'une valeur, et c'est deliberement visible :
- * la montre appairee et l'etat de Health Connect arrivent avec le chantier de l'assistant, l'espace
- * occupe avec celui de la porte P1. Un tiret dit « pas encore branche » ; « Pixel Watch 3 » ecrit
- * en dur disait « branche », ce qui etait faux.
+ * Several rows still show a dash rather than a value, and that is deliberately visible: the paired
+ * watch and the Health Connect state arrive with the onboarding work, the space used with that of
+ * the P1 gate. A dash says "not wired up yet"; a hard-coded "Pixel Watch 3" said "wired up", which
+ * was false.
  */
 class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = PendulumPreferences(app)
 
     /**
-     * L'espace occupe, relu a la demande et non observe.
+     * The space used, re-read on demand and not observed.
      *
-     * Ce n'est pas un flux : c'est une somme de tailles de fichiers plus celle du fichier de base,
-     * donc une lecture disque. La relire a chaque emission d'une preference ferait un acces disque
-     * par frappe de theme. Elle est relue a l'ouverture de l'ecran et apres un effacement — les
-     * deux seuls moments ou elle change de facon que l'utilisateur puisse constater.
+     * This is not a flow: it is a sum of file sizes plus that of the database file, hence a disk
+     * read. Re-reading it on every emission of a preference would mean one disk access per theme
+     * tap. It is re-read when the screen opens and after an erasure — the only two moments at which
+     * it changes in a way the user can observe.
      */
-    private val _espace = MutableStateFlow(NON_RENSEIGNE)
+    private val _spaceUsed = MutableStateFlow(NOT_SET)
 
-    /** Compte rendu du dernier reimport de paquet. Nul tant qu'il n'y en a pas eu. */
+    /** Feedback from the last bundle re-import. Null as long as there has been none. */
     private val _import = MutableStateFlow<UiText?>(null)
 
     init {
-        relireLEspace()
+        rereadSpace()
     }
 
-    fun relireLEspace() {
+    fun rereadSpace() {
         viewModelScope.launch {
-            val octets = withContext(Dispatchers.IO) { DataEraser.bytesOnDisk(getApplication()) }
-            _espace.value = Mapping.octetsLisibles(octets)
+            val bytes = withContext(Dispatchers.IO) { DataEraser.bytesOnDisk(getApplication()) }
+            _spaceUsed.value = Mapping.readableBytes(bytes)
         }
     }
 
-    val reglages: StateFlow<ReglagesUi> = combine(
-        prefs.sourceSommeilPreferee,
-        prefs.repereDeSerrage,
+    val settings: StateFlow<SettingsUi> = combine(
+        prefs.preferredSleepSource,
+        prefs.strapReference,
         prefs.theme,
-        _espace,
+        _spaceUsed,
         _import,
-    ) { source, repere, theme, espace, importe ->
-        ReglagesUi(
-            regle = texte(R.string.settings_rule_aasm),
-            sourcePreferee = source?.let { texte(Mapping.nomDApplication(it)) }
-                ?: texte(R.string.settings_source_unknown),
-            profil = texte(PROFIL_DEFAUT),
-            repereDePort = texte(repere.ifBlank { NON_RENSEIGNE }),
-            // La valeur disait le mot de l'intitule — « Automatic stop : Automatic stop ».
-            // Elle dit maintenant **quand** la montre s'arrete, ce que `StopConditions`
-            // decide : charge, reveil, ou duree maximale.
-            arretAutomatique = texte(R.string.settings_auto_stop_value),
-            montre = texte(NON_RENSEIGNE),
-            healthConnect = texte(NON_RENSEIGNE),
-            espaceOccupe = texte(espace),
-            versionApp = texte(com.pendulum.phone.BuildConfig.VERSION_NAME),
-            versionAlgo = texte(NON_RENSEIGNE),
-            theme = libelleTheme(theme),
-            dernierImport = importe,
+    ) { source, reference, theme, space, imported ->
+        SettingsUi(
+            rule = text(R.string.settings_rule_aasm),
+            preferredSource = source?.let { text(Mapping.appName(it)) }
+                ?: text(R.string.settings_source_unknown),
+            profile = text(DEFAULT_PROFILE),
+            wearingReference = text(reference.ifBlank { NOT_SET }),
+            // The value used to say the word of the label — "Automatic stop: Automatic stop".
+            // It now says **when** the watch stops, which is what `StopConditions` decides:
+            // charging, waking, or maximum duration.
+            autoStop = text(R.string.settings_auto_stop_value),
+            watch = text(NOT_SET),
+            healthConnect = text(NOT_SET),
+            spaceUsed = text(space),
+            appVersion = text(com.pendulum.phone.BuildConfig.VERSION_NAME),
+            algoVersion = text(NOT_SET),
+            theme = themeLabel(theme),
+            lastImport = imported,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), REGLAGES_VIDES)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EMPTY_SETTINGS)
 
     /**
-     * Le retour du paquet d'une nuit — l'autre moitie de [NightExporter], et la seule qui rende
-     * l'aller verifiable.
+     * Reading a night bundle back in — the other half of [NightExporter], and the only one that
+     * makes the outward trip verifiable.
      *
-     * Un export dont personne ne sait relire le produit n'est pas un export, c'est une perte
-     * differee : `BundleRoundTripTest` prouve qu'une base reconstruite depuis un paquet rend un
-     * resultat identique, et cette prouve ne vaut que s'il existe un chemin utilisateur qui
-     * l'emprunte. C'est aussi ce qui permet de porter une campagne d'un telephone a un autre sans
-     * passer par un serveur, ce que l'absence de permission `INTERNET` interdit de toute facon.
+     * An export whose product nobody knows how to read back is not an export, it is a deferred
+     * loss: `BundleRoundTripTest` proves that a database rebuilt from a bundle gives an identical
+     * result, and that proof is only worth something if a user path exists that takes it. It is
+     * also what makes it possible to carry a campaign from one phone to another without going
+     * through a server, which the absence of the `INTERNET` permission forbids in any case.
      *
-     * L'echec est annonce et n'est pas une exception qui remonte : un fichier choisi au hasard
-     * dans le selecteur est le cas ordinaire, pas un incident.
+     * The failure is announced and is not an exception that propagates: a file picked at random in
+     * the chooser is the ordinary case, not an incident.
      */
-    fun importerNuit(uri: android.net.Uri) {
+    fun importNight(uri: android.net.Uri) {
         viewModelScope.launch {
-            val resultat = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 runCatching {
                     getApplication<Application>().contentResolver.openInputStream(uri)?.use {
                         NightExporter.importBundle(getApplication(), it)
                     }
                 }.getOrNull()
             }
-            _import.value = if (resultat == null) {
-                texte(R.string.settings_import_refused)
+            _import.value = if (result == null) {
+                text(R.string.settings_import_refused)
             } else {
-                // La nuit importee est nommee par sa date : « import reussi » ne permet pas de
-                // verifier qu'on a repris le bon fichier. La date vient de la session ecrite par
-                // l'import, pas de `comparable_night` — cette vue n'a pas encore de ligne, la
-                // nuit n'ayant pas ete analysee.
+                // The imported night is named by its date: "import successful" does not let you
+                // check that the right file was taken. The date comes from the session written by
+                // the import, not from `comparable_night` — that view has no row yet, the night
+                // not having been analysed.
                 val session = withContext(Dispatchers.IO) {
-                    PendulumDatabase.get(getApplication()).nightDao().find(resultat)
+                    PendulumDatabase.get(getApplication()).nightDao().find(result)
                 }
-                // Le paquet porte le brut, jamais les resultats : c'est un choix de
-                // `NightExporter`, pour qu'on ne compare pas un chiffre exporte a un chiffre
-                // recalcule par une version ulterieure. Une nuit importee doit donc etre
-                // **analysee**, sans quoi elle entre en base et n'apparait nulle part.
-                WorkScheduler.enqueueNightChain(getApplication(), resultat)
-                texte(
+                // The bundle carries the raw data, never the results: that is a choice of
+                // `NightExporter`, so that an exported figure is not compared with a figure
+                // recomputed by a later version. An imported night must therefore be **analysed**,
+                // failing which it enters the database and appears nowhere.
+                WorkScheduler.enqueueNightChain(getApplication(), result)
+                text(
                     R.string.settings_imported,
-                    session?.let { Mapping.dateLisible(it.startWallMs, it.zoneId) } ?: resultat,
+                    session?.let { Mapping.readableDate(it.startWallMs, it.zoneId) } ?: result,
                 )
             }
-            relireLEspace()
+            rereadSpace()
         }
     }
 
-    fun poserTheme(theme: String) {
-        viewModelScope.launch { prefs.poserTheme(theme) }
+    fun setTheme(theme: String) {
+        viewModelScope.launch { prefs.setTheme(theme) }
     }
 
     private companion object {
-        const val PROFIL_DEFAUT = "default"
-        const val NON_RENSEIGNE = "—"
+        const val DEFAULT_PROFILE = "default"
+        const val NOT_SET = "—"
 
-        val REGLAGES_VIDES = ReglagesUi(
-            regle = texte(R.string.settings_rule_aasm),
-            sourcePreferee = texte(NON_RENSEIGNE),
-            profil = texte(PROFIL_DEFAUT),
-            repereDePort = texte(NON_RENSEIGNE),
-            arretAutomatique = texte(NON_RENSEIGNE),
-            montre = texte(NON_RENSEIGNE),
-            healthConnect = texte(NON_RENSEIGNE),
-            espaceOccupe = texte(NON_RENSEIGNE),
-            versionApp = texte(NON_RENSEIGNE),
-            versionAlgo = texte(NON_RENSEIGNE),
-            theme = texte(R.string.settings_theme_dark),
+        val EMPTY_SETTINGS = SettingsUi(
+            rule = text(R.string.settings_rule_aasm),
+            preferredSource = text(NOT_SET),
+            profile = text(DEFAULT_PROFILE),
+            wearingReference = text(NOT_SET),
+            autoStop = text(NOT_SET),
+            watch = text(NOT_SET),
+            healthConnect = text(NOT_SET),
+            spaceUsed = text(NOT_SET),
+            appVersion = text(NOT_SET),
+            algoVersion = text(NOT_SET),
+            theme = text(R.string.settings_theme_dark),
         )
 
         /**
-         * Le jeton persiste, rendu dans la langue de l'interface.
+         * The persisted token, rendered in the language of the interface.
          *
-         * `PendulumPreferences` ecrit `SOMBRE`, `CLAIR`, `SYSTEME` — des jetons de stockage, en
-         * francais parce que la langue de travail du projet l'est. L'ecran affichait ce jeton tel
-         * quel : « Theme  SOMBRE » au milieu d'une interface anglaise, alors que les trois
-         * libelles anglais existaient dans le fichier de textes et n'avaient aucun appelant. Un
-         * jeton de stockage n'est pas un texte d'interface, et il ne le devient pas parce qu'il
-         * se lit.
+         * `PendulumPreferences` writes `SOMBRE`, `CLAIR`, `SYSTEME` — storage tokens, in French
+         * because that is the project's working language. The screen displayed that token as it
+         * was: "Theme  SOMBRE" in the middle of an English interface, while the three English
+         * labels existed in the text file and had no caller at all. A storage token is not
+         * interface text, and it does not become one just because it can be read.
          */
-        fun libelleTheme(jeton: String): UiText = when (jeton) {
-            PendulumPreferences.THEME_SYSTEME -> texte(R.string.settings_theme_system)
-            PendulumPreferences.THEME_CLAIR -> texte(R.string.settings_theme_light)
-            else -> texte(R.string.settings_theme_dark)
+        fun themeLabel(token: String): UiText = when (token) {
+            PendulumPreferences.THEME_SYSTEM -> text(R.string.settings_theme_system)
+            PendulumPreferences.THEME_LIGHT -> text(R.string.settings_theme_light)
+            else -> text(R.string.settings_theme_dark)
         }
     }
 }
 
 /**
- * L'ecran d'export, et le document qui est la raison d'etre du projet.
+ * The export screen, and the document that is the project's reason to exist.
  *
- * ### Ce qu'il repare
+ * ### What it repairs
  *
- * `ReportExporter` etait ecrit, complet, et **n'avait aucun appelant** : les cinq lambdas de
- * l'ecran d'export etaient vides dans `MainActivity`. Le seul but que `README.md` juge defendable
- * — « produire un document a poser devant un medecin » — n'etait atteignable par aucun geste.
+ * `ReportExporter` was written, complete, and **had no caller at all**: the export screen's five
+ * lambdas were empty in `MainActivity`. The only purpose `README.md` considers defensible — "to
+ * produce a document to put in front of a doctor" — was reachable by no gesture.
  *
- * ### Le garde-fou tient au meme endroit qu'a l'ecran
+ * ### The guard rail holds in the same place as on the screen
  *
- * Le bouton reste visible et desactive sous [Aggregat.MIN_NUITS_AGREGAT] nuits eligibles, avec son
- * motif ecrit dessus : c'est `ExportScreen` qui le decide, a partir du seul champ
- * `nuitsEligibles`, et non ce ViewModel. Il n'y a donc pas deux endroits ou la regle peut diverger,
- * et aucun chemin ou le bouton serait actif et l'ecriture echouerait.
+ * The button stays visible and disabled below [Aggregate.MIN_NIGHTS_AGGREGATE] eligible nights,
+ * with its reason written on it: it is `ExportScreen` that decides, from the single field
+ * `eligibleNights`, and not this ViewModel. There are therefore not two places where the rule can
+ * diverge, and no path where the button would be enabled and the write would fail.
  */
 class ExportViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -903,132 +899,132 @@ class ExportViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _questionnaire = MutableStateFlow(true)
 
-    /** Par defaut **oui** : masquer les nuits ratees a un medecin est trompeur. */
-    private val _ecartees = MutableStateFlow(true)
+    /** **Yes** by default: hiding failed nights from a doctor is misleading. */
+    private val _excluded = MutableStateFlow(true)
 
     /**
-     * Ce que la derniere ecriture a donne. Affiche par l'ecran, pas efface.
+     * What the last write gave. Displayed by the screen, not erased.
      *
-     * Il portait le seul nom du fichier, et il etait pose **apres** un `runCatching` dont
-     * l'exception etait jetee : « Written: pendulum-report-2026-03-15.md » pouvait donc s'ecrire
-     * alors que rien n'avait ete ecrit. Sur le document destine au medecin, c'est le mensonge le
-     * plus cher du produit — on l'emporte en consultation sans le rouvrir.
+     * It carried the file name alone, and it was set **after** a `runCatching` whose exception was
+     * thrown: "Written: pendulum-report-2026-03-15.md" could therefore be written when nothing had
+     * been. On the document meant for the doctor, that is the product's most expensive lie — you
+     * take it to the consultation without reopening it.
      */
-    private val _ecriture = MutableStateFlow<CompteRendu?>(null)
+    private val _feedback = MutableStateFlow<Feedback?>(null)
 
-    val etat: StateFlow<ExportUi?> = combine(
-        repo.observerTendance(),
+    val state: StateFlow<ExportUi?> = combine(
+        repo.observeTrend(),
         _questionnaire,
-        _ecartees,
-        _ecriture,
-    ) { tendance, questionnaire, ecartees, ecriture ->
-        val nuits = tendance.nuits.sortedBy { it.startWallMs }
+        _excluded,
+        _feedback,
+    ) { trend, questionnaire, excluded, feedback ->
+        val nights = trend.nights.sortedBy { it.startWallMs }
         ExportUi(
-            inclureQuestionnaire = questionnaire,
-            inclureEcartees = ecartees,
-            nuitsEligibles = tendance.nuitsEligibles,
-            periode = when {
-                nuits.isEmpty() -> "—"
-                nuits.size == 1 -> nuits.first().dateLisible
-                else -> "${nuits.first().dateLisible} – ${nuits.last().dateLisible}"
+            includeQuestionnaire = questionnaire,
+            includeExcluded = excluded,
+            eligibleNights = trend.eligibleNights,
+            period = when {
+                nights.isEmpty() -> "—"
+                nights.size == 1 -> nights.first().readableDate
+                else -> "${nights.first().readableDate} – ${nights.last().readableDate}"
             },
-            profilPersonnalise = tendance.profilPersonnalise,
-            ecriture = ecriture,
+            customProfile = trend.customProfile,
+            writeFeedback = feedback,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    fun poserQuestionnaire(inclus: Boolean) {
-        _questionnaire.value = inclus
+    fun setQuestionnaire(included: Boolean) {
+        _questionnaire.value = included
     }
 
-    fun poserEcartees(inclus: Boolean) {
-        _ecartees.value = inclus
+    fun setExcluded(included: Boolean) {
+        _excluded.value = included
     }
 
-    /** Le nom propose dans le selecteur SAF. Le jour de la generation, pas celui d'une nuit. */
-    fun nomFichier(): String =
-        NomsDeFichier.rapportDeCampagne(
-            Mapping.jourIso(System.currentTimeMillis(), java.time.ZoneId.systemDefault().id),
+    /** The name proposed in the SAF picker. The day of generation, not that of a night. */
+    fun fileName(): String =
+        FileNames.campaignReport(
+            Mapping.isoDay(System.currentTimeMillis(), java.time.ZoneId.systemDefault().id),
         )
 
     /**
-     * L'ecriture, dans l'`Uri` que l'utilisateur vient de designer, et nulle part ailleurs.
+     * The write, into the `Uri` the user has just designated, and nowhere else.
      *
-     * L'etat de la tendance est relu au moment de l'ecriture plutot que capture a l'affichage :
-     * entre l'ouverture de l'ecran et le choix de l'emplacement, un rescore a pu se terminer, et
-     * un document qui porterait les chiffres d'avant sans le dire serait un document faux.
+     * The trend state is re-read at the moment of writing rather than captured at display time:
+     * between the screen opening and the location being chosen, a rescore may have finished, and a
+     * document carrying the earlier figures without saying so would be a false document.
      *
-     * ### Les deux facons d'echouer en silence, et ce qui les remplace
+     * ### The two ways of failing silently, and what replaces them
      *
-     * Le `runCatching` **jetait** son exception, et le `?.` avalait un flux nul — un fournisseur
-     * SAF qui refuse d'ouvrir l'`Uri` rendait donc exactement le meme resultat qu'une ecriture
-     * reussie. Le nom du fichier etait pose ensuite, inconditionnellement. Un rapport destine a un
-     * medecin pouvait ainsi ne pas etre ecrit sans que rien ne le dise.
+     * The `runCatching` **threw** its exception, and the `?.` swallowed a null stream — a SAF
+     * provider refusing to open the `Uri` therefore gave exactly the same result as a successful
+     * write. The file name was set afterwards, unconditionally. A report meant for a doctor could
+     * thus go unwritten without anything saying so.
      *
-     * Les deux cas sont desormais un echec : le flux nul est converti en exception, et le
-     * `isSuccess` du `runCatching` decide de ce que l'ecran affiche.
+     * Both cases are now a failure: the null stream is turned into an exception, and the
+     * `runCatching`'s `isSuccess` decides what the screen displays.
      */
-    fun enregistrer(uri: android.net.Uri, nom: String) {
+    fun save(uri: android.net.Uri, name: String) {
         viewModelScope.launch {
-            val tendance = repo.observerTendance().first()
-            val ecrit = withContext(Dispatchers.IO) {
+            val trend = repo.observeTrend().first()
+            val written = withContext(Dispatchers.IO) {
                 runCatching {
-                    val flux = getApplication<Application>().contentResolver.openOutputStream(uri)
-                        ?: error("le fournisseur n'a pas ouvert de flux pour $uri")
-                    flux.use {
-                        RapportExporteur.exportCampagne(
+                    val stream = getApplication<Application>().contentResolver.openOutputStream(uri)
+                        ?: error("the provider opened no stream for $uri")
+                    stream.use {
+                        ReportExporter.exportCampaign(
                             context = getApplication(),
-                            etat = tendance,
-                            inclureQuestionnaire = _questionnaire.value,
-                            inclureEcartees = _ecartees.value,
+                            state = trend,
+                            includeQuestionnaire = _questionnaire.value,
+                            includeExcluded = _excluded.value,
                             out = it,
                         )
                     }
                 }.isSuccess
             }
-            _ecriture.value = if (ecrit) {
-                CompteRendu(texte(R.string.export_written, nom), echec = false)
+            _feedback.value = if (written) {
+                Feedback(text(R.string.export_written, name), failed = false)
             } else {
-                CompteRendu(texte(R.string.export_failed), echec = true)
+                Feedback(text(R.string.export_failed), failed = true)
             }
         }
     }
 }
 
 /**
- * Le questionnaire de depistage.
+ * The screening questionnaire.
  *
- * ### Une seule question, et une reponse qui se garde
+ * ### A single question, and an answer that is kept
  *
- * `questionnaire_response` est append-only par usage : on ajoute une passation, on ne corrige pas.
- * « Revoir mes reponses » ne modifie donc rien — il repose la question, et la reponse suivante
- * s'ajoute avec sa date. C'est ce qui permet de dire quand une reponse a ete donnee, et le
- * rapport pour le medecin les liste toutes.
+ * `questionnaire_response` is append-only by use: a sitting is added, it is not corrected. "Review
+ * my answers" therefore changes nothing — it asks the question again, and the next answer is added
+ * with its date. That is what makes it possible to say when an answer was given, and the report for
+ * the doctor lists them all.
  *
- * ### Pourquoi la reponse « non » n'efface pas la mesure
+ * ### Why the answer "no" does not erase the measurement
  *
- * L'issue est une phrase, jamais un score, et elle ne conditionne aucun autre ecran : le
- * questionnaire porte sur ce qui est ressenti a l'eveil, la montre mesure ce qui se passe pendant
- * le sommeil. Faire dependre l'un de l'autre reviendrait a laisser un depistage clore une mesure.
+ * The outcome is a sentence, never a score, and it conditions no other screen: the questionnaire is
+ * about what is felt while awake, the watch measures what happens during sleep. Making one depend on
+ * the other would amount to letting a screening close a measurement.
  */
 class QuizViewModel(app: Application) : AndroidViewModel(app) {
 
     private val dao = PendulumDatabase.get(app).questionnaireDao()
 
-    private val _issue = MutableStateFlow<IssueQuestionnaire?>(null)
-    val issue: StateFlow<IssueQuestionnaire?> = _issue
+    private val _outcome = MutableStateFlow<QuizOutcome?>(null)
+    val outcome: StateFlow<QuizOutcome?> = _outcome
 
     init {
         viewModelScope.launch {
-            _issue.value = withContext(Dispatchers.IO) {
-                dao.all().firstOrNull()?.let { issueDe(it.answersJson) }
+            _outcome.value = withContext(Dispatchers.IO) {
+                dao.all().firstOrNull()?.let { outcomeOf(it.answersJson) }
             }
         }
     }
 
-    fun repondre(urgenceDeBouger: Boolean) {
+    fun answer(urgeToMove: Boolean) {
         viewModelScope.launch {
-            val json = """{"urge_to_move":$urgenceDeBouger}"""
+            val json = """{"urge_to_move":$urgeToMove}"""
             withContext(Dispatchers.IO) {
                 dao.append(
                     QuestionnaireResponseEntity(
@@ -1038,67 +1034,67 @@ class QuizViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 )
             }
-            _issue.value = issueDe(json)
+            _outcome.value = outcomeOf(json)
         }
     }
 
-    /** Reposer la question. La passation precedente reste en base avec sa date. */
-    fun revoir() {
-        _issue.value = null
+    /** Ask the question again. The previous sitting stays in the database with its date. */
+    fun review() {
+        _outcome.value = null
     }
 
-    private fun issueDe(json: String): IssueQuestionnaire = when {
-        json.contains("\"urge_to_move\":true") -> IssueQuestionnaire.COMPATIBLE
-        json.contains("\"urge_to_move\":false") -> IssueQuestionnaire.NON_COMPATIBLE
-        else -> IssueQuestionnaire.INCOMPLET
+    private fun outcomeOf(json: String): QuizOutcome = when {
+        json.contains("\"urge_to_move\":true") -> QuizOutcome.CONSISTENT
+        json.contains("\"urge_to_move\":false") -> QuizOutcome.NOT_CONSISTENT
+        else -> QuizOutcome.INCOMPLETE
     }
 
     private companion object {
-        /** Le nom de la passation. Une seule question ; le questionnaire detaille viendra a cote. */
+        /** The name of the sitting. A single question; the detailed questionnaire will sit beside it. */
         const val KIND = "screening-single"
     }
 }
 
 /**
- * L'effacement total.
+ * Total erasure.
  *
- * `DataEraser` etait ecrit — travaux annules, fichiers avant base, `VACUUM` — et **n'avait aucun
- * appelant** : la ligne « Erase all data » des reglages appelait un `{}`. Une application de sante
- * dont le bouton d'effacement ne fait rien promet exactement ce qu'elle ne tient pas.
+ * `DataEraser` was written — work cancelled, files before database, `VACUUM` — and **had no caller
+ * at all**: the settings' "Erase all data" row called a `{}`. A health application whose erase
+ * button does nothing promises exactly what it does not deliver.
  *
- * L'espace occupe est relu avant et apres, et affiche : c'est la seule confirmation verifiable que
- * les huit heures d'accelerometrie par nuit sont bien parties de `filesDir`, la ou une base vide
- * et un ecran vide ne prouvent rien.
+ * The space used is re-read before and after, and displayed: it is the only verifiable confirmation
+ * that the eight hours of accelerometry per night really have left `filesDir`, where an empty
+ * database and an empty screen prove nothing.
  */
-class EffacementViewModel(app: Application) : AndroidViewModel(app) {
+class ErasureViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val _espace = MutableStateFlow("—")
-    val espace: StateFlow<String> = _espace
+    private val _spaceUsed = MutableStateFlow("—")
+    val spaceUsed: StateFlow<String> = _spaceUsed
 
-    private val _efface = MutableStateFlow(false)
-    val efface: StateFlow<Boolean> = _efface
+    private val _erased = MutableStateFlow(false)
+    val erased: StateFlow<Boolean> = _erased
 
     init {
-        relire()
+        reread()
     }
 
-    fun effacer() {
+    fun erase() {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { DataEraser.eraseEverything(getApplication()) }
-            // `DataEraser` annule **tous** les travaux, et c'est voulu : un `SleepFetchWorker`
-            // deja en file recreerait une ligne quelques minutes apres l'effacement. Le chien de
-            // garde, lui, ne recree rien — il constate qu'aucune session n'est ouverte — et sans
-            // lui l'application reste sans surveillance jusqu'au prochain demarrage.
+            // `DataEraser` cancels **all** the work, and that is intended: a `SleepFetchWorker`
+            // already queued would recreate a row a few minutes after the erasure. The watchdog,
+            // on the other hand, recreates nothing — it observes that no session is open — and
+            // without it the application stays unsupervised until the next start.
             WorkScheduler.ensureWatchdog(getApplication())
-            _efface.value = true
-            relire()
+            _erased.value = true
+            reread()
         }
     }
 
-    private fun relire() {
+    private fun reread() {
         viewModelScope.launch {
-            val octets = withContext(Dispatchers.IO) { DataEraser.bytesOnDisk(getApplication()) }
-            _espace.value = Mapping.octetsLisibles(octets)
+            val bytes = withContext(Dispatchers.IO) { DataEraser.bytesOnDisk(getApplication()) }
+            _spaceUsed.value = Mapping.readableBytes(bytes)
         }
     }
 }

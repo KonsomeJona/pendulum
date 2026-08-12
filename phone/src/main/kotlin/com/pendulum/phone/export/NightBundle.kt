@@ -9,40 +9,40 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
- * Le format de bundle : une nuit, entiere, dans un fichier.
+ * The bundle format: one night, whole, in one file.
  *
  * ```
  * pendulum-<sessionHex>.zip
- *   manifest.txt          cle=valeur : version du bundle, session, horloges, etat, fuseau
- *   context.txt           cle=valeur : le contexte du soir scelle (dose, jambe, bracelet…)
- *   baseline.txt          cle=valeur : etalon de gain de reference, hash et parametres
- *   hypnogram.csv         debutMs:finMs:type;… tel que Health Connect l'avait rendu
- *   chunks/00000.pendulum     les octets exacts des chunks, non transcodes
+ *   manifest.txt          key=value : bundle version, session, clocks, state, time zone
+ *   context.txt           key=value : the sealed evening context (dose, leg, strap…)
+ *   baseline.txt          key=value : gain reference of the reference night, hash and parameters
+ *   hypnogram.csv         startMs:endMs:type;… exactly as Health Connect returned it
+ *   chunks/00000.pendulum     the exact chunk bytes, not transcoded
  * ```
  *
- * ### Pourquoi `cle=valeur` et pas du JSON
+ * ### Why `key=value` and not JSON
  *
- * Ce fichier doit se **relire**, et se relire dans dix ans, sur une version de l'application qui
- * n'existe pas encore. Un format que l'on parse en quinze lignes sans bibliotheque ne peut pas
- * se mettre a echouer differemment selon la version d'un analyseur. Le JSON serait plus joli et
- * apporterait une dependance et une classe de bugs, pour zero benefice a cette echelle.
+ * This file has to be **read back**, and read back in ten years, by a version of the application
+ * that does not exist yet. A format that parses in fifteen lines without a library cannot start
+ * failing differently depending on the version of a parser. JSON would be prettier, and would
+ * bring a dependency and a class of bugs, for zero benefit at this scale.
  *
- * ### Pourquoi les chunks partent tels quels
+ * ### Why the chunks leave as they are
  *
- * Ce sont **les seules donnees irremplaçables**. Un bundle qui contiendrait les resultats mais
- * pas le brut serait un rapport, pas une sauvegarde : il ne permettrait pas de rescorer quand
- * l'algorithme changera. Les resultats, eux, ne sont volontairement pas dans le bundle — les
- * inclure inviterait a les comparer a ceux d'une version ulterieure sans passer par un rescore.
+ * They are **the only irreplaceable data**. A bundle that carried the results but not the raw
+ * signal would be a report, not a backup: it would not allow a rescore when the algorithm
+ * changes. The results, for their part, are deliberately not in the bundle — including them
+ * would invite comparing them with those of a later version without going through a rescore.
  *
- * ### La determinisme du fichier produit
+ * ### The determinism of the file produced
  *
- * Les entrees sont ecrites dans un ordre fixe et **horodatees a zero**. Sans cela, deux exports
- * de la meme nuit produiraient deux fichiers differents (l'horodatage ZIP par defaut est
- * l'instant d'ecriture) et il deviendrait impossible de verifier par simple comparaison qu'un
- * export n'a pas altere son contenu.
+ * The entries are written in a fixed order and **timestamped to zero**. Without that, two exports
+ * of the same night would produce two different files (the default ZIP timestamp is the instant
+ * of writing) and it would become impossible to check, by simple comparison, that an export has
+ * not altered its content.
  *
- * Objet pur, sans Android : c'est ce qui rend testable sur JVM la propriete qui compte —
- * exporter puis reimporter puis reanalyser redonne le meme resultat, au bit pres.
+ * A pure object, with no Android: that is what makes the property that matters testable on the
+ * JVM — export, then reimport, then reanalyse gives back the same result, bit for bit.
  */
 object NightBundle {
 
@@ -55,8 +55,8 @@ object NightBundle {
     const val CHUNK_DIR = "chunks/"
 
     /**
-     * @param chunks index -> octets exacts du fichier de chunk. Une `LinkedHashMap` triee par
-     *   index a l'ecriture : l'ordre des entrees fait partie du determinisme du fichier.
+     * @param chunks index -> the exact bytes of the chunk file. A `LinkedHashMap` sorted by index
+     *   when writing: the order of the entries is part of the determinism of the file.
      */
     data class Content(
         val manifest: Map<String, String>,
@@ -107,10 +107,10 @@ object NightBundle {
         }
 
         if (manifest["bundleVersion"]?.toIntOrNull() == null) {
-            throw IOException("ce fichier n'est pas un bundle Pendulum (manifest absent ou illisible)")
+            throw IOException("this file is not a Pendulum bundle (manifest missing or unreadable)")
         }
         if (manifest["sessionHex"].isNullOrBlank()) {
-            throw IOException("bundle sans identifiant de session")
+            throw IOException("bundle with no session identifier")
         }
         return Content(manifest, context, baseline, hypnogram, chunks)
     }
@@ -118,12 +118,12 @@ object NightBundle {
     // ------------------------------------------------------------------
 
     /**
-     * `cle=valeur`, une par ligne, **triees par cle**.
+     * `key=value`, one per line, **sorted by key**.
      *
-     * Le tri n'est pas cosmetique : sans lui, l'ordre d'iteration d'une map deciderait du
-     * contenu du fichier, et deux exports identiques quant au fond produiraient deux octets
-     * differents. Les retours a la ligne dans une valeur sont echappes, faute de quoi une note
-     * multiligne casserait le format a la relecture.
+     * The sort is not cosmetic: without it, the iteration order of a map would decide the content
+     * of the file, and two exports identical in substance would produce two different sets of
+     * bytes. Newlines inside a value are escaped, failing which a multi-line note would break the
+     * format when read back.
      */
     fun encodeMap(map: Map<String, String>): String =
         map.toSortedMap().entries.joinToString("\n") { (k, v) ->
@@ -164,14 +164,14 @@ object NightBundle {
 
     private fun putBytes(zip: ZipOutputStream, name: String, bytes: ByteArray) {
         val entry = ZipEntry(name)
-        // Horodatage fige : deux exports du meme contenu doivent donner le meme fichier.
+        // Frozen timestamp: two exports of the same content must give the same file.
         entry.time = 0L
         zip.putNextEntry(entry)
         zip.write(bytes)
         zip.closeEntry()
     }
 
-    /** Utilitaire de test : ecrire dans un tableau plutot que dans un flux. */
+    /** Test helper: write into an array rather than into a stream. */
     fun toByteArray(content: Content): ByteArray =
         ByteArrayOutputStream().also { write(it, content) }.toByteArray()
 }

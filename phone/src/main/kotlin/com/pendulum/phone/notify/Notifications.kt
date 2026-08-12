@@ -15,48 +15,48 @@ import com.pendulum.phone.R
 import com.pendulum.phone.ui.MainActivity
 
 /**
- * Les notifications du telephone. Il y en a deux, et pas une de plus.
+ * The phone's notifications. There are two of them, and not one more.
  *
- * ### Pourquoi une notification plutot qu'une ouverture directe
+ * ### Why a notification rather than opening the app directly
  *
- * Parce qu'Android ne laisse pas le choix. Le service qui recoit un message de la montre tourne en
- * arriere-plan — c'est Google Play Services qui le demarre — et le lancement d'activite depuis
- * l'arriere-plan est bloque depuis Android 10, en silence. Le tap de l'utilisateur sur une
- * notification est, lui, une exemption explicite et fiable.
+ * Because Android leaves no choice. The service that receives a message from the watch runs in
+ * the background — it is Google Play Services that starts it — and launching an activity from the
+ * background has been blocked since Android 10, silently. The user's tap on a notification is, by
+ * contrast, an explicit and reliable exemption.
  *
- * ### Ce qu'elles ne disent jamais
+ * ### What they never say
  *
- * **Aucun chiffre.** La notification du matin annonce qu'une nuit a ete analysee et combien de
- * nuits sont disponibles, jamais un indice. Le garde-fou 2 masque le resultat au reveil et
- * journalise son devoilement : une notification qui porterait la valeur serait un devoilement sans
- * trace, c'est-a-dire le contournement complet du garde-fou par un canal lateral.
+ * **No figure.** The morning notification announces that a night has been analysed and how many
+ * nights are available, never an index. Guard rail 2 masks the result at waking and journals its
+ * unveiling: a notification that carried the value would be an unveiling with no trace, that is,
+ * the complete circumvention of the guard rail through a side channel.
  */
 object Notifications {
 
     /**
-     * « Le formulaire du soir vous attend » — postee quand la montre le demande.
+     * "The evening form is waiting for you" — posted when the watch asks for it.
      *
-     * Priorite haute : elle est declenchee par un geste explicite de l'utilisateur sur sa montre,
-     * a l'instant ou il attend qu'un ecran s'allume. Ce n'est pas une sollicitation, c'est une
-     * reponse.
+     * High priority: it is triggered by an explicit gesture of the user on their watch, at the
+     * very moment they are waiting for a screen to light up. It is not a solicitation, it is an
+     * answer.
      */
-    // `notify` est garde par `peutNotifier` des la premiere ligne, mais lint ne suit pas une garde
-    // a travers un appel de fonction : `PermissionDetector` n'analyse que le corps de la methode
-    // appelante. Inliner le `checkSelfPermission` ici satisferait lint et laisserait la raison de
-    // la garde sans domicile — c'est la KDoc de `peutNotifier` qui la porte, et elle vaut plus que
-    // le warning. Meme forme, meme motif dans `wear/transfer/WatchNotifications.kt`.
+    // `notify` is guarded by `canNotify` from the very first line, but lint does not follow a
+    // guard across a function call: `PermissionDetector` only analyses the body of the calling
+    // method. Inlining the `checkSelfPermission` here would satisfy lint and leave the reason for
+    // the guard homeless — it is the KDoc of `canNotify` that carries it, and it is worth more
+    // than the warning. Same shape, same reason in `wear/transfer/WatchNotifications.kt`.
     @android.annotation.SuppressLint("MissingPermission")
-    fun demandeDeContexteDuSoir(ctx: Context) {
-        if (!peutNotifier(ctx)) return
-        creerCanaux(ctx)
+    fun eveningContextRequest(ctx: Context) {
+        if (!canNotify(ctx)) return
+        createChannels(ctx)
 
         val intent = Intent(
             Intent.ACTION_VIEW,
-            LIEN_SOIR.toUri(),
+            EVENING_LINK.toUri(),
             ctx,
             MainActivity::class.java,
         )
-        val enAttente = PendingIntent.getActivity(
+        val pending = PendingIntent.getActivity(
             ctx,
             0,
             intent,
@@ -64,58 +64,58 @@ object Notifications {
         )
 
         NotificationManagerCompat.from(ctx).notify(
-            ID_CONTEXTE_DU_SOIR,
-            NotificationCompat.Builder(ctx, CANAL_ACTION)
+            EVENING_CONTEXT_ID,
+            NotificationCompat.Builder(ctx, ACTION_CHANNEL)
                 .setSmallIcon(R.drawable.ic_launcher_monochrome)
-                .setContentTitle(TITRE_CONTEXTE)
-                .setContentText(CORPS_CONTEXTE)
+                .setContentTitle(CONTEXT_TITLE)
+                .setContentText(CONTEXT_BODY)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
-                .setContentIntent(enAttente)
+                .setContentIntent(pending)
                 .setAutoCancel(true)
                 .build(),
         )
     }
 
     /**
-     * `POST_NOTIFICATIONS` est une permission d'execution depuis Android 13, et `minSdk` vaut 30 :
-     * poster sans l'avoir ne leve pas, cela ne fait simplement rien. Verifier permet au moins de
-     * ne pas croire qu'on a prevenu quelqu'un.
+     * `POST_NOTIFICATIONS` has been a runtime permission since Android 13, and `minSdk` is 30:
+     * posting without holding it does not throw, it simply does nothing. Checking at least keeps
+     * us from believing we have warned somebody.
      */
-    private fun peutNotifier(ctx: Context): Boolean =
-        // La garde de version n'est pas une precaution de style : sous Android 13 la permission
-        // **n'existe pas**, et `checkSelfPermission` d'une permission qu'aucun paquet ne definit
-        // rend `DENIED`, pas « accordee ». `minSdk` valant 30, ce test a rendu l'application
-        // entierement muette sur Android 11 et 12 — le rappel du soir n'y partait jamais, et le
-        // bouton « autoriser » de l'assistant demandait une permission inconnue, donc refusee sans
-        // meme afficher de dialogue. Le commentaire ci-dessus enoncait le fait ; le code n'en
-        // tirait pas la consequence.
+    private fun canNotify(ctx: Context): Boolean =
+        // The version guard is not a precaution of style: below Android 13 the permission
+        // **does not exist**, and `checkSelfPermission` of a permission that no package defines
+        // returns `DENIED`, not "granted". `minSdk` being 30, this test made the application
+        // entirely mute on Android 11 and 12 — the evening reminder never went out there, and the
+        // "allow" button of the onboarding asked for an unknown permission, hence refused without
+        // even showing a dialog. The comment above stated the fact; the code did not draw the
+        // consequence from it.
         android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
 
-    private fun creerCanaux(ctx: Context) {
+    private fun createChannels(ctx: Context) {
         val manager = ctx.getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
             NotificationChannel(
-                CANAL_ACTION,
-                NOM_CANAL_ACTION,
+                ACTION_CHANNEL,
+                ACTION_CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_HIGH,
-            ).apply { description = DESC_CANAL_ACTION },
+            ).apply { description = ACTION_CHANNEL_DESC },
         )
     }
 
-    const val LIEN_SOIR = "pendulum://tonight"
+    const val EVENING_LINK = "pendulum://tonight"
 
-    private const val CANAL_ACTION = "pendulum.action"
-    private const val NOM_CANAL_ACTION = "Actions needed tonight"
-    private const val DESC_CANAL_ACTION =
+    private const val ACTION_CHANNEL = "pendulum.action"
+    private const val ACTION_CHANNEL_NAME = "Actions needed tonight"
+    private const val ACTION_CHANNEL_DESC =
         "Sent when your watch asks for something that can only be done on the phone. " +
             "At most one per evening."
 
-    private const val ID_CONTEXTE_DU_SOIR = 1
+    private const val EVENING_CONTEXT_ID = 1
 
-    private const val TITRE_CONTEXTE = "Pendulum — the evening record is not sealed"
-    private const val CORPS_CONTEXTE =
+    private const val CONTEXT_TITLE = "Pendulum — the evening record is not sealed"
+    private const val CONTEXT_BODY =
         "Your watch will not start recording until it is. Tap to fill it in."
 }

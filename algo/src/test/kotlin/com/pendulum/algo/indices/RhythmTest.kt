@@ -8,18 +8,18 @@ import kotlin.math.exp
 import kotlin.math.ln
 
 /**
- * Tests de la deconvolution des harmoniques (`SPEC-v2.md` §5.3).
+ * Tests of the harmonic deconvolution (`SPEC-v2.md` §5.3).
  *
- * Les tolerances ne sont pas choisies apres coup : elles viennent de la spec (periode a mieux que
- * 5 %, taux de manques a mieux que 0,1) et les marges reellement observees sur simulation sont
- * environ trois fois meilleures.
+ * The tolerances are not chosen after the fact: they come from the spec (period to better than
+ * 5 %, miss rate to better than 0.1) and the margins actually observed in simulation are about
+ * three times better.
  */
 class RhythmTest {
 
     private val fundamentalSec = 22.0
 
     @Test
-    fun `intervalles parfaitement periodiques - aucun manque et periode exacte`() {
+    fun `perfectly periodic intervals - no miss and exact period`() {
         val imi = DoubleArray(200) { fundamentalSec }
 
         val fit = Rhythm.fit(imi)
@@ -30,35 +30,35 @@ class RhythmTest {
         assertThat(fit.result.missRate).isLessThan(0.01)
         assertThat(fit.result.alternationSuspect).isFalse()
         assertThat(fit.reject).isNull()
-        // Toute la masse sur la composante fondamentale : aucun harmonique n'est invente.
+        // All the mass on the fundamental component: no harmonic is invented.
         assertThat(fit.componentShare[0]).isCloseTo(1.0, within(1e-9))
-        // La statistique KS est degeneree quand la dispersion l'est ; le garde-fou doit donc etre
-        // neutralise, sinon une nuit parfaitement periodique serait declaree non interpretable.
+        // The KS statistic is degenerate when the dispersion is; the guard rail must therefore be
+        // neutralised, otherwise a perfectly periodic night would be declared uninterpretable.
         assertThat(fit.result.sigmaLog).isLessThan(RhythmConfig().ksMinSigma)
     }
 
     @Test
-    fun `39 pourcent de manques - periode retrouvee a mieux que 5 pourcent et taux a mieux que 0,1`() {
+    fun `39 percent of misses - period recovered to better than 5 percent, rate to better than 0,1`() {
         for (seed in longArrayOf(11L, 12L, 13L)) {
             val imi = simulateObservedIntervalsSec(fundamentalSec, 0.22, 0.39, 4000, seed)
 
             val fit = Rhythm.fit(imi)
 
-            assertThat(fit.result.valid).`as`("seed %s valide", seed).isTrue()
+            assertThat(fit.result.valid).`as`("seed %s valid", seed).isTrue()
             assertThat(fit.result.converged).isTrue()
             assertThat(abs(fit.result.fundamentalSec - fundamentalSec) / fundamentalSec)
-                .`as`("seed %s : erreur relative de periode", seed)
+                .`as`("seed %s: relative period error", seed)
                 .isLessThan(0.05)
             assertThat(abs(fit.result.missRate - 0.39))
-                .`as`("seed %s : erreur sur le taux de manques", seed)
+                .`as`("seed %s: miss rate error", seed)
                 .isLessThan(0.10)
-            // Les manques etant ici VRAIMENT independants, la mesure d'adequation doit rester basse.
+            // The misses being TRULY independent here, the misfit measure must stay low.
             assertThat(fit.geometricMisfit).isLessThan(RhythmConfig().maxGeometricMisfit)
         }
     }
 
     @Test
-    fun `la moyenne brute du log est biaisee de +0,357 nats, la deconvolution ne l'est pas`() {
+    fun `the raw log mean is biased by +0,357 nats, the deconvolution is not`() {
         val cfg = RhythmConfig()
         val imi = simulateObservedIntervalsSec(fundamentalSec, 0.22, 0.39, 4000, 12L)
         val kept = imi.filter { it >= cfg.minIntervalSec && it <= cfg.maxIntervalSec }
@@ -66,31 +66,31 @@ class RhythmTest {
 
         val fit = Rhythm.fit(imi, cfg)
 
-        // C'est le coeur de l'argument du §5.3 : la moyenne brute du log est decalee d'environ
-        // +0,357 nats (intervalle x1,43), soit 3,3 fois la variabilite nuit a nuit publiee.
+        // This is the heart of the §5.3 argument: the raw log mean is shifted by about
+        // +0.357 nats (interval x1.43), that is 3.3 times the published night-to-night variability.
         assertThat(rawLogMean - ln(fundamentalSec)).isBetween(0.28, 0.45)
-        // La deconvolution, elle, retombe sur la periode vraie.
+        // The deconvolution, for its part, lands back on the true period.
         assertThat(abs(fit.result.muLog - ln(fundamentalSec))).isLessThan(0.06)
-        // Et le biais theorique tabule dans la spec est bien celui-la.
+        // And the theoretical bias tabulated in the spec is indeed that one.
         assertThat(Rhythm.rawLogBias(0.39)).isCloseTo(0.357, within(0.002))
     }
 
     @Test
-    fun `le biais theorique reproduit le tableau de la SPEC`() {
+    fun `the theoretical bias reproduces the SPEC table`() {
         assertThat(Rhythm.rawLogBias(0.20)).isCloseTo(0.158, within(0.002))
         assertThat(Rhythm.rawLogBias(0.30)).isCloseTo(0.255, within(0.002))
         assertThat(Rhythm.rawLogBias(0.50)).isCloseTo(0.508, within(0.002))
-        // La SPEC annonce +0,901 pour p = 0,70 ; la valeur exacte de la serie est +0,9146
-        // (x2,50 et non x2,46). A p = 0,70 la serie converge lentement et 0,901 correspond a une
-        // somme arretee vers k = 15. Les quatre autres lignes du tableau sont exactes.
+        // The SPEC states +0.901 for p = 0.70; the exact value of the series is +0.9146
+        // (x2.50 and not x2.46). At p = 0.70 the series converges slowly and 0.901 corresponds to
+        // a sum stopped around k = 15. The four other rows of the table are exact.
         assertThat(Rhythm.rawLogBias(0.70)).isCloseTo(0.9146, within(0.001))
         assertThat(exp(Rhythm.rawLogBias(0.39))).isCloseTo(1.43, within(0.01))
         assertThat(Rhythm.rawLogBias(0.0)).isEqualTo(0.0)
     }
 
     @Test
-    fun `alternance gauche-droite - un mouvement sur deux vu leve le drapeau`() {
-        // Lateralisation stochastique : chaque mouvement de la serie vraie est vu une fois sur deux.
+    fun `left-right alternation - one movement in two seen raises the flag`() {
+        // Stochastic lateralisation: each movement of the true series is seen one time in two.
         val imi = simulateObservedIntervalsSec(fundamentalSec, 0.22, 0.50, 4000, 21L)
 
         val fit = Rhythm.fit(imi)
@@ -98,13 +98,13 @@ class RhythmTest {
         assertThat(fit.result.valid).isTrue()
         assertThat(fit.result.alternationSuspect).isTrue()
         assertThat(fit.result.missRate).isGreaterThan(0.45)
-        // La periode FONDAMENTALE reste celle des deux jambes reunies : c'est tout l'interet de la
-        // deconvolution, une lecture naive aurait annonce 44 s.
+        // The FUNDAMENTAL period remains that of both legs together: this is the whole point of the
+        // deconvolution, a naive reading would have stated 44 s.
         assertThat(abs(fit.result.fundamentalSec - fundamentalSec) / fundamentalSec).isLessThan(0.08)
     }
 
     @Test
-    fun `39 pourcent de manques mecaniques ne levent PAS le drapeau d'alternance`() {
+    fun `39 percent of mechanical misses do NOT raise the alternation flag`() {
         val imi = simulateObservedIntervalsSec(fundamentalSec, 0.22, 0.39, 6000, 13L)
 
         val fit = Rhythm.fit(imi)
@@ -115,7 +115,7 @@ class RhythmTest {
     }
 
     @Test
-    fun `trop peu d'intervalles - aucun resultat n'est produit`() {
+    fun `too few intervals - no result is produced`() {
         val imi = DoubleArray(20) { 22.0 + it * 0.1 }
 
         val fit = Rhythm.fit(imi)
@@ -124,19 +124,19 @@ class RhythmTest {
         assertThat(fit.result.converged).isFalse()
         assertThat(fit.result.intervalsUsed).isEqualTo(20)
         assertThat(fit.reject).isEqualTo(RhythmReject.TOO_FEW_INTERVALS)
-        // NaN et non zero : « pas de valeur » doit empoisonner visiblement tout calcul aval.
+        // NaN and not zero: "no value" must visibly poison every downstream computation.
         assertThat(fit.result.fundamentalSec.isNaN()).isTrue()
         assertThat(fit.result.missRate.isNaN()).isTrue()
         assertThat(fit.result.harmonicWeights).isEmpty()
     }
 
     @Test
-    fun `la fenetre de selection ecarte les fragments intra-salve et les pauses inter-series`() {
+    fun `the selection window excludes intra-burst fragments and inter-series pauses`() {
         val cfg = RhythmConfig()
         val imi = DoubleArray(120) {
             when {
-                it % 10 == 0 -> 2.5      // fragment intra-salve, sous minIntervalSec
-                it % 10 == 5 -> 600.0    // pause entre deux series, au-dessus de maxIntervalSec
+                it % 10 == 0 -> 2.5      // intra-burst fragment, below minIntervalSec
+                it % 10 == 5 -> 600.0    // pause between two series, above maxIntervalSec
                 else -> 22.0
             }
         }
@@ -148,11 +148,11 @@ class RhythmTest {
     }
 
     @Test
-    fun `des manques agglomeres, non geometriques, invalident le resultat`() {
-        // Reserve du §5.3 codee, pas seulement documentee : l'accelerometre rate d'abord les
-        // mouvements de faible amplitude, donc les manques peuvent s'agglomerer et creuser le pic
-        // 2x. On fabrique ici le cas extreme — un intervalle sur deux vaut 4 fois le fondamental,
-        // AUCUN ne vaut 2 fois — et l'on exige un refus plutot qu'un chiffre faux a l'air sur.
+    fun `clustered, non-geometric misses invalidate the result`() {
+        // The caveat of §5.3 coded, not merely documented: the accelerometer misses low-amplitude
+        // movements first, so the misses can cluster and hollow out the 2x peak. The extreme case
+        // is built here — one interval in two is worth 4 times the fundamental, NONE is worth
+        // 2 times — and a refusal is required rather than a wrong figure that looks sure.
         val rnd = java.util.Random(7L)
         val imi = DoubleArray(1000) {
             val base = 22.0 * exp(0.20 * rnd.nextGaussian())
@@ -168,7 +168,7 @@ class RhythmTest {
     }
 
     @Test
-    fun `deux executions sur la meme entree sont identiques au bit`() {
+    fun `two runs on the same input are identical to the bit`() {
         val imi = simulateObservedIntervalsSec(fundamentalSec, 0.25, 0.42, 3000, 99L)
 
         val a = Rhythm.fit(imi)
@@ -188,7 +188,7 @@ class RhythmTest {
     }
 
     @Test
-    fun `les poids sont ceux d'une geometrique tronquee et somment a un`() {
+    fun `the weights are those of a truncated geometric and sum to one`() {
         val k = 5
         val w = Rhythm.geometricWeights(0.4, k)
 
@@ -199,12 +199,12 @@ class RhythmTest {
     }
 
     @Test
-    fun `l'estimation de p inverse exactement le rang moyen du modele`() {
+    fun `the estimation of p exactly inverts the mean rank of the model`() {
         for (p in doubleArrayOf(0.0, 0.05, 0.2, 0.39, 0.5, 0.7, 0.85)) {
             val m = Rhythm.meanRank(p, 5)
             assertThat(Rhythm.solveMissRate(m, 5)).isCloseTo(p, within(1e-9))
         }
-        // Hors domaine : un rang moyen de 1 signifie « aucun manque ».
+        // Outside the domain: a mean rank of 1 means "no miss".
         assertThat(Rhythm.solveMissRate(1.0, 5)).isEqualTo(0.0)
         assertThat(Rhythm.solveMissRate(0.5, 5)).isEqualTo(0.0)
     }

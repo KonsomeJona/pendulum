@@ -14,29 +14,29 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * Export et reimport d'une nuit.
+ * Export and reimport of a night.
  *
- * L'ecriture se fait dans un `OutputStream` fourni par l'appelant — en pratique celui d'un
- * `Uri` obtenu par SAF (`ACTION_CREATE_DOCUMENT`). L'application n'ecrit donc **jamais** dans un
- * repertoire partage de sa propre initiative : l'emplacement est choisi par l'utilisateur, geste
- * par geste. C'est la seule sortie de donnees prevue, et elle est explicite — l'application ne
- * declare pas la permission `INTERNET` et ne peut rien envoyer ailleurs.
+ * Writing goes into an `OutputStream` supplied by the caller — in practice that of a `Uri`
+ * obtained through SAF (`ACTION_CREATE_DOCUMENT`). The application therefore **never** writes
+ * into a shared directory on its own initiative: the location is chosen by the user, one gesture
+ * at a time. This is the only data output there is, and it is explicit — the application does not
+ * declare the `INTERNET` permission and cannot send anything anywhere else.
  */
 object NightExporter {
 
     /**
-     * Le bundle d'une nuit : chunks bruts, sidecar, lignes de base.
+     * The bundle of a night: raw chunks, sidecar, baselines.
      *
-     * Ce qui **n'y est pas** : les resultats. Les inclure inviterait a comparer un chiffre
-     * exporte a un chiffre recalcule par une version ulterieure, sans passer par un rescore —
-     * c'est-a-dire a comparer deux algorithmes en croyant comparer deux nuits. Le bundle porte
-     * ce qui permet de recalculer, pas ce qui a ete calcule.
+     * What is **not** in it: the results. Including them would invite comparing an exported figure
+     * with a figure recomputed by a later version, without going through a rescore — that is,
+     * comparing two algorithms while believing one is comparing two nights. The bundle carries
+     * what allows a recomputation, not what was computed.
      */
     suspend fun exportBundle(context: Context, sessionHex: String, out: OutputStream) {
         val db = PendulumDatabase.get(context)
         val store = ChunkStore(context)
         val session = db.nightDao().find(sessionHex)
-            ?: error("session inconnue : $sessionHex")
+            ?: error("unknown session: $sessionHex")
         val nightContext = db.contextDao().findForSession(sessionHex)
         val snapshot = db.hcSnapshotDao().latest(sessionHex)
         val reference = db.contextDao().reference()
@@ -65,15 +65,15 @@ object NightExporter {
     }
 
     /**
-     * Reimport. Reconstruit la nuit **a l'identique** : memes octets de chunks, meme contexte,
-     * meme hypnogramme retenu.
+     * Reimport. Rebuilds the night **identically**: same chunk bytes, same context, same retained
+     * hypnogram.
      *
-     * C'est ce chemin que `BundleRoundTripTest` exerce : une base reconstruite depuis un bundle
-     * doit produire un resultat identique au bit pres. Si un champ manquait ici, le test
-     * echouerait sur le chiffre plutot que sur le champ — ce qui est exactement le bon endroit
-     * pour echouer, parce que c'est le chiffre qui compte.
+     * This is the path `BundleRoundTripTest` exercises: a database rebuilt from a bundle must
+     * produce a result identical bit for bit. If a field were missing here, the test would fail on
+     * the figure rather than on the field — which is exactly the right place to fail, because it
+     * is the figure that matters.
      *
-     * @return l'identifiant de la nuit importee.
+     * @return the identifier of the imported night.
      */
     suspend fun importBundle(context: Context, input: InputStream): String {
         val content = NightBundle.read(input)
@@ -123,17 +123,17 @@ object NightExporter {
             )
         }
 
-        // Le contexte est scelle a l'import comme il l'etait a l'origine — `sealedAtMs` est
-        // recopie, jamais regenere : une date de scellement remise a l'instant de l'import
-        // detruirait la seule preuve que le contexte precede la mesure.
+        // The context is sealed on import as it was originally — `sealedAtMs` is copied across,
+        // never regenerated: a sealing date reset to the instant of the import would destroy the
+        // only evidence that the context precedes the measurement.
         val c = content.context
         if (c.isNotEmpty() && db.contextDao().findForSession(hex) == null) {
             db.contextDao().seal(
                 NightContextEntity(
-                    // La cle de nuit est **derivee du debut de la session importee**, avec la
-                    // meme bascule a midi que le scellement d'origine. La recalculer plutot que
-                    // de la lire dans le bundle garantit que la nuit reimportee se rattache a son
-                    // contexte par la meme regle que toutes les autres.
+                    // The night key is **derived from the start of the imported session**, with
+                    // the same rollover at noon as the original sealing. Recomputing it rather
+                    // than reading it from the bundle guarantees that the reimported night is
+                    // attached to its context by the same rule as every other one.
                     nightKey = WirePaths.nightKey(m.long("startWallMs")),
                     sealedAtMs = c.long("sealedAtMs"),
                     leg = c["leg"].orEmpty(),
@@ -164,8 +164,8 @@ object NightExporter {
                     stageCount = m.int("hcStageCount"),
                     distinctStageTypes = m.int("hcDistinctStageTypes"),
                     selectedStagesCsv = content.hypnogramCsv,
-                    recordsJson = """{"origine":"bundle importe"}""",
-                    outcome = "IMPORTE",
+                    recordsJson = """{"origin":"imported bundle"}""",
+                    outcome = "IMPORTED",
                 )
             )
         }
@@ -219,12 +219,12 @@ object NightExporter {
     }
 
     /**
-     * Les « lignes de base » : ce sans quoi la nuit ne se recalcule pas a l'identique.
+     * The "baselines": what the night cannot be recomputed identically without.
      *
-     * L'etalon de gain de la nuit de reference en fait partie, et c'est le champ qu'on oublie :
-     * il n'appartient pas a la nuit exportee mais il entre dans son analyse (detection d'un
-     * bracelet resserre differemment) et dans sa comparabilite. Un bundle sans lui se reanalyse
-     * en donnant un `outlierVsBaseline` different, donc une nuit qui change de camp.
+     * The gain reference of the reference night is one of them, and it is the field one forgets:
+     * it does not belong to the exported night but it enters its analysis (detection of a strap
+     * tightened differently) and its comparability. A bundle without it reanalyses into a
+     * different `outlierVsBaseline`, hence a night that changes camp.
      */
     private suspend fun baselineOf(
         db: PendulumDatabase,

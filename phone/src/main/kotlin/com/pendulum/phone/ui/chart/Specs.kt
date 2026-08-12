@@ -1,205 +1,202 @@
 package com.pendulum.phone.ui.chart
 
 import androidx.compose.runtime.Immutable
-import com.pendulum.phone.ui.model.Aggregat
+import com.pendulum.phone.ui.model.Aggregate
 import kotlin.math.ceil
 import kotlin.math.max
 
 /**
- * Les descriptions de graphe.
+ * The chart descriptions.
  *
- * Elles sont construites dans le ViewModel, jamais dans un composable. Consequences directes :
- * elles se testent sans ecran, et l'export PDF passe exactement les memes objets aux memes
- * fonctions de dessin — un seul chemin de rendu, donc un seul endroit ou une divergence entre
- * l'ecran et le papier pourrait naitre.
+ * They are built in the ViewModel, never in a composable. Two direct consequences: they can be
+ * tested without a screen, and the PDF export passes exactly the same objects to the same drawing
+ * functions — a single rendering path, hence a single place where a divergence between the screen
+ * and the paper could be born.
  */
 
 @Immutable
-data class Intervalle(val debutMs: Long, val finMs: Long)
+data class Interval(val startMs: Long, val endMs: Long)
 
-/** Un marqueur d'evenement, sur la bande dediee sous la courbe. Jamais superpose au signal. */
+/** An event marker, on the dedicated band under the curve. Never overlaid on the signal. */
 @Immutable
-data class Marqueur(
+data class Marker(
     val onsetMs: Long,
-    val genre: GenreMarqueur,
-    val numeroSerie: Int?,
+    val kind: MarkerKind,
+    val seriesNumber: Int?,
     /**
-     * Duree du mouvement, en millisecondes, et amplitude de son pic en multiples du plancher de
-     * bruit.
+     * Duration of the movement, in milliseconds, and amplitude of its peak in multiples of the
+     * noise floor.
      *
-     * Elles n'alimentent pas le trace — un marqueur est un tick sur une bande dediee, de largeur
-     * fixe — mais le **tableau de valeurs**, qui est a la fois l'alternative accessible du graphe
-     * et le chemin « je veux le chiffre exact ». Il affichait jusqu'ici « 2.4 s » et « x9.2 » en
-     * litteraux pour chaque ligne, quel que soit le mouvement : un tableau qui promet la valeur
-     * exacte et rend une constante est pire qu'un tableau absent.
+     * They do not feed the trace — a marker is a tick on a dedicated band, of fixed width — but the
+     * **value table**, which is at once the accessible alternative to the chart and the "I want the
+     * exact figure" path. Until now it displayed "2.4 s" and "x9.2" as literals for every row,
+     * whatever the movement: a table that promises the exact value and returns a constant is worse
+     * than no table at all.
      *
-     * Nullables parce qu'un marqueur peut venir d'une source qui ne les porte pas ; le tableau
-     * affiche alors un tiret plutot qu'un chiffre invente.
+     * Nullable because a marker may come from a source that does not carry them; the table then
+     * shows a dash rather than an invented figure.
      */
-    val dureeMs: Long? = null,
+    val durationMs: Long? = null,
     val amplitudeRatio: Float? = null,
 )
 
 /**
- * Trois genres, trois formes distinctes — la couleur ne suffit jamais (P6) : trait plein, croix
- * fine, trait creux.
+ * Three kinds, three distinct shapes — colour is never enough (P6): solid stroke, thin cross,
+ * hollow stroke.
  */
-enum class GenreMarqueur { COMPTE, EXCLU_POSTURE, EN_EVEIL }
+enum class MarkerKind { COUNTED, POSTURE_EXCLUDED, DURING_WAKE }
 
 @Immutable
-data class PicAnnote(val ratio: Float, val heure: String)
+data class AnnotatedPeak(val ratio: Float, val time: String)
 
 /**
- * Le graphe de nuit.
+ * The night chart.
  *
- * L'axe Y est une amplitude **relative au plancher de bruit**, sans dimension, en echelle log₂.
- * Justification : les amplitudes utiles s'etalent de ×1,5 a ×30 ; en lineaire les petits
- * evenements sont invisibles, en log ils restent lisibles **et le seuil a ×8 devient une droite
- * horizontale**, ce qui rend la logique du detecteur immediatement comprehensible a l'oeil.
+ * The Y axis is an amplitude **relative to the noise floor**, dimensionless, on a log2 scale.
+ * Rationale: the useful amplitudes spread from x1.5 to x30; on a linear scale the small events are
+ * invisible, on a log scale they stay readable **and the threshold at x8 becomes a horizontal
+ * line**, which makes the detector's logic immediately understandable to the eye.
  */
 @Immutable
-data class NuitChartSpec(
-    val debutMs: Long,
-    val finMs: Long,
-    val pyramide: EnvelopePyramid,
-    /** Periode d'echantillonnage de l'enveloppe, en ms. */
-    val pasEnveloppeMs: Long,
-    /** Plancher de bruit et seuil d'onset, echantillonnes a ~1 Hz, en ratio du plancher. */
-    val plancher: FloatArray,
-    val seuilOnset: FloatArray,
-    val pasSerieMs: Long,
-    val horsSommeil: List<Intervalle>,
-    val trous: List<Intervalle>,
-    val marqueurs: List<Marqueur>,
-    val series: List<Intervalle>,
-    val pic: PicAnnote?,
-    val logarithmique: Boolean = true,
-    val descriptionAccessible: String,
+data class NightChartSpec(
+    val startMs: Long,
+    val endMs: Long,
+    val pyramid: EnvelopePyramid,
+    /** Sampling period of the envelope, in ms. */
+    val envelopeStepMs: Long,
+    /** Noise floor and onset threshold, sampled at ~1 Hz, as a ratio of the floor. */
+    val noiseFloor: FloatArray,
+    val onsetThreshold: FloatArray,
+    val fineSeriesStepMs: Long,
+    val outsideSleep: List<Interval>,
+    val gaps: List<Interval>,
+    val markers: List<Marker>,
+    val series: List<Interval>,
+    val peak: AnnotatedPeak?,
+    val logarithmic: Boolean = true,
+    val accessibleDescription: String,
 ) {
     /**
-     * Borne haute de l'axe : la puissance de deux immediatement superieure au maximum observe.
+     * Upper bound of the axis: the power of two immediately above the observed maximum.
      *
-     * **Aucun ecretage silencieux.** Si un seul echantillon oblige a doubler l'echelle, on la
-     * double et on annote le pic ([pic]). Couper un pic pour garder une echelle ronde, c'est
-     * effacer l'evenement le plus informatif de la nuit.
+     * **No silent clipping.** If a single sample forces the scale to double, we double it and
+     * annotate the peak ([peak]). Cutting a peak to keep a round scale means erasing the most
+     * informative event of the night.
      */
     val ratioMax: Float
         get() {
-            val m = max(pic?.ratio ?: 0f, 32f)
+            val m = max(peak?.ratio ?: 0f, 32f)
             var p = 1f
             while (p < m) p *= 2f
             return p
         }
 
-    val ratioMin: Float get() = if (logarithmique) 0.5f else 0f
+    val ratioMin: Float get() = if (logarithmic) 0.5f else 0f
 }
 
-/** Etat d'un point de tendance. Forme distincte pour chacun, jamais la seule couleur. */
-enum class EtatPoint { ELIGIBLE, MASQUE_ACCELERO, ECARTEE }
+/** State of a trend point. A distinct shape for each, never colour alone. */
+enum class PointState { ELIGIBLE, ACCEL_MASKED, EXCLUDED }
 
 @Immutable
-data class PointNuit(
+data class NightPoint(
     val sessionHex: String,
     val dateMs: Long,
-    val valeur: Float,
-    val etat: EtatPoint,
+    val value: Float,
+    val state: PointState,
 )
 
 @Immutable
-data class LigneReference(val valeur: Float, val libelle: String, val legende: String)
+data class ReferenceLine(val value: Float, val label: String, val caption: String)
 
 @Immutable
-data class BandeMediane(
-    val debutMs: Long,
-    val finMs: Long,
-    val mediane: Float,
-    val ciBas: Float,
-    val ciHaut: Float,
-    val etiquette: String?,
+data class MedianBand(
+    val startMs: Long,
+    val endMs: Long,
+    val median: Float,
+    val ciLow: Float,
+    val ciHigh: Float,
+    val label: String?,
 )
 
 /**
- * Le graphe de tendance — le graphe le plus important du produit.
+ * The trend chart — the most important chart in the product.
  *
- * ### L'axe X est calendaire, pas ordinal
+ * ### The X axis is calendar-based, not ordinal
  *
- * Les nuits sont posees a leur date reelle. Une semaine sans mesure laisse un trou visible : ce
- * trou est une information, pas un defaut de rendu. Un axe ordinal ferait passer trois nuits
- * espacees d'un mois pour une serie reguliere.
+ * Nights are laid down at their real date. A week without a measurement leaves a visible gap: that
+ * gap is information, not a rendering defect. An ordinal axis would make three nights a month apart
+ * look like a regular run.
  *
- * ### Les points ne sont pas relies
+ * ### The points are not joined up
  *
- * **C'est une decision, pas un oubli, et elle est commentee ici pour qu'un contributeur futur ne
- * la « corrige » pas.** Une polyligne entre deux nuits dessine une trajectoire continue entre
- * deux mesures qui n'ont rien de continu, et suggere une causalite qui n'existe pas. Si une
- * evolution monotone est reellement presente, la position des points la montrera sans qu'on ait
- * besoin de la souligner d'un trait. Une droite de tendance proprement dite est refusee sous dix
- * nuits comparables.
+ * **This is a decision, not an oversight, and it is commented here so that a future contributor
+ * does not "fix" it.** A polyline between two nights draws a continuous trajectory between two
+ * measurements that have nothing continuous about them, and suggests a causality that does not
+ * exist. If a monotonic evolution really is present, the position of the points will show it
+ * without needing to be underlined by a stroke. A trend line proper is refused below ten comparable
+ * nights.
  */
 @Immutable
-data class TendanceChartSpec(
-    val grandeur: Aggregat.Grandeur,
-    val points: List<PointNuit>,
-    val bandes: List<BandeMediane>,
-    val reference: LigneReference?,
-    val premierJourMs: Long,
-    val dernierJourMs: Long,
+data class TrendChartSpec(
+    val quantity: Aggregate.Quantity,
+    val points: List<NightPoint>,
+    val bands: List<MedianBand>,
+    val reference: ReferenceLine?,
+    val firstDayMs: Long,
+    val lastDayMs: Long,
     /**
-     * Le fuseau dans lequel les nuits ont ete vecues.
+     * The time zone in which the nights were lived.
      *
-     * Il n'est pas decoratif : l'axe des X est **calendaire**, donc ses graduations sont des
-     * dates, et une date n'existe pas sans calendrier. Sans lui, la seule maniere d'etiqueter une
-     * graduation est de diviser un epoch par 86 400 000 — c'est-a-dire de l'etiqueter en UTC — et
-     * une nuit commencee a 23 h 14 a Paris s'affiche alors au lendemain. Le pas d'un jour a la
-     * meme faiblesse : un jour civil fait 23 ou 25 heures deux fois par an, et un pas fixe finit
-     * par traverser minuit et repeter une date.
+     * It is not decorative: the X axis is **calendar-based**, so its ticks are dates, and a date
+     * does not exist without a calendar. Without it, the only way to label a tick is to divide an
+     * epoch by 86 400 000 — that is, to label it in UTC — and a night begun at 23:14 in Paris then
+     * shows up on the following day. A one-day step has the same weakness: a civil day lasts 23 or
+     * 25 hours twice a year, and a fixed step ends up crossing midnight and repeating a date.
      */
     val zoneId: String,
-    /** Date pivot en mode comparaison ; `null` sinon. */
+    /** Pivot date in comparison mode; `null` otherwise. */
     val pivotMs: Long?,
-    val descriptionAccessible: String,
+    val accessibleDescription: String,
 ) {
     /**
-     * `yMin = 0`, **en dur, non parametrable**.
+     * `yMin = 0`, **hard-coded, not configurable**.
      *
-     * Pour le compte horaire c'est l'invariante de produit classique : une echelle tronquee
-     * transforme une variation de 2/h en falaise. Pour le rythme en secondes, la question a ete
-     * posee autrement — un rythme n'a pas de zero « naturel » au sens ou une duree nulle n'existe
-     * pas physiologiquement. Elle est tranchee dans le meme sens et pour la meme raison : ancrer
-     * a zero preserve les **rapports** (21 s contre 42 s se lit comme le double), alors qu'un axe
-     * demarrant a 18 s ferait d'un ecart de trois secondes un effondrement visuel. Le prix est un
-     * peu de hauteur perdue ; le benefice est qu'aucune capture d'ecran ne peut mentir sur
-     * l'ampleur d'un ecart.
+     * For the hourly count this is the classic product invariant: a truncated scale turns a
+     * variation of 2/h into a cliff. For the rhythm in seconds the question was put differently — a
+     * rhythm has no "natural" zero in the sense that a null duration does not exist
+     * physiologically. It is settled the same way and for the same reason: anchoring at zero
+     * preserves the **ratios** (21 s against 42 s reads as double), whereas an axis starting at
+     * 18 s would turn a three-second difference into a visual collapse. The price is a little lost
+     * height; the benefit is that no screenshot can lie about the size of a difference.
      */
     val yMin: Float get() = 0f
 
-    /** `max(20, ceil(1,15 × plus haute valeur / 5) × 5)` : arrondi au multiple de 5 superieur. */
+    /** `max(20, ceil(1.15 x highest value / 5) x 5)`: rounded up to the next multiple of 5. */
     val yMax: Float
         get() {
-            val plusHaut = (points.maxOfOrNull { it.valeur } ?: 0f)
-                .coerceAtLeast(bandes.maxOfOrNull { it.ciHaut } ?: 0f)
-                .coerceAtLeast(reference?.valeur ?: 0f)
-            return max(20f, ceil(1.15f * plusHaut / 5f) * 5f)
+            val highest = (points.maxOfOrNull { it.value } ?: 0f)
+                .coerceAtLeast(bands.maxOfOrNull { it.ciHigh } ?: 0f)
+                .coerceAtLeast(reference?.value ?: 0f)
+            return max(20f, ceil(1.15f * highest / 5f) * 5f)
         }
 
-    val pasGraduation: Float get() = if (yMax <= 40f) 5f else 10f
+    val tickStep: Float get() = if (yMax <= 40f) 5f else 10f
 }
 
-/** Un segment de stade dans l'hypnogramme. */
+/** A stage segment in the hypnogram. */
 @Immutable
-data class SegmentStade(val debutMs: Long, val finMs: Long, val stade: StadeUi)
+data class StageSegment(val startMs: Long, val endMs: Long, val stage: StageUi)
 
 /**
- * Ordre conventionnel des laboratoires de sommeil : eveil en haut, sommeil profond en bas.
- * La position verticale est le porteur principal de l'information ; la couleur ne fait que
- * confirmer.
+ * The conventional order of sleep laboratories: wake at the top, deep sleep at the bottom.
+ * The vertical position is the primary carrier of the information; colour only confirms it.
  *
- * Le rang est la seule chose que cet enum porte : les cinq mots ecrits en marge vivent dans
- * `strings.xml` et descendent jusqu'au dessin par [LibellesHypnogramme]. Un libelle dans un
- * constructeur d'enum est une chaine anglaise qu'aucun `values-fr/` ne peut atteindre.
+ * The rank is the only thing this enum carries: the five words written in the margin live in
+ * `strings.xml` and travel down to the drawing through [HypnogramLabels]. A label in an enum
+ * constructor is an English string that no `values-fr/` can reach.
  */
-enum class StadeUi(val rang: Int) {
-    EVEIL(0),
+enum class StageUi(val rank: Int) {
+    WAKE(0),
     REM(1),
     N1(2),
     N2(3),
@@ -207,10 +204,10 @@ enum class StadeUi(val rang: Int) {
     ;
 
     companion object {
-        const val NIVEAUX = 5
+        const val LEVELS = 5
 
-        fun depuisCode(code: String): StadeUi = when (code.uppercase()) {
-            "WAKE", "AWAKE_IN_BED", "OUT_OF_BED", "EVEIL" -> EVEIL
+        fun fromCode(code: String): StageUi = when (code.uppercase()) {
+            "WAKE", "AWAKE_IN_BED", "OUT_OF_BED", "EVEIL" -> WAKE
             "REM" -> REM
             "LIGHT", "N1" -> N1
             "N2", "SLEEP" -> N2
@@ -221,131 +218,130 @@ enum class StadeUi(val rang: Int) {
 }
 
 // =========================================================================================
-// La bande d'etat de l'appareil — troisieme bande, meme axe, forme volontairement etrangere
+// The device state band — third band, same axis, deliberately foreign shape
 // =========================================================================================
 
 /**
- * Le port, en trois etats et non deux.
+ * Wearing, in three states and not two.
  *
- * [SANS_CAPTEUR] n'est pas une commodite : le Pixel Watch 3 porte bien un
- * `TYPE_LOW_LATENCY_OFFBODY_DETECT`, mais un appareil qui n'en a pas rendrait une bande vide
- * indiscernable d'une bande « porte toute la nuit ». Et la KDoc de `RecordingService` note que
- * **a la cheville**, ce detecteur lit tres probablement « non porte » en permanence : la voie est
- * donc une indication a croiser avec la temperature, pas un verdict.
+ * [NO_SENSOR] is not a convenience: the Pixel Watch 3 does carry a
+ * `TYPE_LOW_LATENCY_OFFBODY_DETECT`, but a device that has none would render an empty band
+ * indistinguishable from a "worn all night" band. And the KDoc of `RecordingService` notes that
+ * **at the ankle** this detector very probably reads "not worn" permanently: the lane is therefore
+ * an indication to cross-check against temperature, not a verdict.
  */
-enum class EtatPort { PORTE, RETIRE, SANS_CAPTEUR }
+enum class WearState { WORN, REMOVED, NO_SENSOR }
 
 /**
- * Le niveau de datation, en classes nommees et **sans axe gradue**.
+ * The timestamping level, in named classes and **with no graduated axis**.
  *
- * Ce que la classe designe est l'incertitude que la gigue fait peser sur l'instant d'un
- * echantillon : le format interpole lineairement entre `tFirstNs` et `tLastNs`, donc une cadence
- * moyenne parfaite obtenue en alternant 10 et 30 ms date chaque echantillon a 10 ms pres. C'est la
- * **dispersion** qui decide de la datation, jamais la moyenne — et c'est pour cela que la voie
- * montre `jitterStdUs` et non `measuredRateCentiHz`.
+ * What the class designates is the uncertainty that jitter places on the instant of a sample: the
+ * format interpolates linearly between `tFirstNs` and `tLastNs`, so a perfect mean rate obtained by
+ * alternating 10 and 30 ms dates each sample only to within 10 ms. It is the **dispersion** that
+ * decides the timestamping class, never the mean — and that is why the lane shows `jitterStdUs`
+ * and not `measuredRateCentiHz`.
  *
- * Trois classes et pas une echelle continue, parce qu'une echelle continue invite a lire une
- * tendance dans une grandeur qui n'en a pas : ce qui compte est de quel cote d'une periode
- * d'echantillonnage on se trouve, pas si la gigue a monte de 1,2 a 1,4 ms.
+ * Three classes and not a continuous scale, because a continuous scale invites reading a trend into
+ * a quantity that has none: what matters is which side of a sampling period one is on, not whether
+ * the jitter rose from 1.2 to 1.4 ms.
  */
-enum class NiveauDatation(val libelle: String) {
+enum class TimestampLevel(val label: String) {
     FINE("≤ 2 ms"),
-    MOYENNE("≤ 10 ms"),
-    GROSSIERE("> 10 ms"),
+    MEDIUM("≤ 10 ms"),
+    COARSE("> 10 ms"),
 }
 
-/** Un palier de datation. Marche horizontale, marche verticale : aucune interpolation. */
+/** A timestamping tier. Horizontal step, vertical step: no interpolation. */
 @Immutable
-data class PalierDatation(val debutMs: Long, val finMs: Long, val niveau: NiveauDatation)
+data class TimestampTier(val startMs: Long, val endMs: Long, val level: TimestampLevel)
 
 /**
- * La jauge de batterie — **une jauge, pas une courbe**.
+ * The battery gauge — **a gauge, not a curve**.
  *
- * Une courbe qui descend suggere une dynamique et invite a chercher une correlation entre la
- * batterie et les mouvements, entre lesquels il n'y a aucune causalite. La question posee a cette
- * voie est « la montre a-t-elle tenu la nuit », pas « quelle charge a 3 h 12 » — et une jauge
- * repond a la premiere sans permettre de poser la seconde.
+ * A curve that goes down suggests a dynamic and invites the reader to look for a correlation
+ * between the battery and the movements, between which there is no causality at all. The question
+ * put to this lane is "did the watch last the night", not "what was the charge at 03:12" — and a
+ * gauge answers the first without making the second askable.
  *
- * @param fraction remplissage dans `[0, 1]`, la charge restante a la fin de la nuit.
- * @param tenue le critere batterie de la porte P1 est-il tenu ? Il est **calcule ailleurs** —
- *   [com.pendulum.phone.ui.model.PenteBatterie] quand la pente aboutit, le dernier pourcentage
- *   sinon — et jamais recalcule ici : deux lectures du meme seuil finissent par diverger.
- * @param libelle le chiffre en clair, a cote de la jauge. La jauge situe, le texte mesure.
+ * @param fraction fill in `[0, 1]`, the charge left at the end of the night.
+ * @param thresholdMet is the battery criterion of the P1 gate met? It is **computed elsewhere** —
+ *   [com.pendulum.phone.ui.model.BatterySlope] when the slope succeeds, the last percentage
+ *   otherwise — and never recomputed here: two readings of the same threshold end up diverging.
+ * @param label the figure in plain text, next to the gauge. The gauge situates, the text measures.
  */
 @Immutable
-data class JaugeBatterie(val fraction: Float, val tenue: Boolean, val libelle: String)
+data class BatteryGauge(val fraction: Float, val thresholdMet: Boolean, val label: String)
 
 /**
- * L'etat de l'appareil pendant la nuit — la troisieme bande, sous l'hypnogramme.
+ * The state of the device during the night — the third band, under the hypnogram.
  *
- * ### L'axe partage est une necessite, pas un confort
+ * ### The shared axis is a necessity, not a convenience
  *
- * Sans lui, on lit un artefact de mesure comme un evenement physiologique : un signal plat pris
- * pour du calme alors que la montre etait hors du poignet, un mouvement absent pris pour une nuit
- * tranquille alors que l'ecretage du capteur avait aplati son sommet. Les trois bandes partagent
- * donc `debutMs`, `finMs` et la meme [XTransform] — un seul proprietaire du geste, le graphe de
- * nuit, exactement comme pour l'hypnogramme.
+ * Without it, a measurement artefact is read as a physiological event: a flat signal taken for
+ * calm when the watch was off the wrist, a missing movement taken for a quiet night when the
+ * sensor's clipping had flattened its peak. The three bands therefore share `startMs`, `endMs` and
+ * the same [XTransform] — a single owner of the gesture, the night chart, exactly as for the
+ * hypnogram.
  *
- * ### Et la separation doit etre totale dans la forme
+ * ### And the separation must be total in the shape
  *
- * L'oeil ne doit **pas** correler la batterie aux mouvements : il n'y a aucune causalite entre les
- * deux, et un lecteur qui en trouverait une aurait raison de croire ce qu'il voit et tort sur le
- * fond. Trois moyens, cumules :
+ * The eye must **not** correlate the battery with the movements: there is no causality between the
+ * two, and a reader who found one would be right to believe what he sees and wrong on the
+ * substance. Three means, cumulated:
  *
- *  1. **Une gouttiere franche**, anormalement large, avec un filet dur de separation. Elle dit
- *     « ce qui suit n'est pas du signal » avant qu'on ait lu quoi que ce soit.
- *  2. **Une grammaire graphique etrangere** : rien de continu, rien de courbe. Des blocs, des
- *     escaliers durs, des *rug plots*, une jauge. C'est la convention du *housekeeping* en
- *     telemetrie scientifique, isolee precisement pour ne pas etre lue comme de la mesure.
- *  3. **Aucune echelle Y graduee.** Les voies portent des noms, pas des valeurs : `worn`,
- *     `charger`, `timing`. Un axe chiffre en face d'un axe chiffre invite a la comparaison.
+ *  1. **A clear gutter**, abnormally wide, with a hard separating rule. It says "what follows is
+ *     not signal" before anything at all has been read.
+ *  2. **A foreign graphical grammar**: nothing continuous, nothing curved. Blocks, hard staircases,
+ *     *rug plots*, a gauge. This is the *housekeeping* convention of scientific telemetry, isolated
+ *     precisely so as not to be read as measurement.
+ *  3. **No graduated Y axis.** The lanes carry names, not values: `worn`, `charger`, `timing`. A
+ *     numbered axis facing a numbered axis invites comparison.
  *
- * ### Les intervalles couvrent la minute qui *precede* leur point
+ * ### The intervals cover the minute that *precedes* their point
  *
- * `fsyncCount`, `fsyncTotalUs`, `fsyncMaxUs` et `clippedSamples` comptent **depuis le point
- * precedent** ([com.pendulum.format.TelemetryPoint]). Un bloc d'etat s'etend donc du point
- * precedent au point courant, et non l'inverse — poser l'intervalle a l'envers decalerait toute la
- * bande d'une minute, ce qui est exactement l'ordre de grandeur d'un mouvement.
+ * `fsyncCount`, `fsyncTotalUs`, `fsyncMaxUs` and `clippedSamples` count **from the previous point**
+ * ([com.pendulum.format.TelemetryPoint]). A state block therefore extends from the previous point
+ * to the current one, and not the other way round — laying the interval down backwards would shift
+ * the whole band by a minute, which is exactly the order of magnitude of a movement.
  *
- * @param ecretage instants ou au moins un echantillon a touche la dynamique du capteur. *Rug
- *   plot* : des tics de meme hauteur, parce que la hauteur serait une echelle.
- * @param gels instants ou le pire `fsync` de la periode a depasse une periode d'echantillonnage —
- *   c'est-a-dire ou le processeur a pu geler assez longtemps pour manquer une interruption.
- * @param texteIndisponible ce qui s'ecrit quand la nuit ne porte aucune telemetrie. Une bande
- *   vide avec ses voies ferait chercher une panne la ou il y a une nuit enregistree avant que la
- *   telemetrie n'existe.
+ * @param clipping instants where at least one sample touched the sensor's dynamic range. *Rug
+ *   plot*: ticks of the same height, because height would be a scale.
+ * @param freezes instants where the worst `fsync` of the period exceeded one sampling period — that
+ *   is, where the processor may have frozen long enough to miss an interrupt.
+ * @param unavailableText what is written when the night carries no telemetry. An empty band with
+ *   its lanes would make one look for a fault where there is a night recorded before telemetry
+ *   existed.
  */
 @Immutable
-data class MetrologieSpec(
-    val debutMs: Long,
-    val finMs: Long,
-    val etatPort: EtatPort,
-    val horsPoignet: List<Intervalle>,
-    val charge: List<Intervalle>,
-    val datation: List<PalierDatation>,
-    val ecretage: List<Long>,
-    val gels: List<Long>,
-    val batterie: JaugeBatterie?,
+data class MetrologySpec(
+    val startMs: Long,
+    val endMs: Long,
+    val wearState: WearState,
+    val offWrist: List<Interval>,
+    val charging: List<Interval>,
+    val timestamping: List<TimestampTier>,
+    val clipping: List<Long>,
+    val freezes: List<Long>,
+    val battery: BatteryGauge?,
     val points: Int,
-    val texteIndisponible: String,
-    val descriptionAccessible: String,
+    val unavailableText: String,
+    val accessibleDescription: String,
 )
 
 /**
- * L'hypnogramme, sous le graphe de nuit, meme largeur, meme transformation X.
+ * The hypnogram, under the night chart, same width, same X transform.
  *
- * Quand [stades] est `null`, la voie centrale n'est **pas dessinee vide** : elle est remplacee
- * par une bande sourde portant un texte centre. Une voie vide avec ses graduations invite l'oeil
- * a chercher une courbe qui n'existe pas, et laisse croire a un bug plutot qu'a une donnee
- * absente.
+ * When [stages] is `null`, the central lane is **not drawn empty**: it is replaced by a muted band
+ * carrying a centred text. An empty lane with its ticks invites the eye to look for a curve that
+ * does not exist, and suggests a bug rather than absent data.
  */
 @Immutable
-data class HypnogrammeSpec(
-    val debutMs: Long,
-    val finMs: Long,
-    val stades: List<SegmentStade>?,
-    val immobiliteAccelero: List<Intervalle>,
-    val desaccord: List<Intervalle>,
-    val texteIndisponible: String,
-    val statistiques: String,
+data class HypnogramSpec(
+    val startMs: Long,
+    val endMs: Long,
+    val stages: List<StageSegment>?,
+    val accelStillness: List<Interval>,
+    val disagreement: List<Interval>,
+    val unavailableText: String,
+    val statistics: String,
 )

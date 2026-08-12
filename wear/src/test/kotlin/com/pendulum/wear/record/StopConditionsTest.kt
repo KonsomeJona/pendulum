@@ -7,13 +7,13 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * Les conditions d'arret automatique et leurs bornes.
+ * The automatic stop conditions and their bounds.
  *
- * Chaque condition ferme la nuit proprement — fichier clos, salve finale urgente. Le defaut
- * qu'on veut rendre impossible est double : une condition qui se declenche trop tot ampute une
- * nuit valide (le faux contact du chargeur magnetique, l'heure butoir sur un enregistrement qui
- * vient de demarrer), une condition qui se declenche trop tard laisse le systeme tuer le service
- * et la nuit se termine en « la montre est morte a 3 h » au lieu de « tout est envoye ».
+ * Each condition closes the night cleanly — file closed, final burst urgent. The defect we want
+ * to make impossible is twofold: a condition that fires too early truncates a valid night (the
+ * false contact of the magnetic charger, the cut-off time on a recording that has only just
+ * started), a condition that fires too late lets the system kill the service and the night ends
+ * as "the watch died at 3 a.m." instead of "everything was sent".
  */
 class StopConditionsTest {
 
@@ -23,23 +23,23 @@ class StopConditionsTest {
     }
 
     /**
-     * Les durees sont passees **nominales**, jamais lues dans `Durees.ACTIVES`.
+     * The durations are passed in **nominal**, never read from `Durations.ACTIVE`.
      *
-     * Ce fichier affirme des bornes a la milliseconde pres — « 59 999 ms de charge continuent,
-     * 60 000 arretent ». Les laisser suivre le diviseur de la variante compilee ferait echouer
-     * toutes ces assertions des qu'un banc serait construit avec une echelle comprimee, pour une
-     * raison qui n'a rien a voir avec ce qu'elles verifient : la logique d'arret, elle, ne depend
-     * pas de la vitesse a laquelle le temps passe.
+     * This file asserts bounds to the millisecond — "59,999 ms of charging carries on, 60,000
+     * stops". Letting them follow the divisor of the compiled variant would make all these
+     * assertions fail as soon as a bench were built with a compressed scale, for a reason that
+     * has nothing to do with what they check: the stop logic itself does not depend on the speed
+     * at which time passes.
      */
     private fun conditions(stopAt: Int = 600) = StopConditions(
         startWallMs = START,
         stopAtLocalMinutes = stopAt,
-        antiRebondChargeMs = 60_000L,
-        dureeMaxMs = 10 * 3_600_000L,
-        delaiMinAvantHeureButoirMs = 3_600_000L,
+        chargingDebounceMs = 60_000L,
+        maxDurationMs = 10 * 3_600_000L,
+        minDelayBeforeCutoffMs = 3_600_000L,
     )
 
-    /** Une nuit saine a 3 h du matin : aucune condition ne doit se presenter. */
+    /** A healthy night at 3 a.m.: no condition should present itself. */
     private fun StopConditions.eval(
         nowMs: Long = TWO_HOURS,
         isCharging: Boolean = false,
@@ -50,18 +50,18 @@ class StopConditionsTest {
     ): StopReason? = evaluate(nowMs, isCharging, batteryPct, freeBytes, localMinutes, wakeRatio)
 
     @Test
-    @DisplayName("une nuit saine ne s'arrete pas")
-    fun `cas nominal`() {
+    @DisplayName("a healthy night does not stop")
+    fun `nominal case`() {
         assertThat(conditions().eval()).isNull()
     }
 
     // -------------------------------------------------------------------------------------
-    // Chargeur : 60 s de charge soutenue
+    // Charger: 60 s of sustained charging
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("la charge n'arrete qu'apres 60 s soutenues, a la milliseconde pres")
-    fun `anti-rebond du chargeur`() {
+    @DisplayName("charging only stops after 60 sustained seconds, to the millisecond")
+    fun `charger debounce`() {
         val c = conditions()
 
         assertThat(c.eval(nowMs = TWO_HOURS, isCharging = true)).isNull()
@@ -71,97 +71,97 @@ class StopConditionsTest {
     }
 
     @Test
-    @DisplayName("un faux contact du chargeur magnetique ne coupe pas la nuit")
-    fun `faux contact remet l anti-rebond a zero`() {
+    @DisplayName("a false contact of the magnetic charger does not cut the night short")
+    fun `a false contact resets the debounce`() {
         val c = conditions()
 
-        // Le dormeur roule sur le chargeur pose sur la table de nuit : contact bref, rupture,
-        // recontact. Sans remise a zero, les contacts brefs s'additionneraient et la nuit
-        // s'arreterait au premier qui depasse le total — pour une montre jamais vraiment posee.
+        // The sleeper rolls onto the charger left on the bedside table: brief contact, break,
+        // contact again. Without a reset, the brief contacts would add up and the night would
+        // stop at the first one to push the total over — for a watch never really put down.
         assertThat(c.eval(nowMs = TWO_HOURS, isCharging = true)).isNull()
         assertThat(c.eval(nowMs = TWO_HOURS + 30_000, isCharging = false)).isNull()
         assertThat(c.eval(nowMs = TWO_HOURS + 40_000, isCharging = true)).isNull()
-        // 60 s depuis le PREMIER contact, mais 59,999 s depuis le second : pas d'arret.
+        // 60 s since the FIRST contact, but 59.999 s since the second: no stop.
         assertThat(c.eval(nowMs = TWO_HOURS + 99_999, isCharging = true)).isNull()
         assertThat(c.eval(nowMs = TWO_HOURS + 100_000, isCharging = true))
             .isEqualTo(StopReason.CHARGING)
     }
 
     // -------------------------------------------------------------------------------------
-    // Batterie
+    // Battery
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("5 % arrete, 6 % continue : la fermeture doit preceder la mort du systeme")
-    fun `borne de batterie basse`() {
+    @DisplayName("5 % stops, 6 % carries on: the close must come before the system dies")
+    fun `low battery bound`() {
         assertThat(conditions().eval(batteryPct = 6)).isNull()
         assertThat(conditions().eval(batteryPct = 5)).isEqualTo(StopReason.LOW_BATTERY)
         assertThat(conditions().eval(batteryPct = 0)).isEqualTo(StopReason.LOW_BATTERY)
     }
 
     @Test
-    @DisplayName("un niveau de batterie inconnu n'arrete jamais rien")
-    fun `batterie inconnue`() {
-        // BatteryManager repond -1 quand la valeur n'est pas disponible. Traiter « inconnu »
-        // comme « vide » couperait des nuits entieres sur un simple rate de lecture.
+    @DisplayName("an unknown battery level never stops anything")
+    fun `unknown battery`() {
+        // BatteryManager answers -1 when the value is not available. Treating "unknown" as
+        // "empty" would cut whole nights short on a single failed read.
         assertThat(conditions().eval(batteryPct = -1)).isNull()
     }
 
     // -------------------------------------------------------------------------------------
-    // Duree maximale
+    // Maximum duration
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("dix heures pile arretent ; une milliseconde de moins continue")
-    fun `borne de duree maximale`() {
-        val dixHeures = 10 * 3_600_000L
-        assertThat(conditions().eval(nowMs = START + dixHeures - 1)).isNull()
-        assertThat(conditions().eval(nowMs = START + dixHeures))
+    @DisplayName("exactly ten hours stops; one millisecond less carries on")
+    fun `maximum duration bound`() {
+        val tenHours = 10 * 3_600_000L
+        assertThat(conditions().eval(nowMs = START + tenHours - 1)).isNull()
+        assertThat(conditions().eval(nowMs = START + tenHours))
             .isEqualTo(StopReason.MAX_DURATION)
     }
 
     // -------------------------------------------------------------------------------------
-    // Heure butoir
+    // Cut-off time
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("l'heure butoir ne vaut que si la nuit a plus d'une heure")
-    fun `heure butoir et nuit qui vient de demarrer`() {
-        // Enregistrement demarre a 11 h avec butoir a 10 h : l'heure locale depasse le butoir
-        // des la premiere milliseconde. Sans le garde-fou d'une heure, la nuit s'arreterait
-        // avant d'avoir existe.
+    @DisplayName("the cut-off time only counts if the night is more than an hour old")
+    fun `cut-off time and a night that has only just started`() {
+        // Recording started at 11 a.m. with a cut-off at 10 a.m.: local time is past the cut-off
+        // from the very first millisecond. Without the one-hour guard rail, the night would stop
+        // before it had existed.
         assertThat(conditions().eval(nowMs = START + 1, localMinutes = 660)).isNull()
-        // Une heure pile ne suffit pas : la borne est strictement au-dela.
+        // Exactly one hour is not enough: the bound is strictly beyond.
         assertThat(conditions().eval(nowMs = START + 3_600_000, localMinutes = 660)).isNull()
         assertThat(conditions().eval(nowMs = START + 3_600_001, localMinutes = 660))
             .isEqualTo(StopReason.TIME_LIMIT)
     }
 
     @Test
-    @DisplayName("la minute butoir elle-meme arrete ; la minute d'avant continue")
-    fun `borne de l heure butoir`() {
+    @DisplayName("the cut-off minute itself stops; the minute before carries on")
+    fun `cut-off time bound`() {
         assertThat(conditions().eval(localMinutes = 599)).isNull()
         assertThat(conditions().eval(localMinutes = 600)).isEqualTo(StopReason.TIME_LIMIT)
     }
 
     // -------------------------------------------------------------------------------------
-    // Reveil
+    // Waking
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("80 % d'epoques actives continuent ; strictement au-dela, la personne est levee")
-    fun `borne du ratio de reveil`() {
+    @DisplayName("80 % of active epochs carries on; strictly beyond, the person is up")
+    fun `waking ratio bound`() {
         assertThat(conditions().eval(wakeRatio = 0.80)).isNull()
         assertThat(conditions().eval(wakeRatio = 0.801)).isEqualTo(StopReason.WAKE_DETECTED)
     }
 
     // -------------------------------------------------------------------------------------
-    // Disque
+    // Disk
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("sous 50 Mo libres, fermer maintenant vaut mieux qu'ecrire jusqu'au mur")
-    fun `borne d espace disque`() {
+    @DisplayName("below 50 MB free, closing now is better than writing until the wall")
+    fun `disk space bound`() {
         assertThat(conditions().eval(freeBytes = StopConditions.MIN_FREE_BYTES)).isNull()
         assertThat(conditions().eval(freeBytes = StopConditions.MIN_FREE_BYTES - 1))
             .isEqualTo(StopReason.DISK_FULL)
@@ -169,46 +169,46 @@ class StopConditionsTest {
     }
 
     // -------------------------------------------------------------------------------------
-    // Priorite : la premiere condition presentee gagne
+    // Priority: the first condition to present itself wins
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("la charge soutenue passe avant la batterie basse : le motif dit la cause premiere")
-    fun `priorite de la charge`() {
+    @DisplayName("sustained charging comes before low battery: the reason states the first cause")
+    fun `charging priority`() {
         val c = conditions()
-        c.eval(nowMs = TWO_HOURS, isCharging = true) // le contact demarre l'anti-rebond
+        c.eval(nowMs = TWO_HOURS, isCharging = true) // the contact starts the debounce
 
-        // Sur le chargeur avec 3 % : la nuit est finie parce que l'utilisateur a pose la montre,
-        // pas parce que la batterie est vide. Le sidecar racontera la mauvaise histoire si
-        // l'ordre change — et c'est ce motif que l'ecran du telephone affichera au reveil.
+        // On the charger at 3 %: the night is over because the user put the watch down, not
+        // because the battery is empty. The sidecar will tell the wrong story if the order
+        // changes — and it is this reason that the phone screen will show on waking.
         assertThat(c.eval(nowMs = TWO_HOURS + 60_000, isCharging = true, batteryPct = 3))
             .isEqualTo(StopReason.CHARGING)
     }
 
     @Test
-    @DisplayName("le reveil detecte passe avant le disque plein")
-    fun `priorite du reveil sur le disque`() {
+    @DisplayName("detected waking comes before a full disk")
+    fun `waking takes priority over the disk`() {
         assertThat(conditions().eval(wakeRatio = 0.9, freeBytes = 0))
             .isEqualTo(StopReason.WAKE_DETECTED)
     }
 }
 
 /**
- * Le vrai detecteur de « montre retiree » : la locomotion. L'off-body du PPG n'existe pas ici,
- * et c'est voulu — a la cheville il lirait « non porte » en permanence et couperait chaque nuit
- * a sa premiere minute.
+ * The real "watch removed" detector: locomotion. The PPG's off-body does not exist here, and that
+ * is deliberate — at the ankle it would read "not worn" permanently and would cut every night at
+ * its first minute.
  */
 class WakeDetectorTest {
 
     private companion object {
         const val T0 = 1_000_000_000L
-        const val ACTIVE_RMS = 3.0 // marche : bien au-dela du seuil de locomotion de 1,5 m/s^2
-        const val QUIET_RMS = 0.1 // sommeil
+        const val ACTIVE_RMS = 3.0 // walking: well beyond the locomotion threshold of 1.5 m/s^2
+        const val QUIET_RMS = 0.1 // sleep
     }
 
     @Test
-    @DisplayName("le ratio reste a zero tant qu'aucune epoque de 30 s n'est close")
-    fun `pas de verdict sans epoque complete`() {
+    @DisplayName("the ratio stays at zero as long as no 30 s epoch has closed")
+    fun `no verdict without a complete epoch`() {
         val d = WakeDetector()
         var ts = T0
         repeat(29) {
@@ -216,49 +216,49 @@ class WakeDetectorTest {
             ts += 1_000_000_000L
         }
 
-        // 29 s d'agitation ne font pas un lever : se prononcer avant la premiere epoque close,
-        // c'est arreter la nuit sur un retournement.
+        // 29 s of restlessness do not make a getting-up: ruling before the first epoch has closed
+        // means stopping the night over a single turn in bed.
         assertThat(d.ratio).isEqualTo(0.0)
     }
 
     @Test
-    @DisplayName("une epoque bascule a la majorite stricte de secondes actives, pas a l'egalite")
-    fun `borne de majorite dans l epoque`() {
-        // Premiere epoque : 31 appels (le 31e la clot). 16 secondes actives sur 31 = majorite.
-        val actif = WakeDetector()
-        feed(actif, activeSeconds = 16, totalSeconds = 31)
-        assertThat(actif.ratio).isEqualTo(1.0)
+    @DisplayName("an epoch flips on a strict majority of active seconds, not on a tie")
+    fun `majority bound within the epoch`() {
+        // First epoch: 31 calls (the 31st closes it). 16 active seconds out of 31 = majority.
+        val active = WakeDetector()
+        feed(active, activeSeconds = 16, totalSeconds = 31)
+        assertThat(active.ratio).isEqualTo(1.0)
 
-        // 15 sur 31 : l'egalite arrondie ne suffit pas, l'epoque reste une epoque de sommeil.
-        val calme = WakeDetector()
-        feed(calme, activeSeconds = 15, totalSeconds = 31)
-        assertThat(calme.ratio).isEqualTo(0.0)
+        // 15 out of 31: a rounded tie is not enough, the epoch stays a sleep epoch.
+        val quiet = WakeDetector()
+        feed(quiet, activeSeconds = 15, totalSeconds = 31)
+        assertThat(quiet.ratio).isEqualTo(0.0)
     }
 
     @Test
-    @DisplayName("un lever reel franchit le seuil de 0,80 seulement apres une locomotion soutenue")
-    fun `scenario du lever`() {
+    @DisplayName("a real getting-up crosses the 0.80 threshold only after sustained locomotion")
+    fun `getting-up scenario`() {
         val d = WakeDetector()
         var ts = T0
 
-        // Fin de nuit calme : 3 epoques de sommeil...
-        repeat(91) { // la 1re epoque compte 31 appels, les suivantes 30
+        // A quiet end of night: 3 sleep epochs...
+        repeat(91) { // the 1st epoch counts 31 calls, the following ones 30
             d.onSecond(QUIET_RMS, ts)
             ts += 1_000_000_000L
         }
-        // ... puis la personne se leve et reste debout : 17 epoques de locomotion.
+        // ... then the person gets up and stays up: 17 locomotion epochs.
         repeat(17 * 30) {
             d.onSecond(ACTIVE_RMS, ts)
             ts += 1_000_000_000L
         }
 
-        // 17 epoques actives sur les 20 de la fenetre de 10 min : 0,85, au-dela du seuil de
-        // 0,80 de StopConditions. Le sursaut d'une minute, lui, n'y arrivera jamais — c'est
-        // toute la difference entre « alle aux toilettes » et « leve pour de bon ».
+        // 17 active epochs out of the 20 in the 10 min window: 0.85, beyond the 0.80 threshold of
+        // StopConditions. A one-minute stir will never get there — that is the whole difference
+        // between "went to the toilet" and "up for good".
         assertThat(d.ratio).isCloseTo(0.85, within(1e-9))
     }
 
-    /** Alimente [d] a 1 Hz : d'abord [activeSeconds] secondes actives, puis du calme. */
+    /** Feeds [d] at 1 Hz: first [activeSeconds] active seconds, then quiet. */
     private fun feed(d: WakeDetector, activeSeconds: Int, totalSeconds: Int) {
         var ts = T0
         repeat(totalSeconds) { i ->

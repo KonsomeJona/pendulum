@@ -11,189 +11,190 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.pendulum.phone.ui.common.BoutonMotive
+import com.pendulum.phone.ui.common.ReasonedButton
 import com.pendulum.phone.ui.common.PendulumCard
-import com.pendulum.phone.ui.common.Paragraphe
+import com.pendulum.phone.ui.common.Paragraph
 import com.pendulum.phone.ui.common.SectionHeader
 import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.model.CeSoirUi
-import com.pendulum.phone.ui.model.CompteRendu
-import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.model.TonightUi
+import com.pendulum.phone.ui.model.Feedback
+import com.pendulum.phone.ui.text.resolve
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 /**
- * La carte « Preparer la nuit » — la premiere des trois cartes fixes de l'accueil.
+ * The "Prepare the night" card — the first of the three fixed cards on the home screen.
  *
- * ### Elle ne va plus et ne vient plus
+ * ### It no longer comes and goes
  *
- * Elle etait ecrite pour n'apparaitre qu'entre 20 h et 4 h, et n'a jamais ete rendue par personne.
- * La plage horaire est retiree : une carte en tete d'ecran qui apparait et disparait deplace
- * verticalement tout ce qui la suit, deux fois par jour, et l'horloge n'est pas une source d'etat
- * fiable — un travailleur de nuit se couche a 9 h. Elle est desormais permanente, et c'est son
- * bouton qui porte l'etat. Ecart assume vis-a-vis de `docs/06-interface.md` §2.2.
+ * It was written to appear only between 8 pm and 4 am, and was never rendered by anyone. The time
+ * window is removed: a card at the top of the screen that appears and disappears moves everything
+ * below it vertically, twice a day, and the clock is not a reliable source of state — a night
+ * worker goes to bed at 9 am. It is permanent from now on, and it is its button that carries the
+ * state. Deliberate departure from `docs/06-interface.md` §2.2.
  *
- * ### Ce qui est un avis et ce qui est une porte
+ * ### What is an advisory and what is a gate
  *
- * La batterie sous 85 % est un **avis** : la ligne passe en ambre, le texte donne le chiffre, et
- * rien n'est bloque. C'est l'utilisateur qui decide s'il tente la nuit.
+ * A battery below 85 % is an **advisory**: the row turns amber, the text gives the figure, and
+ * nothing is blocked. It is the user who decides whether to attempt the night.
  *
- * Le scellement du contexte, lui, est la seule vraie **porte** du produit : tant qu'il n'est pas
- * fait, la montre refuse de demarrer. Le motif est le garde-fou 1 de `SPEC-v2.md` §3 — une dose
- * et un contexte notes apres coup sont notes en connaissance du resultat, donc inutilisables.
+ * Sealing the context, on the other hand, is the product's only real **gate**: until it is done,
+ * the watch refuses to start. The reason is guard rail 1 of `SPEC-v2.md` §3 — a dose and a
+ * context noted after the fact are noted in the knowledge of the result, hence unusable.
  *
- * ### Pourquoi le bouton reste, meme scelle
+ * ### Why the button stays, even once sealed
  *
- * Le contexte est append-only : le sceller deux fois leve. Le bouton pourrait donc disparaitre
- * une fois le geste fait — et la carte changerait de hauteur au moment precis ou l'utilisateur
- * vient d'agir. Il reste, grise, et **porte son motif** : le contexte est scelle sur ce telephone.
- * La forme de la carte est la meme du debut a la fin de la soiree.
+ * The context is append-only: sealing it twice throws. The button could therefore disappear once
+ * the gesture is done — and the card would change height at the very moment the user has just
+ * acted. It stays, greyed out, and **carries its reason**: the context is sealed on this phone.
+ * The card has the same shape from the beginning to the end of the evening.
  *
- * ### Le bouton de demarrage rend compte
+ * ### The start button gives feedback
  *
- * `demanderLeDemarrage` peut echouer — la montre est hors de portee, ou son application n'est pas
- * installee — et le ViewModel publiait deja les deux issues dans un flux que **personne ne
- * collectait**. « La montre enregistre » et « la montre n'a rien recu » etaient donc le meme
- * ecran. C'est le pire endroit de l'application ou taire un echec : il ne se constate qu'au
- * reveil, quand la nuit est perdue et qu'il n'y a plus rien a rattraper.
+ * `requestStart` can fail — the watch is out of range, or its app is not installed — and the
+ * ViewModel already published both outcomes into a flow that **nobody collected**. "The watch is
+ * recording" and "the watch received nothing" were therefore the same screen. This is the worst
+ * place in the application to keep quiet about a failure: it is only found out on waking, when the
+ * night is lost and there is nothing left to salvage.
  *
- * [retourDemarrage] tient sous le bouton, en une ligne, et disparait — voir l'appelant. La teinte
- * vient de `CompteRendu.echec` et non du texte.
+ * [startFeedback] sits under the button, on one line, and disappears — see the caller. The tint
+ * comes from `Feedback.failed` and not from the text.
  */
 @Composable
 fun TonightCard(
-    etat: CeSoirUi,
-    motifIndisponible: String?,
-    onSceller: () -> Unit,
-    onDemarrer: (() -> Unit)? = null,
-    retourDemarrage: CompteRendu? = null,
+    state: TonightUi,
+    unavailableReason: String?,
+    onSeal: () -> Unit,
+    onStart: (() -> Unit)? = null,
+    startFeedback: Feedback? = null,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
     PendulumCard(modifier) {
         SectionHeader(
-            if (etat.enregistrement == null) {
+            if (state.recording == null) {
                 stringResource(R.string.home_prepare_title)
             } else {
                 stringResource(R.string.tonight_recording)
             },
         )
 
-        val enr = etat.enregistrement
-        if (enr == null) {
-            Ligne(
+        val rec = state.recording
+        if (rec == null) {
+            ValueRow(
                 stringResource(R.string.tonight_row_watch),
-                "${pourcentage(etat.batteriePct)}  ·  ${etat.espaceLibre ?: TIRET} free",
-                if (etat.batterieInsuffisante) c.attention else null,
+                "${percentage(state.batteryPct)}  ·  ${state.freeSpace ?: DASH} free",
+                if (state.batteryInsufficient) c.attention else null,
             )
-            if (etat.batterieInsuffisante) {
+            if (state.batteryInsufficient) {
                 Text(stringResource(R.string.tonight_low_battery), style = PendulumType.caption, color = c.attention)
             }
-            Ligne(stringResource(R.string.tonight_row_strap), portLisible(etat))
-            Ligne(
+            ValueRow(stringResource(R.string.tonight_row_strap), readableWearing(state))
+            ValueRow(
                 stringResource(R.string.tonight_row_sleep),
-                etat.sourceSommeil.resoudre(),
-                if (etat.sourceActive == false) c.attention else null,
+                state.sleepSource.resolve(),
+                if (state.sourceActive == false) c.attention else null,
             )
             Spacer(Modifier.height(Spacing.sm.dp))
 
-            Paragraphe(stringResource(R.string.tonight_seal_body))
+            Paragraph(stringResource(R.string.tonight_seal_body))
             Spacer(Modifier.height(Spacing.s.dp))
             Text(
                 stringResource(
-                    if (etat.contexteScelle) R.string.tonight_start_instruction
+                    if (state.contextSealed) R.string.tonight_start_instruction
                     else R.string.tonight_seal_missing,
                 ),
-                style = if (etat.contexteScelle) PendulumType.bodyEmph else PendulumType.body,
-                color = if (etat.contexteScelle) c.textPrimary else c.attention,
+                style = if (state.contextSealed) PendulumType.bodyEmph else PendulumType.body,
+                color = if (state.contextSealed) c.textPrimary else c.attention,
             )
             Spacer(Modifier.height(Spacing.s.dp))
-            // Une fois le contexte scelle, la montre accepte de demarrer — et on peut le lui
-            // demander d'ici. C'est l'ecart assume vis-a-vis de `docs/06-interface.md` §2.2, qui
-            // reserve le demarrage a un geste physique sur la montre.
+            // Once the context is sealed the watch accepts to start — and it can be asked to from
+            // here. This is the deliberate departure from `docs/06-interface.md` §2.2, which
+            // reserves the start for a physical gesture on the watch.
             //
-            // Ce que l'ecart ne coute pas : `RecordingService` re-verifie le preflight avant de
-            // demarrer, donc ce bouton ne contourne rien. Ce qu'il rapporte : au coucher, la
-            // montre est deja a la cheville, sous la couette, et se pencher pour la reveiller
-            // produit exactement l'artefact de mouvement que la mesure de la nuit va enregistrer.
+            // What the departure does not cost: `RecordingService` re-checks the preflight before
+            // starting, so this button bypasses nothing. What it brings: at bedtime the watch is
+            // already on the ankle, under the duvet, and leaning over to wake it produces exactly
+            // the movement artefact that the night's measurement is about to record.
             //
-            // La consigne « appuyez sur START sur la montre » reste affichee au-dessus : le geste
-            // physique demeure le chemin nominal, et celui-ci le double sans le remplacer.
-            if (etat.contexteScelle && onDemarrer != null) {
+            // The instruction "press START on the watch" stays displayed above: the physical
+            // gesture remains the nominal path, and this one doubles it without replacing it.
+            if (state.contextSealed && onStart != null) {
                 Spacer(Modifier.height(Spacing.s.dp))
                 Button(
-                    onClick = onDemarrer,
+                    onClick = onStart,
                     shape = PendulumShapes.button,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(stringResource(R.string.tonight_start_on_watch)) }
 
-                // Sous le bouton et non a sa place : le libelle d'un bouton reste invariant, c'est
-                // la meme regle que le motif de `BoutonMotive`. Ambre quand la montre n'a rien
-                // recu — rien n'est casse, mais la consigne du dessus devient la seule qui marche.
-                retourDemarrage?.let {
+                // Under the button and not in its place: a button's label stays invariant, which is
+                // the same rule as the reason of `ReasonedButton`. Amber when the watch received
+                // nothing — nothing is broken, but the instruction above becomes the only one that
+                // works.
+                startFeedback?.let {
                     Spacer(Modifier.height(Spacing.xs.dp))
                     Text(
-                        it.message.resoudre(),
+                        it.message.resolve(),
                         style = PendulumType.caption,
-                        color = if (it.echec) c.attention else c.textSecondary,
+                        color = if (it.failed) c.attention else c.textSecondary,
                     )
                 }
             }
 
-            BoutonMotive(
-                libelle = stringResource(R.string.tonight_seal_button),
-                motifIndisponible = motifIndisponible,
-                onClick = onSceller,
+            ReasonedButton(
+                label = stringResource(R.string.tonight_seal_button),
+                unavailableReason = unavailableReason,
+                onClick = onSeal,
             )
         } else {
-            Ligne(stringResource(R.string.tonight_row_since, enr.depuis), enr.duree)
-            Ligne(
+            ValueRow(stringResource(R.string.tonight_row_since, rec.since), rec.duration)
+            ValueRow(
                 stringResource(R.string.tonight_row_samples),
                 stringResource(
                     R.string.tonight_row_samples_value,
-                    enr.echantillons,
-                    "%.1f".format(enr.hzMesures),
+                    rec.samples,
+                    "%.1f".format(rec.measuredHz),
                 ),
             )
-            Ligne(
+            ValueRow(
                 stringResource(R.string.tonight_row_battery),
-                stringResource(R.string.tonight_row_battery_value, enr.batteriePct, enr.trous),
+                stringResource(R.string.tonight_row_battery_value, rec.batteryPct, rec.gaps),
             )
             Spacer(Modifier.height(Spacing.s.dp))
-            // Rafraichissement 60 s, ecran allume et application au premier plan uniquement.
-            // Aucun service telephone, aucune notification persistante : rien a surveiller.
-            Paragraphe(stringResource(R.string.tonight_stop_instruction))
+            // Refreshed every 60 s, screen on and application in the foreground only. No phone
+            // service, no persistent notification: nothing to keep an eye on.
+            Paragraph(stringResource(R.string.tonight_stop_instruction))
         }
     }
 }
 
 /**
- * Le port : bracelet et jambe, ou ce qu'on en sait.
+ * The wearing: strap and leg, or what is known of them.
  *
- * Avant le scellement la jambe est inconnue et le reste — la deviner fausserait le critere de
- * comparabilite sans que rien ne le signale.
+ * Before sealing, the leg is unknown and stays so — guessing it would distort the comparability
+ * criterion without anything saying so.
  */
 @Composable
-private fun portLisible(etat: CeSoirUi): String =
-    listOfNotNull(etat.bracelet.takeIf { it.isNotBlank() }, etat.jambe?.resoudre())
+private fun readableWearing(state: TonightUi): String =
+    listOfNotNull(state.strap.takeIf { it.isNotBlank() }, state.leg?.resolve())
         .joinToString(", ")
-        .ifBlank { TIRET }
+        .ifBlank { DASH }
 
-private fun pourcentage(pct: Int?): String = if (pct == null) TIRET else "$pct%"
+private fun percentage(pct: Int?): String = if (pct == null) DASH else "$pct%"
 
-private const val TIRET = "—"
+private const val DASH = "—"
 
 @Composable
-private fun Ligne(libelle: String, valeur: String, teinte: Color? = null) {
+private fun ValueRow(label: String, value: String, tint: Color? = null) {
     val c = LocalPendulumColors.current
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(libelle, style = PendulumType.body, color = c.textSecondary)
-        Text(valeur, style = PendulumType.bodyNum, color = teinte ?: c.textPrimary)
+        Text(label, style = PendulumType.body, color = c.textSecondary)
+        Text(value, style = PendulumType.bodyNum, color = tint ?: c.textPrimary)
     }
 }

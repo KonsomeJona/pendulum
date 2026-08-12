@@ -5,34 +5,34 @@ import com.pendulum.format.ChunkHeader
 import com.pendulum.format.ChunkWriter
 import com.pendulum.format.TelemetryPoint
 import com.pendulum.format.wire.WireProtocol
-import com.pendulum.wear.temps.Durees
+import com.pendulum.wear.time.Durations
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.TimeZone
 
 /**
- * Nommage, rotation et durabilite des fichiers de chunk d'une session.
+ * Naming, rotation and durability of a session's chunk files.
  *
- * Un chunk est ferme des que `elapsed >= 300 s` **ou** que l'ecriture du bloc suivant ferait
- * depasser 92 160 octets. Les deux conditions sont necessaires : la duree borne ce qu'on perd
- * si la montre meurt, le plafond d'octets garantit que le fichier tient dans la charge utile de
- * 100 Ko d'un `DataItem` meme si `fs` reel derive ou si un mode degrade change la cadence.
+ * A chunk is closed as soon as `elapsed >= 300 s` **or** writing the next block would take it
+ * past 92 160 bytes. Both conditions are necessary: the duration bounds what is lost if the
+ * watch dies, the byte ceiling guarantees the file fits in the 100 KB payload of a `DataItem`
+ * even if the real `fs` drifts or a degraded mode changes the rate.
  *
- * **Sur le banc, les deux conditions ne courent plus a la meme vitesse.** La duree se comprime,
- * le volume non — c'est le choix explique dans `Temps`. La consequence est chiffree dans la KDoc
- * de [writeBlock], parce que c'est la que la course se decide.
+ * **On the bench, the two conditions no longer run at the same speed.** Duration compresses,
+ * volume does not — that is the choice explained in `TimeScale`. The consequence is quantified in
+ * the KDoc of [writeBlock], because that is where the race is decided.
  *
- * **La telemetrie de nuit voyage dans les memes fichiers**, comme un type de bloc de plus (voir la
- * KDoc de `ChunkFormat`). Elle n'a donc pas de plafond a elle : ses octets comptent dans le
- * `bytesWritten` du writer, c'est-a-dire dans la condition de rotation par le volume. Le garde-fou
- * des 92 160 octets couvre la telemetrie sans qu'on ait rien a lui ajouter — et il aurait fallu y
- * penser si elle avait eu son propre chemin.
+ * **Night telemetry travels in the same files**, as one more block type (see the KDoc of
+ * `ChunkFormat`). It therefore has no ceiling of its own: its bytes count towards the writer's
+ * `bytesWritten`, that is, towards the rotation-by-volume condition. The 92 160-byte guard rail
+ * covers telemetry without anything having to be added for it — and it would have had to be
+ * thought about had telemetry been given a path of its own.
  *
- * Le fichier porte son nom definitif des l'ouverture : c'est le **marqueur de fin** qui
- * distingue un chunk complet d'un chunk en cours, pas son extension. Un `.part` renomme a la
- * fermeture serait une seconde source de verite, qui divergerait le jour ou le processus meurt
- * entre le `finish()` et le `rename()`.
+ * The file bears its final name from the moment it is opened: it is the **end marker** that
+ * distinguishes a complete chunk from one still in progress, not its extension. A `.part`
+ * renamed at close would be a second source of truth, which would diverge the day the process
+ * dies between the `finish()` and the `rename()`.
  */
 class ChunkStore(
     private val sessionDir: File,
@@ -43,13 +43,13 @@ class ChunkStore(
     startIndex: Int,
     private var rateHz: Int,
     private var modeFlags: Int,
-    /** Borne de duree de la rotation. Parametre plutot que constante lue au fond de [writeBlock] :
-     *  c'est ce qui rend la rotation testable a une echelle choisie, sans horloge a bousculer. */
-    private val rotationMs: Long = Durees.ACTIVES.rotationChunkMs,
+    /** Rotation duration bound. A parameter rather than a constant read deep inside [writeBlock]:
+     *  this is what makes rotation testable at a chosen scale, with no clock to tamper with. */
+    private val rotationMs: Long = Durations.ACTIVE.chunkRotationMs,
 ) {
 
-    /** Index du prochain chunk a ouvrir. Continue la numerotation apres une reprise : jamais
-     *  reinitialise, l'unicite `(sessionId, idx)` cote telephone en depend. */
+    /** Index of the next chunk to open. Carries the numbering on after a resume: never reset, the
+     *  `(sessionId, idx)` uniqueness on the phone side depends on it. */
     var nextIndex: Int = startIndex
         private set
 
@@ -59,23 +59,23 @@ class ChunkStore(
     private var openedAtMs = 0L
     private var openIndex = -1
 
-    /** Octets et echantillons du chunk courant, pour l'affichage et le sidecar. */
+    /** Bytes and samples of the current chunk, for the display and the sidecar. */
     var totalSamples: Long = 0
         private set
     var totalBytes: Long = 0
         private set
 
-    /** Gels de processeur dus aux `fsync`, depuis le dernier [consommerEcrituresFlash]. */
+    /** Processor freezes caused by `fsync`, since the last [consumeFlashWrites]. */
     private var fsyncCount = 0
     private var fsyncTotalUs = 0L
     private var fsyncMaxUs = 0L
 
-    /** Echantillons ecretes par le capteur depuis le dernier [consommerEcretages]. */
-    private var ecretagesDepuisPoint = 0L
+    /** Samples clipped by the sensor since the last [consumeClippedSamples]. */
+    private var clippedSinceLastPoint = 0L
 
-    /** Valeur du compteur du writer courant deja imputee : le writer repart de zero a chaque
-     *  chunk, la telemetrie, elle, court sur toute la nuit. */
-    private var ecretagesDuChunk = 0L
+    /** Value of the current writer's counter already accounted for: the writer restarts from zero
+     *  at every chunk, whereas the telemetry runs across the whole night. */
+    private var clippedInChunk = 0L
 
     init {
         sessionDir.mkdirs()
@@ -83,40 +83,40 @@ class ChunkStore(
 
     fun chunkFile(idx: Int): File = File(sessionDir, "%05d.pendulum".format(idx))
 
-    /** Vrai si un chunk est ouvert, donc si un point de telemetrie a ou aller. */
-    val chunkOuvert: Boolean get() = writer != null
+    /** True if a chunk is open, and therefore if a telemetry point has somewhere to go. */
+    val chunkOpen: Boolean get() = writer != null
 
     /**
-     * Ecrit un bloc, en ouvrant ou en faisant tourner le chunk si necessaire.
+     * Writes a block, opening or rotating the chunk if necessary.
      *
-     * ### Laquelle des deux conditions ferme le chunk, et ce que le banc en change
+     * ### Which of the two conditions closes the chunk, and what the bench changes about it
      *
-     * En marche reelle les deux sont a egalite, a un pour cent pres : 50 Hz x 6 octets font
-     * environ 303 o/s une fois les entetes de bloc comptes, donc les 92 160 octets sont atteints
-     * apres a peu pres 304 s — juste **apres** les 300 s de la borne de duree. C'est la duree qui
-     * ferme, d'un cheveu, et les chunks sortent remplis a ~99 % du plafond. Le plafond d'octets ne
-     * gagne que dans les cas degrades, qui sont exactement ceux pour lesquels il existe.
+     * In real operation the two are level, to within one per cent: 50 Hz x 6 bytes make about
+     * 303 B/s once the block headers are counted, so the 92 160 bytes are reached after roughly
+     * 304 s — just **after** the 300 s of the duration bound. It is the duration that closes, by
+     * a hair, and chunks come out filled to ~99 % of the ceiling. The byte ceiling only wins in
+     * the degraded cases, which are exactly the ones it exists for.
      *
-     * Sur le banc, deux accelerations independantes se superposent :
+     * On the bench, two independent accelerations are superimposed:
      *
-     *  - le **rejeu** avance de 250 s de temps capteur par seconde de temps mural, et ce facteur
-     *    n'est pas libre — `SourceSynthetique` le derive de la taille de salve et de
-     *    `SensorPipeline.FLUSH_GAP_NS`. Les octets s'accumulent donc 250 fois plus vite ;
-     *  - la **borne de duree**, elle, est divisee par `EchelleTemps.DIVISEUR`.
+     *  - the **replay** advances 250 s of sensor time per second of wall time, and that factor is
+     *    not free — `SyntheticSource` derives it from the burst size and from
+     *    `SensorPipeline.FLUSH_GAP_NS`. Bytes therefore accumulate 250 times faster;
+     *  - the **duration bound**, for its part, is divided by `TimeScaling.DIVISOR`.
      *
-     * L'egalite d'origine n'est preservee que si ces deux facteurs sont **le meme nombre**. A 250,
-     * la borne tombe a 1 200 ms de temps mural et le plafond d'octets est atteint vers 1 216 ms :
-     * meme cheveu, memes chunks, memes octets — c'est le comportement reel, joue plus vite. A 600,
-     * la borne tombe a 500 ms alors qu'il faut toujours 1 216 ms pour remplir le chunk : la duree
-     * gagne largement, les chunks sortent a ~40 % du plafond, et le banc **cesse d'exercer** ce
-     * pour quoi le plafond existe — la tenue des tampons memoire et le passage sous les 100 Ko
-     * d'un `DataItem`.
+     * The original equality is preserved only if those two factors are **the same number**. At
+     * 250, the bound falls to 1 200 ms of wall time and the byte ceiling is reached at around
+     * 1 216 ms: same hair, same chunks, same bytes — the real behaviour, played faster. At 600,
+     * the bound falls to 500 ms while it still takes 1 216 ms to fill the chunk: duration wins by
+     * a wide margin, chunks come out at ~40 % of the ceiling, and the bench **stops exercising**
+     * what the ceiling exists for — the memory buffers holding up and the chunk staying under the
+     * 100 KB of a `DataItem`.
      *
-     * C'est pourquoi `CoherenceEchelleTest` refuse tout diviseur qui ne soit pas l'acceleration du
-     * rejeu. La regle en une phrase : **comprimer le temps mural exactement autant que le rejeu
-     * comprime le temps capteur, sinon on ne teste plus la meme rotation.**
+     * That is why `ScaleConsistencyTest` refuses any divisor that is not the acceleration of the
+     * replay. The rule in one sentence: **compress wall time exactly as much as the replay
+     * compresses sensor time, otherwise the rotation being tested is no longer the same one.**
      *
-     * @return l'index du chunk ferme par cette ecriture, ou `null` si aucune rotation n'a eu lieu.
+     * @return the index of the chunk closed by this write, or `null` if no rotation took place.
      */
     fun writeBlock(
         x: FloatArray,
@@ -133,7 +133,7 @@ class ChunkStore(
         if (w != null) {
             val blockBytes = blockBytes(count)
             if (nowMs - openedAtMs >= rotationMs ||
-                // Jamais mis a l'echelle. Voir la KDoc ci-dessus, et celle de `Temps`.
+                // Never scaled. See the KDoc above, and that of `TimeScale`.
                 w.bytesWritten + blockBytes > WireProtocol.CHUNK_ROTATION_BYTES
             ) {
                 closed = close()
@@ -142,27 +142,27 @@ class ChunkStore(
         if (writer == null) open(tFirstNs, nowMs)
         val w2 = writer!!
         w2.writeBlock(x, y, z, count, tFirstNs, tLastNs, flags)
-        // Le compteur d'ecretage du writer est cumulatif *par chunk* ; le point de telemetrie
-        // compte, lui, depuis le point precedent. La difference se fait ici, la ou les deux
-        // horizons se croisent.
-        val cumulChunk = w2.clippedSamples
-        ecretagesDepuisPoint += cumulChunk - ecretagesDuChunk
-        ecretagesDuChunk = cumulChunk
+        // The writer's clipping counter is cumulative *per chunk*; the telemetry point, for its
+        // part, counts from the previous point. The difference is taken here, where the two
+        // horizons cross.
+        val chunkTotal = w2.clippedSamples
+        clippedSinceLastPoint += chunkTotal - clippedInChunk
+        clippedInChunk = chunkTotal
         totalSamples += count
         totalBytes += blockBytes(count)
         return closed
     }
 
     /**
-     * Ecrit un point de telemetrie dans le chunk courant.
+     * Writes a telemetry point into the current chunk.
      *
-     * **N'ouvre jamais de chunk a lui seul**, et c'est delibere : l'entete de fichier porte
-     * `firstEventTimestampNs`, qui n'existe pas tant qu'aucun echantillon n'est arrive. Un chunk
-     * ouvert par la telemetrie porterait donc une base de temps inventee. Le cas ne se produit
-     * qu'avant le premier bloc de la nuit et juste apres une rotation forcee par [rotate] —
-     * quelques secondes sur huit heures.
+     * **Never opens a chunk on its own**, and that is deliberate: the file header carries
+     * `firstEventTimestampNs`, which does not exist until a sample has arrived. A chunk opened by
+     * telemetry would therefore carry an invented time base. The case only arises before the
+     * first block of the night and just after a rotation forced by [rotate] — a few seconds out
+     * of eight hours.
      *
-     * @return vrai si le point a ete ecrit, faux si aucun chunk n'etait ouvert.
+     * @return true if the point was written, false if no chunk was open.
      */
     fun writeTelemetry(point: TelemetryPoint): Boolean {
         val w = writer ?: return false
@@ -171,19 +171,19 @@ class ChunkStore(
         return true
     }
 
-    /** Les gels dus aux `fsync` depuis le dernier appel, puis remise a zero. */
-    fun consommerEcrituresFlash(): EcrituresFlash {
-        val e = EcrituresFlash(fsyncCount, fsyncTotalUs, fsyncMaxUs)
+    /** The freezes caused by `fsync` since the last call, then a reset to zero. */
+    fun consumeFlashWrites(): FlashWrites {
+        val e = FlashWrites(fsyncCount, fsyncTotalUs, fsyncMaxUs)
         fsyncCount = 0
         fsyncTotalUs = 0
         fsyncMaxUs = 0
         return e
     }
 
-    /** Les echantillons ecretes par le capteur depuis le dernier appel, puis remise a zero. */
-    fun consommerEcretages(): Long {
-        val n = ecretagesDepuisPoint
-        ecretagesDepuisPoint = 0
+    /** The samples clipped by the sensor since the last call, then a reset to zero. */
+    fun consumeClippedSamples(): Long {
+        val n = clippedSinceLastPoint
+        clippedSinceLastPoint = 0
         return n
     }
 
@@ -191,8 +191,8 @@ class ChunkStore(
         ChunkFormat.BLOCK_HEADER_SIZE + count.toLong() * ChunkFormat.BYTES_PER_SAMPLE
 
     /**
-     * Force une rotation, sans ecrire de bloc. Utilise a chaque changement de mode : `modeFlags`
-     * et `nominalRateHz` vivent dans l'entete de fichier et ne sont jamais reecrits.
+     * Forces a rotation, without writing a block. Used at every mode change: `modeFlags` and
+     * `nominalRateHz` live in the file header and are never rewritten.
      */
     fun rotate(rateHz: Int = this.rateHz, modeFlags: Int = this.modeFlags): Int? {
         val closed = close()
@@ -202,26 +202,26 @@ class ChunkStore(
     }
 
     /**
-     * `fsync` du chunk courant. Sans effet si aucun chunk n'est ouvert.
+     * `fsync` of the current chunk. No effect if no chunk is open.
      *
-     * Appele toutes les dix secondes *de temps eveille* : le tick est un `Handler` sur l'horloge
-     * d'uptime, qui ne s'ecoule pas pendant la suspension du SoC. Le `fsync` tombe donc
-     * naturellement juste apres chaque vidage du FIFO, et ne provoque **aucun reveil a lui seul**.
+     * Called every ten seconds *of awake time*: the tick is a `Handler` on the uptime clock,
+     * which does not advance while the SoC is suspended. The `fsync` therefore falls naturally
+     * just after each FIFO flush, and causes **no wake-up of its own**.
      */
     fun sync() {
         val fos = out ?: return
         buffered?.flush()
-        mesurer(fos)
+        measure(fos)
     }
 
     /**
-     * `fsync` chronometre. La duree part dans la telemetrie parce que c'est le seul moment ou le
-     * processeur **gele** de son propre fait : pendant ce gel, une interruption capteur peut etre
-     * ratee, et un trou qui tombe la n'a pas la meme cause qu'un trou tombe ailleurs. Le
-     * chronometrage lui-meme ne coute que deux `System.nanoTime()`, autour d'un appel qui dure
-     * deja des millisecondes.
+     * Timed `fsync`. The duration goes into the telemetry because it is the only moment when the
+     * processor **freezes** of its own doing: during that freeze a sensor interrupt can be missed,
+     * and a gap that falls there does not have the same cause as a gap that falls elsewhere. The
+     * timing itself costs only two `System.nanoTime()`, around a call that already takes
+     * milliseconds.
      */
-    private fun mesurer(fos: FileOutputStream) {
+    private fun measure(fos: FileOutputStream) {
         val t0 = System.nanoTime()
         fos.fd.sync()
         val dtUs = (System.nanoTime() - t0) / 1_000
@@ -230,13 +230,13 @@ class ChunkStore(
         if (dtUs > fsyncMaxUs) fsyncMaxUs = dtUs
     }
 
-    /** Ferme le chunk courant en ecrivant son marqueur de fin, puis le `fsync`. */
+    /** Closes the current chunk by writing its end marker, then `fsync`s it. */
     fun close(): Int? {
         val w = writer ?: return null
         w.finish()
         buffered?.flush()
         out?.let {
-            mesurer(it)
+            measure(it)
             it.close()
         }
         totalBytes += ChunkFormat.FOOTER_SIZE
@@ -261,14 +261,14 @@ class ChunkStore(
             firstEventTimestampNs = firstEventTsNs,
             sensorResolution = sensorResolution,
             sensorMaxRange = sensorMaxRange,
-            // On y ecrit `fifoReservedEventCount`, pas `fifoMaxEventCount` : c'est la part
-            // garantie, la seule qui explique le comportement observe a la relecture.
+            // What goes in here is `fifoReservedEventCount`, not `fifoMaxEventCount`: it is the
+            // guaranteed share, the only one that explains the behaviour observed on read-back.
             fifoMaxEventCount = fifoReserved.coerceIn(0, 0xFFFF),
             modeFlags = modeFlags,
             tzOffsetMin = TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000,
         )
-        // L'ecriture de l'entete a lieu dans le constructeur du writer : le fichier est valide
-        // des la premiere milliseconde.
+        // The header is written in the writer's constructor: the file is valid from its very
+        // first millisecond.
         val bos = BufferedOutputStream(fos, 8 * 1024)
         writer = ChunkWriter(bos, header)
         buffered = bos
@@ -276,22 +276,22 @@ class ChunkStore(
         openedAtMs = nowMs
         openIndex = idx
         nextIndex = idx + 1
-        ecretagesDuChunk = 0
+        clippedInChunk = 0
         totalBytes += ChunkFormat.HEADER_SIZE
-        // L'entete est encore dans le tampon a ce stade : la vider avant le `fsync`, sinon le
-        // fichier existe sur le disque mais vide, et une coupure ici laisse un fichier sans magic.
+        // The header is still in the buffer at this point: flush it before the `fsync`, otherwise
+        // the file exists on disk but empty, and a cut here leaves a file with no magic.
         bos.flush()
-        mesurer(fos)
+        measure(fos)
     }
 }
 
 /**
- * Ce que les ecritures sur la memoire flash ont coute depuis le point de telemetrie precedent.
+ * What the writes to flash memory have cost since the previous telemetry point.
  *
- * @param count nombre de `fsync`. Il normalise les deux autres : dix gels de 2 ms et un gel de
- *   20 ms ne s'expliquent pas pareil.
- * @param totalUs temps cumule passe a geler. C'est le budget de la periode.
- * @param maxUs pire gel de la periode. C'est celui-la qui explique une interruption ratee a un
- *   instant precis, la ou le cumul ne dit que la tendance.
+ * @param count number of `fsync`s. It normalises the other two: ten freezes of 2 ms and one
+ *   freeze of 20 ms are not explained the same way.
+ * @param totalUs cumulative time spent frozen. It is the budget for the period.
+ * @param maxUs worst freeze of the period. That is the one that explains an interrupt missed at a
+ *   precise instant, where the total only tells the trend.
  */
-data class EcrituresFlash(val count: Int, val totalUs: Long, val maxUs: Long)
+data class FlashWrites(val count: Int, val totalUs: Long, val maxUs: Long)

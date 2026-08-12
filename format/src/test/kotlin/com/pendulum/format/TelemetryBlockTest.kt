@@ -9,12 +9,12 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Le bloc de telemetrie : sa symetrie, son layout, et surtout **ce qu'il ne casse pas**.
+ * The telemetry block: its symmetry, its layout, and above all **what it does not break**.
  *
- * L'exigence centrale n'est pas qu'il fonctionne — c'est qu'il ne coute rien a ce qui fonctionnait
- * deja. D'ou la forme de ce fichier : chaque propriete du signal qui aurait pu regresser a son
- * test, et l'assertion inversee (« la telemetrie survit a un bloc de signal corrompu, et
- * reciproquement ») compte autant que l'aller-retour.
+ * The central requirement is not that it works — it is that it costs nothing to what already
+ * worked. Hence the shape of this file: every property of the signal that could have regressed has
+ * its own test, and the inverted assertion ("telemetry survives a corrupt signal block, and vice
+ * versa") counts as much as the round trip.
  */
 class TelemetryBlockTest {
 
@@ -34,13 +34,13 @@ class TelemetryBlockTest {
         tzOffsetMin = 120,
     )
 
-    /** Un point dont **aucun** champ ne vaut sa valeur par defaut : un octet oublie a l'encodage
-     *  ou un champ interverti se voit alors, ce qu'un point a zero ne montrerait pas. */
+    /** A point where **no** field holds its default value: a byte forgotten at encoding time or
+     *  two swapped fields then show up, which a zeroed point would not reveal. */
     private fun point() = TelemetryPoint(
         elapsedRealtimeNs = 0x0102030405060708L,
         sensorTsNs = 987_654_321_000L,
         batteryChargeUah = -123_456,
-        // Au-dela d'Int.MAX_VALUE : c'est le champ u32 qui exerce le passage par un Int signe.
+        // Beyond Int.MAX_VALUE: this is the u32 field exercising the trip through a signed Int.
         maxIntervalUs = 4_000_000_000L,
         fsyncTotalUs = 123_456L,
         fsyncMaxUs = 9_999L,
@@ -50,7 +50,7 @@ class TelemetryBlockTest {
         clippedSamples = 12,
         fsyncCount = 7,
         batteryPct = 83,
-        offBody = TelemetryPoint.OFF_BODY_RETIRE,
+        offBody = TelemetryPoint.OFF_BODY_REMOVED,
         charging = true,
     )
 
@@ -71,10 +71,10 @@ class TelemetryBlockTest {
     private val telemetryBlockSize =
         ChunkFormat.TELEMETRY_HEADER_SIZE + ChunkFormat.TELEMETRY_POINT_SIZE
 
-    // --- Symetrie et layout ---
+    // --- Symmetry and layout ---
 
     @Test
-    fun `aller-retour, un point de telemetrie est preserve champ par champ`() {
+    fun `round trip, a telemetry point is preserved field by field`() {
         val p = point()
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -89,14 +89,14 @@ class TelemetryBlockTest {
     }
 
     @Test
-    fun `un bloc de telemetrie fait exactement son entete plus la taille d'un point`() {
+    fun `a telemetry block is exactly its header plus the size of one point`() {
         val out = ByteArrayOutputStream()
         ChunkWriter(out, header()).writeTelemetry(point())
         assertThat(out.size()).isEqualTo(ChunkFormat.HEADER_SIZE + telemetryBlockSize)
     }
 
     @Test
-    fun `le bloc de telemetrie est ecrit au layout documente`() {
+    fun `the telemetry block is written to the documented layout`() {
         val p = point()
         val out = ByteArrayOutputStream()
         ChunkWriter(out, header()).writeTelemetry(p)
@@ -108,7 +108,7 @@ class TelemetryBlockTest {
         assertThat(bb.getShort(off + 4).toInt()).isEqualTo(1)
         assertThat(bb.getShort(off + 6).toInt()).isEqualTo(ChunkFormat.TELEMETRY_POINT_SIZE)
         assertThat(bb.getShort(off + 8).toInt()).isZero()
-        // Le CRC couvre l'entete[0,10) puis le payload, exactement comme pour un bloc de signal.
+        // The CRC covers header[0, 10) then the payload, exactly as for a signal block.
         val expected = ChunkFormat.crc16(
             raw, off + ChunkFormat.TELEMETRY_HEADER_SIZE, ChunkFormat.TELEMETRY_POINT_SIZE,
             seed = ChunkFormat.crc16(raw, off, ChunkFormat.TELEMETRY_CRC_OFFSET),
@@ -130,19 +130,19 @@ class TelemetryBlockTest {
         assertThat(bb.getShort(q + 38).toInt() and 0xFFFF).isEqualTo(p.clippedSamples)
         assertThat(bb.getShort(q + 40).toInt() and 0xFFFF).isEqualTo(p.fsyncCount)
         assertThat(raw[q + 42].toInt() and 0xFF).isEqualTo(p.batteryPct)
-        assertThat(raw[q + 43].toInt() and 0xFF).isEqualTo(TelemetryPoint.OFF_BODY_RETIRE)
+        assertThat(raw[q + 43].toInt() and 0xFF).isEqualTo(TelemetryPoint.OFF_BODY_REMOVED)
         assertThat(raw[q + 44].toInt()).isEqualTo(1)
         assertThat(raw.copyOfRange(q + 45, q + ChunkFormat.TELEMETRY_POINT_SIZE)).containsOnly(0)
     }
 
     @Test
-    fun `les sentinelles d'absence traversent l'aller-retour`() {
-        // Une lecture manquante ne doit jamais ressortir comme une mesure : 0 % de batterie et
-        // 0 degre sont des valeurs parfaitement plausibles, l'absence a donc ses propres codes.
+    fun `the absence sentinels survive the round trip`() {
+        // A missing reading must never come back out as a measurement: 0 % battery and 0 degrees
+        // are perfectly plausible values, so absence has codes of its own.
         val p = point().copy(
-            batteryPct = TelemetryPoint.BATTERIE_INCONNUE,
-            batteryChargeUah = TelemetryPoint.CHARGE_INCONNUE,
-            temperatureDeciC = TelemetryPoint.TEMPERATURE_INCONNUE,
+            batteryPct = TelemetryPoint.BATTERY_UNKNOWN,
+            batteryChargeUah = TelemetryPoint.CHARGE_UNKNOWN,
+            temperatureDeciC = TelemetryPoint.TEMPERATURE_UNKNOWN,
             offBody = TelemetryPoint.OFF_BODY_ABSENT,
             charging = false,
         )
@@ -153,60 +153,60 @@ class TelemetryBlockTest {
     }
 
     @Test
-    fun `un point agrandi par une version ulterieure reste relisible`() {
-        // Meme regle que `headerSize` pour l'entete de fichier (F-32) : `pointSize` autorise a
-        // ajouter des champs en queue du point sans casser les archives ni changer de version.
+    fun `a point grown by a later version stays readable`() {
+        // Same rule as `headerSize` for the file header (F-32): `pointSize` allows fields to be
+        // appended at the tail of the point without breaking the archives or changing version.
         val p = point()
-        val natif = ByteArrayOutputStream()
-        val w = ChunkWriter(natif, header())
+        val native = ByteArrayOutputStream()
+        val w = ChunkWriter(native, header())
         w.writeFlat(8, 0L)
-        val avant = natif.size()
+        val before = native.size()
         w.writeTelemetry(p)
-        val blocNatif = natif.toByteArray().copyOfRange(avant, natif.size())
+        val nativeBlock = native.toByteArray().copyOfRange(before, native.size())
 
-        val agrandi = 56
-        val bloc = ByteArray(ChunkFormat.TELEMETRY_HEADER_SIZE + agrandi)
-        System.arraycopy(blocNatif, 0, bloc, 0, blocNatif.size)
-        putShortLe(bloc, 6, agrandi)
-        // Les octets inconnus de cette version : ils doivent etre sautes, pas lus.
-        for (i in blocNatif.size until bloc.size) bloc[i] = 0x5A
+        val grown = 56
+        val block = ByteArray(ChunkFormat.TELEMETRY_HEADER_SIZE + grown)
+        System.arraycopy(nativeBlock, 0, block, 0, nativeBlock.size)
+        putShortLe(block, 6, grown)
+        // The bytes unknown to this version: they must be skipped, not read.
+        for (i in nativeBlock.size until block.size) block[i] = 0x5A
         putShortLe(
-            bloc, ChunkFormat.TELEMETRY_CRC_OFFSET,
+            block, ChunkFormat.TELEMETRY_CRC_OFFSET,
             ChunkFormat.crc16(
-                bloc, ChunkFormat.TELEMETRY_HEADER_SIZE, agrandi,
-                seed = ChunkFormat.crc16(bloc, 0, ChunkFormat.TELEMETRY_CRC_OFFSET),
+                block, ChunkFormat.TELEMETRY_HEADER_SIZE, grown,
+                seed = ChunkFormat.crc16(block, 0, ChunkFormat.TELEMETRY_CRC_OFFSET),
             ),
         )
 
-        val fichier = natif.toByteArray().copyOf(avant) + bloc
-        val read = ChunkReader.read(ByteArrayInputStream(fichier))
+        val file = native.toByteArray().copyOf(before) + block
+        val read = ChunkReader.read(ByteArrayInputStream(file))
         assertThat(read.telemetry).containsExactly(p)
         assertThat(read.blocks).hasSize(1)
         assertThat(read.corruptBlocks).isZero()
     }
 
     @Test
-    fun `un point plus petit que celui de cette version est rejete`() {
-        // L'autre sens n'est pas symetrique : un point tronque ne laisserait pas de quoi remplir
-        // les champs, et les remplir par defaut inventerait des mesures.
-        val natif = ByteArrayOutputStream()
-        val w = ChunkWriter(natif, header())
+    fun `a point smaller than this version's is rejected`() {
+        // The other direction is not symmetric: a truncated point would not leave enough to fill
+        // the fields, and filling them with defaults would invent measurements.
+        val native = ByteArrayOutputStream()
+        val w = ChunkWriter(native, header())
         w.writeTelemetry(point())
         w.writeFlat(8, 0L)
-        val bytes = natif.toByteArray()
+        val bytes = native.toByteArray()
         putShortLe(bytes, ChunkFormat.HEADER_SIZE + 6, ChunkFormat.TELEMETRY_POINT_SIZE - 8)
 
         val read = ChunkReader.read(ByteArrayInputStream(bytes))
         assertThat(read.telemetry).isEmpty()
         assertThat(read.scan.damagedRanges.single().reason).isEqualTo(DamageReason.BAD_COUNT)
-        // Le signal qui suit est intact : la resynchronisation a retrouve son magic.
+        // The signal that follows is intact: resynchronisation found its magic again.
         assertThat(read.blocks).hasSize(1)
     }
 
-    // --- Cohabitation avec le signal ---
+    // --- Cohabitation with the signal ---
 
     @Test
-    fun `signal et telemetrie se melangent dans le meme chunk sans se gener`() {
+    fun `signal and telemetry interleave in the same chunk without disturbing each other`() {
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         repeat(5) { k ->
@@ -226,7 +226,7 @@ class TelemetryBlockTest {
     }
 
     @Test
-    fun `le marqueur de fin annonce les points de telemetrie`() {
+    fun `the end marker declares the telemetry points`() {
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeFlat(32, 0L)
@@ -240,7 +240,7 @@ class TelemetryBlockTest {
     }
 
     @Test
-    fun `un bloc de telemetrie corrompu est saute et le signal survit`() {
+    fun `a corrupt telemetry block is skipped and the signal survives`() {
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeFlat(64, 0L, mark = 1)
@@ -249,8 +249,8 @@ class TelemetryBlockTest {
         w.finish()
         val bytes = out.toByteArray()
 
-        val victime = ChunkFormat.HEADER_SIZE + blockSize(64) + ChunkFormat.TELEMETRY_HEADER_SIZE + 3
-        bytes[victime] = (bytes[victime].toInt() xor 0xFF).toByte()
+        val victim = ChunkFormat.HEADER_SIZE + blockSize(64) + ChunkFormat.TELEMETRY_HEADER_SIZE + 3
+        bytes[victim] = (bytes[victim].toInt() xor 0xFF).toByte()
 
         val read = ChunkReader.read(ByteArrayInputStream(bytes))
         assertThat(read.telemetry).isEmpty()
@@ -258,15 +258,15 @@ class TelemetryBlockTest {
             .containsExactly(ChunkFormat.toMs2(1), ChunkFormat.toMs2(2))
         assertThat(read.scan.damagedRanges.single().reason).isEqualTo(DamageReason.BAD_CRC)
         assertThat(read.scan.resyncSkippedBytes).isEqualTo(telemetryBlockSize.toLong())
-        // Le marqueur de fin annonce le point que la relecture n'a pas retrouve : la perte est
-        // chiffree, pas seulement subie.
+        // The end marker declares the point that the re-read did not find: the loss is quantified,
+        // not merely suffered.
         assertThat(read.scan.lostTelemetryPoints).isEqualTo(1)
     }
 
     @Test
-    fun `un count de telemetrie aberrant est rejete sans desynchroniser la suite`() {
-        // Le cas exact que `MAX_TELEMETRY_POINTS` existe pour borner : sans lui, un `count`
-        // corrompu ferait lire une longueur de payload aberrante, donc perdre la synchro.
+    fun `an absurd telemetry count is rejected without desynchronising what follows`() {
+        // The exact case `MAX_TELEMETRY_POINTS` exists to bound: without it, a corrupt `count`
+        // would make an absurd payload length be read, and so lose synchronisation.
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeTelemetry(point())
@@ -283,10 +283,10 @@ class TelemetryBlockTest {
     }
 
     @Test
-    fun `un bloc de signal corrompu ne fait pas perdre la telemetrie qui le suit`() {
-        // C'est l'assertion qui verrouille la connaissance de `TLM!` par la resynchronisation :
-        // sans elle, le lecteur sauterait de bloc de signal en bloc de signal et jetterait au
-        // passage une telemetrie intacte — celle qui explique peut-etre la corruption.
+    fun `a corrupt signal block does not lose the telemetry that follows it`() {
+        // This is the assertion that locks in the resynchronisation's knowledge of `TLM!`: without
+        // it, the reader would jump from signal block to signal block and throw away an intact
+        // telemetry on the way — the very one that may explain the corruption.
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeFlat(64, 0L, mark = 1)
@@ -295,7 +295,7 @@ class TelemetryBlockTest {
         w.finish()
         val bytes = out.toByteArray()
 
-        bytes[ChunkFormat.HEADER_SIZE] = 'Z'.code.toByte() // magic du premier bloc de signal
+        bytes[ChunkFormat.HEADER_SIZE] = 'Z'.code.toByte() // magic of the first signal block
 
         val read = ChunkReader.read(ByteArrayInputStream(bytes))
         assertThat(read.telemetry).containsExactly(point())
@@ -303,21 +303,21 @@ class TelemetryBlockTest {
         assertThat(read.scan.damagedRanges.single().reason).isEqualTo(DamageReason.BAD_MAGIC)
     }
 
-    // --- Ecretage du capteur (FLAG_SENSOR_CLIPPED) ---
+    // --- Sensor clipping (FLAG_SENSOR_CLIPPED) ---
 
     @Test
-    fun `l'ecretage du capteur est distinct de la saturation du format`() {
-        // Un capteur a 4 g s'ecrete a 39,23 m/s2, soit au quart de ce que le format sait coder :
-        // l'artefact d'ecretage etait donc totalement invisible, puisque FLAG_SATURATED ne se pose
-        // qu'a 16 g. C'est cet ecart-la qui faussait l'amplitude, donc le seuil de detection.
-        val quatreG = 4f * ChunkFormat.G_IN_MS2.toFloat()
+    fun `sensor clipping is distinct from format saturation`() {
+        // A 4 g sensor clips at 39.23 m/s2, a quarter of what the format can encode: the clipping
+        // artefact was therefore completely invisible, since FLAG_SATURATED is only set at 16 g.
+        // That is the gap which skewed the amplitude, and so the detection threshold.
+        val fourG = 4f * ChunkFormat.G_IN_MS2.toFloat()
         val n = 10
         val x = FloatArray(n)
-        x[0] = quatreG + 1f
-        x[1] = -(quatreG + 1f)
+        x[0] = fourG + 1f
+        x[1] = -(fourG + 1f)
 
         val out = ByteArrayOutputStream()
-        val w = ChunkWriter(out, header(maxRange = quatreG))
+        val w = ChunkWriter(out, header(maxRange = fourG))
         w.writeBlock(x, FloatArray(n), FloatArray(n), n, 0L, (n - 1) * stepNs, 0)
 
         assertThat(w.clippedSamples).isEqualTo(2)
@@ -329,9 +329,9 @@ class TelemetryBlockTest {
     }
 
     @Test
-    fun `un mouvement dans la dynamique du capteur ne pose aucun drapeau`() {
-        // Assertion inversee : un drapeau qui se poserait tout le temps ne dirait plus rien. La
-        // gravite plus quelques g d'a-coups reste tres en deca d'un rail a 8 g.
+    fun `a movement within the sensor range sets no flag`() {
+        // Inverted assertion: a flag that was set all the time would no longer say anything.
+        // Gravity plus a few g of jolts stays well below an 8 g rail.
         val n = 64
         val z = FloatArray(n) { 9.81f + (it % 7) }
         val out = ByteArrayOutputStream()
@@ -344,9 +344,9 @@ class TelemetryBlockTest {
     }
 
     @Test
-    fun `une dynamique inconnue ne fait pas declarer d'ecretage`() {
-        // `sensorMaxRange` a zero veut dire « on ne sait pas », et on ne devine pas : declarer
-        // toute la nuit ecretee serait pire que de ne rien declarer.
+    fun `an unknown range does not declare any clipping`() {
+        // `sensorMaxRange` at zero means "we do not know", and we do not guess: declaring the
+        // whole night clipped would be worse than declaring nothing.
         val n = 8
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header(maxRange = 0f))
@@ -354,41 +354,41 @@ class TelemetryBlockTest {
         assertThat(w.clippedSamples).isZero()
     }
 
-    // --- Non-regression de taille ---
+    // --- Size non-regression ---
 
     @Test
-    fun `un bloc de telemetrie plein reste plus petit qu'un bloc de signal plein`() {
-        // C'est ce qui garantit que la fenetre du lecteur — dimensionnee sur le plus grand bloc —
-        // n'a pas eu a grandir. Une fenetre plus grande, c'est de la memoire en plus sur la montre
-        // *et* sur le telephone, pour une donnee qui pese quelques kilo-octets par nuit.
-        val telemetriePleine = ChunkFormat.TELEMETRY_HEADER_SIZE +
+    fun `a full telemetry block stays smaller than a full signal block`() {
+        // This is what guarantees that the reader window — sized on the largest block — did not
+        // have to grow. A larger window means more memory on the watch *and* on the phone, for a
+        // piece of data that weighs a few kilobytes per night.
+        val fullTelemetry = ChunkFormat.TELEMETRY_HEADER_SIZE +
             ChunkFormat.MAX_TELEMETRY_POINTS * ChunkFormat.TELEMETRY_POINT_SIZE
-        val signalPlein = ChunkFormat.BLOCK_HEADER_SIZE +
+        val fullSignal = ChunkFormat.BLOCK_HEADER_SIZE +
             ChunkFormat.MAX_SAMPLES_PER_BLOCK * ChunkFormat.BYTES_PER_SAMPLE
-        assertThat(telemetriePleine).isLessThanOrEqualTo(signalPlein)
+        assertThat(fullTelemetry).isLessThanOrEqualTo(fullSignal)
     }
 
     @Test
-    fun `la telemetrie ne fait deborder ni la rotation ni un DataItem`() {
-        // Les deux plafonds que la KDoc de `WireProtocol` declare intouchables. La telemetrie
-        // s'ecrit sans consulter la condition de rotation — elle ne peut donc que s'ajouter apres
-        // coup, et c'est ce depassement-la qu'on borne ici.
-        val pointsParRotation =
+    fun `telemetry overflows neither the rotation nor a DataItem`() {
+        // The two ceilings that the KDoc of `WireProtocol` declares untouchable. Telemetry is
+        // written without consulting the rotation condition — it can therefore only add itself
+        // after the fact, and it is that overshoot which is bounded here.
+        val pointsPerRotation =
             (WireProtocol.CHUNK_ROTATION_MS / WireProtocol.TELEMETRY_PERIOD_MS).toInt()
-        val pire = WireProtocol.CHUNK_ROTATION_BYTES +
-            pointsParRotation * telemetryBlockSize +
+        val worst = WireProtocol.CHUNK_ROTATION_BYTES +
+            pointsPerRotation * telemetryBlockSize +
             ChunkFormat.FOOTER_SIZE
-        // 256 octets de marge pour le `ChunkMeta` et son cadre de longueur, que `DataLayerTransfer`
-        // place devant le fichier dans la meme charge utile.
-        assertThat(pire + 256).isLessThan(WireProtocol.MAX_DATA_ITEM_BYTES.toLong())
-        assertThat(pire - WireProtocol.CHUNK_ROTATION_BYTES).isLessThan(1024L)
+        // 256 bytes of margin for the `ChunkMeta` and its length frame, which `DataLayerTransfer`
+        // places in front of the file in the same payload.
+        assertThat(worst + 256).isLessThan(WireProtocol.MAX_DATA_ITEM_BYTES.toLong())
+        assertThat(worst - WireProtocol.CHUNK_ROTATION_BYTES).isLessThan(1024L)
     }
 
     @Test
-    fun `un chunk plein de signal accepte encore ses cinq points`() {
-        // La verification par les octets reels, et non par l'arithmetique ci-dessus : on remplit
-        // un chunk jusqu'au plafond de rotation, on y ajoute les points d'une rotation, et on
-        // verifie que le fichier passe toujours dans un `DataItem`.
+    fun `a chunk full of signal still accepts its five points`() {
+        // The check on the real bytes, and not on the arithmetic above: fill a chunk up to the
+        // rotation ceiling, add the points of one rotation, and check the file still fits in a
+        // `DataItem`.
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         var t = 0L

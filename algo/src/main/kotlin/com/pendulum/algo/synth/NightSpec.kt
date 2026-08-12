@@ -1,44 +1,45 @@
 package com.pendulum.algo.synth
 
 /**
- * Parametres d'une nuit synthetique. Transcription de `docs/fr/ALGO-v2.md` §5.2, etendue aux douze
- * familles de distracteurs du tableau du meme paragraphe.
+ * Parameters of a synthetic night. Transcription of `docs/workings/ALGO-v2.md` §5.2, extended to the
+ * twelve distractor families of the table in that same paragraph.
  *
- * Tout est parametrable et rien n'a de valeur cachee : c'est le generateur qui sert de **reference**
- * a l'ensemble de l'algorithme, et un generateur dont on ne peut pas durcir un distracteur ne
- * prouve rien (defaut F-21 de `docs/fr/REVUE-CRITIQUE.md`, « validation circulaire »).
+ * Everything is parameterisable and nothing has a hidden value: the generator is what serves as the
+ * **reference** for the whole algorithm, and a generator in which a distractor cannot be made harder
+ * proves nothing (defect F-21 of `docs/workings/CRITICAL-REVIEW.md`, "circular validation").
  */
 
-/** Echelle sur laquelle se lit l'amplitude tiree pour un mouvement. */
+/** Scale on which the amplitude drawn for a movement is read. */
 enum class AmplitudeScale {
     /**
-     * Crete de la **norme** du signal de mouvement (accelerometre, hors gravite statique) : les
-     * trois contributions de §5.1 sommees — tangentielle, reprojection de la gravite, centripete.
+     * Peak of the **norm** of the movement signal (accelerometer, static gravity excluded): the
+     * three contributions of §5.1 summed — tangential, gravity reprojection, centripetal.
      *
-     * Ce n'est **pas** la grandeur du tableau de calibration de §5.1 (30 / 184 / 985 mg), contrairement
-     * a ce que ce KDoc affirmait. Ce tableau chiffre le seul terme **tangentiel**, `r . theta''`, que
-     * calcule [MovementKinematics.peakTangentialG] ; §5.1 note d'ailleurs juste apres qu'aux grands
-     * angles c'est le terme gravitaire qui domine, ce qui interdit de confondre les deux. Les valeurs
-     * du tableau sont asserties par `MovementModelTest`, qui appelle `peakTangentialG` directement.
+     * This is **not** the quantity of the calibration table of §5.1 (30 / 184 / 985 mg), contrary to
+     * what this KDoc used to claim. That table quantifies the **tangential** term alone,
+     * `r . theta''`, computed by [MovementKinematics.peakTangentialG]; §5.1 notes just afterwards
+     * that at large angles it is the gravity term that dominates, which forbids conflating the two.
+     * The values of the table are asserted by `MovementModelTest`, which calls `peakTangentialG`
+     * directly.
      */
     PEAK,
 
     /**
-     * Crete de l'**enveloppe RMS grossiere de 0,5 s**, c'est-a-dire exactement la grandeur que le
-     * detecteur compare a `Theta_on`. Indispensable au test T5 : « 8x le plancher = le seuil, par
-     * construction » n'a de sens que si l'axe des abscisses de la courbe de sensibilite est celui
-     * sur lequel la decision est prise.
+     * Peak of the **coarse 0.5 s RMS envelope**, that is to say exactly the quantity the detector
+     * compares to `Theta_on`. Indispensable to test T5: "8x the floor = the threshold, by
+     * construction" only means something if the abscissa of the sensitivity curve is the one on
+     * which the decision is taken.
      */
     COARSE_ENVELOPE,
 }
 
 /**
- * Loi d'amplitude des mouvements (§5.1, derniere ligne).
+ * Amplitude distribution of the movements (§5.1, last line).
  *
- * @param sigmaLog **parametre**, pas constante : la specification precise que c'est un choix
- *   d'ingenierie et qu'il pilote directement la pente de la courbe de sensibilite (T5).
- * @param fixedG si non nul, court-circuite la loi et impose cette amplitude a tous les mouvements.
- *   Sert au balayage de la courbe de sensibilite.
+ * @param sigmaLog a **parameter**, not a constant: the specification states that it is an
+ *   engineering choice and that it drives the slope of the sensitivity curve directly (T5).
+ * @param fixedG if non-null, short-circuits the distribution and imposes this amplitude on every
+ *   movement. Used for sweeping the sensitivity curve.
  */
 data class AmplitudeSpec(
     val medianG: Double = 0.080,
@@ -50,47 +51,47 @@ data class AmplitudeSpec(
 )
 
 /**
- * Loi de duree et geometrie du mouvement (§5.1).
+ * Duration distribution and geometry of the movement (§5.1).
  *
- * `meanSec` reprend Sforza 2005 : **4,2 s** de duree moyenne a la cheville en SJSR.
+ * `meanSec` takes up Sforza 2005: **4.2 s** of mean duration at the ankle in RLS.
  *
- * `sdSec` **n'est pas** un chiffre de Sforza, contrairement a ce que ce KDoc affirmait. Le « +/- 0,14 »
- * publie est une **erreur type de la moyenne** — le §2.5 de l'article dit « results in the text and in
- * the tables are expressed as mean +/- standard error of the mean », et le groupe SJSR compte 11
- * patients. L'ecart-type inter-patients des moyennes individuelles vaut donc `0,14 x sqrt(11) ~ 0,46 s`,
- * et la dispersion **evenement par evenement** — la seule dont un generateur a besoin — n'est publiee
- * nulle part. Le 1,4 s retenu ici est un **choix de modelisation** : il donne un CV de 0,33, dont les
- * quantiles a +/-2 sigma (~1,9 a 8,0 s) restent confortablement dans la fenetre de cotation 0,5-10 s des
- * criteres de Coleman. Une valeur de 0,14 s ferait de la loi une masse de Dirac, ce qui est incompatible
- * avec l'existence meme de cette fenetre et avec la moyenne de 3,2 s du groupe TMPJ du meme article.
- * Le mode court de ~2-3 s parfois avance n'est confirme par aucun histogramme publie et n'est pas code.
+ * `sdSec` is **not** a figure from Sforza, contrary to what this KDoc used to claim. The published
+ * "+/- 0.14" is a **standard error of the mean** — §2.5 of the article says "results in the text and
+ * in the tables are expressed as mean +/- standard error of the mean", and the RLS group counts 11
+ * patients. The between-patient standard deviation of the individual means is therefore
+ * `0.14 x sqrt(11) ~ 0.46 s`, and the **event-by-event** spread — the only one a generator needs —
+ * is published nowhere. The 1.4 s retained here is a **modelling choice**: it gives a CV of 0.33,
+ * whose +/-2 sigma quantiles (~1.9 to 8.0 s) stay comfortably inside the 0.5-10 s scoring window of
+ * the Coleman criteria. A value of 0.14 s would make the distribution a Dirac mass, which is
+ * incompatible with the very existence of that window and with the 3.2 s mean of the PLMD group in
+ * the same article. The short mode of ~2-3 s sometimes put forward is confirmed by no published
+ * histogram and is not coded.
  */
 data class DurationSpec(
     val meanSec: Double = 4.2,
     val sdSec: Double = 1.4,
     val minSec: Double = 0.5,
     val maxSec: Double = 10.0,
-    /** Duree de la phase de flexion, `T_rise`. Donne `f_pic = 0,8 / T_rise` dans [1,6 ; 5,3] Hz. */
+    /** Duration of the flexion phase, `T_rise`. Gives `f_peak = 0.8 / T_rise` in [1.6 ; 5.3] Hz. */
     val tRiseMinSec: Double = 0.15,
     val tRiseMaxSec: Double = 0.50,
-    /** Bras de levier capteur / centre de rotation, en metres. */
+    /** Lever arm sensor / centre of rotation, in metres. */
     val radiusMinM: Double = 0.15,
     val radiusMaxM: Double = 0.30,
     /**
-     * Rapport « pic d'acceleration pendant le maintien / pic balistique de la flexion ».
+     * Ratio "acceleration peak during the hold / ballistic peak of the flexion".
      *
-     * La phase de maintien d'un CLM n'est pas un plateau immobile : voir la KDoc de
-     * [MovementKinematics]. La valeur 0,50 est le rapport **seuil de decroissance / seuil d'entree**
-     * du PAM-RL (100 mg / 200 mg, Sforza 2005 §2.4), le dispositif qui a mesure les 4,2 s : c'est le
-     * minimum qu'un evenement doit soutenir pour avoir ete compte comme un seul kick de 4,2 s plutot
-     * que scinde par le drop-out de 1 s.
+     * The hold phase of a CLM is not a motionless plateau: see the KDoc of [MovementKinematics]. The
+     * value 0.50 is the **decay threshold / entry threshold** ratio of the PAM-RL (100 mg / 200 mg,
+     * Sforza 2005 §2.4), the device that measured the 4.2 s: it is the minimum an event must sustain
+     * to have been counted as a single 4.2 s kick rather than split by the 1 s drop-out.
      *
-     * `0.0` restaure le plateau immobile du modele d'origine — utile pour reproduire le defaut.
+     * `0.0` restores the motionless plateau of the original model — useful to reproduce the defect.
      */
     val holdActivityRatio: Double = 0.50,
 )
 
-/** Une population de series periodiques. `NightSpec.trueSeries` en contient autant qu'on veut. */
+/** A population of periodic series. `NightSpec.trueSeries` holds as many of them as wanted. */
 data class SeriesSpec(
     val nSeries: Int,
     val clmPerSeries: Int,
@@ -99,8 +100,8 @@ data class SeriesSpec(
 )
 
 /**
- * Structure veille / sommeil de la nuit. Elle fournit le **denominateur vrai** : c'est le journal
- * de sommeil parfait, totalement independant du signal, donc non circulaire par construction.
+ * Wake / sleep structure of the night. It provides the **true denominator**: it is the perfect sleep
+ * diary, entirely independent of the signal, hence non-circular by construction.
  */
 data class SleepSpec(
     val sleepLatencyMin: Double = 18.0,
@@ -110,33 +111,33 @@ data class SleepSpec(
     val wasoMaxMin: Double = 12.0,
 )
 
-/** Famille 5 du tableau §5.2 : bruit MEMS et quantification. */
+/** Family 5 of the §5.2 table: MEMS noise and quantisation. */
 data class NoiseSpec(
-    /** Densite spectrale du bruit, en g/sqrt(Hz). Plage du tableau : 150-300 ug/sqrt(Hz). */
+    /** Spectral density of the noise, in g/sqrt(Hz). Range from the table: 150-300 ug/sqrt(Hz). */
     val densityMinG: Double = 150e-6,
     val densityMaxG: Double = 300e-6,
-    /** Pas de quantification du format, 1/2048 g. `0` desactive la quantification. */
+    /** Quantisation step of the format, 1/2048 g. `0` disables quantisation. */
     val lsbG: Double = 1.0 / 2048.0,
     /**
-     * Derive posturale lente du membre porteur, en degres RMS (processus d'Ornstein-Uhlenbeck de
-     * constante `wanderTauSec`). **Ce n'est pas du bruit de capteur** : c'est le fait qu'une jambe
-     * vivante ne tient jamais exactement la meme orientation dix minutes de suite. Sans ce terme,
-     * une nuit calme presente un ecart-type brut inferieur au seuil `offBodySdG` (5 mg) et l'etape 0
-     * la classe integralement **off-body** — le test T1 passerait alors a vide, faute de temps
-     * analysable. Le contenu est sous 0,01 Hz : il tombe entierement dans le canal gravite et ne
-     * touche pas le canal mouvement.
+     * Slow postural drift of the wearing limb, in RMS degrees (Ornstein-Uhlenbeck process of time
+     * constant `wanderTauSec`). **This is not sensor noise**: it is the fact that a living leg never
+     * holds exactly the same orientation ten minutes in a row. Without this term, a quiet night
+     * shows a raw standard deviation below the `offBodySdG` threshold (5 mg) and step 0 classifies
+     * it entirely as **off-body** — test T1 would then run on nothing, for lack of analysable time.
+     * The content is below 0.01 Hz: it falls entirely in the gravity channel and does not touch the
+     * movement channel.
      */
     val wanderDeg: Double = 0.8,
     val wanderTauSec: Double = 120.0,
 )
 
 /**
- * Les douze familles de distracteurs du tableau §5.2. Les comptes sont tires uniformement dans
- * `[...Min, ...Max]`, les amplitudes log-uniformement (une amplitude uniforme dans [3 ; 40] mg
- * mettrait la moitie de la masse au-dessus de 21 mg, ce qui n'est pas ce que decrit la source).
+ * The twelve distractor families of the §5.2 table. The counts are drawn uniformly in
+ * `[...Min, ...Max]`, the amplitudes log-uniformly (an amplitude uniform in [3 ; 40] mg would put
+ * half the mass above 21 mg, which is not what the source describes).
  */
 data class DistractorSpec(
-    // --- 1. Changements de posture -------------------------------------------------------
+    // --- 1. Posture changes ---------------------------------------------------------------
     val postureCountMin: Int = 15,
     val postureCountMax: Int = 40,
     val postureDegMin: Double = 20.0,
@@ -144,7 +145,7 @@ data class DistractorSpec(
     val postureDurMinSec: Double = 0.5,
     val postureDurMaxSec: Double = 3.0,
 
-    // --- 2. Mouvements corporels grossiers ------------------------------------------------
+    // --- 2. Gross body movements ----------------------------------------------------------
     val grossBodyCountMin: Int = 20,
     val grossBodyCountMax: Int = 60,
     val grossBodyDurMinSec: Double = 2.0,
@@ -152,7 +153,7 @@ data class DistractorSpec(
     val grossBodyAmpMinG: Double = 0.300,
     val grossBodyAmpMaxG: Double = 2.500,
 
-    // --- 3. Artefact respiratoire ---------------------------------------------------------
+    // --- 3. Respiratory artefact ----------------------------------------------------------
     val respiratory: Boolean = true,
     val respHzMin: Double = 0.20,
     val respHzMax: Double = 0.33,
@@ -161,7 +162,7 @@ data class DistractorSpec(
     val respAmPeriodMinSec: Double = 60.0,
     val respAmPeriodMaxSec: Double = 300.0,
 
-    // --- 4. Vibration de matelas ----------------------------------------------------------
+    // --- 4. Mattress vibration ------------------------------------------------------------
     val mattressCountMin: Int = 50,
     val mattressCountMax: Int = 500,
     val mattressDurMinSec: Double = 0.05,
@@ -171,7 +172,7 @@ data class DistractorSpec(
     val mattressRingHzMin: Double = 8.0,
     val mattressRingHzMax: Double = 20.0,
 
-    // --- 6. Trous FIFO --------------------------------------------------------------------
+    // --- 6. FIFO gaps ---------------------------------------------------------------------
     val gapCountMin: Int = 0,
     val gapCountMax: Int = 0,
     val gapMinSec: Double = 0.1,
@@ -183,11 +184,11 @@ data class DistractorSpec(
     // --- 8. Off-body ----------------------------------------------------------------------
     val offBody: Boolean = false,
     val offBodyMin: Double = 12.0,
-    /** La montre pose elle-meme son drapeau materiel. `false` par defaut : le detecteur d'immobilite
-     *  absolue doit savoir se debrouiller seul, sinon on ne teste que la confiance au drapeau. */
+    /** The watch raises its own hardware flag. `false` by default: the absolute-immobility detector
+     *  must be able to cope on its own, otherwise all that is tested is trust in the flag. */
     val offBodyHardwareFlag: Boolean = false,
 
-    // --- 9. Tremblement hypnagogique / ALMA -----------------------------------------------
+    // --- 9. Hypnagogic tremor / ALMA ------------------------------------------------------
     val almaCountMin: Int = 0,
     val almaCountMax: Int = 0,
     val almaDurMinSec: Double = 10.0,
@@ -197,26 +198,26 @@ data class DistractorSpec(
     val almaAmpMinG: Double = 0.020,
     val almaAmpMaxG: Double = 0.080,
 
-    // --- 10. Salves non periodiques -------------------------------------------------------
+    // --- 10. Non-periodic bursts ----------------------------------------------------------
     val clusterCount: Int = 0,
     val clusterSizeMin: Int = 5,
     val clusterSizeMax: Int = 10,
     val clusterImiMinSec: Double = 1.0,
     val clusterImiMaxSec: Double = 8.0,
 
-    // --- 11. RRLM (mouvements lies a la respiration) --------------------------------------
+    // --- 11. RRLM (respiration-related leg movements) -------------------------------------
     val rrlmSeriesCount: Int = 0,
     val rrlmPerSeries: Int = 6,
     val rrlmImiMinSec: Double = 25.0,
     val rrlmImiMaxSec: Double = 45.0,
 
-    // --- 12. Saut de gain mecanique en cours de nuit --------------------------------------
-    /** Facteur applique au couplage mecanique a partir de `gainStepAtFraction` de la nuit. */
+    // --- 12. Mechanical gain step during the night ----------------------------------------
+    /** Factor applied to the mechanical coupling from `gainStepAtFraction` of the night onwards. */
     val gainStep: Double? = null,
     val gainStepAtFraction: Double = 0.5,
 ) {
     companion object {
-        /** Nuit sans aucun distracteur : seuls le signal utile et le bruit MEMS subsistent. */
+        /** Night with no distractor at all: only the useful signal and the MEMS noise remain. */
         val NONE: DistractorSpec = DistractorSpec(
             postureCountMin = 0, postureCountMax = 0,
             grossBodyCountMin = 0, grossBodyCountMax = 0,
@@ -224,7 +225,7 @@ data class DistractorSpec(
             mattressCountMin = 0, mattressCountMax = 0,
         )
 
-        /** Les douze familles actives, valeurs par defaut du tableau §5.2. C'est la nuit du test T6. */
+        /** The twelve families active, default values of the §5.2 table. The test T6 night. */
         val ALL: DistractorSpec = DistractorSpec(
             gapCountMin = 20, gapCountMax = 60, longGap = true,
             offBody = true,
@@ -236,10 +237,10 @@ data class DistractorSpec(
 }
 
 /**
- * Rituel de calibration mecanique de §3.3 volet B. Le generateur le **rend physiquement**, avec le
- * meme modele que les CLM, plutot que de poser une constante : `gainCal` doit varier avec le
- * couplage mecanique de la nuit exactement comme le signal utile, sinon le test T11 se contente de
- * verifier une tautologie.
+ * Mechanical calibration ritual of §3.3 part B. The generator **renders it physically**, with the
+ * same model as the CLMs, rather than laying down a constant: `gainCal` must vary with the
+ * mechanical coupling of the night exactly like the useful signal, otherwise test T11 does no more
+ * than check a tautology.
  */
 data class RitualSpec(
     val thetaMaxDeg: Double = 25.0,
@@ -249,21 +250,21 @@ data class RitualSpec(
 )
 
 /**
- * Nuit complete. `durationH` est la duree d'enregistrement ; `truncateAtH` la coupe (montre morte).
+ * Complete night. `durationH` is the recording duration; `truncateAtH` cuts it short (dead watch).
  *
- * @param ankleOnlyFraction fraction des mouvements de jambe qui sont une **rotation pure de la
- *   cheville** : le boitier etant au-dessus de l'axe talo-cruraire, il ne se deplace pas. C'est le
- *   mecanisme physique du taux de manques de Terrill (39,0 %), et c'est ce qui separe `emgTruth` de
- *   `accelTruth`. Plage publiee 0,25-0,55.
- * @param gainMultiplier couplage mecanique cheville -> bracelet -> boitier de la nuit entiere
- *   (serrage du bracelet). `1,0` = nuit de reference.
- * @param visibilityG sous cette crete simulee, un mouvement n'est pas mecaniquement visible et sort
- *   de `accelTruth` (defaut 8 mg, ~0,4x le plancher absolu).
+ * @param ankleOnlyFraction fraction of the leg movements that are a **pure ankle rotation**: the
+ *   case sitting above the talocrural axis, it does not move. This is the physical mechanism behind
+ *   Terrill's miss rate (39.0 %), and it is what separates `emgTruth` from `accelTruth`. Published
+ *   range 0.25-0.55.
+ * @param gainMultiplier mechanical coupling ankle -> strap -> case for the whole night (strap
+ *   tightness). `1.0` = reference night.
+ * @param visibilityG below this simulated peak, a movement is not mechanically visible and drops out
+ *   of `accelTruth` (default 8 mg, ~0.4x the absolute floor).
  */
 data class NightSpec(
     val durationH: Double = 8.0,
     val fsRealHz: Double = 50.0,
-    /** Derive lineaire de `fs` sur la nuit, en pourcent (plage du tableau : +/- 0,5 %). */
+    /** Linear drift of `fs` over the night, in percent (range from the table: +/- 0.5 %). */
     val fsDriftPct: Double = 0.0,
     val trueSeries: List<SeriesSpec> = listOf(SeriesSpec(24, 7, 22.0, 25.0)),
     val isolatedClmPerHour: Double = 6.0,
@@ -277,20 +278,20 @@ data class NightSpec(
     val sleep: SleepSpec = SleepSpec(),
     val ritual: RitualSpec = RitualSpec(),
     val visibilityG: Double = 0.008,
-    /** Orientation initiale du segment jambier, en degres par rapport a l'horizontale. */
+    /** Initial orientation of the leg segment, in degrees relative to the horizontal. */
     val initialTiltDeg: Double = 15.0,
-    /** Taille nominale d'un bloc du format. 250 echantillons = 5 s a 50 Hz. */
+    /** Nominal size of a block of the format. 250 samples = 5 s at 50 Hz. */
     val blockSamples: Int = 250,
-    /** Instant du premier echantillon, en ns. Fixe : aucune horloge murale n'entre ici. */
+    /** Time of the first sample, in ns. Fixed: no wall clock enters here. */
     val startNs: Long = 1_000_000_000L,
 ) {
     init {
-        require(durationH > 0.0) { "durationH doit etre > 0" }
-        require(fsRealHz > 0.0) { "fsRealHz doit etre > 0" }
-        require(ankleOnlyFraction in 0.0..1.0) { "ankleOnlyFraction hors [0,1]" }
-        require(blockSamples in 2..512) { "blockSamples hors [2, 512] (limite du format)" }
+        require(durationH > 0.0) { "durationH must be > 0" }
+        require(fsRealHz > 0.0) { "fsRealHz must be > 0" }
+        require(ankleOnlyFraction in 0.0..1.0) { "ankleOnlyFraction outside [0, 1]" }
+        require(blockSamples in 2..512) { "blockSamples outside [2, 512] (format limit)" }
     }
 
-    /** Duree effectivement enregistree, troncature comprise. */
+    /** Duration actually recorded, truncation included. */
     val recordedH: Double get() = truncateAtH?.coerceAtMost(durationH) ?: durationH
 }

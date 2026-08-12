@@ -15,27 +15,28 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Paramètres du masque d'immobilité (`docs/fr/ALGO-v2.md` §3.6.2, tableau §6.6).
+ * Immobility mask parameters (`docs/workings/ALGO-v2.md` §3.6.2, table §6.6).
  *
- * @param epochSec durée d'une époque. **Fixe** dans le tableau §6.6 (van Hees 2015), mais laissé
- *   constructible parce que les tests doivent pouvoir descendre la grille sans réécrire le module.
- * @param angleDeg seuil de changement d'orientation, en degrés (plage 3–8). **Deuxième paramètre
- *   le plus sensible de toute la chaîne : ±20 % déplacent l'indice de 8 à 15 %.**
- * @param moveFactor critère d'amplitude additionnel, en multiples du plancher de bruit (plage
- *   4–10). C'est l'ajout par rapport à van Hees : il rattrape les mouvements *vibratoires*, qui ne
- *   réorientent rien et sont donc rigoureusement invisibles à un critère purement angulaire.
- * @param sustainedMin durée minimale d'une bouffée d'inactivité pour valoir du sommeil (plage 3–10).
- * @param sptMinMin durée minimale d'une bouffée pour pouvoir **borner** le SPT (plage 10–30).
- * @param maxFixedPointIterations §3.6.3 couche 2. **Fixe à 2** : un point fixe itéré sans borne sur
- *   un critère non monotone peut osciller. Vérifié par un `require`, pas seulement documenté.
- * @param convergenceTstFraction écart relatif de TST au-delà duquel le masque est déclaré non
- *   convergent (plage 0,15–0,40).
- * @param neutralizeMaxAngleDeg garde-fou de la couche 1 : une époque dont le Δφ atteint l'ampleur
- *   d'un **changement de posture** (§6.4 : `postureDeg` = 20°) n'est **jamais** neutralisée, même
- *   si un CLM y a été détecté. Sans ce garde-fou, il suffirait qu'un mouvement de jambe coïncide
- *   avec un retournement pour effacer la seule preuve d'éveil réellement fiable dont on dispose.
- * @param minEpochCoverage fraction minimale d'échantillons exploitables pour qu'une époque soit
- *   scorable ; en dessous, l'époque est `UNKNOWN` — ni preuve de sommeil, ni preuve d'éveil.
+ * @param epochSec duration of an epoch. **Fixed** in table §6.6 (van Hees 2015), but left
+ *   constructible because the tests must be able to lower the grid without rewriting the module.
+ * @param angleDeg orientation change threshold, in degrees (range 3–8). **Second most sensitive
+ *   parameter of the whole chain: ±20 % move the index by 8 to 15 %.**
+ * @param moveFactor additional amplitude criterion, in multiples of the noise floor (range 4–10).
+ *   This is the addition with respect to van Hees: it catches the *vibratory* movements, which
+ *   reorient nothing and are therefore strictly invisible to a purely angular criterion.
+ * @param sustainedMin minimum duration of a bout of inactivity to count as sleep (range 3–10).
+ * @param sptMinMin minimum duration of a bout to be able to **bound** the SPT (range 10–30).
+ * @param maxFixedPointIterations §3.6.3 layer 2. **Fixed at 2**: a fixed point iterated without a
+ *   bound on a non-monotonic criterion can oscillate. Verified by a `require`, not merely
+ *   documented.
+ * @param convergenceTstFraction relative TST gap beyond which the mask is declared non-convergent
+ *   (range 0.15–0.40).
+ * @param neutralizeMaxAngleDeg guard rail of layer 1: an epoch whose Δφ reaches the magnitude of a
+ *   **posture change** (§6.4: `postureDeg` = 20°) is **never** neutralised, even if a CLM was
+ *   detected in it. Without this guard rail, it would be enough for a leg movement to coincide
+ *   with a roll-over to erase the only really reliable proof of wake that we have.
+ * @param minEpochCoverage minimum fraction of usable samples for an epoch to be scorable; below
+ *   that, the epoch is `UNKNOWN` — neither proof of sleep, nor proof of wake.
  */
 data class ImmobilityConfig(
     val epochSec: Double = 5.0,
@@ -50,14 +51,14 @@ data class ImmobilityConfig(
 )
 
 /**
- * Sortie du point fixe borné (§3.6.3, couche 2). Les grandeurs intermédiaires sont exposées parce
- * que la **non-convergence est un signal clinique**, pas un détail d'implémentation : c'est elle
- * qui remonte dans `QualityReport.maskNonConvergent` et qui ferme la porte de publication.
+ * Output of the bounded fixed point (§3.6.3, layer 2). The intermediate quantities are exposed
+ * because **non-convergence is a clinical signal**, not an implementation detail: it is what comes
+ * up in `QualityReport.maskNonConvergent` and what closes the publication gate.
  *
- * @param provisionalTstMin TST du masque M₀, celui construit **sans** neutralisation. Sur un sujet
- *   très atteint il vaut zéro : c'est exactement le mode de défaillance décrit en §3.6.3, et le
- *   fait de le conserver permet de le mesurer au lieu de le subir.
- * @param tstDeltaFraction `|TST(M₁) − TST(M₀)| / TST(M₀)`. `NaN` si `TST(M₀)` est nul.
+ * @param provisionalTstMin TST of the M₀ mask, the one built **without** neutralisation. On a
+ *   severely affected subject it is zero: that is exactly the failure mode described in §3.6.3,
+ *   and keeping it makes it possible to measure it instead of merely suffering it.
+ * @param tstDeltaFraction `|TST(M₁) − TST(M₀)| / TST(M₀)`. `NaN` if `TST(M₀)` is zero.
  */
 data class FixedPointResult(
     val mask: SleepMask,
@@ -67,67 +68,69 @@ data class FixedPointResult(
 )
 
 /**
- * Étape 6 — masque de sommeil accélérométrique, règle d'**inactivité soutenue de type van Hees**
- * (`docs/fr/ALGO-v2.md` §3.6.2), adaptée à la cheville et rendue invariante par orientation.
+ * Step 6 — accelerometric sleep mask, **van Hees-type sustained inactivity** rule
+ * (`docs/workings/ALGO-v2.md` §3.6.2), adapted to the ankle and made invariant by orientation.
  *
- * **Ce que ce fichier n'implémente pas, et pourquoi.** Cole-Kripke est rejeté (§3.6.1), sans
- * variante ni « adaptation » : il consomme des *activity counts* ActiGraph — une transformation
- * propriétaire dont il n'existe aucune conversion publiée depuis des g — il est validé au poignet,
- * et à la cheville il **surestime le TST de +43 min**. Or un TST surestimé **déflate** l'indice
- * (+43 min sur 420 → ×0,907 : un aPLM-i vrai de 15,0 s'affiche à 13,6, sous le seuil de
- * dépistage). L'algorithme le plus précis au poignet est celui qui fait rater le diagnostic à la
- * cheville. Les algorithmes GGIR/van Hees sont à l'inverse les **seuls** de la littérature à ne
- * montrer aucune différence significative poignet/cheville — exactement la propriété requise ici,
- * puisque la position du boîtier varie d'une nuit à l'autre.
+ * **What this file does not implement, and why.** Cole-Kripke is rejected (§3.6.1), with no
+ * variant and no "adaptation": it consumes ActiGraph *activity counts* — a proprietary
+ * transformation for which no published conversion from g exists — it is validated at the wrist,
+ * and at the ankle it **overestimates the TST by +43 min**. Now an overestimated TST **deflates**
+ * the index (+43 min over 420 → ×0.907: a true aPLM-i of 15.0 is displayed at 13.6, below the
+ * screening threshold). The most accurate algorithm at the wrist is the one that makes the
+ * diagnosis be missed at the ankle. The GGIR/van Hees algorithms are on the contrary the **only**
+ * ones in the literature to show no significant difference between wrist and ankle — exactly the
+ * property required here, since the position of the case varies from one night to the next.
  *
- * **Deux écarts assumés par rapport à van Hees 2015.**
- *  1. Le **Δ angulaire du vecteur gravité unitaire** remplace l'angle sur un axe nommé. L'original
- *     calcule `atan(a_z / √(a_x²+a_y²))`, ce qui présuppose une orientation anatomique connue du
- *     boîtier. Nous ne la connaissons pas, et elle change d'une nuit à l'autre. `Δφ = angle(ĝ_k,
- *     ĝ_{k−1})` mesure la même chose — la réorientation du segment — sans jamais nommer d'axe : il
- *     est **invariant par rotation constante** du boîtier, donc reproductible d'une pose à l'autre.
- *  2. Le **critère d'amplitude** `amp_k < moveFactor · floor_k` s'ajoute au critère angulaire.
- *     Une secousse qui revient à sa position de départ (le cas typique d'un CLM, et de tout
- *     mouvement vibratoire) ne laisse **aucune trace angulaire** : sans ce second critère, le
- *     masque serait aveugle à une catégorie entière de mobilité.
+ * **Two deviations owned with respect to van Hees 2015.**
+ *  1. The **angular Δ of the unit gravity vector** replaces the angle on a named axis. The original
+ *     computes `atan(a_z / √(a_x²+a_y²))`, which presupposes a known anatomical orientation of the
+ *     case. We do not know it, and it changes from one night to the next. `Δφ = angle(ĝ_k,
+ *     ĝ_{k−1})` measures the same thing — the reorientation of the segment — without ever naming
+ *     an axis: it is **invariant under a constant rotation** of the case, and therefore
+ *     reproducible from one placement to the next.
+ *  2. The **amplitude criterion** `amp_k < moveFactor · floor_k` is added to the angular criterion.
+ *     A jolt that returns to its starting position (the typical case of a CLM, and of any
+ *     vibratory movement) leaves **no angular trace at all**: without this second criterion, the
+ *     mask would be blind to a whole category of mobility.
  *
- * **Biais connu, assumé, et corrigé ailleurs** : van Hees à la cheville sous-estime le TST de
- * −89 min dans la seule étude disponible, ce qui **inflate** l'indice d'environ 27 %. On échange
- * un biais de −9 % (Cole-Kripke) contre un biais de +27 %, en gagnant l'invariance du site.
- * Aucun des deux n'est acceptable non corrigé : la correction vit dans [MaskFusion].
+ * **A known bias, owned, and corrected elsewhere**: van Hees at the ankle underestimates the TST
+ * by −89 min in the only study available, which **inflates** the index by about 27 %. We trade a
+ * bias of −9 % (Cole-Kripke) for a bias of +27 %, gaining site invariance. Neither of the two is
+ * acceptable uncorrected: the correction lives in [MaskFusion].
  *
- * Toutes les fonctions sont pures. `fs` vient toujours du signal, jamais d'une constante ; aucune
- * horloge murale n'est lue ; les accumulations se font en `Double` — même entrée, même sortie.
+ * All the functions are pure. `fs` always comes from the signal, never from a constant; no wall
+ * clock is read; the accumulations are done in `Double` — same input, same output.
  */
 object ImmobilityMask {
 
     /**
-     * Construit un masque en **une passe**.
+     * Builds a mask in **one pass**.
      *
-     * @param gravity `ĝ` estimé à l'étape 1. Le canal gravité maintient sa dernière valeur dans les
-     *   micro-trous : on ne s'attend donc pas à des `NaN` à l'intérieur d'un segment.
-     * @param env enveloppe **grossière** (0,50 s) de l'étape 2. C'est celle qui porte la décision :
-     *   la fine garde l'ondulation à `2f` et fabriquerait des époques mobiles au hasard.
-     * @param floor plancher de bruit adaptatif de l'étape 3, sur la même grille.
-     * @param segments intervalles continus. Une époque à cheval sur une frontière n'est jamais
-     *   comparée à sa voisine : de part et d'autre, l'état des filtres n'a rien de commun et le Δφ
-     *   ne mesurerait qu'un transitoire de réinitialisation.
-     * @param offBody périodes hors-corps. Ni sommeil, ni éveil : elles ne prouvent rien.
-     * @param ignoreIntervals intervalles (typiquement les CLM détectés) **neutralisés** comme
-     *   preuve de mobilité. Couche 1 de la réponse à la circularité (§3.6.3) : un PLMS est par
-     *   définition un mouvement **pendant** le sommeil ; s'en servir comme preuve d'éveil est une
-     *   erreur de catégorie, et c'est celle qui fait exploser l'indice du sujet le plus atteint.
-     * @param diary journal manuel. Il ne fabrique **pas** d'indépendance ici (voir la valeur de
-     *   `independence` renvoyée) : il borne la **recherche** du SPT, comme van Hees 2015 l'exigeait,
-     *   ce qui empêche une sieste ou une immobilité de canapé de préempter le début de nuit.
-     * @param blindZones trous trop longs pour être interpolés. **Paramètre ajouté en fin de liste,
-     *   et non inséré après [offBody], délibérément** : `blindZones` et `ignoreIntervals` ont le
-     *   même type, et les insérer côte à côte ferait qu'un appel positionnel écrit sur la signature
-     *   §4.4 compilerait en silence avec les deux arguments intervertis. Une erreur silencieuse sur
-     *   la couche 1 est précisément ce qu'il ne faut pas rendre possible.
+     * @param gravity `ĝ` estimated at step 1. The gravity channel holds its last value across the
+     *   micro-gaps: we therefore do not expect `NaN` inside a segment.
+     * @param env **coarse** envelope (0.50 s) from step 2. That is the one that carries the
+     *   decision: the fine one keeps the ripple at `2f` and would manufacture mobile epochs at
+     *   random.
+     * @param floor adaptive noise floor from step 3, on the same grid.
+     * @param segments continuous intervals. An epoch straddling a boundary is never compared with
+     *   its neighbour: on either side, the state of the filters has nothing in common and the Δφ
+     *   would only measure a reset transient.
+     * @param offBody off-body periods. Neither sleep nor wake: they prove nothing.
+     * @param ignoreIntervals intervals (typically the detected CLMs) **neutralised** as proof of
+     *   mobility. Layer 1 of the answer to circularity (§3.6.3): a PLMS is by definition a
+     *   movement **during** sleep; using it as proof of wake is a category error, and it is the
+     *   one that makes the index of the most severely affected subject explode.
+     * @param diary manual diary. It does **not** manufacture independence here (see the returned
+     *   `independence` value): it bounds the **search** for the SPT, as van Hees 2015 required,
+     *   which prevents a nap or a sofa immobility from pre-empting the start of the night.
+     * @param blindZones gaps too long to be interpolated. **A parameter added at the end of the
+     *   list, and deliberately not inserted after [offBody]**: `blindZones` and `ignoreIntervals`
+     *   have the same type, and putting them side by side would mean that a positional call
+     *   written against the §4.4 signature would compile silently with the two arguments swapped.
+     *   A silent error on layer 1 is precisely what must not be made possible.
      *
-     * `fixedPointConverged` vaut `true` : une passe unique n'a **rien** à faire converger. Le
-     * drapeau n'a de sens que rempli par [fixedPoint], qui seul dispose des deux TST à comparer.
+     * `fixedPointConverged` is `true`: a single pass has **nothing** to converge. The flag only
+     * makes sense when filled in by [fixedPoint], which alone has the two TSTs to compare.
      */
     fun build(
         gravity: TriAxial,
@@ -145,33 +148,33 @@ object ImmobilityMask {
             .toMask(converged = true)
 
     /**
-     * Couche 2 de la réponse à la circularité — **point fixe borné à deux itérations** (§3.6.3).
+     * Layer 2 of the answer to circularity — **fixed point bounded to two iterations** (§3.6.3).
      *
      * ```
-     * 1. M₀ : immobilité SANS ignoreIntervals            (dégradé, mais borne le SPT)
-     * 2. C₀ : intervalles de mouvement obtenus avec M₀
-     * 3. M₁ : immobilité AVEC ignoreIntervals = C₀
-     * 4. |TST(M₁) − TST(M₀)| < convergenceTstFraction · TST(M₀) ?  sinon MASK_NON_CONVERGENT
+     * 1. M₀: immobility WITHOUT ignoreIntervals          (degraded, but it bounds the SPT)
+     * 2. C₀: movement intervals obtained with M₀
+     * 3. M₁: immobility WITH ignoreIntervals = C₀
+     * 4. |TST(M₁) − TST(M₀)| < convergenceTstFraction · TST(M₀) ?  otherwise MASK_NON_CONVERGENT
      * ```
      *
-     * **Deux itérations, jamais plus.** Ce n'est pas une économie de calcul : la couche 1 *supprime*
-     * la boucle de rétroaction au lieu de l'atténuer, donc une passe supplémentaire n'apporterait
-     * rien, tandis qu'un point fixe non borné sur un critère non monotone peut osciller
-     * indéfiniment entre deux scorages également défendables.
+     * **Two iterations, never more.** This is not a saving of computation: layer 1 *removes* the
+     * feedback loop instead of attenuating it, so an extra pass would bring nothing, whereas an
+     * unbounded fixed point on a non-monotonic criterion can oscillate indefinitely between two
+     * equally defensible scorings.
      *
-     * **Conséquence à connaître et à assumer.** La couche 1 ne peut que *rendre* du sommeil
-     * (elle ne transforme jamais une époque immobile en époque mobile), donc `TST(M₁) ≥ TST(M₀)`.
-     * Sur un sujet très atteint, `TST(M₀)` s'effondre à zéro et l'écart relatif explose : la nuit
-     * sort **non convergente**, et la porte de publication refuse l'aPLM-i. C'est voulu — sur une
-     * telle nuit, le TST accélérométrique n'est tout simplement pas déterminable — et c'est sans
-     * conséquence pour la métrique de suivi : le Periodicity Index et le rythme fondamental n'ont
-     * pas de dénominateur temporel et survivent à `NO_PLMI`. La bonne réponse à ce cas n'est pas
-     * d'assouplir le critère, c'est de fournir un dénominateur indépendant (couche 3).
+     * **A consequence to be known and owned.** Layer 1 can only *give back* sleep (it never turns
+     * an immobile epoch into a mobile one), hence `TST(M₁) ≥ TST(M₀)`. On a severely affected
+     * subject, `TST(M₀)` collapses to zero and the relative gap explodes: the night comes out
+     * **non-convergent**, and the publication gate refuses the aPLM-i. This is intended — on such
+     * a night, the accelerometric TST is simply not determinable — and it has no consequence for
+     * the follow-up metric: the Periodicity Index and the fundamental rhythm have no temporal
+     * denominator and survive `NO_PLMI`. The right answer to this case is not to loosen the
+     * criterion, it is to supply an independent denominator (layer 3).
      *
-     * @param movementIntervalsOf détection injectée : `M → intervalles de mouvement à neutraliser`.
-     *   Passée en lambda pour que `mask` ne dépende pas de `detect` — la dépendance naturelle va
-     *   dans l'autre sens (les séries consomment le masque), et la refermer ici créerait un cycle.
-     *   L'appelant y branche `clms.filter { it.isClm }.map { Segment(it.onsetIdx, it.offsetIdx) }`.
+     * @param movementIntervalsOf injected detection: `M → movement intervals to neutralise`.
+     *   Passed as a lambda so that `mask` does not depend on `detect` — the natural dependency goes
+     *   the other way (the series consume the mask), and closing it here would create a cycle.
+     *   The caller plugs in `clms.filter { it.isClm }.map { Segment(it.onsetIdx, it.offsetIdx) }`.
      */
     fun fixedPoint(
         gravity: TriAxial,
@@ -185,7 +188,7 @@ object ImmobilityMask {
         movementIntervalsOf: (SleepMask) -> List<Segment>,
     ): FixedPointResult {
         require(cfg.maxFixedPointIterations in 1..2) {
-            "maxFixedPointIterations est fixe a 1 ou 2 (§6.6) : au-dela, le point fixe peut osciller"
+            "maxFixedPointIterations is fixed at 1 or 2 (§6.6): beyond, the fixed point can oscillate"
         }
         val m0 = build(gravity, env, floor, segments, offBody, emptyList(), diary, cfg, blindZones)
         if (cfg.maxFixedPointIterations == 1) {
@@ -196,8 +199,8 @@ object ImmobilityMask {
 
         val delta = abs(m1.tstMin - m0.tstMin)
         val fraction = if (m0.tstMin > 0.0) delta / m0.tstMin else Double.NaN
-        // `TST(M₀) == 0` n'est pas une convergence parfaite, c'est l'effondrement décrit ci-dessus :
-        // on ne peut rien conclure d'un rapport dont le dénominateur est nul, donc non convergent.
+        // `TST(M₀) == 0` is not a perfect convergence, it is the collapse described above: nothing
+        // can be concluded from a ratio whose denominator is zero, hence non-convergent.
         val converged = fraction.isFinite() && fraction < cfg.convergenceTstFraction
         return FixedPointResult(
             mask = m1.copy(fixedPointConverged = converged),
@@ -209,21 +212,21 @@ object ImmobilityMask {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Scorage par époque
+// Epoch scoring
 // ---------------------------------------------------------------------------------------------
 
 private const val ST_UNKNOWN: Byte = 0
 private const val ST_IMMOBILE: Byte = 1
 private const val ST_MOBILE: Byte = 2
 
-/** Résultat intermédiaire du scorage : tout ce qu'il faut pour fabriquer le [SleepMask]. */
+/** Intermediate result of the scoring: everything needed to build the [SleepMask]. */
 private class Scored(
     val fsHz: Double,
     val epochLen: Int,
     val epochSec: Double,
-    /** `ST_*` après neutralisation (couche 1). */
+    /** `ST_*` after neutralisation (layer 1). */
     val state: ByteArray,
-    /** Époque immobile appartenant à une bouffée d'au moins `sustainedMin`. */
+    /** Immobile epoch belonging to a bout of at least `sustainedMin`. */
     val sleepEpoch: BooleanArray,
     val sptFromEpoch: Int,
     val sptToEpoch: Int,
@@ -234,9 +237,9 @@ private class Scored(
     private fun stageOf(k: Int): Stage = when {
         sleepEpoch[k] -> Stage.SLEEP
         state[k] == ST_UNKNOWN -> Stage.UNKNOWN
-        // Immobile mais dans une bouffée trop courte : c'est de l'éveil calme au lit, pas du
-        // sommeil. Le regrouper avec le mouvement est la lettre de van Hees (le sommeil est
-        // l'inactivité *soutenue*, jamais l'inactivité instantanée).
+        // Immobile but within a bout that is too short: this is quiet wake in bed, not sleep.
+        // Grouping it with movement is the letter of van Hees (sleep is *sustained* inactivity,
+        // never instantaneous inactivity).
         else -> Stage.AWAKE_IN_BED
     }
 
@@ -268,18 +271,18 @@ private class Scored(
             }
         }
 
-        // Le SPT est aligné sur la grille d'époques, donc `waso = spt − tst` est exact : aucune
-        // milliseconde ne se perd entre les deux comptages.
+        // The SPT is aligned on the epoch grid, so `waso = spt − tst` is exact: not a millisecond
+        // is lost between the two counts.
         var sleepEpochs = 0
         for (k in sptFromEpoch until sptToEpoch) if (sleepEpoch[k]) sleepEpochs++
         val sptEpochs = sptToEpoch - sptFromEpoch
         val sptMin = sptEpochs * epochSec / 60.0
         val tstMin = sleepEpochs * epochSec / 60.0
 
-        // Dénominateur exposé = temps de sommeil **analysable** (§2.4 et `SPEC-v2.md` §2.3) :
-        // TST ∩ segments valides ∩ hors zones aveugles ∩ hors off-body. Compter des mouvements sur
-        // une durée pendant laquelle on n'aurait pas pu en voir gonfle le dénominateur et déflate
-        // l'indice — dans le sens exact qui fait rater un dépistage. Jamais le TST brut.
+        // Exposed denominator = **analysable** sleep time (§2.4 and `SPEC-v2.md` §2.3):
+        // TST ∩ valid segments ∩ outside blind zones ∩ outside off-body. Counting movements over a
+        // duration during which none could have been seen inflates the denominator and deflates
+        // the index — in the exact direction that makes a screening miss its case. Never raw TST.
         var analysableTstSamples = 0L
         for (w in windows) {
             if (w.stage != Stage.SLEEP) continue
@@ -301,11 +304,12 @@ private class Scored(
             analysableSptMin = analysableSptSamples * toMin,
             corrected = false,
             lagAppliedMs = 0L,
-            // **Règle non négociable** (`SPEC-v2.md` §2.3) : un masque dérivé de l'accéléromètre est
-            // circulaire — numérateur et dénominateur sortent du même signal et sont anti-corrélés
-            // par construction — et ne peut donc JAMAIS porter le résultat principal. Le journal
-            // manuel passé à `build` ne change rien à cela : il borne la recherche du SPT, il ne
-            // fournit pas le dénominateur. Un dénominateur indépendant se produit dans [MaskFusion].
+            // **Non-negotiable rule** (`SPEC-v2.md` §2.3): a mask derived from the accelerometer is
+            // circular — numerator and denominator come out of the same signal and are
+            // anti-correlated by construction — and can therefore NEVER carry the primary result.
+            // The manual diary passed to `build` changes nothing to that: it bounds the search for
+            // the SPT, it does not supply the denominator. An independent denominator is produced
+            // in [MaskFusion].
             independence = DenominatorIndependence.CIRCULAR,
             fixedPointConverged = converged,
         )
@@ -326,10 +330,10 @@ private class Scorer(
     private val fs = env.fsHz
     private val n = env.n
 
-    /** Scorable = dans un segment continu et hors du corps exclu. */
+    /** Scorable = inside a continuous segment and outside the excluded off-body. */
     private val scorable = IntervalSet.of(segments).minus(IntervalSet.of(offBody))
 
-    /** Analysable = scorable, moins les zones aveugles. Sert au seul dénominateur. */
+    /** Analysable = scorable, minus the blind zones. Serves the denominator only. */
     private val analysable = scorable.minus(IntervalSet.of(blindZones))
     private val ignore = IntervalSet.of(ignoreIntervals)
 
@@ -345,9 +349,9 @@ private class Scorer(
     private val scratch = FloatArray(epochLen)
 
     init {
-        require(fs > 0.0) { "fsHz doit etre > 0" }
-        require(gravity.n == n && floor.n == n) { "gravite, enveloppe et plancher doivent partager la grille" }
-        require(cfg.epochSec > 0.0 && cfg.sustainedMin > 0.0) { "durees strictement positives attendues" }
+        require(fs > 0.0) { "fsHz must be > 0" }
+        require(gravity.n == n && floor.n == n) { "gravity, envelope and floor must share the grid" }
+        require(cfg.epochSec > 0.0 && cfg.sustainedMin > 0.0) { "strictly positive durations expected" }
     }
 
     fun run(): Scored {
@@ -358,7 +362,7 @@ private class Scorer(
         return Scored(fs, epochLen, cfg.epochSec, state, sleepEpoch, from, to, analysable)
     }
 
-    // --- 1. état brut ------------------------------------------------------------------------
+    // --- 1. raw state ------------------------------------------------------------------------
 
     private fun scoreRaw() {
         val minValid = (cfg.minEpochCoverage * epochLen).toInt().coerceAtLeast(1)
@@ -369,21 +373,21 @@ private class Scorer(
             val a = k * epochLen
             val b = a + epochLen
 
-            // Une époque n'est scorable que si l'enregistrement la couvre vraiment. En dessous,
-            // elle n'est ni une preuve de sommeil ni une preuve d'éveil : UNKNOWN, et rien d'autre.
+            // An epoch is scorable only if the recording really covers it. Below that, it is
+            // neither proof of sleep nor proof of wake: UNKNOWN, and nothing else.
             if (scorable.intersectLength(a, b) < minValid) continue
 
-            // Le journal borne la **recherche** : hors de la fenêtre déclarée, aucune bouffée ne
-            // peut ouvrir ou fermer le SPT. Sans cela, une immobilité de canapé avant le coucher
-            // préempte le début de nuit et allonge le SPT de plusieurs dizaines de minutes.
+            // The diary bounds the **search**: outside the declared window, no bout can open or
+            // close the SPT. Without this, a sofa immobility before bedtime pre-empts the start of
+            // the night and lengthens the SPT by several tens of minutes.
             if (a < bedIdx || b > riseIdx) continue
 
             meanUnitGravity(a, b)
             if (!hasDir[k]) continue
 
-            // Δφ contre l'époque précédente, et seulement si les deux sont **contiguës dans le
-            // même segment** : à travers une frontière, les filtres ont été réinitialisés et
-            // l'angle mesurerait un transitoire d'amorçage, pas un mouvement du sujet.
+            // Δφ against the previous epoch, and only if the two are **contiguous within the same
+            // segment**: across a boundary, the filters have been reset and the angle would
+            // measure a warm-up transient, not a movement of the subject.
             val contiguous = k > 0 && hasDir[k - 1] && scorable.containsRange(a - 1, a + 1)
             val d = if (contiguous) {
                 Gravity.angleDeg(
@@ -391,7 +395,7 @@ private class Scorer(
                     ux[k].toFloat(), uy[k].toFloat(), uz[k].toFloat(),
                 )
             } else {
-                0f // absence de comparaison possible = absence de preuve, jamais preuve d'éveil
+                0f // no comparison possible = absence of proof, never proof of wake
             }
             dphiDeg[k] = if (d.isNaN()) 0f else d
 
@@ -405,11 +409,12 @@ private class Scorer(
     }
 
     /**
-     * `ĝ_k` = moyenne des vecteurs gravité **unitaires** de l'époque, renormalisée.
+     * `ĝ_k` = mean of the **unit** gravity vectors of the epoch, renormalised.
      *
-     * Normaliser chaque échantillon *avant* de moyenner, et non l'inverse : la moyenne des vecteurs
-     * bruts est pondérée par la norme, si bien qu'une seconde où `‖ĝ‖` dérive à 1,1 g pèse 10 % de
-     * plus dans la direction moyenne. On mesure une orientation ; le module n'a rien à y faire.
+     * Normalise each sample *before* averaging, and not the other way round: the mean of the raw
+     * vectors is weighted by the norm, so that a second where `‖ĝ‖` drifts to 1.1 g weighs 10 %
+     * more in the mean direction. We are measuring an orientation; the magnitude has no business
+     * in it.
      */
     private fun meanUnitGravity(a: Int, b: Int) {
         var sx = 0.0
@@ -427,37 +432,37 @@ private class Scorer(
         val k = a / epochLen
         if (cnt == 0) return
         val norm = sqrt(sx * sx + sy * sy + sz * sz)
-        if (norm <= 1e-9) return // époque dont les directions s'annulent : aucune direction moyenne
+        if (norm <= 1e-9) return // epoch whose directions cancel out: no mean direction at all
         ux[k] = sx / norm; uy[k] = sy / norm; uz[k] = sz / norm
         hasDir[k] = true
     }
 
-    // --- 2. couche 1 : neutralisation des mouvements périodiques ------------------------------
+    // --- 2. layer 1: neutralisation of the periodic movements ---------------------------------
 
     /**
-     * Couche 1 de §3.6.3 — **rendre le masque aveugle aux mouvements périodiques**.
+     * Layer 1 of §3.6.3 — **make the mask blind to the periodic movements**.
      *
-     * L'énoncé du problème, chiffré : la règle exige ≥ 5 min consécutives sans mouvement, or une
-     * série à IMI 22 s place ~13 mouvements dans *n'importe quelle* fenêtre de 5 min. La
-     * probabilité qu'une fenêtre de 5 min soit libre de tout mouvement pendant une série est
-     * **nulle**. Appliqué naïvement, le masque score donc toute la période de crise comme de
-     * l'éveil : le TST s'effondre, l'indice explose, et simultanément la règle AASM « au moins une
-     * partie du mouvement dans une époque de sommeil » supprime les mouvements eux-mêmes. Le sujet
-     * le plus atteint est celui pour lequel l'algorithme se comporte le plus mal — mode de
-     * défaillance disqualifiant.
+     * The statement of the problem, with figures: the rule requires ≥ 5 consecutive min without
+     * movement, yet a series at IMI 22 s places ~13 movements in *any* 5 min window. The
+     * probability that a 5 min window is free of any movement during a series is **nil**. Applied
+     * naively, the mask therefore scores the whole crisis period as wake: the TST collapses, the
+     * index explodes, and at the same time the AASM rule "at least part of the movement within a
+     * sleep epoch" suppresses the movements themselves. The most severely affected subject is the
+     * one for whom the algorithm behaves worst — a disqualifying failure mode.
      *
-     * Position clinique tenable, et la seule : un PLMS est *par définition* un mouvement **pendant**
-     * le sommeil. L'AASM score les PLMS *dans* des époques de sommeil ; un mouvement de jambe ne
-     * rend pas l'époque éveillée sauf critère d'éveil cortical, que nous ne pouvons pas évaluer
-     * sans EEG. Restent comme preuves d'éveil : les mouvements corporels **grossiers**, les
-     * **changements de posture**, et la mobilité soutenue non attribuable à un mouvement périodique
-     * — c'est-à-dire tout ce que l'appelant n'a pas placé dans `ignoreIntervals`.
+     * The tenable clinical position, and the only one: a PLMS is *by definition* a movement
+     * **during** sleep. The AASM scores PLMS *within* sleep epochs; a leg movement does not make
+     * the epoch a wake one, barring a cortical arousal criterion, which we cannot evaluate without
+     * EEG. What remains as proof of wake: **gross** body movements, **posture changes**, and
+     * sustained mobility not attributable to a periodic movement — that is to say everything the
+     * caller has not placed in `ignoreIntervals`.
      *
-     * Deux invariants tiennent l'implémentation :
-     *  - le rescorage lit **toujours** les états bruts, jamais des états déjà rescorés : sans cela
-     *    l'ordre de parcours changerait le résultat, et le déterminisme au bit tomberait ;
-     *  - il ne peut que transformer MOBILE → IMMOBILE. Il ne fabrique jamais d'éveil, ce qui rend
-     *    `TST(M₁) ≥ TST(M₀)` et donne son sens au contrôle de convergence de la couche 2.
+     * Two invariants hold the implementation together:
+     *  - the rescoring **always** reads the raw states, never states that have already been
+     *    rescored: without this the traversal order would change the result, and bit-level
+     *    determinism would fall;
+     *  - it can only turn MOBILE → IMMOBILE. It never manufactures wake, which is what makes
+     *    `TST(M₁) ≥ TST(M₀)` and gives its meaning to the layer 2 convergence check.
      */
     private fun neutralize() {
         if (ignore.isEmpty()) return
@@ -469,19 +474,19 @@ private class Scorer(
         }
         for (k in 0 until nEpochs) {
             if (raw[k] != ST_MOBILE || !neutral[k]) continue
-            // Garde-fou posture : une réorientation persistante de l'ampleur d'un retournement
-            // n'est pas neutralisable. C'est la seule preuve d'éveil vraiment fiable du dispositif,
-            // et un CLM coïncidant ne doit pas suffire à l'effacer.
+            // Posture guard rail: a persistent reorientation of the magnitude of a roll-over is
+            // not neutralisable. It is the only really reliable proof of wake the device has, and
+            // a coinciding CLM must not be enough to erase it.
             if (dphiDeg[k] > cfg.neutralizeMaxAngleDeg) continue
             if (nearestNonNeutralState(raw, neutral, k) == ST_IMMOBILE) state[k] = ST_IMMOBILE
         }
     }
 
     /**
-     * Interpolation au plus proche voisin non neutralisé. Égalité de distance → **la gauche
-     * gagne**, arbitrairement mais de façon fixée : le déterminisme importe plus que le choix.
-     * Aucun voisin exploitable (série couvrant toute la nuit) → `ST_IMMOBILE` : dans ce cas la
-     * seule mobilité observée est celle qu'on a justement décidé de ne pas compter.
+     * Nearest non-neutralised neighbour interpolation. Distance tie → **the left one wins**,
+     * arbitrarily but in a fixed way: determinism matters more than the choice. No usable
+     * neighbour (a series covering the whole night) → `ST_IMMOBILE`: in that case the only
+     * mobility observed is precisely the one we decided not to count.
      */
     private fun nearestNonNeutralState(raw: ByteArray, neutral: BooleanArray, k: Int): Byte {
         var d = 1
@@ -496,7 +501,7 @@ private class Scorer(
         return ST_IMMOBILE
     }
 
-    // --- 3. bouffées d'inactivité soutenue et bornes du SPT ------------------------------------
+    // --- 3. sustained inactivity bouts and SPT bounds ------------------------------------------
 
     private fun sustainedBouts(): BooleanArray {
         val sleep = BooleanArray(nEpochs)
@@ -506,12 +511,12 @@ private class Scorer(
     }
 
     /**
-     * `SPT = du début de la première bouffée ≥ sptMinMin jusqu'à la fin de la dernière`.
+     * `SPT = from the start of the first bout ≥ sptMinMin to the end of the last one`.
      *
-     * Le SPT ne dépend ainsi que des **deux transitions extrêmes** de la nuit, qui sont loin du
-     * cœur dense en mouvements : il est quasi insensible à la circularité, là où le TST y est
-     * directement exposé via le WASO. C'est ce qui fait de `plmiSpt` un repli défendable en
-     * l'absence de dénominateur indépendant (§3.6.5-b).
+     * The SPT thus depends only on the **two extreme transitions** of the night, which are far
+     * from the movement-dense core: it is almost insensitive to circularity, where the TST is
+     * directly exposed to it through the WASO. That is what makes `plmiSpt` a defensible fallback
+     * in the absence of an independent denominator (§3.6.5-b).
      */
     private fun sptBounds(): Pair<Int, Int> {
         val minEpochs = boutEpochs(cfg.sptMinMin)
@@ -530,10 +535,10 @@ private class Scorer(
         Math.ceil(minutes * 60.0 / cfg.epochSec).toInt().coerceAtLeast(1)
 
     /**
-     * Parcourt les plages maximales d'époques `ST_IMMOBILE` consécutives. Une époque `UNKNOWN`
-     * **rompt** la plage : on ne peut pas certifier la continuité d'une immobilité à travers une
-     * période où l'on ne mesurait rien, et le contraire ferait passer une montre posée sur la table
-     * de nuit pour du sommeil.
+     * Walks the maximal ranges of consecutive `ST_IMMOBILE` epochs. An `UNKNOWN` epoch **breaks**
+     * the range: the continuity of an immobility cannot be certified across a period during which
+     * nothing was being measured, and the opposite would pass a watch left on the bedside table
+     * off as sleep.
      */
     private inline fun forEachBout(action: (Int, Int) -> Unit) {
         var k = 0
@@ -548,19 +553,19 @@ private class Scorer(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Ensemble d'intervalles
+// Interval set
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Union normalisée d'intervalles d'index d'échantillons `[from, to)` — triée, disjointe, fusionnée.
- * Sert exclusivement à l'arithmétique du dénominateur analysable, où la moindre double comptabilité
- * se traduit directement en erreur sur l'indice.
+ * Normalised union of sample-index intervals `[from, to)` — sorted, disjoint, merged. Used
+ * exclusively for the arithmetic of the analysable denominator, where the slightest double
+ * counting translates directly into an error on the index.
  */
 internal class IntervalSet private constructor(private val from: IntArray, private val to: IntArray) {
 
     fun isEmpty(): Boolean = from.isEmpty()
 
-    /** Nombre d'échantillons de `[a, b)` couverts par l'ensemble. */
+    /** Number of samples of `[a, b)` covered by the set. */
     fun intersectLength(a: Int, b: Int): Int {
         if (b <= a) return 0
         var acc = 0
@@ -594,7 +599,7 @@ internal class IntervalSet private constructor(private val from: IntArray, priva
         return IntervalSet(outFrom.toIntArray(), outTo.toIntArray())
     }
 
-    /** Premier intervalle dont la borne haute dépasse `x`. Recherche dichotomique. */
+    /** First interval whose upper bound exceeds `x`. Binary search. */
     private fun lowerBound(x: Int): Int {
         var lo = 0
         var hi = from.size

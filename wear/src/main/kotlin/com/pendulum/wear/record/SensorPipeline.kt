@@ -3,43 +3,43 @@ package com.pendulum.wear.record
 import com.pendulum.format.ChunkFormat
 
 /**
- * Transformation du flot d'evenements capteur en blocs de chunk.
+ * Turning the stream of sensor events into chunk blocks.
  *
- * Deux horloges arrivent ici et elles ne servent **jamais** a la meme chose :
+ * Two clocks arrive here and they **never** serve the same purpose:
  *
- *  - `SensorEvent.timestamp` — la base de temps de la mesure. C'est la seule qui date les
- *    echantillons, la seule sur laquelle [GapMonitor] mesure les trous, la seule qui decide de
- *    la validite d'un bloc.
- *  - `SystemClock.elapsedRealtimeNanos()` a la reception — l'heure de *livraison*. Elle ne dit
- *    rien de la mesure, et tout du materiel : un ecart de livraison de trente secondes en mode
- *    batche, c'est un vidage de FIFO, pas un trou. C'est precisement ce qui la rend utile pour
- *    la seule chose qu'elle sache : **reperer la frontiere entre deux vidages du FIFO**.
+ *  - `SensorEvent.timestamp` — the time base of the measurement. It is the only one that dates
+ *    the samples, the only one on which [GapMonitor] measures gaps, the only one that decides
+ *    whether a block is valid.
+ *  - `SystemClock.elapsedRealtimeNanos()` at reception — the *delivery* time. It says nothing
+ *    about the measurement, and everything about the hardware: a thirty-second delivery interval
+ *    in batched mode is a FIFO flush, not a gap. That is precisely what makes it useful for the
+ *    only thing it knows: **spotting the boundary between two FIFO flushes**.
  *
- * D'ou la regle centrale de ce fichier : **un bloc ne chevauche jamais deux vidages du FIFO**.
- * Le format n'a pas de timestamp par echantillon — il interpole lineairement entre `tFirstNs` et
- * `tLastNs` — et cette economie de 8 octets par echantillon (11 Mo par nuit) n'est licite que
- * tant que l'interpolation l'est. Un bloc a cheval sur deux vidages contient un trou que
- * l'interpolation etale sur *tous* ses echantillons, et les date donc tous faux. Le producteur
- * est le seul a savoir ou est la frontiere : [ChunkWriter][com.pendulum.format.ChunkWriter] le
- * verifie par un `require`, et couper au bon endroit est notre travail, pas le sien.
+ * Hence the central rule of this file: **a block never straddles two FIFO flushes**. The format
+ * has no per-sample timestamp — it interpolates linearly between `tFirstNs` and `tLastNs` — and
+ * that saving of 8 bytes per sample (11 MB per night) is only legitimate as long as the
+ * interpolation is. A block straddling two flushes contains a gap that the interpolation spreads
+ * over *all* of its samples, and therefore dates them all wrong. The producer is the only one
+ * that knows where the boundary is: [ChunkWriter][com.pendulum.format.ChunkWriter] checks it with
+ * a `require`, and cutting in the right place is our job, not its.
  */
 class SensorPipeline(
     private val store: ChunkStore,
     private val gaps: GapMonitor,
     private val envelope: PreviewEnvelope,
     private var rateHz: Int,
-    /** Appele avec l'index du chunk qui vient d'etre ferme. */
+    /** Called with the index of the chunk that has just been closed. */
     private val onChunkClosed: (Int) -> Unit,
-    /** Etat off-body courant, journalise et jamais actionne. */
+    /** Current off-body state, logged and never acted upon. */
     private val offBody: () -> Boolean,
 ) {
 
     companion object {
         /**
-         * Au-dela de cet ecart entre deux *arrivees*, on considere qu'un nouveau vidage du FIFO
-         * commence. En continu les arrivees sont espacees d'une periode (20 ms a 50 Hz) ; a
-         * l'interieur d'une salve elles sont espacees de quelques microsecondes. 100 ms separe
-         * les deux cas sans ambiguite, sur toute la plage de cadences envisagee.
+         * Beyond this interval between two *arrivals*, a new FIFO flush is deemed to begin. In
+         * continuous mode arrivals are one period apart (20 ms at 50 Hz); inside a burst they are
+         * a few microseconds apart. 100 ms separates the two cases unambiguously, across the
+         * whole range of rates under consideration.
          */
         const val FLUSH_GAP_NS = 100_000_000L
     }
@@ -53,16 +53,16 @@ class SensorPipeline(
     private var pendingFlags = 0
     private var lastArrivalNs = 0L
 
-    /** Drapeaux a poser sur le prochain bloc ouvert (trou detecte, reprise apres reboot). */
+    /** Flags to set on the next block opened (gap detected, resume after reboot). */
     fun markNextBlock(flag: Int) {
         pendingFlags = pendingFlags or flag
     }
 
-    /** @param nowMs `SystemClock.elapsedRealtime()` — une duree ne se calcule jamais sur
-     *   l'horloge murale, qui saute au changement d'heure et a la resynchronisation NTP. */
+    /** @param nowMs `SystemClock.elapsedRealtime()` — a duration is never computed on the wall
+     *   clock, which jumps at a time change and at NTP resynchronisation. */
     fun onRateChanged(rateHz: Int, nowMs: Long) {
-        // Le bloc en cours a ete echantillonne a l'ancienne cadence : il doit partir avant que
-        // la nouvelle ne rende sa base de temps invalide au regard de l'entete du chunk suivant.
+        // The block in progress was sampled at the old rate: it must leave before the new one
+        // makes its time base invalid with respect to the header of the next chunk.
         flushBlock(nowMs)
         this.rateHz = rateHz
         gaps.onRateChanged(rateHz)
@@ -81,9 +81,9 @@ class SensorPipeline(
                 gapBefore ||
                 count >= ChunkFormat.MAX_SAMPLES_PER_BLOCK ||
                 tsNs <= tLastNs ||
-                // Meme predicat que celui du writer : on coupe *avant* que la cadence implicite
-                // du bloc ne sorte de la tolerance, ce qui garantit que `writeBlock` n'echoue
-                // jamais et que l'interpolation reste honnete.
+                // Same predicate as the writer's: we cut *before* the block's implicit rate
+                // leaves the tolerance, which guarantees that `writeBlock` never fails and that
+                // the interpolation stays honest.
                 !ChunkFormat.isTimebasePlausible(count + 1, tFirstNs, tsNs, rateHz)
             if (mustCut) {
                 flushBlock(nowMs)
@@ -105,7 +105,7 @@ class SensorPipeline(
         count++
     }
 
-    /** Ecrit le bloc en cours, s'il y en a un. A appeler avant toute fermeture de session. */
+    /** Writes the block in progress, if there is one. To be called before any session close. */
     fun flushBlock(nowMs: Long) {
         if (count == 0) return
         val closed = store.writeBlock(bx, by, bz, count, tFirstNs, tLastNs, pendingFlags, nowMs)

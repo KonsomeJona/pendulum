@@ -15,24 +15,23 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Estimation de la frequence d'echantillonnage reelle et de la derive d'horloge (§3.4).
+ * Estimation of the real sampling frequency and of the clock drift (§3.4).
  *
- * Regle numero un : **ne jamais faire confiance a `nominalRateHz`**. Le champ existe dans
- * l'en-tete pour la tracabilite, pas pour le calcul. `fs` se recalcule depuis
- * `(tFirstNs, tLastNs, N)` de chaque bloc — apres revalidation par l'etape −1, puisque ces
- * champs ne sont pas couverts par le CRC.
+ * Rule number one: **never trust `nominalRateHz`**. The field exists in the header for
+ * traceability, not for computation. `fs` is recomputed from `(tFirstNs, tLastNs, N)` of each
+ * block — after revalidation by step −1, since those fields are not covered by the CRC.
  *
- * Enjeu chiffre : un `fs` faux de 5,2 % (50 -> 52,6 Hz) ne deplace le coude du passe-haut que de
- * 0,500 a 0,526 Hz, sans effet audible — mais il fausse **toutes les durees de 5,2 %**. Un CLM
- * mesure a 10,0 s en dure 9,5 s reellement, un IMI de 90 s en vaut 85,5 s : les evenements aux
- * bornes de classe basculent en masse.
+ * The stake in figures: an `fs` wrong by 5.2 % (50 -> 52.6 Hz) only moves the high-pass corner
+ * from 0.500 to 0.526 Hz, with no audible effect — but it falsifies **all the durations by
+ * 5.2 %**. A CLM measured at 10.0 s really lasts 9.5 s, an IMI of 90 s is worth 85.5 s: the events
+ * at class boundaries switch en masse.
  */
 object Rate {
 
     /**
-     * @param outlierTol tolerance de rejet autour de la mediane (§6.1, `fsOutlierTol = 0,05`).
-     *   Un `fs` de bloc aberrant est un **symptome de timestamps corrompus**, pas de derive : la
-     *   derive d'un quartz se mesure en ppm, pas en pourcents.
+     * @param outlierTol rejection tolerance around the median (§6.1, `fsOutlierTol = 0.05`).
+     *   An aberrant block `fs` is a **symptom of corrupted timestamps**, not of drift: the drift of
+     *   a quartz is measured in ppm, not in percent.
      */
     fun estimate(blocks: List<SampleBlock>, nominalHz: Double, outlierTol: Double = 0.05): FsEstimate {
         val fsList = ArrayList<Double>(blocks.size)
@@ -50,9 +49,9 @@ object Rate {
         }
         val fsArr = fsList.toDoubleArray()
         val wArr = wList.toDoubleArray()
-        // Premiere mediane ponderee par N : un bloc de 512 echantillons contraint `fs` bien
-        // mieux qu'un bloc de 30, et la ponderation evite qu'une rafale de blocs courts en fin
-        // de session ne tire l'estimation.
+        // First median weighted by N: a block of 512 samples constrains `fs` much better than a
+        // block of 30, and the weighting prevents a burst of short blocks at the end of the
+        // session from pulling the estimate.
         val med0 = Numeric.weightedMedian(fsArr, wArr)
         var rejected = 0
         val keptFs = ArrayList<Double>(fsArr.size)
@@ -76,19 +75,18 @@ object Rate {
     }
 
     /**
-     * Derive entre l'echelle `SensorEvent.timestamp` et l'horloge murale, en **ppm** (§3.4).
+     * Drift between the `SensorEvent.timestamp` scale and the wall clock, in **ppm** (§3.4).
      *
-     * Certains OEM excluent le temps de suspend de `SensorEvent.timestamp` : les deux echelles
-     * divergent alors lentement. La consequence n'est pas cosmetique — la fusion avec
-     * l'hypnogramme Health Connect se decale, ce qui deplace des CLM d'un stade a l'autre et
-     * fausse le partage PLMS / PLMW.
+     * Some OEMs exclude suspend time from `SensorEvent.timestamp`: the two scales then diverge
+     * slowly. The consequence is not cosmetic — the merge with the Health Connect hypnogram
+     * shifts, which moves CLMs from one stage to another and falsifies the PLMS / PLMW split.
      *
-     * @param wallMs `startWallMs` de chaque chunk.
-     * @param eventNs `firstEventTimestampNs` du meme chunk.
-     * @return `(pente - 1) x 1e6`. `NaN` si moins de deux ancres exploitables.
+     * @param wallMs `startWallMs` of each chunk.
+     * @param eventNs `firstEventTimestampNs` of the same chunk.
+     * @return `(slope - 1) x 1e6`. `NaN` if fewer than two usable anchors.
      */
     fun clockDrift(wallMs: LongArray, eventNs: LongArray): Double {
-        require(wallMs.size == eventNs.size) { "tailles differentes" }
+        require(wallMs.size == eventNs.size) { "different sizes" }
         if (wallMs.size < 2) return Double.NaN
         val x = DoubleArray(wallMs.size) { (eventNs[it] - eventNs[0]).toDouble() }
         val y = DoubleArray(wallMs.size) { (wallMs[it] - wallMs[0]).toDouble() * 1e6 } // ms -> ns
@@ -97,19 +95,19 @@ object Rate {
     }
 
     /**
-     * Seuil de §3.4 : une pente s'ecartant de 1 de plus de 1e-4 (soit plus de 2,9 s sur 8 h)
-     * doit lever `CLOCK_DRIFT`.
+     * Threshold of §3.4: a slope departing from 1 by more than 1e-4 (i.e. more than 2.9 s over
+     * 8 h) must raise `CLOCK_DRIFT`.
      */
     fun driftSuspect(ppm: Double): Boolean = !ppm.isNaN() && abs(ppm) > 100.0
 }
 
 /**
- * Parametres de l'etape 0. Valeurs par defaut = tableau §6.1, a l'unite pres.
+ * Step 0 parameters. Default values = table §6.1, to the unit.
  *
- * Les trois derniers champs (detection off-body) ne figurent dans aucun tableau de la
- * specification : §5.2 decrit seulement le scenario de test T8 (« montre sur la table 10 min,
- * gravite constante + bruit seul, exclusion du numerateur **et** du denominateur »). Les valeurs
- * retenues transcrivent ce scenario et sont signalees comme **interpretation**.
+ * The last three fields (off-body detection) appear in no table of the specification: §5.2 only
+ * describes test scenario T8 ("watch on the table for 10 min, constant gravity + noise only,
+ * exclusion from the numerator **and** from the denominator"). The values retained transcribe that
+ * scenario and are flagged as **interpretation**.
  */
 data class TimelineConfig(
     val targetFsHz: Double = 50.0,
@@ -119,44 +117,44 @@ data class TimelineConfig(
     val warmupSec: Double = 5.0,
     val fsOutlierTol: Double = 0.05,
     val integrity: IntegrityConfig = IntegrityConfig(),
-    /** INTERPRETATION — fenetre d'analyse de l'immobilite absolue pour l'off-body. */
+    /** INTERPRETATION — analysis window for absolute immobility for the off-body. */
     val offBodyWinSec: Double = 60.0,
-    /** INTERPRETATION — sous cet ecart-type sur les trois axes, plus rien ne bouge du tout. */
+    /** INTERPRETATION — below this standard deviation on the three axes, nothing moves at all. */
     val offBodySdG: Float = 0.005f,
-    /** INTERPRETATION — duree minimale d'une plage off-body, calquee sur le test T8. */
+    /** INTERPRETATION — minimum duration of an off-body stretch, modelled on test T8. */
     val offBodyMinSec: Double = 600.0,
 )
 
 /**
- * Etape 0 — reconstruction de la ligne de temps.
+ * Step 0 — timeline reconstruction.
  *
- * **C'est la fonction la plus delicate du prealable.** Tout ce qui suit (durees de CLM, IMI,
- * denominateur du PLMI) se lit en index de la grille produite ici : un decalage d'un demi-trou
- * fausse la nuit entiere sans jamais lever d'exception.
+ * **This is the trickiest function of the preliminary stage.** Everything that follows (CLM
+ * durations, IMI, PLMI denominator) is read as indices of the grid produced here: an offset of
+ * half a hole falsifies the entire night without ever raising an exception.
  *
- * Choix structurant (§3.4, deuxieme point) : on **reechantillonne sur une grille fixe** a
- * `targetFsHz` plutot que d'adapter les coefficients des filtres a un `fs` variable. Adapter les
- * filtres obligerait a recalculer les biquads en cours de session, ce qui produit un transitoire
- * a chaque recalcul — on remplacerait un biais de 5 % par des artefacts localises, c'est-a-dire
- * par des faux positifs. L'interpolation lineaire coute **au plus 1,8 %** d'attenuation point a
- * point a 3 Hz et rend tout le reste exact.
+ * Structuring choice (§3.4, second point): we **resample onto a fixed grid** at `targetFsHz`
+ * rather than adapting the filter coefficients to a varying `fs`. Adapting the filters would force
+ * recomputing the biquads mid-session, which produces a transient at each recomputation — we would
+ * be replacing a 5 % bias by localised artefacts, that is to say by false positives. Linear
+ * interpolation costs **at most 1.8 %** of point-to-point attenuation at 3 Hz and makes everything
+ * else exact.
  *
- * Ce commentaire a longtemps annonce « 0,2 % pour un rapport de reechantillonnage inferieur a
- * 1,06 ». La specification a formellement retire cette phrase le 2026-07-31 (`ALGO-v2.md` §2
- * etape 0, encadre de correction) : ce n'est pas le rapport de reechantillonnage qui gouverne
- * l'attenuation mais la **periode d'echantillonnage source**, et meme moyennee sur une phase
- * uniforme — la seule lecture qui aurait pu justifier 0,2 % — elle reste autour de 1,1 %. Le
- * chiffre etait donc faux d'un ordre de grandeur, et il a survecu ici a sa propre retractation.
+ * This comment long announced "0.2 % for a resampling ratio below 1.06". The specification
+ * formally withdrew that sentence on 2026-07-31 (`ALGO-v2.md` §2 step 0, correction box): it is
+ * not the resampling ratio that governs the attenuation but the **source sampling period**, and
+ * even averaged over a uniform phase — the only reading that could have justified 0.2 % — it stays
+ * around 1.1 %. The figure was therefore wrong by an order of magnitude, and it survived here past
+ * its own retraction.
  */
 object TimelineBuilder {
 
     /**
-     * @param sessionClosedCleanly INTERPRETATION — [SampleBlock] ne porte aucun marqueur de fin
-     *   de session (le format est append-only, il n'y a pas de patch d'en-tete a la fermeture).
-     *   L'appelant — c'est-a-dire l'adaptateur de `:phone`, qui a vu le fichier — est le seul a
-     *   savoir si la nuit s'est terminee proprement. Par defaut on suppose que oui, pour qu'une
-     *   nuit synthetique ne soit pas marquee tronquee a tort ; `:phone` doit passer `false` des
-     *   que le dernier chunk est incomplet ou que la session a ete tuee.
+     * @param sessionClosedCleanly INTERPRETATION — [SampleBlock] carries no end-of-session marker
+     *   (the format is append-only, there is no header patch on close). The caller — that is to
+     *   say the `:phone` adapter, which has seen the file — is the only one that knows whether the
+     *   night ended properly. By default we assume it did, so that a synthetic night is not
+     *   wrongly flagged as truncated; `:phone` must pass `false` as soon as the last chunk is
+     *   incomplete or the session has been killed.
      */
     fun build(
         blocks: List<SampleBlock>,
@@ -170,8 +168,8 @@ object TimelineBuilder {
         if (accepted.isEmpty()) return emptyTimeline(cfg, fsEst, integrity)
 
         val fsTarget = cfg.targetFsHz
-        // Cadence de reference pour mesurer un trou : le `fs` de session mesure, jamais le
-        // nominal. Si l'un des deux est absurde on retombe sur le nominal, faute de mieux.
+        // Reference rate for measuring a hole: the measured session `fs`, never the nominal one.
+        // If either of the two is absurd we fall back on the nominal, for want of better.
         val fsSrc = if (fsEst.fsSessionHz.isFinite() && fsEst.fsSessionHz > 1.0) fsEst.fsSessionHz else nominalHz
         val stepSrcNs = 1e9 / fsSrc
 
@@ -187,9 +185,9 @@ object TimelineBuilder {
 
         val gaps = ArrayList<Gap>()
 
-        // --- Remplissage de la grille par curseur a deux pointeurs -----------------------
-        // On ne materialise jamais la suite des echantillons sources : `(b, i)` suffit, et la
-        // monotonie garantie par l'etape −1 fait que le curseur n'avance que vers l'avant.
+        // --- Filling the grid with a two-pointer cursor ----------------------------------
+        // We never materialise the sequence of source samples: `(b, i)` suffices, and the
+        // monotonicity guaranteed by step −1 means the cursor only moves forward.
         var cb = 0
         var ci = 0
         var nanRunStart = -1
@@ -207,7 +205,7 @@ object TimelineBuilder {
 
         for (k in 0 until n) {
             val tk = t0Ns + Math.round(k * 1e9 / fsTarget)
-            // Avancer tant que l'echantillon SUIVANT est encore <= tk.
+            // Advance as long as the NEXT sample is still <= tk.
             while (true) {
                 val nb: Int
                 val ni: Int
@@ -225,7 +223,7 @@ object TimelineBuilder {
 
             val tCur = sampleTimeNs(accepted[cb], ci)
             if (!hasNext) {
-                // Dernier echantillon de la session : la grille s'arrete dessus par construction.
+                // Last sample of the session: the grid stops on it by construction.
                 if (nanRunStart >= 0) closeNanRun(k)
                 gx[k] = accepted[cb].x[ci]; gy[k] = accepted[cb].y[ci]; gz[k] = accepted[cb].z[ci]
                 continue
@@ -234,9 +232,9 @@ object TimelineBuilder {
             val excessNs = (tNext - tCur).toDouble() - stepSrcNs
 
             if (excessNs <= microGapNs) {
-                // Trou micro (< 0,10 s, soit 5 echantillons) : interpolation lineaire silencieuse.
-                // Plus court que la plus rapide caracteristique d'un CLM (T_rise >= 0,15 s), donc
-                // aucun artefact detectable — c'est le seul cas ou l'on fabrique de la donnee.
+                // Micro hole (< 0.10 s, i.e. 5 samples): silent linear interpolation. Shorter than
+                // the fastest characteristic of a CLM (T_rise >= 0.15 s), therefore no detectable
+                // artefact — it is the only case where we manufacture data.
                 if (nanRunStart >= 0) closeNanRun(k)
                 val span = (tNext - tCur).toDouble()
                 val u = if (span > 0.0) ((tk - tCur).toDouble() / span).coerceIn(0.0, 1.0) else 0.0
@@ -245,15 +243,15 @@ object TimelineBuilder {
                 gy[k] = lerp(a.y[ci], bnx.y[ni], u)
                 gz[k] = lerp(a.z[ci], bnx.z[ni], u)
             } else if ((tk - tCur).toDouble() * 2.0 <= stepSrcNs) {
-                // Point de grille situe a moins d'un demi-echantillon du dernier echantillon
-                // valide AVANT le trou : on recopie cet echantillon au lieu de le perdre. Sans
-                // ce cas, le trou mangerait un echantillon reel a son bord gauche et la
-                // frontiere de segment tomberait un cran trop tot.
+                // Grid point situated less than half a sample from the last valid sample BEFORE
+                // the hole: we copy that sample instead of losing it. Without this case, the hole
+                // would eat a real sample at its left edge and the segment boundary would fall one
+                // notch too early.
                 if (nanRunStart >= 0) closeNanRun(k)
                 gx[k] = accepted[cb].x[ci]; gy[k] = accepted[cb].y[ci]; gz[k] = accepted[cb].z[ci]
             } else {
-                // Trou reel : NaN. Le canal mouvement les traitera comme des zeros, le canal
-                // gravite maintiendra la derniere valeur (etape 1) ; le denominateur les retire.
+                // Real hole: NaN. The movement channel will treat them as zeros, the gravity
+                // channel will hold the last value (step 1); the denominator removes them.
                 if (nanRunStart >= 0 && (nanRunPairB != cb || nanRunPairI != ci)) closeNanRun(k)
                 if (nanRunStart < 0) {
                     nanRunStart = k
@@ -265,10 +263,10 @@ object TimelineBuilder {
         }
         closeNanRun(n)
 
-        // Les trous MICRO sont rapportes pour le diagnostic mais n'excluent rien : leurs bornes
-        // en index sont calculees par la formule directe, a +/-1 echantillon pres. Les trous
-        // BLIND et SEGMENT_BREAK, eux, viennent des plages de NaN reellement ecrites, donc sont
-        // exacts — c'est sur eux seuls que reposent segments, zones aveugles et denominateur.
+        // The MICRO holes are reported for diagnostics but exclude nothing: their index bounds are
+        // computed by the direct formula, to within +/-1 sample. The BLIND and SEGMENT_BREAK
+        // holes, on the other hand, come from the NaN stretches actually written, so are exact —
+        // it is on them alone that segments, blind zones and the denominator rest.
         collectMicroGaps(accepted, t0Ns, fsTarget, stepSrcNs, microGapNs, n, gaps)
         gaps.sortBy { it.fromIdx }
 
@@ -284,16 +282,15 @@ object TimelineBuilder {
         }
         if (segStart < n) segments.add(Segment(segStart, n))
 
-        // --- Zones aveugles --------------------------------------------------------------
-        // Deux origines reunies dans la meme liste, parce qu'elles ont exactement le meme effet
-        // aval (aucun CLM ne peut y debuter ni s'y achever, et le temps est retire du
-        // denominateur) :
-        //  a) les trous BLIND, elargis de `settleSec` de chaque cote — le filtre sonne autant
-        //     apres un trou qu'apres un demarrage ;
-        //  b) les `warmupSec` premieres secondes de CHAQUE segment. §2 etape 1 les exclut de
-        //     l'analyse et du denominateur ; les y ranger evite de dupliquer cette regle dans le
-        //     detecteur, le masque et le calcul d'indices — trois endroits ou l'oublier serait
-        //     silencieux.
+        // --- Blind zones -----------------------------------------------------------------
+        // Two origins gathered in the same list, because they have exactly the same downstream
+        // effect (no CLM can begin or end there, and the time is removed from the denominator):
+        //  a) the BLIND holes, widened by `settleSec` on each side — the filter rings as much
+        //     after a hole as after a start;
+        //  b) the first `warmupSec` seconds of EVERY segment. §2 step 1 excludes them from the
+        //     analysis and from the denominator; filing them here avoids duplicating that rule in
+        //     the detector, the mask and the index computation — three places where forgetting it
+        //     would be silent.
         val settleSamples = Numeric.samples(cfg.settleSec, fsTarget)
         val warmupSamples = Numeric.samples(cfg.warmupSec, fsTarget)
         val blind = ArrayList<Segment>()
@@ -313,7 +310,7 @@ object TimelineBuilder {
         // --- Off-body ---------------------------------------------------------------------
         val offBody = detectOffBody(signal, accepted, t0Ns, segments, cfg)
 
-        // --- Temps analysable --------------------------------------------------------------
+        // --- Analysable time ---------------------------------------------------------------
         val analysable = BooleanArray(n)
         for (seg in segments) for (i in seg.fromIdx until seg.toIdx) analysable[i] = true
         for (z in blindZones) for (i in z.fromIdx until z.toIdx) analysable[i] = false
@@ -322,8 +319,8 @@ object TimelineBuilder {
         var analysableCount = 0
         for (i in 0 until n) if (analysable[i]) analysableCount++
 
-        // Une nuit dont les derniers blocs ont ete rejetes se termine sur un trou : elle est
-        // tronquee au sens de §3.7.2, meme si le fichier a ete ferme proprement.
+        // A night whose last blocks were rejected ends on a hole: it is truncated in the sense of
+        // §3.7.2, even if the file was closed properly.
         val endsOnGap = gaps.lastOrNull()?.let { it.toIdx >= n } ?: false
         val truncated = !sessionClosedCleanly || endsOnGap
 
@@ -341,17 +338,17 @@ object TimelineBuilder {
     }
 
     // ------------------------------------------------------------------
-    // Internes
+    // Internals
     // ------------------------------------------------------------------
 
     /**
-     * Instant de l'echantillon `i` du bloc, par interpolation exacte de l'en-tete :
+     * Instant of sample `i` of the block, by exact interpolation of the header:
      * `t = tFirst + round(i x (tLast - tFirst) / (N - 1))`.
      *
-     * C'est la formule de §2 etape 0, et **pas** `tFirst + i/fs` : le FIFO materiel echantillonne
-     * uniformement entre les deux bornes du bloc, mais la cadence reelle d'un bloc peut differer
-     * de la cadence de session de quelques ppm. Utiliser `1/fs` accumulerait cette difference
-     * jusqu'a la fin du bloc.
+     * This is the formula of §2 step 0, and **not** `tFirst + i/fs`: the hardware FIFO samples
+     * uniformly between the two bounds of the block, but the real rate of a block can differ from
+     * the session rate by a few ppm. Using `1/fs` would accumulate that difference until the end
+     * of the block.
      */
     private fun sampleTimeNs(b: SampleBlock, i: Int): Long {
         val n = b.x.size
@@ -378,7 +375,7 @@ object TimelineBuilder {
             val tFirst = sampleTimeNs(b, 0)
             if (prevT != Long.MIN_VALUE) {
                 val excess = (tFirst - prevT).toDouble() - stepSrcNs
-                // Strictement positif : un enchainement parfait n'est pas un trou.
+                // Strictly positive: a perfect chaining is not a hole.
                 if (excess > stepSrcNs * 0.5 && excess <= microGapNs) {
                     val from = ((prevT - t0Ns).toDouble() * fsTarget / 1e9).toInt() + 1
                     val to = ((tFirst - t0Ns).toDouble() * fsTarget / 1e9).toInt() + 1
@@ -391,7 +388,7 @@ object TimelineBuilder {
         }
     }
 
-    /** Fusionne et trie une liste d'intervalles, en absorbant les chevauchements. */
+    /** Merges and sorts a list of intervals, absorbing the overlaps. */
     internal fun mergeSegments(src: List<Segment>): List<Segment> {
         if (src.isEmpty()) return emptyList()
         val sorted = src.sortedWith(compareBy({ it.fromIdx }, { it.toIdx }))
@@ -410,19 +407,19 @@ object TimelineBuilder {
     /**
      * Off-body — INTERPRETATION.
      *
-     * La specification ne definit l'off-body que par son scenario de test (T8 : « montre sur la
-     * table 10 min, gravite constante + bruit seul »). Deux sources sont donc combinees :
+     * The specification only defines off-body by its test scenario (T8: "watch on the table for
+     * 10 min, constant gravity + noise only"). Two sources are therefore combined:
      *
-     *  1. le drapeau `FLAG_OFF_BODY` du bloc, quand la montre l'a pose elle-meme ;
-     *  2. une detection d'**immobilite absolue** : sur des fenetres de `offBodyWinSec`,
-     *     l'ecart-type des trois axes est sous `offBodySdG`, et cela dure au moins
+     *  1. the block's `FLAG_OFF_BODY` flag, when the watch set it itself;
+     *  2. an **absolute immobility** detection: over windows of `offBodyWinSec`, the standard
+     *     deviation of the three axes is below `offBodySdG`, and this lasts at least
      *     `offBodyMinSec`.
      *
-     * Le seuil est volontairement bien plus bas que celui du masque d'immobilite (§3.6) : une
-     * cheville endormie n'est jamais totalement immobile — respiration, micro-ajustements,
-     * tonus — alors qu'une montre posee sur une table ne produit que le bruit du MEMS. Confondre
-     * les deux couterait cher dans les deux sens : compter du temps table comme du sommeil
-     * gonfle le denominateur et deflate le PLMI ; exclure du vrai sommeil calme le fait monter.
+     * The threshold is deliberately far lower than that of the immobility mask (§3.6): a sleeping
+     * ankle is never totally immobile — breathing, micro-adjustments, tone — whereas a watch left
+     * on a table produces only the MEMS noise. Confusing the two would cost dearly in both
+     * directions: counting table time as sleep inflates the denominator and deflates the PLMI;
+     * excluding genuinely quiet sleep raises it.
      */
     private fun detectOffBody(
         signal: TriAxial,
@@ -454,8 +451,8 @@ object TimelineBuilder {
             if (runStart >= 0 && seg.toIdx - runStart >= minSamples) candidates.add(Segment(runStart, seg.toIdx))
         }
 
-        // Drapeau materiel : on fait confiance a la montre pour dire « non porte », jamais pour
-        // dire « porte » (l'absence de drapeau ne prouve rien, le capteur off-body est optionnel).
+        // Hardware flag: we trust the watch to say "not worn", never to say "worn" (the absence of
+        // a flag proves nothing, the off-body sensor is optional).
         for (b in accepted) {
             if ((b.flags and BlockFlags.OFF_BODY) == 0) continue
             val from = (((b.tFirstNs - t0Ns).toDouble() * fs / 1e9).toInt()).coerceIn(0, n)

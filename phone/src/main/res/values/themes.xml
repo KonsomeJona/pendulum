@@ -1,44 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      Le theme de la FENETRE, qui n'a rien a voir avec le theme Compose et que ce module n'avait
-      pas. C'est ce manque qui a rendu l'ecran d'avertissement du premier lancement illisible.
+      The theme of the WINDOW, which has nothing to do with the Compose theme and which this module
+      did not have. That absence is what made the first-launch notice screen unreadable.
 
-      ### Ce qu'Android choisit quand on ne choisit pas
+      ### What Android picks when you do not pick
 
-      Sans `android:theme` sur `<application>`, le systeme n'utilise pas un theme neutre : il
-      applique `Theme.DeviceDefault.Light.DarkActionBar` (`Resources.selectDefaultTheme`, des
-      que `targetSdk` depasse 17). Le nom dit exactement ce qu'on obtenait — un `windowBackground`
-      **clair** (mesure : #F0EDEF sur l'appareil, teinte par Material You) surmonte d'une barre
-      d'action **sombre** portant « Pendulum ».
+      Without `android:theme` on `<application>`, the system does not use a neutral theme: it
+      applies `Theme.DeviceDefault.Light.DarkActionBar` (`Resources.selectDefaultTheme`, as soon as
+      `targetSdk` exceeds 17). The name says exactly what we were getting — a **light**
+      `windowBackground` (measured: #F0EDEF on the device, tinted by Material You) topped by a
+      **dark** action bar carrying "Pendulum".
 
-      Compose ne peint pas de fond tout seul. Partout ou la composition en peignait un — le
-      `Scaffold` de `PendulumNavHost`, dont le `containerColor` vaut `colorScheme.background` — le
-      fond clair etait recouvert et rien ne se voyait. L'assistant du premier lancement, lui, est
-      une simple `Column` : le fond clair de la fenetre restait visible sous un texte ecrit dans
-      la palette sombre (#E6EAF0), soit un contraste de 1,06:1. Illisible, sur l'ecran qui porte
-      « ceci n'est pas un dispositif medical ».
+      Compose does not paint a background on its own. Everywhere the composition painted one — the
+      `Scaffold` of `PendulumNavHost`, whose `containerColor` is `colorScheme.background` — the
+      light background was covered and nothing showed. First-launch onboarding, however, is a plain
+      `Column`: the light window background stayed visible under text written in the dark palette
+      (#E6EAF0), that is, a contrast of 1.06:1. Unreadable, on the screen that carries "this is not
+      a medical device".
 
-      ### Pourquoi ce fichier et pas seulement un correctif Compose
+      ### Why this file and not just a Compose fix
 
-      `PendulumTheme` peint desormais son fond, ce qui suffirait a l'affichage. Deux choses ne se
-      reparent qu'ici :
+      `PendulumTheme` now paints its background, which would be enough for display. Two things are
+      only repaired here:
 
-      - **La premiere image.** La fenetre est dessinee avant que la moindre ligne de Compose ne
-        s'execute. Un `windowBackground` clair produit un flash blanc a chaque demarrage a froid,
-        c'est-a-dire a 7 h du matin, dans le noir — exactement ce que le choix du theme sombre
-        existe pour eviter (`06-interface.md` §5.4).
-      - **La barre d'action.** Elle n'est dans aucune maquette, elle repete le nom de
-        l'application deja present dans le lanceur, et elle mange 56 dp de hauteur sur des ecrans
-        de texte long. `NoActionBar` la retire ; la navigation du produit est celle de Compose.
+      - **The first frame.** The window is drawn before a single line of Compose runs. A light
+        `windowBackground` produces a white flash at every cold start, that is, at 7 in the morning,
+        in the dark — exactly what the choice of a dark theme exists to avoid (`06-interface.md`
+        section 5.4).
+      - **The action bar.** It is in no mock-up, it repeats the name of the application already
+        present in the launcher, and it eats 56 dp of height on screens of long text. `NoActionBar`
+        removes it; the product's navigation is the Compose one.
 
-      Consequence a tenir : sans barre d'action, plus rien dans le decor ne reserve la place des
-      barres systeme. C'est `Scaffold` qui la reserve sur les ecrans de `PendulumNavHost`, et
-      `OnboardingPager` qui la reserve explicitement pour l'assistant.
+      A consequence to hold to: without an action bar, nothing in the decor reserves room for the
+      system bars any more. It is `Scaffold` that reserves it on the screens of `PendulumNavHost`,
+      and `OnboardingPager` that reserves it explicitly for onboarding.
 
-      La valeur du fond est celle de `PendulumColors.Dark.background`, et `ContrasteTexteTest`
-      fait echouer la compilation des tests si les deux divergent : deux sources pour une seule
-      couleur, c'est exactement le defaut qu'on repare.
+      The background value is that of `PendulumColors.Dark.background`, and `TextContrastTest`
+      fails the compilation of the tests if the two diverge: two sources for a single colour is
+      exactly the defect being repaired.
     -->
     <style name="Theme.Pendulum" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:windowBackground">#FF0E1116</item>

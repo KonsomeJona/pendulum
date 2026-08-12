@@ -13,95 +13,94 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
- * Ouvrir l'application telephone depuis la montre.
+ * Opening the phone application from the watch.
  *
- * ### Le probleme que ca resout
+ * ### The problem this solves
  *
- * Le bloqueur le plus frequent du preflight est « contexte du soir non scelle », et il se leve
- * **sur l'autre appareil**. Jusqu'ici la montre disait « remplissez le formulaire du soir sur le
- * telephone » et s'arretait la : a l'utilisateur de reposer la montre, de trouver son telephone,
- * de deverrouiller, de retrouver l'application. Au coucher, ecran a la cheville.
+ * The most frequent preflight blocker is "evening context not sealed", and it is cleared **on the
+ * other device**. Until now the watch said "fill in the evening form on the phone" and stopped
+ * there: up to the user to put the watch down, find their phone, unlock it, find the application
+ * again. At bedtime, screen at ankle height.
  *
- * ### Pourquoi ce chemin et pas l'evident
+ * ### Why this path and not the obvious one
  *
- * L'evident serait : la montre envoie un message, le telephone le recoit dans son
- * `WearableListenerService` et appelle `startActivity`. **Ce chemin est casse depuis Android 10** —
- * le service tourne en arriere-plan, le lancement est bloque, et le seul temoin est une ligne
- * `Background activity launch blocked!` dans les journaux du systeme. Android 14 puis 15 ont
- * encore durci les regles. C'est un echec silencieux, donc le pire genre.
+ * The obvious one would be: the watch sends a message, the phone receives it in its
+ * `WearableListenerService` and calls `startActivity`. **That path has been broken since
+ * Android 10** — the service runs in the background, the launch is blocked, and the only witness is
+ * a `Background activity launch blocked!` line in the system logs. Android 14 and then 15 tightened
+ * the rules further. It is a silent failure, therefore the worst kind.
  *
- * [RemoteActivityHelper] passe, lui, parce que le lancement est execute cote telephone par les
- * services Google Play et non par notre processus : il beneficie de l'exemption accordee aux
- * composants du systeme. Sa contrainte est de n'accepter qu'un `ACTION_VIEW` avec une URI
- * navigable, d'ou le lien profond declare sur `MainActivity` cote telephone.
+ * [RemoteActivityHelper] does get through, because the launch is carried out on the phone side by
+ * Google Play Services and not by our process: it benefits from the exemption granted to system
+ * components. Its constraint is to accept only an `ACTION_VIEW` with a browsable URI, hence the
+ * deep link declared on `MainActivity` on the phone side.
  */
 object RemoteCommands {
 
     /**
-     * Ouvre le formulaire du soir sur le telephone.
+     * Opens the evening form on the phone.
      *
-     * @return `false` si aucun appareil n'a pu etre atteint — telephone eteint, hors de portee, ou
-     *   application compagnon absente. L'appelant doit le dire : annoncer un succes alors que rien
-     *   ne s'est ouvert envoie quelqu'un chercher un ecran qui n'est pas apparu.
+     * @return `false` if no device could be reached — phone switched off, out of range, or
+     *   companion application absent. The caller must say so: announcing a success when nothing
+     *   opened sends someone looking for a screen that never appeared.
      */
-    suspend fun ouvrirLeTelephone(ctx: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun openPhone(ctx: Context): Boolean = withContext(Dispatchers.IO) {
         try {
-            // `get` bloquant plutot que `await` : ce dernier viendrait de
-            // `kotlinx-coroutines-guava`, une dependance de plus pour convertir un
-            // `ListenableFuture` alors qu'on est deja sur `Dispatchers.IO` et qu'un delai
-            // explicite vaut mieux qu'une attente sans borne.
+            // A blocking `get` rather than `await`: the latter would come from
+            // `kotlinx-coroutines-guava`, one more dependency just to convert a
+            // `ListenableFuture` when we are already on `Dispatchers.IO` and an explicit
+            // timeout is better than an unbounded wait.
             RemoteActivityHelper(ctx).startRemoteActivity(
                 Intent(Intent.ACTION_VIEW)
                     .addCategory(Intent.CATEGORY_BROWSABLE)
-                    .setData(Uri.parse(LIEN_SOIR)),
-            ).get(DELAI_S, TimeUnit.SECONDS)
+                    .setData(Uri.parse(EVENING_LINK)),
+            ).get(TIMEOUT_S, TimeUnit.SECONDS)
             true
         } catch (e: Exception) {
-            // Repli : un message, que le telephone transforme en notification. Une notification
-            // est le seul chemin garanti pour reveiller une application depuis l'arriere-plan,
-            // parce que le tap de l'utilisateur est une exemption explicite au blocage.
-            Log.w(TAG, "ouverture distante refusee, repli par notification", e)
-            envoyerATousLesNoeuds(ctx, WirePaths.OPEN_PHONE)
+            // Fallback: a message, which the phone turns into a notification. A notification is
+            // the only guaranteed path to wake an application from the background, because the
+            // user's tap is an explicit exemption from the block.
+            Log.w(TAG, "remote opening refused, falling back to a notification", e)
+            sendToAllNodes(ctx, WirePaths.OPEN_PHONE)
         }
     }
 
     /**
-     * Envoie un message a tous les noeuds connectes.
+     * Sends a message to every connected node.
      *
-     * A tous, et non au premier : il peut y avoir plusieurs telephones appaires, et deviner lequel
-     * est le bon a partir d'un identifiant de noeud n'est pas quelque chose qu'on peut faire
-     * correctement. Les autres ignorent un message qu'ils ne savent pas traiter.
+     * To every one, and not to the first: there may be several paired phones, and guessing which
+     * one is the right one from a node identifier is not something that can be done correctly. The
+     * others ignore a message they do not know how to handle.
      */
-    private fun envoyerATousLesNoeuds(ctx: Context, chemin: String): Boolean = try {
-        val noeuds = Tasks.await(
+    private fun sendToAllNodes(ctx: Context, path: String): Boolean = try {
+        val nodes = Tasks.await(
             Wearable.getNodeClient(ctx).connectedNodes,
-            DELAI_S,
+            TIMEOUT_S,
             TimeUnit.SECONDS,
         )
-        noeuds.forEach { noeud ->
+        nodes.forEach { node ->
             Tasks.await(
-                Wearable.getMessageClient(ctx).sendMessage(noeud.id, chemin, ByteArray(0)),
-                DELAI_S,
+                Wearable.getMessageClient(ctx).sendMessage(node.id, path, ByteArray(0)),
+                TIMEOUT_S,
                 TimeUnit.SECONDS,
             )
         }
-        noeuds.isNotEmpty()
+        nodes.isNotEmpty()
     } catch (e: Exception) {
-        Log.w(TAG, "aucun noeud joignable pour $chemin", e)
+        Log.w(TAG, "no node reachable for $path", e)
         false
     }
 
     /**
-     * Lien profond vers le formulaire du soir, cote telephone.
+     * Deep link to the evening form, on the phone side.
      *
-     * Schema personnalise et non `https` verifie : un App Link demanderait d'heberger un
-     * `assetlinks.json`, ce qui est faisable — le site de documentation existe — mais ajoute une
-     * dependance a un domaine pour une application qui ne declare meme pas la permission Internet.
-     * Le prix du schema personnalise est qu'un constructeur peut afficher une boite « ouvrir
-     * avec » au premier usage.
+     * A custom scheme and not a verified `https` one: an App Link would require hosting an
+     * `assetlinks.json`, which is feasible — the documentation site exists — but adds a dependency
+     * on a domain for an application that does not even declare the Internet permission. The price
+     * of the custom scheme is that a manufacturer may show an "open with" box on first use.
      */
-    const val LIEN_SOIR = "pendulum://tonight"
+    const val EVENING_LINK = "pendulum://tonight"
 
     private const val TAG = "PendulumRemote"
-    private const val DELAI_S = 15L
+    private const val TIMEOUT_S = 15L
 }

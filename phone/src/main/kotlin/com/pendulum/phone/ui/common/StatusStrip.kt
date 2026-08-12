@@ -14,10 +14,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.model.ErreurPendulum
-import com.pendulum.phone.ui.model.EtapeAnalyse
-import com.pendulum.phone.ui.model.EtatReveil
-import com.pendulum.phone.ui.text.texte
+import com.pendulum.phone.ui.model.PendulumError
+import com.pendulum.phone.ui.model.AnalysisStep
+import com.pendulum.phone.ui.model.WakingState
+import com.pendulum.phone.ui.text.text
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumTheme
@@ -25,87 +25,86 @@ import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 /**
- * La bande d'etat en tete de l'ecran Tendance : **un seul etat a la fois, au plus une action**.
+ * The status strip at the head of the Trend screen: **one state at a time, at most one action**.
  *
- * P4 limite a trois informations au-dessus de la ligne de flottaison au reveil : ou en est la
- * nuit d'hier, l'agregat s'il existe, une action. Cette bande porte la premiere, et une seule
- * action — pas un menu, pas un choix, pas un formulaire. A 7 h du matin, embrume, une main, un
- * choix multiple est un choix qu'on ne fait pas.
+ * P4 limits to three the pieces of information above the fold at waking: where last night stands,
+ * the aggregate if it exists, one action. This strip carries the first, and a single action — not a
+ * menu, not a choice, not a form. At 7 am, foggy, one-handed, a multiple choice is a choice one
+ * does not make.
  */
 @Composable
 fun StatusStrip(
-    etat: EtatReveil,
+    state: WakingState,
     onAction: () -> Unit = {},
 ) {
-    when (etat) {
-        EtatReveil.Rien -> Unit
+    when (state) {
+        WakingState.None -> Unit
 
-        is EtatReveil.EnAttenteTransfert -> PendulumCard {
-            Titre(stringResource(R.string.waking_pending_title, etat.date))
-            Paragraphe(stringResource(R.string.waking_pending_body, etat.mo, etat.minutes))
+        is WakingState.AwaitingTransfer -> PendulumCard {
+            Title(stringResource(R.string.waking_pending_title, state.date))
+            Paragraph(stringResource(R.string.waking_pending_body, state.mb, state.minutes))
             Spacer(Modifier.height(Spacing.sm.dp))
             Button(onClick = onAction, shape = PendulumShapes.button) {
                 Text(stringResource(R.string.waking_pending_action))
             }
         }
 
-        is EtatReveil.Transfert -> PendulumCard {
-            Titre(stringResource(R.string.waking_transfer_title, etat.recuMo, etat.totalMo))
+        is WakingState.Transfer -> PendulumCard {
+            Title(stringResource(R.string.waking_transfer_title, state.receivedMb, state.totalMb))
             Spacer(Modifier.height(Spacing.s.dp))
-            // Le pourcentage ne recule jamais : le transfert reprend ou il s'est arrete, et un
-            // compteur qui redescend fait croire a une perte de donnees.
-            Progression(etat.fraction)
+            // The percentage never goes backwards: the transfer resumes where it stopped, and a
+            // counter that goes back down makes one believe data has been lost.
+            Progress(state.fraction)
             Spacer(Modifier.height(Spacing.s.dp))
-            Text(stringResource(R.string.waking_transfer_chunk, etat.chunk, etat.chunks), style = PendulumType.caption)
-            Paragraphe(stringResource(R.string.waking_transfer_body))
+            Text(stringResource(R.string.waking_transfer_chunk, state.chunk, state.chunks), style = PendulumType.caption)
+            Paragraph(stringResource(R.string.waking_transfer_body))
         }
 
-        is EtatReveil.Analyse -> PendulumCard {
-            Titre(stringResource(R.string.waking_analysis_title, etat.date))
+        is WakingState.Analysis -> PendulumCard {
+            Title(stringResource(R.string.waking_analysis_title, state.date))
             Spacer(Modifier.height(Spacing.s.dp))
-            Progression(etat.etape.fraction)
+            Progress(state.step.fraction)
             Spacer(Modifier.height(Spacing.s.dp))
-            // Trois libelles d'etape et pas un de plus. Le log technique vit dans Reglages.
-            Text(stringResource(etat.etape.libelle), style = PendulumType.body)
-            Text(stringResource(R.string.waking_analysis_remaining, etat.secondesRestantes), style = PendulumType.caption)
+            // Three step labels and not one more. The technical log lives in Settings.
+            Text(stringResource(state.step.label), style = PendulumType.body)
+            Text(stringResource(R.string.waking_analysis_remaining, state.secondsRemaining), style = PendulumType.caption)
         }
 
-        // L'etat NORMAL du reveil. Aucune icone d'alerte, aucun rouge, le mot « provisoire » en
-        // titre et l'explication du delai avant l'action : c'est un resultat en cours de
-        // consolidation, pas une panne, et le presenter autrement rendrait l'application
-        // suspecte tous les matins.
+        // The NORMAL state at waking. No alert icon, no red, the word "provisional" in the title
+        // and the explanation of the delay before the action: this is a result being consolidated,
+        // not a failure, and presenting it otherwise would make the application look suspect every
+        // morning.
         //
-        // **Et surtout : aucun indicateur de progression ici.** Les deux `Progression` de ce
-        // fichier sont determinees et portent une attente de quelques minutes. Celle-ci dure des
-        // heures, et Material 3 calibre son indicateur pour des attentes de moins de cinq
-        // secondes : un cercle qui tourne six heures est un message de panne, quoi que dise le
-        // texte a cote. Ce qui remplace l'animation est ecrit en clair — derniere tentative,
-        // prochaine, et l'echeance datee de l'abandon.
-        is EtatReveil.Provisoire -> PendulumCard {
+        // **And above all: no progress indicator here.** The two `Progress` bars in this file are
+        // determinate and carry a wait of a few minutes. This one lasts hours, and Material 3
+        // calibrates its indicator for waits of under five seconds: a circle spinning for six hours
+        // is a failure message, whatever the text beside it says. What replaces the animation is
+        // written in plain words — last attempt, next one, and the dated deadline for giving up.
+        is WakingState.Provisional -> PendulumCard {
             val c = LocalPendulumColors.current
-            Titre(stringResource(R.string.waking_provisional_title, etat.date))
+            Title(stringResource(R.string.waking_provisional_title, state.date))
             Spacer(Modifier.height(Spacing.s.dp))
-            Paragraphe(stringResource(R.string.waking_provisional_body))
+            Paragraph(stringResource(R.string.waking_provisional_body))
             Spacer(Modifier.height(Spacing.sm.dp))
             Text(
                 when {
-                    etat.abandonne -> stringResource(R.string.waking_provisional_given_up)
-                    etat.derniereTentative == null && etat.prochaineTentative != null ->
-                        stringResource(R.string.waking_provisional_first_attempt, etat.prochaineTentative)
-                    etat.prochaineTentative != null ->
+                    state.gaveUp -> stringResource(R.string.waking_provisional_given_up)
+                    state.lastAttempt == null && state.nextAttempt != null ->
+                        stringResource(R.string.waking_provisional_first_attempt, state.nextAttempt)
+                    state.nextAttempt != null ->
                         stringResource(
                             R.string.waking_provisional_attempts,
-                            etat.derniereTentative.orEmpty(),
-                            etat.prochaineTentative,
+                            state.lastAttempt.orEmpty(),
+                            state.nextAttempt,
                         )
                     else -> stringResource(R.string.waking_provisional_given_up)
                 },
                 style = PendulumType.caption,
                 color = c.textTertiary,
             )
-            if (!etat.abandonne) {
+            if (!state.gaveUp) {
                 Text(
-                    stringResource(R.string.waking_provisional_give_up_at, etat.abandonA),
+                    stringResource(R.string.waking_provisional_give_up_at, state.givingUpAt),
                     style = PendulumType.caption,
                     color = c.textTertiary,
                 )
@@ -116,68 +115,68 @@ fun StatusStrip(
             }
         }
 
-        // Un seul bouton, et il fait quelque chose : la chaine de fin de nuit repart. Le
-        // « See the technical detail » qui l'accompagnait appelait un `{}` — il n'existe aucun
-        // ecran de journal technique dans ce module. Voir la KDoc d'`ErrorCard`.
-        is EtatReveil.Echec -> Column(Modifier.fillMaxWidth()) {
-            ErrorCard(etat.erreur, onAction = onAction)
+        // One button only, and it does something: the end-of-night chain starts again. The
+        // "See the technical detail" that used to accompany it called a `{}` — there is no
+        // technical log screen in this module. See the KDoc of `ErrorCard`.
+        is WakingState.Failure -> Column(Modifier.fillMaxWidth()) {
+            ErrorCard(state.error, onAction = onAction)
         }
     }
 }
 
 @Composable
-private fun Titre(texte: String) {
-    Text(texte, style = PendulumType.titleM, color = LocalPendulumColors.current.textPrimary)
+private fun Title(text: String) {
+    Text(text, style = PendulumType.titleM, color = LocalPendulumColors.current.textPrimary)
 }
 
 // -----------------------------------------------------------------------------------------
-// Apercus — ils servent aussi a produire les captures d'ecran de la documentation, donc les
-// donnees sont realistes et non des « lorem ipsum ».
+// Previews — they also serve to produce the screenshots of the documentation, so the data is
+// realistic and not "lorem ipsum".
 // -----------------------------------------------------------------------------------------
 
 @Preview(name = "Wake-up — state 1 pending", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
-private fun ApercuEnAttente() = PendulumTheme {
-    StatusStrip(EtatReveil.EnAttenteTransfert("12 March", "8.8", 4))
+private fun PreviewPending() = PendulumTheme {
+    StatusStrip(WakingState.AwaitingTransfer("12 March", "8.8", 4))
 }
 
 @Preview(name = "Wake-up — state 2 transfer", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
-private fun ApercuTransfert() = PendulumTheme {
-    StatusStrip(EtatReveil.Transfert("4.1", "8.8", 8, 17))
+private fun PreviewTransfer() = PendulumTheme {
+    StatusStrip(WakingState.Transfer("4.1", "8.8", 8, 17))
 }
 
 @Preview(name = "Wake-up — state 3 analysis", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
-private fun ApercuAnalyse() = PendulumTheme {
-    StatusStrip(EtatReveil.Analyse("12 March", EtapeAnalyse.DETECTION, 40))
+private fun PreviewAnalysis() = PendulumTheme {
+    StatusStrip(WakingState.Analysis("12 March", AnalysisStep.DETECTION, 40))
 }
 
 @Preview(name = "Wake-up — state 4 provisional (normal case)", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
-private fun ApercuProvisoire() = PendulumTheme {
-    StatusStrip(EtatReveil.Provisoire("12 March", "07:12", "08:12", "19:04", abandonne = false))
+private fun PreviewProvisional() = PendulumTheme {
+    StatusStrip(WakingState.Provisional("12 March", "07:12", "08:12", "19:04", gaveUp = false))
 }
 
 @Preview(name = "Wake-up — state 4 after giving up at T+36 h", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
-private fun ApercuProvisoireAbandonne() = PendulumTheme {
-    StatusStrip(EtatReveil.Provisoire("12 March", "18:04", null, "19:04", abandonne = true))
+private fun PreviewProvisionalGivenUp() = PendulumTheme {
+    StatusStrip(WakingState.Provisional("12 March", "18:04", null, "19:04", gaveUp = true))
 }
 
 @Preview(name = "Wake-up — state 5 failure", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
 @Composable
-private fun ApercuEchec() = PendulumTheme {
+private fun PreviewFailure() = PendulumTheme {
     StatusStrip(
-        EtatReveil.Echec(
+        WakingState.Failure(
             "12 March",
-            ErreurPendulum(
+            PendulumError(
                 code = "E-ANA-01",
-                titre = texte(R.string.error_ana_01_title),
-                cause = texte(R.string.error_ana_01_cause),
-                action = texte(R.string.error_ana_01_action),
-                bouton = texte(R.string.error_ana_01_button),
-                technique = true,
+                title = text(R.string.error_ana_01_title),
+                cause = text(R.string.error_ana_01_cause),
+                action = text(R.string.error_ana_01_action),
+                button = text(R.string.error_ana_01_button),
+                technical = true,
             ),
         ),
     )

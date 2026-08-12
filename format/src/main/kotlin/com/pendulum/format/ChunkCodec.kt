@@ -8,13 +8,13 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Ecriture d'un fichier de chunk. Pur JVM : le module `wear` fournit l'[OutputStream]
- * et garde la main sur le `FileDescriptor` pour les `fsync`.
+ * Writing of a chunk file. Pure JVM: the `wear` module provides the [OutputStream]
+ * and keeps control of the `FileDescriptor` for the `fsync` calls.
  *
- * Aucune methode ne reecrit en arriere : le fichier est valide a tout instant. [finish]
- * n'ajoute qu'un marqueur de fin en queue, il ne patche rien.
+ * No method writes backwards: the file is valid at every instant. [finish] only appends an
+ * end marker at the tail, it patches nothing.
  *
- * Le layout octet par octet est documente dans la KDoc de [ChunkFormat].
+ * The byte-by-byte layout is documented in the KDoc of [ChunkFormat].
  */
 class ChunkWriter(
     private val out: OutputStream,
@@ -26,10 +26,11 @@ class ChunkWriter(
         ByteArray(ChunkFormat.TELEMETRY_HEADER_SIZE + ChunkFormat.TELEMETRY_POINT_SIZE)
 
     /**
-     * Seuil d'ecretage **du capteur**, en m/s2. Un cran de `resolution` sous `sensorMaxRange` :
-     * le HAL rend la valeur de rail exactement, mais les arrondis de la chaine flottante peuvent
-     * la manquer d'un LSB, et manquer l'ecretage est bien plus couteux que de le declarer un LSB
-     * trop tot. `Float.POSITIVE_INFINITY` quand la dynamique est inconnue : on ne devine pas.
+     * Clipping threshold **of the sensor**, in m/s2. One notch of `resolution` below
+     * `sensorMaxRange`: the HAL returns the rail value exactly, but the roundings of the
+     * floating-point chain can miss it by one LSB, and missing the clipping is far more costly
+     * than declaring it one LSB too early. `Float.POSITIVE_INFINITY` when the range is unknown:
+     * we do not guess.
      */
     private val clipThreshold: Float =
         if (header.sensorMaxRange > 0f && header.sensorMaxRange.isFinite()) {
@@ -48,34 +49,34 @@ class ChunkWriter(
         private set
 
     /**
-     * Nombre d'echantillons ecretes a +/-32767 LSB (F-11). Un compte non nul sur une nuit
-     * signifie que le signal a touche le plafond du format : les pics sont sous-estimes et
-     * toute amplitude derivee de ces blocs est fausse.
+     * Number of samples clipped at +/-32767 LSB (F-11). A non-zero count over a night means
+     * the signal touched the ceiling of the format: the peaks are underestimated and any
+     * amplitude derived from those blocks is wrong.
      */
     var saturatedSamples: Long = 0
         private set
 
     /**
-     * Nombre d'echantillons NaN/infinis remplaces par 0 (F-11). Un zero de capteur en defaut
-     * est indiscernable d'une chute libre : sans ce compteur, le defaut se lit comme un mouvement.
+     * Number of NaN/infinite samples replaced by 0 (F-11). A zero from a faulty sensor is
+     * indistinguishable from free fall: without this counter, the fault reads as a movement.
      */
     var nonFiniteSamples: Long = 0
         private set
 
     /**
-     * Nombre d'echantillons ayant touche la dynamique du **capteur** (`sensorMaxRange`), et non
-     * le plafond du format. Voir [ChunkFormat.FLAG_SENSOR_CLIPPED] : c'est un ecretage
-     * qui restait totalement invisible, puisqu'un capteur a 8 g s'ecrete a la moitie de ce que
-     * la quantification sait coder.
+     * Number of samples that touched the range of the **sensor** (`sensorMaxRange`), and not
+     * the ceiling of the format. See [ChunkFormat.FLAG_SENSOR_CLIPPED]: this is a clipping
+     * that remained completely invisible, since a sensor at 8 g clips at half of what the
+     * quantisation can encode.
      */
     var clippedSamples: Long = 0
         private set
 
-    /** Points de telemetrie ecrits dans ce chunk. Recopie dans le marqueur de fin. */
+    /** Telemetry points written in this chunk. Copied into the end marker. */
     var telemetryPointsWritten: Int = 0
         private set
 
-    /** Vrai une fois le marqueur de fin ecrit : plus aucun bloc n'est accepte. */
+    /** True once the end marker is written: no block is accepted any more. */
     var finished: Boolean = false
         private set
 
@@ -83,10 +84,10 @@ class ChunkWriter(
 
     init {
         require(header.headerSize == ChunkFormat.HEADER_SIZE) {
-            "cette version n'ecrit que des entetes de ${ChunkFormat.HEADER_SIZE} octets"
+            "this version only writes headers of ${ChunkFormat.HEADER_SIZE} bytes"
         }
         require(header.formatVersion == ChunkFormat.FORMAT_VERSION) {
-            "cette version n'ecrit que le format v${ChunkFormat.FORMAT_VERSION}"
+            "this version only writes format v${ChunkFormat.FORMAT_VERSION}"
         }
         val h = ByteBuffer.allocate(ChunkFormat.HEADER_SIZE).order(ByteOrder.LITTLE_ENDIAN)
         h.put(ChunkFormat.FILE_MAGIC)                       // 8  -> 8
@@ -103,10 +104,10 @@ class ChunkWriter(
         h.putInt(header.chunkIndex)                         // 4  -> 68
         h.putShort(header.modeFlags.toShort())              // 2  -> 70
         h.putShort(header.tzOffsetMin.toShort())            // 2  -> 72
-        // 6 octets reserves, laisses a zero                        -> 78
+        // 6 reserved bytes, left at zero                           -> 78
         val bytes = h.array()
-        // Le CRC d'entete (F-08) est le dernier champ : un octet corrompu dans startWallMs
-        // datait sinon toute la nuit faux, sans la moindre detection.
+        // The header CRC (F-08) is the last field: a corrupt byte in startWallMs otherwise
+        // dated the whole night wrong, without the slightest detection.
         val crc = ChunkFormat.crc16(bytes, 0, ChunkFormat.HEADER_SIZE - 2)
         putShortLe(bytes, ChunkFormat.HEADER_SIZE - 2, crc.toShort())
         out.write(bytes)
@@ -114,15 +115,15 @@ class ChunkWriter(
     }
 
     /**
-     * Ecrit un bloc. Les tableaux sont lus sur `[0, count)`.
+     * Writes a block. The arrays are read over `[0, count)`.
      *
-     * Le bloc doit provenir d'**un seul vidage du FIFO** (F-03) : `(tLast - tFirst)/(count - 1)`
-     * doit rester a [ChunkFormat.TIMEBASE_TOLERANCE] pres de la periode nominale. Un bloc a
-     * cheval sur deux vidages contient un trou que l'interpolation lineaire etale sur tous ses
-     * echantillons, et le producteur est le seul a pouvoir couper au bon endroit — d'ou un
-     * `require` et non un drapeau.
+     * The block must come from **a single FIFO flush** (F-03): `(tLast - tFirst)/(count - 1)`
+     * must stay within [ChunkFormat.TIMEBASE_TOLERANCE] of the nominal period. A block straddling
+     * two flushes contains a hole that the linear interpolation spreads over all of its samples,
+     * and the producer is the only one able to cut at the right place — hence a `require` and not
+     * a flag.
      *
-     * @param count nombre d'echantillons, dans `1..MAX_SAMPLES_PER_BLOCK`.
+     * @param count number of samples, in `1..MAX_SAMPLES_PER_BLOCK`.
      */
     fun writeBlock(
         x: FloatArray,
@@ -133,23 +134,23 @@ class ChunkWriter(
         tLastNs: Long,
         flags: Int,
     ) {
-        check(!finished) { "le chunk est clos, plus aucun bloc ne peut y etre ajoute" }
+        check(!finished) { "the chunk is closed, no block can be added to it any more" }
         require(count in 1..ChunkFormat.MAX_SAMPLES_PER_BLOCK) {
-            "count hors bornes : $count"
+            "count out of bounds: $count"
         }
         require(x.size >= count && y.size >= count && z.size >= count) {
-            "tableaux trop courts pour count=$count"
+            "arrays too short for count=$count"
         }
-        require(flags in 0..0xFFFF) { "flags hors u16 : $flags" }
+        require(flags in 0..0xFFFF) { "flags outside u16: $flags" }
         require(tLastNs >= tFirstNs) {
-            "tLastNs < tFirstNs ($tLastNs < $tFirstNs) : base de temps inversee"
+            "tLastNs < tFirstNs ($tLastNs < $tFirstNs): reversed time base"
         }
         require(count == 1 || tLastNs > tFirstNs) {
-            "bloc de $count echantillons de duree nulle"
+            "block of $count samples with zero duration"
         }
         require(ChunkFormat.isTimebasePlausible(count, tFirstNs, tLastNs, header.nominalRateHz)) {
-            "cadence implicite de ${ChunkFormat.meanIntervalNs(count, tFirstNs, tLastNs)} ns/echantillon " +
-                "incompatible avec ${header.nominalRateHz} Hz : le bloc chevauche probablement deux vidages du FIFO"
+            "implicit rate of ${ChunkFormat.meanIntervalNs(count, tFirstNs, tLastNs)} ns/sample " +
+                "incompatible with ${header.nominalRateHz} Hz: the block probably straddles two FIFO flushes"
         }
 
         var saturated = false
@@ -160,8 +161,8 @@ class ChunkWriter(
             val rx = ChunkFormat.toRaw(x[i])
             val ry = ChunkFormat.toRaw(y[i])
             val rz = ChunkFormat.toRaw(z[i])
-            // Compte par echantillon (le triplet), pas par axe : c'est l'echantillon qui est
-            // inutilisable des qu'un de ses axes a ete ecrete ou remplace.
+            // Counted per sample (the triplet), not per axis: it is the sample that is unusable
+            // as soon as one of its axes has been clipped or replaced.
             if (!x[i].isFinite() || !y[i].isFinite() || !z[i].isFinite()) {
                 nonFiniteSamples++
                 nonFinite = true
@@ -170,9 +171,9 @@ class ChunkWriter(
                     saturatedSamples++
                     saturated = true
                 }
-                // Compte a part et non en `else if` : les deux ecretages repondent a deux
-                // questions differentes — « le format a-t-il deborde » et « le capteur a-t-il
-                // touche son rail » — et sur un capteur a 8 g le second arrive sans le premier.
+                // Counted separately and not as an `else if`: the two clippings answer two
+                // different questions — "did the format overflow" and "did the sensor touch its
+                // rail" — and on a sensor at 8 g the second happens without the first.
                 if (isClipped(x[i]) || isClipped(y[i]) || isClipped(z[i])) {
                     clippedSamples++
                     clipped = true
@@ -196,7 +197,7 @@ class ChunkWriter(
         b.putLong(tFirstNs)                     // 8  -> 14
         b.putLong(tLastNs)                      // 8  -> 22
         b.putShort(effectiveFlags.toShort())    // 2  -> 24
-        // Le CRC couvre l'entete de bloc puis le payload (F-02), d'ou le chainage du seed.
+        // The CRC covers the block header then the payload (F-02), hence the chaining of the seed.
         val crc = ChunkFormat.crc16(
             payload, 0, payloadLen,
             seed = ChunkFormat.crc16(blockHeader, 0, ChunkFormat.BLOCK_CRC_OFFSET),
@@ -206,8 +207,8 @@ class ChunkWriter(
 
         out.write(blockHeader)
         out.write(payload, 0, payloadLen)
-        // Flush a chaque bloc : le cout est negligeable (un bloc toutes les ~10 s a 50 Hz)
-        // et cela borne la perte a un seul bloc en cas de kill brutal.
+        // Flush on every block: the cost is negligible (one block every ~10 s at 50 Hz)
+        // and it bounds the loss to a single block in case of an abrupt kill.
         out.flush()
 
         bytesWritten += ChunkFormat.BLOCK_HEADER_SIZE + payloadLen
@@ -217,26 +218,26 @@ class ChunkWriter(
     }
 
     /**
-     * Ecrit un bloc de telemetrie portant un point unique.
+     * Writes a telemetry block carrying a single point.
      *
-     * Un point par bloc, et non une salve accumulee : un bloc est l'unite de perte du format, et
-     * accumuler dix minutes de telemetrie pour les ecrire d'un coup ferait perdre dix minutes la
-     * ou on n'en perd qu'une. Le surcout est de 16 octets d'entete par point, soit 80 octets sur
-     * un chunk de 92 160 — 0,09 %.
+     * One point per block, and not an accumulated burst: a block is the unit of loss of the
+     * format, and accumulating ten minutes of telemetry to write them at once would lose ten
+     * minutes where only one is lost. The overhead is 16 header bytes per point, that is,
+     * 80 bytes on a chunk of 92 160 — 0.09 %.
      *
-     * Le bloc est ecrit **entre** deux blocs de signal, jamais a l'interieur : chaque bloc du
-     * format est auto-delimite et protege par son propre CRC, donc l'intercalation ne coute rien
-     * a la relecture et n'importe quel bloc reste sautable seul.
+     * The block is written **between** two signal blocks, never inside one: every block of the
+     * format is self-delimited and protected by its own CRC, so the interleaving costs nothing
+     * on read-back and any block remains skippable on its own.
      */
     fun writeTelemetry(point: TelemetryPoint) {
-        check(!finished) { "le chunk est clos, plus aucun bloc ne peut y etre ajoute" }
+        check(!finished) { "the chunk is closed, no block can be added to it any more" }
         val b = ByteBuffer.wrap(telemetryBuf).order(ByteOrder.LITTLE_ENDIAN)
         b.clear()
         b.put(ChunkFormat.TELEMETRY_MAGIC)                          // 4  -> 4
         b.putShort(1)                                               // 2  -> 6   count
         b.putShort(ChunkFormat.TELEMETRY_POINT_SIZE.toShort())      // 2  -> 8   pointSize
-        b.putShort(0)                                               // 2  -> 10  flags, reserve
-        // crc en 10..12, ecrit en dernier ; 12..16 reserves, deja a zero.
+        b.putShort(0)                                               // 2  -> 10  flags, reserved
+        // crc at 10..12, written last; 12..16 reserved, already at zero.
         java.util.Arrays.fill(telemetryBuf, ChunkFormat.TELEMETRY_CRC_OFFSET, ChunkFormat.TELEMETRY_HEADER_SIZE, 0)
 
         b.position(ChunkFormat.TELEMETRY_HEADER_SIZE)
@@ -256,7 +257,7 @@ class ChunkWriter(
         b.put(if (point.charging) 1 else 0)                         // 1  -> 45
         java.util.Arrays.fill(telemetryBuf, ChunkFormat.TELEMETRY_HEADER_SIZE + 45, telemetryBuf.size, 0)
 
-        // Meme chainage que pour un bloc de signal : l'entete d'abord, le payload ensuite.
+        // Same chaining as for a signal block: the header first, the payload next.
         val crc = ChunkFormat.crc16(
             telemetryBuf, ChunkFormat.TELEMETRY_HEADER_SIZE, ChunkFormat.TELEMETRY_POINT_SIZE,
             seed = ChunkFormat.crc16(telemetryBuf, 0, ChunkFormat.TELEMETRY_CRC_OFFSET),
@@ -270,11 +271,11 @@ class ChunkWriter(
     }
 
     /**
-     * Ecrit le marqueur de fin de fichier (F-37) et vide le flux. Idempotent.
+     * Writes the end-of-file marker (F-37) and flushes the stream. Idempotent.
      *
-     * Sans ce marqueur, un chunk en cours d'ecriture est indiscernable d'un chunk complet :
-     * le telephone l'acquitte et la montre supprime un fichier partiel (F-13). N'appeler
-     * qu'apres la rotation, jamais sur le chunk courant.
+     * Without this marker, a chunk being written is indistinguishable from a complete chunk:
+     * the phone acknowledges it and the watch deletes a partial file (F-13). To be called only
+     * after rotation, never on the current chunk.
      */
     fun finish() {
         if (finished) return
@@ -283,8 +284,8 @@ class ChunkWriter(
         f.putInt(blocksWritten)                 // 4  -> 12
         f.putLong(samplesWritten)               // 8  -> 20
         f.putLong(lastTimestampNs)              // 8  -> 28
-        // Les deux octets que la v1 laissait a zero. Un chunk v1 relu ici annonce donc zero point
-        // de telemetrie, ce qui est la verite et non une valeur par defaut.
+        // The two bytes that v1 left at zero. A v1 chunk read back here therefore announces zero
+        // telemetry points, which is the truth and not a default value.
         f.putShort(telemetryPointsWritten.coerceAtMost(0xFFFF).toShort()) // 2 -> 30
         val bytes = f.array()
         val crc = ChunkFormat.crc16(bytes, 0, ChunkFormat.FOOTER_SIZE - 2)
@@ -296,13 +297,13 @@ class ChunkWriter(
     }
 
     /**
-     * Une valeur ecretee est indiscernable d'une valeur qui tombe pile sur la borne ; a
-     * 15,9995 g cette confusion n'a jamais lieu sur une cheville, on l'accepte.
+     * A clipped value is indistinguishable from a value that lands exactly on the bound; at
+     * 15.9995 g that confusion never happens on an ankle, so we accept it.
      */
     private fun isSaturated(raw: Short): Boolean =
         raw == Short.MAX_VALUE || raw == Short.MIN_VALUE
 
-    /** Vrai si la valeur touche la dynamique du capteur. Voir [clipThreshold]. */
+    /** True if the value touches the sensor range. See [clipThreshold]. */
     private fun isClipped(ms2: Float): Boolean = Math.abs(ms2) >= clipThreshold
 
     private fun putShortLe(buf: ByteArray, offset: Int, v: Short) {
@@ -311,33 +312,34 @@ class ChunkWriter(
     }
 }
 
-/** Raison pour laquelle une plage d'octets a ete rejetee a la relecture. */
+/** Reason why a byte range was rejected on read-back. */
 enum class DamageReason {
-    /** Magic de bloc absent la ou il etait attendu : desynchronisation franche. */
+    /** Block magic missing where it was expected: outright desynchronisation. */
     BAD_MAGIC,
 
-    /** `count` hors bornes : la longueur de payload aurait ete lue fausse. */
+    /** `count` out of bounds: the payload length would have been read wrong. */
     BAD_COUNT,
 
-    /** CRC invalide : entete de bloc ou payload corrompu. */
+    /** Invalid CRC: block header or payload corrupt. */
     BAD_CRC,
 
-    /** CRC valide mais `tLastNs < tFirstNs` : structurellement impossible (F-14). */
+    /** Valid CRC but `tLastNs < tFirstNs`: structurally impossible (F-14). */
     INVALID_TIMEBASE,
 
-    /** Fin de fichier au milieu d'un bloc : cas benin d'un kill brutal (F-12). */
+    /** End of file in the middle of a block: the benign case of an abrupt kill (F-12). */
     TRUNCATED_TAIL,
 }
 
 /**
- * Zone illisible d'un fichier de chunk, localisee dans le fichier **et** dans le temps (F-35).
- * C'est ce qui permet de transformer « 3 blocs perdus » en « 30 s manquantes a 3h12 ».
+ * Unreadable zone of a chunk file, located in the file **and** in time (F-35).
+ * This is what makes it possible to turn "3 blocks lost" into "30 s missing at 3:12".
  *
- * @param fileOffset offset absolu, dans le fichier, du premier octet rejete.
- * @param byteLength nombre d'octets sautes.
- * @param afterTimestampNs `tLastNs` du dernier bloc valide *avant* la zone, `null` s'il n'y en a pas.
- * @param beforeTimestampNs `tFirstNs` du premier bloc valide *apres* la zone, `null` si le
- *   fichier se termine dans la zone.
+ * @param fileOffset absolute offset, in the file, of the first rejected byte.
+ * @param byteLength number of bytes skipped.
+ * @param afterTimestampNs `tLastNs` of the last valid block *before* the zone, `null` if there is
+ *   none.
+ * @param beforeTimestampNs `tFirstNs` of the first valid block *after* the zone, `null` if the
+ *   file ends inside the zone.
  */
 data class DamagedRange(
     val reason: DamageReason,
@@ -346,7 +348,7 @@ data class DamagedRange(
     val afterTimestampNs: Long?,
     val beforeTimestampNs: Long?,
 ) {
-    /** Duree de signal manquante, ou `null` si l'une des deux bornes temporelles est inconnue. */
+    /** Missing signal duration, or `null` if either of the two time bounds is unknown. */
     val missingDurationNs: Long?
         get() = if (afterTimestampNs != null && beforeTimestampNs != null) {
             beforeTimestampNs - afterTimestampNs
@@ -356,16 +358,16 @@ data class DamagedRange(
 }
 
 /**
- * Bilan de la relecture d'un fichier de chunk, sans les echantillons : c'est le resultat de
- * l'API streaming [ChunkReader.forEachBlock], et le meme objet est porte par [ChunkFile].
+ * Summary of the read-back of a chunk file, without the samples: it is the result of the
+ * streaming API [ChunkReader.forEachBlock], and the same object is carried by [ChunkFile].
  *
- * @param complete vrai si le marqueur de fin de fichier a ete lu et son CRC verifie. Un chunk
- *   incomplet ne doit jamais etre acquitte par le telephone (F-13/F-37).
- * @param truncatedTail vrai si le fichier se termine au milieu d'un bloc — cas **benin** d'un
- *   kill brutal, a distinguer de [desynchronised] (F-12).
- * @param desynchronised vrai si une zone illisible a ete rencontree ailleurs qu'en queue :
- *   la ou `truncatedTail` coute au pire un bloc, ceci signale une corruption en plein fichier.
- * @param declaredBlockCount nombre de blocs annonce par le marqueur de fin, `null` si absent.
+ * @param complete true if the end-of-file marker was read and its CRC checked. An incomplete
+ *   chunk must never be acknowledged by the phone (F-13/F-37).
+ * @param truncatedTail true if the file ends in the middle of a block — the **benign** case of an
+ *   abrupt kill, to be distinguished from [desynchronised] (F-12).
+ * @param desynchronised true if an unreadable zone was met somewhere other than at the tail:
+ *   where `truncatedTail` costs at worst one block, this signals a corruption mid-file.
+ * @param declaredBlockCount number of blocks announced by the end marker, `null` if absent.
  */
 class ChunkScanResult(
     val header: ChunkHeader,
@@ -380,82 +382,81 @@ class ChunkScanResult(
     val desynchronised: Boolean,
     val declaredBlockCount: Int?,
     val declaredSampleCount: Long?,
-    /** Points de telemetrie decodes. Zero sur un chunk du format v1, qui n'en portait pas. */
+    /** Decoded telemetry points. Zero on a v1 format chunk, which carried none. */
     val telemetryPointCount: Int = 0,
-    /** Points annonces par le marqueur de fin, `null` sans marqueur. */
+    /** Points announced by the end marker, `null` without a marker. */
     val declaredTelemetryPointCount: Int? = null,
 ) {
-    /** Blocs annonces par le marqueur de fin mais absents a la relecture. `null` sans marqueur. */
+    /** Blocks announced by the end marker but absent on read-back. `null` without a marker. */
     val lostBlocks: Int? get() = declaredBlockCount?.let { it - blockCount }
 
-    /** Points de telemetrie annonces mais absents a la relecture. `null` sans marqueur. */
+    /** Telemetry points announced but absent on read-back. `null` without a marker. */
     val lostTelemetryPoints: Int?
         get() = declaredTelemetryPointCount?.let { it - telemetryPointCount }
 
-    /** Duree totale de signal manquante, sur les seules zones dont les deux bornes sont connues. */
+    /** Total missing signal duration, over only the zones whose two bounds are known. */
     val missingDurationNs: Long get() = damagedRanges.sumOf { it.missingDurationNs ?: 0L }
 }
 
 /**
- * Resultat de la lecture *materialisee* d'un fichier de chunk. Pratique pour les tests et pour
- * les fichiers courts ; pour une nuit entiere, preferer [ChunkReader.forEachBlock] (F-27).
+ * Result of the *materialised* reading of a chunk file. Convenient for tests and for short
+ * files; for a whole night, prefer [ChunkReader.forEachBlock] (F-27).
  */
 class ChunkFile(
     val scan: ChunkScanResult,
     val blocks: List<DecodedBlock>,
-    /** Les points de telemetrie du chunk, dans l'ordre d'ecriture. */
+    /** The telemetry points of the chunk, in write order. */
     val telemetry: List<TelemetryPoint> = emptyList(),
 ) {
     val header: ChunkHeader get() = scan.header
 
-    /** Blocs rejetes pour CRC invalide, magic absent, `count` aberrant ou base de temps impossible. */
+    /** Blocks rejected for invalid CRC, missing magic, aberrant `count` or impossible time base. */
     val corruptBlocks: Int get() = scan.corruptBlocks
 
-    /** Vrai si le fichier se termine par un bloc tronque (cas normal d'un kill brutal). */
+    /** True if the file ends with a truncated block (the normal case of an abrupt kill). */
     val truncatedTail: Boolean get() = scan.truncatedTail
 
     val sampleCount: Int get() = blocks.sumOf { it.sampleCount }
 }
 
 /**
- * Lecture tolerante aux pannes d'un fichier de chunk.
+ * Failure-tolerant reading of a chunk file.
  *
- * Un bloc dont le CRC ne correspond pas, dont le magic est absent, dont le `count` est
- * aberrant ou dont la base de temps est impossible est **saute**, et le lecteur se
- * **resynchronise** en cherchant le prochain `BLK!` (F-02) : sauter un bloc « en gardant la
- * synchro » n'a aucun sens quand c'est justement `count` qui peut etre corrompu, puisque la
- * longueur de payload lue est alors fausse. Chaque zone sautee est localisee dans
- * [ChunkScanResult.damagedRanges].
+ * A block whose CRC does not match, whose magic is missing, whose `count` is aberrant or whose
+ * time base is impossible is **skipped**, and the reader **resynchronises** by looking for the
+ * next `BLK!` (F-02): skipping a block "while keeping in sync" makes no sense when it is
+ * precisely `count` that may be corrupt, since the payload length read is then wrong. Every
+ * skipped zone is located in [ChunkScanResult.damagedRanges].
  *
- * La lecture ne leve que si l'entete du fichier elle-meme est invalide : le reste du fichier
- * est toujours exploite au mieux.
+ * The reading only throws if the file header itself is invalid: the rest of the file is always
+ * exploited as best as possible.
  */
 object ChunkReader {
 
-    /** Garde-fou : au-dela, `headerSize` est manifestement une valeur corrompue. */
+    /** Guard rail: beyond it, `headerSize` is manifestly a corrupt value. */
     private const val MAX_HEADER_SIZE = 4096
 
     private const val MAX_BLOCK_SIZE =
         ChunkFormat.BLOCK_HEADER_SIZE + ChunkFormat.MAX_SAMPLES_PER_BLOCK * ChunkFormat.BYTES_PER_SAMPLE
 
     /**
-     * Le tampon doit pouvoir contenir le plus grand bloc et la plus grande entete : c'est ce
-     * qui borne le retour arriere de la resynchronisation, et donc la memoire du lecteur.
+     * The buffer must be able to hold the largest block and the largest header: this is what
+     * bounds the backtracking of the resynchronisation, and hence the reader's memory.
      */
     private const val BUFFER_SIZE = 2 * MAX_BLOCK_SIZE
 
     /**
-     * Lecture streaming : chaque bloc decode est passe a [onBlock] puis oublie. C'est l'API a
-     * utiliser sur une nuit entiere — la version materialisee garde ~17 Mo utiles et plusieurs
-     * milliers de tableaux vivants pour un algorithme qui, lui, est streaming (F-27).
+     * Streaming reading: every decoded block is passed to [onBlock] then forgotten. This is the
+     * API to use over a whole night — the materialised version keeps ~17 MB of useful data and
+     * several thousand arrays alive for an algorithm that is itself streaming (F-27).
      *
-     * Le [DecodedBlock] passe a [onBlock] n'est pas reutilise : l'appelant peut le conserver
-     * s'il le souhaite, mais c'est alors sa consommation memoire, pas celle du lecteur.
+     * The [DecodedBlock] passed to [onBlock] is not reused: the caller may keep it if they wish,
+     * but it is then their memory consumption, not the reader's.
      */
     fun forEachBlock(
         input: InputStream,
-        /** Les points de telemetrie du chunk. Par defaut ignores : la plupart des appelants —
-         *  la salve de la montre, l'export, le reassemblage — ne s'interessent qu'au signal. */
+        /** The telemetry points of the chunk. Ignored by default: most callers — the watch's
+         *  burst, the export, the reassembly — are only interested in the signal. */
         onTelemetry: (TelemetryPoint) -> Unit = {},
         onBlock: (DecodedBlock) -> Unit,
     ): ChunkScanResult {
@@ -481,7 +482,7 @@ object ChunkReader {
         var declaredBlocks: Int? = null
         var declaredSamples: Long? = null
 
-        /** Enregistre une zone perdue et resynchronise sur le prochain magic. */
+        /** Records a lost zone and resynchronises on the next magic. */
         fun damageAndResync(reason: DamageReason) {
             val from = sc.offset
             val length = resync(sc)
@@ -490,7 +491,7 @@ object ChunkReader {
             openDamageIdx = damaged.size - 1
         }
 
-        /** Enregistre une queue tronquee : le reste du fichier tient dans la zone perdue. */
+        /** Records a truncated tail: the rest of the file fits in the lost zone. */
         fun damageTail(reason: DamageReason) {
             val from = sc.offset
             val length = sc.drain()
@@ -501,7 +502,7 @@ object ChunkReader {
 
         while (true) {
             if (!sc.ensure(4)) {
-                // Moins de 4 octets restants : reliquat inexploitable, donc queue tronquee.
+                // Fewer than 4 bytes left: unusable remainder, hence a truncated tail.
                 if (sc.available > 0) damageTail(DamageReason.TRUNCATED_TAIL)
                 break
             }
@@ -549,10 +550,10 @@ object ChunkReader {
                 t.position(ChunkFormat.TELEMETRY_CRC_OFFSET)
                 val tCrc = t.short.toInt() and 0xFFFF
 
-                // `pointSize` plus grand que celui de cette version est **legal** : un ecrivain
-                // plus recent a ajoute des champs en queue du point, on lit ce qu'on connait a
-                // offset fixe et on saute le reste. Plus petit, non : il n'y aurait pas de quoi
-                // remplir les champs. Meme regle que `headerSize` pour l'entete de fichier (F-32).
+                // A `pointSize` larger than this version's is **legal**: a more recent writer
+                // appended fields at the tail of the point, we read what we know at fixed offsets
+                // and skip the rest. Smaller, no: there would not be enough to fill the fields.
+                // Same rule as `headerSize` for the file header (F-32).
                 val tBlockSize = ChunkFormat.TELEMETRY_HEADER_SIZE + tCount * tPointSize
                 if (tCount < 1 || tCount > ChunkFormat.MAX_TELEMETRY_POINTS ||
                     tPointSize < ChunkFormat.TELEMETRY_POINT_SIZE ||
@@ -586,8 +587,8 @@ object ChunkReader {
                     telemetryCount++
                 }
                 sc.skip(tBlockSize)
-                // `openDamageIdx` et `lastValidTLast` ne bougent pas : un point de telemetrie
-                // n'est pas du signal, il ne peut donc pas borner une zone de signal perdue.
+                // `openDamageIdx` and `lastValidTLast` do not move: a telemetry point is not
+                // signal, so it cannot bound a zone of lost signal.
                 continue
             }
 
@@ -632,9 +633,9 @@ object ChunkReader {
                 continue
             }
 
-            // CRC valide mais chronologie impossible : le bloc est structurellement faux, pas
-            // seulement douteux, on le rejette (F-14). La cadence aberrante, elle, est signalee
-            // et non rejetee : le signal reste utilisable pour tout ce qui ne date pas.
+            // Valid CRC but impossible chronology: the block is structurally wrong, not merely
+            // doubtful, so we reject it (F-14). An aberrant rate, on the other hand, is reported
+            // and not rejected: the signal stays usable for everything that does not date.
             if (tLast < tFirst) {
                 corrupt++
                 sc.skip(ChunkFormat.BLOCK_HEADER_SIZE + payloadLen)
@@ -694,7 +695,7 @@ object ChunkReader {
         )
     }
 
-    /** Lecture materialisee. Voir [forEachBlock] pour l'API a utiliser sur une nuit entiere. */
+    /** Materialised reading. See [forEachBlock] for the API to use over a whole night. */
     fun read(input: InputStream): ChunkFile {
         val blocks = ArrayList<DecodedBlock>()
         val telemetry = ArrayList<TelemetryPoint>()
@@ -703,9 +704,9 @@ object ChunkReader {
     }
 
     /**
-     * Decode un point a `offset`. Ne lit que les [ChunkFormat.TELEMETRY_POINT_SIZE] octets connus
-     * de cette version : un point plus long produit par un ecrivain plus recent laisse sa queue
-     * intacte, et l'appelant a deja calcule l'offset du suivant sur le `pointSize` du bloc.
+     * Decodes a point at `offset`. Reads only the [ChunkFormat.TELEMETRY_POINT_SIZE] bytes known
+     * to this version: a longer point produced by a more recent writer leaves its tail intact,
+     * and the caller has already computed the offset of the next one from the block's `pointSize`.
      */
     private fun decodeTelemetryPoint(buf: ByteArray, offset: Int): TelemetryPoint {
         val b = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN)
@@ -729,30 +730,30 @@ object ChunkReader {
     }
 
     private fun readHeader(sc: ByteScanner): ChunkHeader {
-        if (!sc.ensure(ChunkFormat.HEADER_PREFIX_SIZE)) throw EOFException("entete de fichier tronquee")
+        if (!sc.ensure(ChunkFormat.HEADER_PREFIX_SIZE)) throw EOFException("truncated file header")
         val prefix = ByteArray(ChunkFormat.HEADER_PREFIX_SIZE)
         sc.copyOut(prefix, 0, ChunkFormat.HEADER_PREFIX_SIZE)
         val magic = prefix.copyOf(8)
         if (!magic.contentEquals(ChunkFormat.FILE_MAGIC)) {
-            throw IOException("magic de fichier invalide : ${magic.toString(Charsets.US_ASCII)}")
+            throw IOException("invalid file magic: ${magic.toString(Charsets.US_ASCII)}")
         }
         val formatVersion = getShortLe(prefix, 8).toInt() and 0xFFFF
         if (formatVersion < 1 || formatVersion > ChunkFormat.FORMAT_VERSION) {
-            throw IOException("version de format non geree : $formatVersion")
+            throw IOException("unhandled format version: $formatVersion")
         }
         val headerSize = getShortLe(prefix, 10).toInt() and 0xFFFF
-        // headerSize peut depasser HEADER_SIZE : une version ulterieure a ajoute des champs en
-        // queue sans changer le layout des blocs, on lit ce qu'on connait et on ignore le reste.
+        // headerSize may exceed HEADER_SIZE: a later version appended fields at the tail without
+        // changing the block layout, we read what we know and ignore the rest.
         if (headerSize < ChunkFormat.HEADER_SIZE || headerSize > MAX_HEADER_SIZE) {
-            throw IOException("headerSize invalide : $headerSize")
+            throw IOException("invalid headerSize: $headerSize")
         }
-        if (!sc.ensure(headerSize)) throw EOFException("entete de fichier tronquee")
+        if (!sc.ensure(headerSize)) throw EOFException("truncated file header")
 
         val hb = ByteArray(headerSize)
         sc.copyOut(hb, 0, headerSize)
         val storedCrc = getShortLe(hb, headerSize - 2).toInt() and 0xFFFF
         if (ChunkFormat.crc16(hb, 0, headerSize - 2) != storedCrc) {
-            throw IOException("CRC d'entete de fichier invalide")
+            throw IOException("invalid file header CRC")
         }
 
         val h = ByteBuffer.wrap(hb).order(ByteOrder.LITTLE_ENDIAN)
@@ -788,11 +789,11 @@ object ChunkReader {
     }
 
     /**
-     * Avance jusqu'au prochain magic — bloc de signal, bloc de telemetrie ou fin de fichier.
-     * Renvoie le nombre d'octets sautes, curseur positionne sur le magic trouve (ou sur la fin
-     * du flux). Les trois magics sont cherches ensemble : ne pas connaitre `TLM!` ferait sauter
-     * tout ce qui suit un bloc de signal corrompu jusqu'au bloc de signal suivant, telemetrie
-     * comprise, alors qu'elle est intacte et qu'elle explique peut-etre la corruption.
+     * Advances to the next magic — signal block, telemetry block or end of file.
+     * Returns the number of bytes skipped, cursor positioned on the magic found (or on the end
+     * of the stream). The three magics are searched together: not knowing `TLM!` would skip
+     * everything following a corrupt signal block up to the next signal block, telemetry
+     * included, when it is intact and may be what explains the corruption.
      */
     private fun resync(sc: ByteScanner): Long {
         val from = sc.offset
@@ -815,9 +816,9 @@ object ChunkReader {
 }
 
 /**
- * Fenetre glissante sur un [InputStream], avec retour arriere borne : c'est ce qui rend la
- * resynchronisation possible sans materialiser le fichier. La capacite doit depasser le plus
- * grand bloc, sans quoi un bloc valide pourrait ne jamais tenir entierement dans la fenetre.
+ * Sliding window over an [InputStream], with bounded backtracking: this is what makes
+ * resynchronisation possible without materialising the file. The capacity must exceed the
+ * largest block, failing which a valid block could never fit entirely in the window.
  */
 private class ByteScanner(private val input: InputStream, capacity: Int) {
     private val buf = ByteArray(capacity)
@@ -825,15 +826,15 @@ private class ByteScanner(private val input: InputStream, capacity: Int) {
     private var end = 0
     private var eof = false
 
-    /** Offset absolu du curseur dans le fichier, pour localiser les zones perdues. */
+    /** Absolute offset of the cursor in the file, to locate the lost zones. */
     var offset: Long = 0L
         private set
 
     val available: Int get() = end - start
 
-    /** Garantit [n] octets disponibles depuis le curseur. Faux si le flux se termine avant. */
+    /** Guarantees [n] bytes available from the cursor. False if the stream ends before that. */
     fun ensure(n: Int): Boolean {
-        require(n <= buf.size) { "fenetre trop petite pour $n octets" }
+        require(n <= buf.size) { "window too small for $n bytes" }
         if (available >= n) return true
         if (eof) return false
         if (start > 0) {
@@ -843,8 +844,8 @@ private class ByteScanner(private val input: InputStream, capacity: Int) {
         }
         while (available < n) {
             val r = input.read(buf, end, buf.size - end)
-            // Un read() qui rend 0 sans avoir atteint EOF (cas reel d'un Channel du Data Layer)
-            // faisait tourner la boucle indefiniment (F-31) : on le traite comme une fin de flux.
+            // A read() returning 0 without having reached EOF (a real case with a Data Layer
+            // Channel) made the loop spin forever (F-31): we treat it as an end of stream.
             if (r <= 0) {
                 eof = true
                 break
@@ -854,7 +855,7 @@ private class ByteScanner(private val input: InputStream, capacity: Int) {
         return available >= n
     }
 
-    /** Vrai si les [length] premiers octets du curseur valent le debut de [magic]. */
+    /** True if the first [length] bytes from the cursor equal the start of [magic]. */
     fun startsWith(magic: ByteArray, length: Int): Boolean {
         if (available < length) return false
         for (i in 0 until length) if (buf[start + i] != magic[i]) return false
@@ -870,7 +871,7 @@ private class ByteScanner(private val input: InputStream, capacity: Int) {
         offset += n
     }
 
-    /** Consomme tout ce qui reste (flux epuise). Renvoie le nombre d'octets abandonnes. */
+    /** Consumes everything left (stream exhausted). Returns the number of bytes abandoned. */
     fun drain(): Long {
         var total = 0L
         do {

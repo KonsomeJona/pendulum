@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Regles de sauvegarde pre-Android 12 (`android:fullBackupContent`).
+  Pre-Android 12 backup rules (`android:fullBackupContent`).
 
-  `minSdk` vaut 30 : Android 11 et 12 sont dans le parc, et sur Android 11 c'est ce fichier-ci
-  qui est lu, pas `data_extraction_rules.xml`. Avec `allowBackup="false"` il ne devrait jamais
-  servir — il est la parce qu'un `allowBackup` remis a `true` par megarde dans un merge de
-  manifeste ne doit pas suffire a exfiltrer la base.
+  `minSdk` is 30: Android 11 and 12 are in the field, and on Android 11 it is this file that is
+  read, not `data_extraction_rules.xml`. With `allowBackup="false"` it should never serve — it is
+  here so that an `allowBackup` set back to `true` by accident in a manifest merge is not enough
+  on its own to exfiltrate the database.
 -->
 <full-backup-content>
     <exclude domain="root" path="." />

@@ -12,52 +12,53 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * Le rythme fondamental sous un fort taux de manques — la mesure qui decide si le produit tient.
+ * The fundamental rhythm under a high miss rate — the measurement that decides whether the product
+ * holds.
  *
- * **Pourquoi ce fichier existe.** T22 publie que 6 % seulement de l'`aPLM-i` vrai survit a la
- * politique de seuil. Cela n'invaliderait pas Pendulum si l'`aPLM-i` etait une grandeur secondaire :
- * la metrique de suivi annoncee est le **rythme fondamental en secondes**, recupere par
- * deconvolution harmonique (`Rhythm`), et tout son interet tient a ce qu'elle n'a **pas** de
- * denominateur et varie douze fois moins d'une nuit a l'autre que le compte horaire.
+ * **Why this file exists.** T22 publishes that only 6 % of the true `aPLM-i` survives the threshold
+ * policy. That would not invalidate Pendulum if `aPLM-i` were a secondary quantity: the follow-up
+ * metric announced is the **fundamental rhythm in seconds**, recovered by harmonic deconvolution
+ * (`Rhythm`), and its whole interest lies in the fact that it has **no** denominator and varies
+ * twelve times less from one night to the next than the hourly count.
  *
- * Mais la deconvolution a une limite d'identifiabilite que sa propre KDoc enonce : les composantes
- * du melange sont separees de `ln 2` nats, et le poids du fondamental vaut `1 - p`. A `p = 0,39`
- * — le cas pour lequel elle a ete concue — le fondamental pese encore 61 %. A `p = 0,70`, il ne pese
- * plus que 30 %, le premier harmonique 21 %, le second 15 % ; si `sigma` est large, les cloches
- * fusionnent en une trainee continue et l'EM peut accrocher le mauvais pic. **Personne n'avait
- * mesure ce qui se passe a ce taux-la**, et c'est exactement le taux ou le detecteur travaille.
+ * But the deconvolution has an identifiability limit that its own KDoc states: the components of the
+ * mixture are separated by `ln 2` nats, and the weight of the fundamental is `1 - p`. At `p = 0.39`
+ * — the case it was designed for — the fundamental still weighs 61 %. At `p = 0.70`, it weighs only
+ * 30 %, the first harmonic 21 %, the second 15 %; if `sigma` is wide, the bells merge into a
+ * continuous smear and the EM can latch onto the wrong peak. **Nobody had measured what happens at
+ * that rate**, and it is exactly the rate at which the detector works.
  *
- * Deux mesures, aucune assertion de qualite. Elles impriment, comme le balayage de `k_on` : ce sont
- * des chiffres pour decider, et la decision — changer `calFraction`, changer de regle de serie,
- * changer de metrique publiee — est clinique et produit, pas une correction de code.
+ * Two measurements, no quality assertion. They print, like the `k_on` sweep: these are figures to
+ * decide with, and the decision — change `calFraction`, change the series rule, change the published
+ * metric — is clinical and product, not a code fix.
  */
 class RhythmMeasurementTest {
 
     /**
-     * Mesure 1 — la deconvolution telle qu'elle tourne reellement, sur la nuit nominale.
+     * Measurement 1 — the deconvolution as it really runs, on the nominal night.
      *
-     * Quatre grandeurs, dans l'ordre d'importance :
+     * Four quantities, in order of importance:
      *
-     *  1. **l'erreur relative sur `fundamentalSec`** contre le rythme reellement injecte. C'est LE
-     *     chiffre : si le rythme tient sous 70 % de manques, l'effondrement de l'indice est un
-     *     probleme de metrique secondaire ; s'il ne tient pas, c'est le produit ;
-     *  2. **`missRate` rendu** contre les deux taux vrais. Il y en a deux parce qu'il y a deux
-     *     trains de reference : le train **EMG** (tous les mouvements de serie generes — l'echelle
-     *     clinique, et celle que la KDoc de `Rhythm` vise explicitement en citant les 39 % de
-     *     Terrill) et le train **accelerometrique** (ceux qui deplacent le capteur). Les rapporter
-     *     tous les deux evite de declarer `p` juste ou faux selon la reference qu'on choisit ;
-     *  3. **l'adequation** — `geometricMisfit`, `ksStatistic` — et le nombre de graines que le
-     *     module **invalide**. Sa KDoc affirme qu'il prefere invalider plutot que rendre un chiffre
-     *     faux avec l'air sur. C'est une affirmation verifiable, et elle n'avait pas ete verifiee a
-     *     ce taux de manques ;
-     *  4. `alternationSuspect`. Le generateur ne produit **aucune** alternance, donc ce drapeau ne
-     *     doit jamais se lever ici. Avant correction il se levait 14 fois sur 20 : sa condition etait
-     *     une demi-droite `p >= 0,48`, et a 0,83 de manques amplitudinaires elle etait satisfaite pour
-     *     une raison qui n'a rien a voir avec la lateralisation. `RhythmConfig` porte desormais une
-     *     borne haute et cette mesure l'assertionne.
+     *  1. **the relative error on `fundamentalSec`** against the rhythm really injected. That is THE
+     *     figure: if the rhythm holds under 70 % of misses, the collapse of the index is a problem
+     *     of a secondary metric; if it does not hold, it is the product;
+     *  2. **the `missRate` returned** against the two true rates. There are two of them because
+     *     there are two reference trains: the **EMG** train (all the generated series movements —
+     *     the clinical scale, and the one the KDoc of `Rhythm` explicitly targets when it cites
+     *     Terrill's 39 %) and the **accelerometric** train (those that move the sensor). Reporting
+     *     both avoids declaring `p` right or wrong depending on the reference one picks;
+     *  3. **the goodness of fit** — `geometricMisfit`, `ksStatistic` — and the number of seeds the
+     *     module **invalidates**. Its KDoc claims it prefers to invalidate rather than return a
+     *     wrong figure with a confident air. That is a verifiable claim, and it had not been
+     *     verified at this miss rate;
+     *  4. `alternationSuspect`. The generator produces **no** alternation, so this flag must never
+     *     be raised here. Before the fix it was raised 14 times out of 20: its condition was a
+     *     half-line `p >= 0.48`, and at 0.83 of amplitude misses it was satisfied for a reason that
+     *     has nothing to do with lateralisation. `RhythmConfig` now carries an upper bound and this
+     *     measurement asserts it.
      */
     @Test
-    @DisplayName("Rythme — deconvolution sur la nuit nominale : fondamental, missRate, adequation")
+    @DisplayName("Rhythm — deconvolution on the nominal night: fundamental, missRate, goodness of fit")
     fun rhythmOnTheNominalNightUnderTheRealMissRate() {
         val fundErr = ArrayList<Double>()
         val fundamental = ArrayList<Double>()
@@ -82,8 +83,8 @@ class RhythmMeasurementTest {
             val trueFund = injectedFundamentalSec(night.truth)
             injected.add(trueFund)
             fundamental.add(r.fundamentalSec)
-            // L'erreur est rapportee meme quand le resultat est invalide : savoir de combien un
-            // chiffre refuse se serait trompe est ce qui dit si le refus etait utile.
+            // The error is reported even when the result is invalid: knowing by how much a refused
+            // figure would have been wrong is what says whether the refusal was useful.
             fundErr.add(if (trueFund > 0.0) abs(r.fundamentalSec - trueFund) / trueFund else Double.NaN)
 
             val emgSeries = night.truth.emgTruth.filter { it.kind == TruthKind.PLM_IN_SERIES }
@@ -102,78 +103,79 @@ class RhythmMeasurementTest {
         }
 
         val out = StringBuilder()
-        out.append("\n=== Rythme sur la nuit nominale, ").append(SEEDS.size).append(" graines ===\n")
-        out.append(line("fondamental injecte, s", injected))
-        out.append(line("fondamental estime, s", fundamental))
-        out.append(line("erreur relative", fundErr))
-        out.append(line("missRate estime", missEstimated))
-        out.append(line("missRate vrai / train EMG", missTrueEmg))
-        out.append(line("missRate vrai / train accel", missTrueAccel))
-        out.append(line("sigmaLog estime", sigma))
+        out.append("\n=== Rhythm on the nominal night, ").append(SEEDS.size).append(" seeds ===\n")
+        out.append(line("injected fundamental, s", injected))
+        out.append(line("estimated fundamental, s", fundamental))
+        out.append(line("relative error", fundErr))
+        out.append(line("estimated missRate", missEstimated))
+        out.append(line("true missRate / EMG train", missTrueEmg))
+        out.append(line("true missRate / accel train", missTrueAccel))
+        out.append(line("estimated sigmaLog", sigma))
         out.append(line("geometricMisfit", misfit))
         out.append(line("ksStatistic", ks))
-        out.append(line("intervalles utilises", intervals))
-        out.append("valides : ").append(valid).append(" / ").append(SEEDS.size)
-        out.append(" ; alternationSuspect : ").append(alternation).append(" / ").append(SEEDS.size).append("\n")
-        out.append("motifs de refus : ").append(if (rejects.isEmpty()) "aucun" else rejects.toString()).append("\n")
+        out.append(line("intervals used", intervals))
+        out.append("valid: ").append(valid).append(" / ").append(SEEDS.size)
+        out.append(" ; alternationSuspect: ").append(alternation).append(" / ").append(SEEDS.size).append("\n")
+        out.append("rejection reasons: ").append(if (rejects.isEmpty()) "none" else rejects.toString()).append("\n")
         println(out)
 
-        // Garde-fou de scenario, pas de qualite : si la deconvolution ne recevait plus aucun
-        // intervalle, tout ce qui precede serait du vide et le tableau serait trompeur. La borne est
-        // volontairement tres basse — le fait que la mediane frole `RhythmConfig.minIntervals` (30)
-        // est justement l'un des resultats, pas une condition de validite de la mesure.
+        // Scenario guard rail, not a quality one: if the deconvolution no longer received any
+        // interval, everything above would be empty and the table would be misleading. The bound is
+        // deliberately very low — the fact that the median grazes `RhythmConfig.minIntervals` (30)
+        // is precisely one of the results, not a validity condition of the measurement.
         assertThat(medianOf(intervals))
-            .`as`("intervalles medians fournis a la deconvolution")
+            .`as`("median intervals supplied to the deconvolution")
             .isGreaterThan(10.0)
 
-        // Assertion **inversee**, meme esprit que T11 : sur la nuit nominale la grande majorite des
-        // ajustements est refusee. Ce n'est pas un echec du module, c'est son contrat qui s'applique.
-        // Le jour ou cette assertion echoue, soit la chaine detecte enfin assez de mouvements, soit
-        // le garde-fou a ete relache — les deux exigent de rouvrir §4.3 de `docs/07-validation.md`.
+        // **Inverted** assertion, same spirit as T11: on the nominal night the vast majority of fits
+        // is refused. This is not a failure of the module, it is its contract applying. The day this
+        // assertion fails, either the chain finally detects enough movements, or the guard rail has
+        // been loosened — both require reopening §4.3 of `docs/07-validation.md`.
         assertThat(valid)
-            .`as`("ajustements de rythme declares valides sur la nuit nominale")
+            .`as`("rhythm fits declared valid on the nominal night")
             .isLessThanOrEqualTo(SEEDS.size / 4)
 
-        // Le generateur ne produit aucune alternance gauche/droite. Un drapeau qui se leve ici est
-        // une affirmation clinique fausse — la seule sortie du systeme qui puisse l'etre.
+        // The generator produces no left/right alternation. A flag raised here is a false clinical
+        // claim — the only output of the system that can be one.
         //
-        // **Plafond et non zero, et c'est une mesure et non un compromis.** La borne haute de
-        // `RhythmConfig.alternationMaxMissRate` fait tomber le compte de 14/20 a 1/20 : elle supprime
-        // le cas absurde ou « presque tout manque » se lisait « une fois sur deux ». Le reste est
-        // irreductible par reglage : le drapeau est une fonction de `p` et de la part du fondamental,
-        // et ces deux grandeurs sont **identiques** selon qu'une moitie des mouvements manque parce
-        // qu'ils sont sous le seuil ou parce qu'ils sont sur l'autre jambe. Le balayage de
-        // `calFraction` le rend visible : a `f_cal = 0,06`, ou le taux de manques tombe justement vers
-        // 0,5, le drapeau remonte a 11/20. Separer les deux causes demande l'amplitude des evenements
-        // detectes, que `Rhythm` ne recoit pas. Voir `docs/07-validation.md` §4.4.
+        // **A ceiling and not zero, and it is a measurement and not a compromise.** The upper bound
+        // of `RhythmConfig.alternationMaxMissRate` brings the count down from 14/20 to 1/20: it
+        // removes the absurd case where "almost everything is missing" read as "every other one".
+        // The rest is irreducible by tuning: the flag is a function of `p` and of the share of the
+        // fundamental, and those two quantities are **identical** whether half the movements are
+        // missing because they are below the threshold or because they are on the other leg. The
+        // `calFraction` sweep makes it visible: at `f_cal = 0.06`, where the miss rate falls
+        // precisely towards 0.5, the flag goes back up to 11/20. Separating the two causes requires
+        // the amplitude of the detected events, which `Rhythm` does not receive. See
+        // `docs/07-validation.md` §4.4.
         assertThat(alternation)
-            .`as`("alternationSuspect leve sur une nuit sans aucune alternance (14/20 avant la borne haute)")
+            .`as`("alternationSuspect raised on a night without any alternation (14/20 before the upper bound)")
             .isLessThanOrEqualTo(SEEDS.size / 10)
     }
 
     /**
-     * Mesure 2 — ou la deconvolution lache, en fonction du taux de manques impose.
+     * Measurement 2 — where the deconvolution gives way, as a function of the imposed miss rate.
      *
-     * Le detecteur n'intervient pas ici : on prend le **train vrai** de la nuit nominale, on l'eclaircit
-     * avec une probabilite imposee, et on ajuste. C'est le meilleur cas absolu du modele — les
-     * manques y sont exactement independants et geometriques, ce qu'ils ne sont jamais en vrai,
-     * puisque l'accelerometre rate d'abord les faibles amplitudes. **Une degradation observee ici
-     * est donc un plancher sur la degradation reelle, pas une estimation de celle-ci.**
+     * The detector plays no part here: the **true train** of the nominal night is taken, thinned out
+     * with an imposed probability, and fitted. This is the absolute best case of the model — the
+     * misses there are exactly independent and geometric, which they never are in reality, since the
+     * accelerometer misses the low amplitudes first. **A degradation observed here is therefore a
+     * floor on the real degradation, not an estimate of it.**
      *
-     * C'est aussi ce qui rend la mesure interpretable : elle isole l'identifiabilite du melange de
-     * tout le reste de la chaine, et elle est presque gratuite — aucune detection, aucun signal.
+     * That is also what makes the measurement interpretable: it isolates the identifiability of the
+     * mixture from all the rest of the chain, and it is almost free — no detection, no signal.
      */
     @Test
-    @DisplayName("Rythme — courbe de rupture : taux de manques imposes 0,1 / 0,3 / 0,5 / 0,7 sur le train vrai")
+    @DisplayName("Rhythm — breakdown curve: imposed miss rates 0.1 / 0.3 / 0.5 / 0.7 on the true train")
     fun rhythmAgainstImposedMissRateOnTheTrueTrain() {
         val rates = doubleArrayOf(0.0, 0.1, 0.3, 0.5, 0.7)
         val out = StringBuilder()
-        out.append("\n=== Deconvolution sur le train vrai eclairci, ").append(SEEDS.size)
-        out.append(" graines, medianes ===\n")
+        out.append("\n=== Deconvolution on the thinned true train, ").append(SEEDS.size)
+        out.append(" seeds, medians ===\n")
         out.append(
             String.format(
                 Locale.ROOT, "%6s %10s %10s %10s %10s %10s %8s %8s%n",
-                "p", "err.rel", "p estime", "sigma", "misfit", "ks", "valides", "altern.",
+                "p", "rel.err", "p_est", "sigma", "misfit", "ks", "valid", "altern.",
             ),
         )
 
@@ -185,16 +187,17 @@ class RhythmMeasurementTest {
         val valid = IntArray(rates.size)
         val alternation = IntArray(rates.size)
 
-        // Graine a l'exterieur, taux a l'interieur : la nuit ne depend pas du taux, et la regenerer
-        // cinq fois couterait quatre generations de 8 h pour rien.
+        // Seed on the outside, rate on the inside: the night does not depend on the rate, and
+        // regenerating it five times would cost four 8 h generations for nothing.
         for (seed in SEEDS) {
             val night = nominalNight(seed)
             val trueFund = injectedFundamentalSec(night.truth)
             val onsets = night.truth.emgLegMovements.map { it.onsetMsRel }.sorted()
 
             for ((k, rate) in rates.withIndex()) {
-                // Flot nomme : eclaircir a 0,3 ne doit pas dependre des tirages faits pour 0,1,
-                // sinon on comparerait cinq trains differents en croyant comparer cinq taux.
+                // Named stream: thinning at 0.3 must not depend on the draws made for 0.1, otherwise
+                // one would be comparing five different trains while believing one compares five
+                // rates.
                 val rnd = SynthRandom(seed).stream("thin-$rate")
                 val kept = onsets.filter { rate <= 0.0 || rnd.nextBoolean(1.0 - rate) }
                 val imi = DoubleArray((kept.size - 1).coerceAtLeast(0)) {
@@ -221,46 +224,46 @@ class RhythmMeasurementTest {
                 ),
             )
         }
-        out.append("\nManques imposes independants et geometriques : c'est le meilleur cas du modele.\n")
+        out.append("\nImposed misses, independent and geometric: this is the model's best case.\n")
         println(out)
 
         val last = rates.size - 1
-        // Deux assertions **inversees**, dans l'esprit de T11 : elles affirment qu'un defaut mesure
-        // est encore la, pour qu'on soit prevenu le jour ou il ne l'est plus.
+        // Two **inverted** assertions, in the spirit of T11: they state that a measured defect is
+        // still there, so that we are warned the day it no longer is.
         //
-        // 1. L'erreur sur le fondamental empire nettement entre 0,5 et 0,7 de manques. C'est la
-        //    limite d'identifiabilite que la KDoc de `Rhythm` annonce sans la chiffrer, et le
-        //    detecteur travaille au-dela.
+        // 1. The error on the fundamental gets markedly worse between 0.5 and 0.7 of misses. This is
+        //    the identifiability limit that the KDoc of `Rhythm` announces without putting a figure
+        //    on it, and the detector works beyond it.
         assertThat(medianOf(err[last]))
-            .`as`("erreur sur le fondamental a 70 %% de manques, contre %.3f a 30 %%", medianOf(err[2]))
+            .`as`("error on the fundamental at 70 %% of misses, against %.3f at 30 %%", medianOf(err[2]))
             .isGreaterThan(2.0 * medianOf(err[2]))
-        // 2. La statistique KS **descend** quand le taux de manques monte, c'est-a-dire que la mesure
-        //    d'adequation s'ameliore pendant que l'estimation se degrade. Un garde-fou anticorrele a
-        //    l'erreur qu'il garde ne peut pas servir de critere de confiance. **Si cette assertion
-        //    echoue un jour, l'adequation est devenue informative** — et §4.3 de
-        //    `docs/07-validation.md`, qui est ecrit sur cette mesure, doit etre refait.
+        // 2. The KS statistic **goes down** when the miss rate goes up, that is, the goodness-of-fit
+        //    measure improves while the estimate degrades. A guard rail anticorrelated with the error
+        //    it guards cannot serve as a confidence criterion. **If this assertion ever fails, the
+        //    goodness of fit has become informative** — and §4.3 of `docs/07-validation.md`, which is
+        //    written on this measurement, must be redone.
         assertThat(medianOf(kss[last]))
-            .`as`("KS a 70 %% de manques, contre %.3f sans manque", medianOf(kss[0]))
+            .`as`("KS at 70 %% of misses, against %.3f with no miss", medianOf(kss[0]))
             .isLessThan(medianOf(kss[0]))
-        // 3. Non inversee, celle-ci : le train eclairci ne contient aucune alternance, quel que soit
-        //    le taux. Avant la borne haute de `RhythmConfig.alternationMaxMissRate`, le drapeau se
-        //    levait 18 fois sur 20 a 70 % de manques ; il en reste 4. Comme sur la nuit nominale, le
-        //    residu n'est pas un defaut de reglage : voir la KDoc de l'assertion jumelle plus haut.
+        // 3. Not inverted, this one: the thinned train contains no alternation, whatever the rate.
+        //    Before the upper bound of `RhythmConfig.alternationMaxMissRate`, the flag was raised 18
+        //    times out of 20 at 70 % of misses; 4 remain. As on the nominal night, the residue is not
+        //    a tuning defect: see the KDoc of the twin assertion above.
         assertThat(alternation[last])
-            .`as`("alternationSuspect a 70 %% de manques imposes, sans alternance (18/20 avant la borne haute)")
+            .`as`("alternationSuspect at 70 %% of imposed misses, with no alternation (18/20 before the upper bound)")
             .isLessThanOrEqualTo(SEEDS.size / 4)
-        // 4. Et le pendant, qui est la vraie mauvaise nouvelle : au taux de manques **fait pour lui**
-        //    — 0,50, la lateralisation stochastique — le drapeau ne se leve que 3 fois sur 20. Sur un
-        //    train melant series, mouvements isoles et RRLM, `p` ressort a 0,333 et tombe sous la
-        //    borne basse de 0,48. Le drapeau est donc a la fois faux-positif quand le seuil manque des
-        //    mouvements et quasi aveugle au cas qu'il existe pour signaler.
+        // 4. And the counterpart, which is the real bad news: at the miss rate it is **made for** —
+        //    0.50, stochastic lateralisation — the flag is raised only 3 times out of 20. On a train
+        //    mixing series, isolated movements and RRLM, `p` comes out at 0.333 and falls below the
+        //    lower bound of 0.48. The flag is therefore both false-positive when the threshold misses
+        //    movements and nearly blind to the very case it exists to signal.
         assertThat(alternation[3])
-            .`as`("alternationSuspect a 50 %% de manques, le cas meme qu'il doit detecter")
+            .`as`("alternationSuspect at 50 %% of misses, the very case it must detect")
             .isLessThan(SEEDS.size / 2)
     }
 }
 
 private fun line(label: String, values: List<Double>): String = String.format(
-    Locale.ROOT, "%-30s mediane %8.3f   [%8.3f ; %8.3f]%n",
+    Locale.ROOT, "%-30s median %8.3f   [%8.3f ; %8.3f]%n",
     label, medianOf(values), worstMin(values), worstMax(values),
 )

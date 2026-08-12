@@ -6,21 +6,21 @@ import android.text.method.ScrollingMovementMethod
 import android.widget.TextView
 
 /**
- * L'ecran de justification des permissions Health Connect.
+ * The Health Connect permissions rationale screen.
  *
- * Health Connect y renvoie l'utilisateur depuis son propre parametrage, par deux chemins
- * differents selon la version d'Android (voir le manifeste : une `activity` **et** une
- * `activity-alias`). Sans elle, l'application n'apparait pas dans la liste de Health Connect —
- * et le symptome est une absence, pas une erreur.
+ * Health Connect sends the user here from its own settings, by two different paths depending on
+ * the Android version (see the manifest: an `activity` **and** an `activity-alias`). Without it,
+ * the application does not appear in the Health Connect list — and the symptom is an absence, not
+ * an error.
  *
- * Ecrit en `View` et non en Compose, deliberement : ce paquet ne doit rien devoir a
- * `com.pendulum.phone.ui`, qui est ecrit en parallele. Un ecran de trois paragraphes ne justifie pas
- * une dependance de couche.
+ * Written in `View` and not in Compose, deliberately: this package must owe nothing to
+ * `com.pendulum.phone.ui`, which is being written in parallel. A three-paragraph screen does not
+ * justify a layer dependency.
  *
- * Le texte est en dur ici plutot que dans `strings.xml` pour la meme raison — les ressources de
- * chaines appartiennent a l'interface, et la regle « aucun verbe d'evolution dans les ressources
- * de chaines » (garde-fou 5) est verifiee par un test sur ce fichier-la, qu'il ne faut pas
- * polluer avec des textes qui ne parlent pas de resultats.
+ * The text is hard-coded here rather than in `strings.xml` for the same reason — string resources
+ * belong to the interface, and the rule "no verb of change in the string resources" (guard rail 5)
+ * is verified by a test on that file, which must not be polluted with texts that do not talk about
+ * results.
  */
 class PermissionsRationaleActivity : Activity() {
 
@@ -37,27 +37,27 @@ class PermissionsRationaleActivity : Activity() {
 
     private companion object {
         val RATIONALE = """
-            Pourquoi Pendulum lit vos donnees de sommeil
+            Why Pendulum reads your sleep data
 
-            Pendulum compte des mouvements de jambe avec une montre portee a la cheville. Pour en
-            faire un index par heure de sommeil, il faut savoir combien d'heures vous avez dormi.
+            Pendulum counts leg movements with a watch worn at the ankle. To turn them into an
+            index per hour of sleep, it needs to know how many hours you slept.
 
-            Cette duree ne peut pas etre deduite de la montre de cheville : l'application y
-            compte des mouvements, et un algorithme de sommeil base sur le mouvement declarerait
-            « eveil » precisement pendant les periodes ou il y a le plus de mouvements a compter.
-            Le chiffre serait fausse deux fois, dans le meme sens.
+            That duration cannot be inferred from the ankle watch: the application counts
+            movements there, and a movement-based sleep algorithm would declare "wake" precisely
+            during the periods where there are the most movements to count. The figure would be
+            distorted twice, in the same direction.
 
-            Pendulum lit donc uniquement les sessions de sommeil ecrites par votre montre ou votre
-            application de sommeil habituelle.
+            Pendulum therefore reads only the sleep sessions written by your watch or by your usual
+            sleep application.
 
-            Lecture seule. Pendulum n'ecrit rien dans Health Connect.
+            Read only. Pendulum writes nothing into Health Connect.
 
-            La lecture en arriere-plan est necessaire parce que votre montre ne transfere pas sa
-            nuit au reveil, mais quand sa propre politique de batterie le decide — parfois
-            plusieurs heures plus tard, telephone verrouille.
+            Reading in the background is necessary because your watch does not transfer its night
+            on waking, but when its own battery policy decides to — sometimes several hours later,
+            phone locked.
 
-            Ces donnees ne quittent pas votre telephone. L'application ne declare pas la
-            permission d'acces a Internet : elle ne peut techniquement pas les envoyer ailleurs.
+            This data does not leave your phone. The application does not declare the Internet
+            access permission: it technically cannot send it anywhere else.
         """.trimIndent()
     }
 }

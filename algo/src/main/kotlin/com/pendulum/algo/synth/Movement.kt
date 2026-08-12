@@ -5,22 +5,22 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** Acceleration de la pesanteur, en m/s^2. Valeur normale, la meme que §5.1. */
+/** Acceleration due to gravity, in m/s^2. Standard value, the same one as §5.1. */
 internal const val G_MS2: Double = 9.80665
 
 /**
- * Profil angulaire a **jerk minimal d'ordre 5**, le geste balistique standard en biomecanique
+ * **Fifth-order minimum-jerk** angular profile, the standard ballistic gesture in biomechanics
  * (`ALGO-v2.md` §5.1).
  *
  * ```
  * s(u)   = 10u^3 - 15u^4 + 6u^5
  * s'(u)  = 30u^2 - 60u^3 + 30u^4
- * s''(u) = 60u - 180u^2 + 120u^3          impulsion BIPOLAIRE
+ * s''(u) = 60u - 180u^2 + 120u^3          BIPOLAR pulse
  * ```
  *
- * Les extrema de `s''` sont en `u = (3 +/- sqrt(3))/6`, de valeur exacte `+/- 10/sqrt(3)`, soit
- * `+/- 5,773502691896258`. C'est cette constante qui fixe le tableau de calibration de §5.1
- * (30 / 184 / 985 mg) et qui cale le modele sur la litterature.
+ * The extrema of `s''` are at `u = (3 +/- sqrt(3))/6`, of exact value `+/- 10/sqrt(3)`, that is
+ * `+/- 5.773502691896258`. It is that constant which fixes the calibration table of §5.1
+ * (30 / 184 / 985 mg) and which anchors the model on the literature.
  */
 internal object MinJerk {
     const val PEAK_ACCEL_COEFF: Double = 5.773502691896258 // 10 / sqrt(3)
@@ -33,52 +33,51 @@ internal object MinJerk {
 }
 
 /**
- * Cinematique d'un mouvement complet : flexion (`tRise`), maintien (`tHold`), retour (`tFall`).
+ * Kinematics of a complete movement: flexion (`tRise`), hold (`tHold`), return (`tFall`).
  *
- * La signature accelerometrique est **quadripolaire** : une paire bipolaire a la flexion, une paire
- * bipolaire au retour, separees par la phase de maintien (§5.1).
+ * The accelerometric signature is **quadripolar**: one bipolar pair at the flexion, one bipolar pair
+ * at the return, separated by the hold phase (§5.1).
  *
- * ### La phase de maintien n'est pas un plateau immobile
+ * ### The hold phase is not a motionless plateau
  *
- * Le modele d'origine tenait `theta = theta_max` pendant `tHold`. Avec la duree publiee de 4,2 s et
- * un `tRise` de 0,15 a 0,50 s, cela donnait **~3,6 s d'angle strictement constant**, donc
- * `theta' = theta'' = 0` et un terme gravitaire reduit a un palier continu : apres le passe-haut a
- * 0,5 Hz, **plus rien**. Le detecteur voyait deux bouffees separees par ~2,3 s de silence et emettait
- * — correctement, en appliquant la regle d'offset AASM a 0,50 s — deux mouvements pour un.
+ * The original model held `theta = theta_max` during `tHold`. With the published duration of 4.2 s
+ * and a `tRise` of 0.15 to 0.50 s, that gave **~3.6 s of strictly constant angle**, hence
+ * `theta' = theta'' = 0` and a gravity term reduced to a continuous plateau: after the high-pass at
+ * 0.5 Hz, **nothing left**. The detector saw two bursts separated by ~2.3 s of silence and emitted
+ * — correctly, applying the AASM offset rule at 0.50 s — two movements for one.
  *
- * **La source de la duree contredit cette forme.** Sforza et al. 2005 (§2.4) mesure ses 4,2 s avec le
- * PAM-RL : seuil d'entree 200 mg, seuil de decroissance 100 mg, et surtout **drop-out time de 1 s** —
- * un « kick » ne se termine qu'apres une seconde entiere sous 100 mg. Un evenement contenant 2,3 s de
- * silence accelerometrique aurait donc ete decoupe en deux par le PAM-RL lui-meme, et la duree
- * moyenne publiee aurait ete de l'ordre de la moitie. Le meme raisonnement vaut si l'on lit les 4,2 s
- * comme une duree de bouffee EMG (criteres de Coleman, 0,5 a 10 s) : une bouffee EMG de 4,2 s est
- * 4,2 s de **contraction active**, pas un maintien passif.
+ * **The source of the duration contradicts that shape.** Sforza et al. 2005 (§2.4) measures its
+ * 4.2 s with the PAM-RL: entry threshold 200 mg, decay threshold 100 mg, and above all a **drop-out
+ * time of 1 s** — a "kick" only ends after a full second below 100 mg. An event containing 2.3 s of
+ * accelerometric silence would therefore have been cut in two by the PAM-RL itself, and the
+ * published mean duration would have been of the order of half that. The same reasoning holds if the
+ * 4.2 s are read as an EMG burst duration (Coleman criteria, 0.5 to 10 s): a 4.2 s EMG burst is
+ * 4.2 s of **active contraction**, not a passive hold.
  *
- * Le corpus de regles le dit d'ailleurs lui-meme : la regle d'offset a 0,50 s n'existe que parce
- * qu'un mouvement de jambe est un **train d'activations** separees de moins de 0,5 s. Un modele qui
- * dessine un silence de 2,3 s au milieu d'un mouvement contredit la regle que le detecteur applique.
+ * The rule corpus says as much itself: the offset rule at 0.50 s only exists because a leg movement
+ * is a **train of activations** separated by less than 0.5 s. A model that draws 2.3 s of silence in
+ * the middle of a movement contradicts the very rule the detector applies.
  *
- * **Le modele retenu** : pendant le maintien, la flexion est entretenue par une activite musculaire
- * continue et non lisse (composante clonique / tremulante classique du PLMS). L'angle oscille autour
- * de `theta_max` en `holdCycles` creux successifs, chaque demi-creux etant un profil a jerk minimal
- * comme la flexion elle-meme. Deux consequences voulues :
+ * **The model retained**: during the hold, the flexion is sustained by continuous, non-smooth muscle
+ * activity (the classic clonic / tremulous component of PLMS). The angle oscillates around
+ * `theta_max` over `holdCycles` successive dips, each half-dip being a minimum-jerk profile just
+ * like the flexion itself. Two intended consequences:
  *
- *  - **Aucune constante nouvelle n'est ajustee sur le test.** La periode d'un creux est calee sur
- *    `2 x tRise`, l'echelle balistique propre du mouvement : le pic spectral d'un demi-creux vaut
- *    `0,8 / tRise`, exactement la bande 1,6-5,3 Hz de §5.1, et la frequence de repetition
- *    `1/(2.tRise)` tombe dans 1,0-3,3 Hz, la bande clonique publiee.
- *  - **La profondeur relative vient de Sforza aussi** : `holdDepthRad = 0,50 x theta_max` donne un
- *    pic d'acceleration de maintien egal a **0,50 x** le pic balistique, c'est-a-dire le rapport
- *    seuil de decroissance / seuil d'entree du PAM-RL (100 mg / 200 mg). C'est le minimum que doit
- *    soutenir un evenement pour que ce dispositif l'ait compte comme un seul kick de 4,2 s.
+ *  - **No new constant is tuned on the test.** The period of a dip is set on `2 x tRise`, the
+ *    movement's own ballistic scale: the spectral peak of a half-dip is `0.8 / tRise`, exactly the
+ *    1.6-5.3 Hz band of §5.1, and the repetition frequency `1/(2.tRise)` falls in 1.0-3.3 Hz, the
+ *    published clonic band.
+ *  - **The relative depth comes from Sforza as well**: `holdDepthRad = 0.50 x theta_max` gives a
+ *    hold acceleration peak equal to **0.50 x** the ballistic peak, that is to say the decay
+ *    threshold / entry threshold ratio of the PAM-RL (100 mg / 200 mg). It is the minimum an event
+ *    must sustain for that device to have counted it as a single 4.2 s kick.
  *
- * Les raccords sont **C2** : `s'(0) = s'(1) = 0` et `s''(0) = s''(1) = 0`, donc ni saut de vitesse ni
- * saut d'acceleration entre flexion, creux successifs et retour. Le tableau de calibration de §5.1
- * (30 / 184 / 985 mg) ne depend que de `theta_max`, `tRise` et `r` : il est inchange.
+ * The junctions are **C2**: `s'(0) = s'(1) = 0` and `s''(0) = s''(1) = 0`, hence neither a velocity
+ * jump nor an acceleration jump between flexion, successive dips and return. The calibration table
+ * of §5.1 (30 / 184 / 985 mg) depends only on `theta_max`, `tRise` and `r`: it is unchanged.
  *
- * `holdCycles = 0` conserve le plateau immobile d'origine ; c'est le defaut, garde pour les
- * distracteurs (mouvements corporels grossiers, rituel de calibration) dont la phase de maintien est
- * bien un maintien passif.
+ * `holdCycles = 0` keeps the original motionless plateau; it is the default, kept for the
+ * distractors (gross body movements, calibration ritual) whose hold phase really is a passive hold.
  */
 internal class MovementKinematics(
     val thetaMaxRad: Double,
@@ -90,22 +89,22 @@ internal class MovementKinematics(
 ) {
     val totalSec: Double get() = tRiseSec + tHoldSec + tFallSec
 
-    /** Duree d'un creux de maintien, en secondes. `0` quand le maintien est un plateau immobile. */
+    /** Duration of one hold dip, in seconds. `0` when the hold is a motionless plateau. */
     private val holdCycleSec: Double =
         if (holdCycles > 0 && tHoldSec > 0.0) tHoldSec / holdCycles else 0.0
 
     /**
-     * Parametre `v` du demi-creux courant, a l'instant `tIn` compte depuis le debut du maintien.
-     * `v` parcourt [0,1] a l'aller comme au retour ; `dv/dt` vaut `+2/tc` puis `-2/tc`. C'est cette
-     * symetrie qui rend les raccords exacts : `theta''` s'ecrit `-profondeur . s''(v) . (dv/dt)^2`
-     * dans les deux demi-creux, et s'annule aux deux bouts puisque `s''(0) = s''(1) = 0`.
+     * Parameter `v` of the current half-dip, at time `tIn` counted from the start of the hold.
+     * `v` runs over [0, 1] on the way out as on the way back; `dv/dt` is `+2/tc` then `-2/tc`. It is
+     * that symmetry which makes the junctions exact: `theta''` reads `-depth . s''(v) . (dv/dt)^2`
+     * in both half-dips, and vanishes at both ends since `s''(0) = s''(1) = 0`.
      */
     private fun holdV(tIn: Double): Double {
         val u = (tIn % holdCycleSec) / holdCycleSec
         return if (u < 0.5) 2.0 * u else 2.0 - 2.0 * u
     }
 
-    /** Angle, en radians, a l'instant `t` compte depuis l'onset. */
+    /** Angle, in radians, at time `t` counted from the onset. */
     fun theta(t: Double): Double = when {
         t < 0.0 -> 0.0
         t < tRiseSec -> thetaMaxRad * MinJerk.s(t / tRiseSec)
@@ -116,7 +115,7 @@ internal class MovementKinematics(
         else -> 0.0
     }
 
-    /** Vitesse angulaire, en rad/s. */
+    /** Angular velocity, in rad/s. */
     fun thetaDot(t: Double): Double = when {
         t < 0.0 -> 0.0
         t < tRiseSec -> thetaMaxRad * MinJerk.sDot(t / tRiseSec) / tRiseSec
@@ -133,7 +132,7 @@ internal class MovementKinematics(
         else -> 0.0
     }
 
-    /** Acceleration angulaire, en rad/s^2. */
+    /** Angular acceleration, in rad/s^2. */
     fun thetaDDot(t: Double): Double = when {
         t < 0.0 -> 0.0
         t < tRiseSec -> thetaMaxRad * MinJerk.sDDot(t / tRiseSec) / (tRiseSec * tRiseSec)
@@ -150,37 +149,37 @@ internal class MovementKinematics(
         else -> 0.0
     }
 
-    /** Crete theorique du terme tangentiel, en g. C'est la colonne « crete tangentielle » de §5.1. */
+    /** Theoretical peak of the tangential term, in g. The "tangential peak" column of §5.1. */
     fun peakTangentialG(radiusM: Double): Double =
         MinJerk.PEAK_ACCEL_COEFF * radiusM * thetaMaxRad / (tRiseSec * tRiseSec) / G_MS2
 }
 
 /**
- * Signal tri-axial d'un mouvement, echantillonne, **hors gravite statique**.
+ * Tri-axial signal of one movement, sampled, **static gravity excluded**.
  *
- * Convention de repere, capteur a la cheville :
- *  - `x` = axe long du tibia, oriente vers le pied ; c'est aussi le bras de levier `r` ;
- *  - `y` = anterieur ; c'est la direction tangentielle, `y = z x x` ;
- *  - `z` = medio-lateral ; c'est l'axe de flexion du genou et de la cheville.
+ * Frame convention, sensor at the ankle:
+ *  - `x` = long axis of the tibia, pointing towards the foot; it is also the lever arm `r`;
+ *  - `y` = anterior; it is the tangential direction, `y = z x x`;
+ *  - `z` = medio-lateral; it is the flexion axis of the knee and of the ankle.
  *
- * Trois contributions, toutes de §5.1 :
- *  1. `a_tang = r.theta''` selon `+y` ;
- *  2. `a_cent = r.theta'^2` selon `-x` (vers le centre de rotation, proximal) ;
- *  3. la **rotation du vecteur gravite** vu dans le repere capteur. Pour les grands angles c'est
- *     elle qui domine : a 20 degres, `sin(20) = 0,342 g` etale sur ~0,25 s. Les deux doivent etre
- *     modelisees — et c'est exactement ce qui rend `tiltExcursionDeg` informatif cote detecteur.
+ * Three contributions, all from §5.1:
+ *  1. `a_tang = r.theta''` along `+y`;
+ *  2. `a_cent = r.theta'^2` along `-x` (towards the centre of rotation, proximal);
+ *  3. the **rotation of the gravity vector** as seen in the sensor frame. At large angles it is the
+ *     one that dominates: at 20 degrees, `sin(20) = 0.342 g` spread over ~0.25 s. Both must be
+ *     modelled — and that is exactly what makes `tiltExcursionDeg` informative on the detector side.
  *
- * Le facteur `coupling` (serrage du bracelet, §3.3) attenue **tout** ce que le membre transmet au
- * boitier : le bras de levier effectif comme l'angle reellement subi par le capteur. C'est
- * physiquement coherent — un bracelet lache laisse le boitier suivre partiellement le membre — et
- * c'est ce qui fait que `gainCal` mesure bien la variable qui detruit la comparabilite inter-nuits.
+ * The `coupling` factor (strap tightness, §3.3) attenuates **everything** the limb transmits to the
+ * case: the effective lever arm as much as the angle the sensor actually undergoes. This is
+ * physically coherent — a loose strap lets the case follow the limb only partly — and it is what
+ * makes `gainCal` measure exactly the variable that destroys night-to-night comparability.
  */
 internal class MovementRender(val n: Int) {
     val dx = DoubleArray(n)
     val dy = DoubleArray(n)
     val dz = DoubleArray(n)
 
-    /** Crete de la norme du signal de mouvement. */
+    /** Peak of the norm of the movement signal. */
     var peakG: Double = 0.0
         private set
 
@@ -195,8 +194,8 @@ internal class MovementRender(val n: Int) {
 }
 
 /**
- * Rend un mouvement sur `n` echantillons a `fs`, en partant de l'orientation `g0` (vecteur unitaire
- * gravite dans le repere capteur a l'onset).
+ * Renders one movement over `n` samples at `fs`, starting from orientation `g0` (unit gravity vector
+ * in the sensor frame at the onset).
  */
 internal fun renderMovement(
     kin: MovementKinematics,
@@ -216,12 +215,12 @@ internal fun renderMovement(
         val thd = kin.thetaDot(t) * coupling
         val thdd = kin.thetaDDot(t) * coupling
 
-        // 1 + 2 : termes inertiels, dans le plan sagittal.
+        // 1 + 2: inertial terms, in the sagittal plane.
         val aTan = rEff * thdd / G_MS2
         val aCen = rEff * thd * thd / G_MS2
 
-        // 3 : rotation de g autour de z de -theta (tourner le capteur de +theta fait tourner la
-        // gravite apparente de -theta). On soustrait g0 : seul le CHANGEMENT est du mouvement.
+        // 3: rotation of g about z by -theta (turning the sensor by +theta turns the apparent
+        // gravity by -theta). g0 is subtracted: only the CHANGE comes from the movement.
         val c = cos(th)
         val s = sin(th)
         val gxr = g0x * c + g0y * s
@@ -236,27 +235,26 @@ internal fun renderMovement(
 }
 
 /**
- * Crete de `env_c` — l'enveloppe RMS **centree** de largeur `win` de la norme du rendu, **apres le
- * passe-bande du canal mouvement de l'etape 1**.
+ * Peak of `env_c` — the **centred** RMS envelope of width `win` of the norm of the render, **after
+ * the movement-channel band-pass of step 1**.
  *
- * Le passe-bande n'est pas un raffinement : c'est ce qui rend l'echelle
- * [AmplitudeScale.COARSE_ENVELOPE] conforme a sa definition — « exactement la grandeur que le
- * detecteur compare a `Theta_on` ». Le detecteur ne voit jamais le rendu brut : il voit
- * `RMS_0,5s(||ButterBP(0,5-8 Hz)(a)||)`. Mesurer l'amplitude sur le rendu non filtre surestime les
- * mouvements dont l'energie vit sous 0,5 Hz — au premier rang desquels le terme de **rotation de la
- * gravite**, qui est un palier quasi continu pendant la phase de maintien. Sur le rituel de
- * calibration (25 degres tenus 0,4 s) l'ecart atteint un facteur 3 : `gainCal` etait surestime
- * d'autant, et le troisieme terme du seuil avec lui.
+ * The band-pass is not a refinement: it is what makes the [AmplitudeScale.COARSE_ENVELOPE] scale
+ * conform to its definition — "exactly the quantity the detector compares to `Theta_on`". The
+ * detector never sees the raw render: it sees `RMS_0.5s(||ButterBP(0.5-8 Hz)(a)||)`. Measuring the
+ * amplitude on the unfiltered render overestimates the movements whose energy lives below 0.5 Hz —
+ * first among them the **gravity rotation** term, which is a near-continuous plateau during the hold
+ * phase. On the calibration ritual (25 degrees held for 0.4 s) the discrepancy reaches a factor of
+ * 3: `gainCal` was overestimated by that much, and the third term of the threshold along with it.
  *
- * L'etape 1 filtre chaque axe separement **puis** prend la norme L2 (§2, etapes 1 et 2) : c'est
- * l'ordre reproduit ici. Le filtrage est lineaire, donc le passage du rendu seul est exact : la
- * contribution du mouvement a `a_lin` est bien `ButterBP(rendu)`, quel que soit le fond sur lequel
- * il est ajoute.
+ * Step 1 filters each axis separately **then** takes the L2 norm (§2, steps 1 and 2): that is the
+ * order reproduced here. Filtering is linear, so passing the render on its own is exact: the
+ * contribution of the movement to `a_lin` really is `ButterBP(render)`, whatever background it is
+ * added on top of.
  *
- * Le rendu est prolonge par des zeros a droite sur `tailSec` pour que la queue de la reponse du
- * filtre soit comptee — un mouvement isole commence et finit au repos, mais le filtre, lui, sonne
- * encore. La convention de fenetre est celle de `com.pendulum.algo.dsp.Numeric.movingRms`
- * (`halfLeft = (win-1)/2`), au demi-echantillon pres, sans quoi les fronts seraient decales.
+ * The render is extended with zeros on the right over `tailSec` so that the tail of the filter
+ * response is counted — an isolated movement starts and ends at rest, but the filter is still
+ * ringing. The window convention is that of `com.pendulum.algo.dsp.Numeric.movingRms`
+ * (`halfLeft = (win-1)/2`), to within half a sample, without which the edges would be shifted.
  */
 internal fun coarseEnvelopePeak(
     r: MovementRender,
@@ -283,9 +281,8 @@ internal fun coarseEnvelopePeak(
     }
     val w = win.coerceAtLeast(1)
     val halfLeft = (w - 1) / 2
-    // Les echantillons hors du tampon valent 0 (repos avant le mouvement, silence apres la queue),
-    // mais le diviseur reste `w` : c'est ce que fait la RMS glissante de l'etape 2 au milieu d'un
-    // segment.
+    // Samples outside the buffer are 0 (rest before the movement, silence after the tail), but the
+    // divisor stays `w`: that is what the sliding RMS of step 2 does in the middle of a segment.
     var best = 0.0
     for (c in 0 until m) {
         val from = c - halfLeft
@@ -300,20 +297,21 @@ internal fun coarseEnvelopePeak(
 }
 
 /**
- * Cale `thetaMax` pour que le rendu atteigne l'amplitude demandee sur l'echelle demandee.
+ * Tunes `thetaMax` so that the render reaches the requested amplitude on the requested scale.
  *
- * Iteration de point fixe multiplicative : le terme tangentiel est exactement lineaire en
- * `thetaMax`, le terme gravitaire l'est au premier ordre et le terme centripete est quadratique ;
- * trois tours suffisent a converger sous le pour-mille dans toute la plage physiologique. On borne
- * ensuite `thetaMax` a `[0,2 ; 60] degres` : au-dela, ce n'est plus une reponse en triple flexion.
+ * Multiplicative fixed-point iteration: the tangential term is exactly linear in `thetaMax`, the
+ * gravity term is linear to first order and the centripetal term is quadratic; three rounds are
+ * enough to converge below one part per thousand over the whole physiological range. `thetaMax` is
+ * then clamped to `[0.2 ; 60] degrees`: beyond that, it is no longer a triple-flexion response.
  *
- * **Le calage se fait toujours a couplage 1**, et le couplage reel n'est applique qu'au rendu.
- * L'inverse annulerait le serrage du bracelet en amplifiant l'angle pour retrouver l'amplitude
- * demandee — et le test T11 ne mesurerait plus rien du tout. C'est la raison pour laquelle cette
- * fonction ne prend pas de parametre `coupling`.
+ * **The tuning is always done at coupling 1**, and the real coupling is applied to the render only.
+ * The other way round would cancel out the strap tightness by amplifying the angle to recover the
+ * requested amplitude — and test T11 would no longer measure anything at all. That is the reason
+ * this function takes no `coupling` parameter.
  *
- * `holdDepthRatio` est la profondeur des creux de maintien **en fraction de `thetaMax`** : elle
- * suit donc l'angle a chaque tour de l'iteration, ce qui laisse le point fixe multiplicatif valide.
+ * `holdDepthRatio` is the depth of the hold dips **as a fraction of `thetaMax`**: it therefore
+ * follows the angle at each round of the iteration, which keeps the multiplicative fixed point
+ * valid.
  */
 internal fun calibrateThetaMax(
     targetG: Double,
@@ -331,7 +329,7 @@ internal fun calibrateThetaMax(
     holdCycles: Int = 0,
     holdDepthRatio: Double = 0.0,
 ): Double {
-    var theta = 0.10 // rad, point de depart ~5,7 degres
+    var theta = 0.10 // rad, starting point ~5.7 degrees
     val minTheta = Math.toRadians(0.2)
     val maxTheta = Math.toRadians(60.0)
     repeat(4) {

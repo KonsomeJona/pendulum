@@ -5,12 +5,12 @@ import com.pendulum.algo.model.NightCalibration
 import com.pendulum.algo.model.Signal1D
 
 /**
- * Parametres de l'etape 4. Valeurs par defaut = tableau §6.3.
+ * Step 4 parameters. Default values = table §6.3.
  *
- * Cette classe porte les memes quatre valeurs que `com.pendulum.algo.detect.ThresholdConfig`, dont
- * elle est volontairement distincte : `dsp` calcule les courbes de seuil, `detect` decide. Le
- * detecteur construit son [ThresholdParams] depuis sa propre configuration ; on evite ainsi une
- * dependance de `dsp` vers `detect` — l'inverse du sens de la chaine.
+ * This class carries the same four values as `com.pendulum.algo.detect.ThresholdConfig`, from
+ * which it is deliberately distinct: `dsp` computes the threshold curves, `detect` decides. The
+ * detector builds its [ThresholdParams] from its own configuration; this avoids a dependency from
+ * `dsp` towards `detect` — the reverse of the chain's direction.
  */
 data class ThresholdParams(
     val kOn: Double = 8.0,
@@ -19,33 +19,33 @@ data class ThresholdParams(
     val calFraction: Double = 0.12,
 ) {
     /**
-     * Rapport d'hysteresis, `k_off / k_on` = 0,3125 avec les valeurs par defaut (la
-     * specification l'ecrit « 0,31 »).
+     * Hysteresis ratio, `k_off / k_on` = 0.3125 with the default values (the specification writes
+     * it "0.31").
      *
-     * Il est **calcule** et non code en dur, parce que c'est ce qui garantit la propriete
-     * annoncee : l'hysteresis vaut 3,2 **quel que soit le terme dominant**. Figer 0,31 tout en
-     * laissant `kOn`/`kOff` reglables casserait cette invariance des que l'un des deux bougerait,
-     * et le detecteur se mettrait a relacher trop tot ou trop tard selon le regime de la nuit.
+     * It is **computed** and not hard-coded, because that is what guarantees the announced
+     * property: the hysteresis is 3.2 **whatever the dominant term**. Freezing 0.31 while leaving
+     * `kOn`/`kOff` adjustable would break that invariance as soon as either of the two moved, and
+     * the detector would start releasing too early or too late depending on the night's regime.
      */
     val hysteresisRatio: Double get() = kOff / kOn
 }
 
 /**
- * Les deux courbes de seuil, plus la **tracabilite du terme dominant** echantillon par
- * echantillon (`ClmFlags.ABS_FLOOR_LIMITED` / `CAL_FLOOR_LIMITED`, 0 si c'est le plancher
- * mesure qui commande).
+ * The two threshold curves, plus the **traceability of the dominant term** sample by sample
+ * (`ClmFlags.ABS_FLOOR_LIMITED` / `CAL_FLOOR_LIMITED`, 0 if it is the measured floor that
+ * commands).
  *
- * Cette tracabilite n'est pas un luxe de diagnostic : c'est elle qui dit si le detecteur a
- * fonctionne en regime relatif (sensibilite pilotee par le bruit de la nuit) ou en regime
- * plancher (sensibilite plafonnee). Deux nuits qui ne sont pas dans le meme regime ne sont pas
- * comparables, et c'est la comparabilite qui fait toute la valeur d'un depistage sur 5 a 7 nuits.
+ * This traceability is not a diagnostic luxury: it is what says whether the detector operated in
+ * relative regime (sensitivity driven by the night's noise) or in floor regime (sensitivity
+ * capped). Two nights that are not in the same regime are not comparable, and it is comparability
+ * that makes all the value of a screening over 5 to 7 nights.
  */
 class ThresholdCurves(
     val on: Signal1D,
     val off: Signal1D,
     val dominance: IntArray,
 ) {
-    /** Fraction du temps ou le seuil etait plafonne par un terme non adaptatif. */
+    /** Fraction of the time where the threshold was capped by a non-adaptive term. */
     fun limitedFraction(): Double {
         if (dominance.isEmpty()) return 0.0
         var c = 0
@@ -55,29 +55,29 @@ class ThresholdCurves(
 }
 
 /**
- * Etape 4 — seuils.
+ * Step 4 — thresholds.
  *
  * ```
  * Theta_on(t)  = max( k_on  x floor(t),  Theta_abs,         f_cal x gainCal )
  * Theta_off(t) = max( k_off x floor(t),  Theta_abs x r,     f_cal x gainCal x r )   r = k_off/k_on
  * ```
  *
- * **Pourquoi trois termes et pas un.**
- *  - `k_on x floor` : le terme adaptatif. Il suit le bruit reel de la nuit. `k_on = 8` n'est
- *    **pas** dicte par le bruit thermique — un facteur 4,8 suffirait deja a garantir moins de
- *    0,01 faux positif thermique par nuit. Les 8 sont entierement un **budget anti-artefact**.
- *    Consequence pratique : ne jamais regler `k_on` en regardant du bruit, seulement des nuits
- *    reelles (§2 etape 4, test T11).
- *  - `Theta_abs = 20 mg` : le garde-fou absolu. Sur une nuit tres calme, le terme relatif seul
- *    tomberait a 7 mg et le detecteur compterait des micro-vibrations (§1.1).
- *  - `f_cal x gainCal` : le terme de calibration. Un CLM est declare s'il atteint 12 % de
- *    l'amplitude d'une dorsiflexion volontaire confortable **de cette nuit-la** (§3.3, volet B).
- *    C'est le seul des trois qui compense le serrage du bracelet, c'est-a-dire la seule variable
- *    qui detruit la comparabilite inter-nuits.
+ * **Why three terms and not one.**
+ *  - `k_on x floor`: the adaptive term. It follows the night's real noise. `k_on = 8` is **not**
+ *    dictated by thermal noise — a factor of 4.8 would already suffice to guarantee fewer than
+ *    0.01 thermal false positives per night. The 8 is entirely an **anti-artefact budget**.
+ *    Practical consequence: never set `k_on` by looking at noise, only at real nights (§2 step 4,
+ *    test T11).
+ *  - `Theta_abs = 20 mg`: the absolute guard rail. On a very quiet night, the relative term alone
+ *    would drop to 7 mg and the detector would count micro-vibrations (§1.1).
+ *  - `f_cal x gainCal`: the calibration term. A CLM is declared if it reaches 12 % of the
+ *    amplitude of a comfortable voluntary dorsiflexion **of that particular night** (§3.3,
+ *    part B). It is the only one of the three that compensates for the strap tightness, that is to
+ *    say the only variable that destroys inter-night comparability.
  */
 object Thresholds {
 
-    /** Seuil de declenchement pour un plancher donne. */
+    /** Trigger threshold for a given floor. */
     fun onAt(floorG: Float, gainCalG: Float, p: ThresholdParams = ThresholdParams()): Float {
         if (floorG.isNaN()) return Float.NaN
         val rel = (p.kOn * floorG).toFloat()
@@ -85,7 +85,7 @@ object Thresholds {
         return maxOf(rel, p.absFloorG, cal)
     }
 
-    /** Seuil de relachement. Le rapport d'hysteresis est preserve terme a terme. */
+    /** Release threshold. The hysteresis ratio is preserved term by term. */
     fun offAt(floorG: Float, gainCalG: Float, p: ThresholdParams = ThresholdParams()): Float {
         if (floorG.isNaN()) return Float.NaN
         val r = p.hysteresisRatio
@@ -96,10 +96,10 @@ object Thresholds {
     }
 
     /**
-     * Lequel des trois termes commande le seuil de declenchement.
-     * @return 0 (plancher adaptatif), [ClmFlags.ABS_FLOOR_LIMITED] ou [ClmFlags.CAL_FLOOR_LIMITED].
-     *   En cas d'egalite exacte, la priorite va au terme le moins adaptatif, qui est le plus
-     *   informatif a rapporter : calibration, puis plancher absolu.
+     * Which of the three terms commands the trigger threshold.
+     * @return 0 (adaptive floor), [ClmFlags.ABS_FLOOR_LIMITED] or [ClmFlags.CAL_FLOOR_LIMITED].
+     *   In case of exact equality, priority goes to the least adaptive term, which is the most
+     *   informative to report: calibration, then absolute floor.
      */
     fun dominanceAt(floorG: Float, gainCalG: Float, p: ThresholdParams = ThresholdParams()): Int {
         if (floorG.isNaN()) return 0
@@ -114,13 +114,13 @@ object Thresholds {
     }
 
     /**
-     * Courbes completes sur toute la nuit.
+     * Complete curves over the whole night.
      *
-     * @param gainCalG gain de calibration de la nuit ; `0` ou `NaN` desactive le troisieme terme
-     *   (cas `GainSource.NONE`, ou aucun mouvement corporel grossier n'a
-     *   ete observe). Le seuil se replie alors sur `max(k_on x floor, Theta_abs)`, ce qui reste
-     *   correct — mais la nuit n'est plus comparable aux nuits calibrees, et c'est
-     *   `NightCalibration.gainSource` qui doit accompagner le resultat publie.
+     * @param gainCalG the night's calibration gain; `0` or `NaN` disables the third term (the
+     *   `GainSource.NONE` case, where no gross body movement was
+     *   observed). The threshold then falls back on `max(k_on x floor, Theta_abs)`, which stays
+     *   correct — but the night is no longer comparable to the calibrated nights, and it is
+     *   `NightCalibration.gainSource` that must accompany the published result.
      */
     fun compute(
         floor: Signal1D,

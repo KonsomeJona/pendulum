@@ -7,13 +7,13 @@ import com.pendulum.algo.model.Segment
 import com.pendulum.algo.model.TriAxial
 
 /**
- * Parametres du detecteur de posture (`docs/fr/ALGO-v2.md` §6.4). Aucun n'est marque « fixe ».
+ * Parameters of the posture detector (`docs/workings/ALGO-v2.md` §6.4). None is marked "fixed".
  *
- * @param tauSec demi-fenetre de comparaison de `g` (plage 1,0-3,0).
- * @param postureDeg seuil de rotation persistante, en degres (plage 12-30).
- * @param stableDeg cone de stabilite post-transition (plage 6-15).
- * @param stableSec duree de maintien dans le cone (plage 5-20).
- * @param guardSec fenetre d'exclusion des CLM autour de la transition (plage 1,5-4,0).
+ * @param tauSec half-window for comparing `g` (range 1.0-3.0).
+ * @param postureDeg persistent rotation threshold, in degrees (range 12-30).
+ * @param stableDeg post-transition stability cone (range 6-15).
+ * @param stableSec hold duration inside the cone (range 5-20).
+ * @param guardSec CLM exclusion window around the transition (range 1.5-4.0).
  */
 data class PostureConfig(
     val tauSec: Double = 2.0,
@@ -24,25 +24,25 @@ data class PostureConfig(
 )
 
 /**
- * Detection des changements de posture. Transcription de `docs/fr/ALGO-v2.md` §3.1, parametres §6.4.
+ * Detection of posture changes. Transcription of `docs/workings/ALGO-v2.md` §3.1, parameters §6.4.
  *
- * Pourquoi ce detecteur existe : un retournement change la projection de la gravite d'un axe de
- * jusqu'a **1 g** en 0,5-3 s. Passe dans le passe-haut a 0,5 Hz, cet echelon produit un transitoire
- * de constante de temps 0,32 s, sensible sur ~2 s. Un CLM typique fait 30-200 mg : l'artefact de
- * posture est donc **5 a 30 fois plus gros qu'un vrai CLM** et dure exactement la bonne duree pour
- * etre compte. C'est, de loin, la premiere source de faux positifs, et il est indiscernable d'un
- * mouvement de jambe sur le seul canal enveloppe. La seule information qui les separe est portee
- * par la gravite : une posture **reoriente durablement** le segment, un CLM revient a sa position.
+ * Why this detector exists: a turn-over changes the projection of gravity on an axis by up to
+ * **1 g** in 0.5-3 s. Passed through the 0.5 Hz high-pass, that step produces a transient with a
+ * time constant of 0.32 s, noticeable over ~2 s. A typical CLM is 30-200 mg: the posture artefact
+ * is therefore **5 to 30 times larger than a real CLM** and lasts exactly the right duration to be
+ * counted. It is, by far, the leading source of false positives, and it is indistinguishable from
+ * a leg movement on the envelope channel alone. The only information that separates them is
+ * carried by gravity: a posture **durably reorients** the segment, a CLM returns to its position.
  *
- * Le detecteur n'opere donc jamais sur l'enveloppe, uniquement sur `g`.
+ * The detector therefore never operates on the envelope, only on `g`.
  */
 object PostureDetector {
 
     /**
-     * @param gravity `g` estime (etape 1), sur la grille uniforme. Aucun `NaN` attendu : le canal
-     *   gravite maintient la derniere valeur dans les trous (etape 0).
-     * @param segments intervalles continus analysables. Une fenetre ne franchit jamais une frontiere.
-     * @return un [PostureChange] par transition, dans l'ordre chronologique.
+     * @param gravity `g` estimated (step 1), on the uniform grid. No `NaN` expected: the gravity
+     *   channel holds the last value across the gaps (step 0).
+     * @param segments continuous analysable intervals. A window never crosses a boundary.
+     * @return one [PostureChange] per transition, in chronological order.
      */
     fun detect(
         gravity: TriAxial,
@@ -50,14 +50,14 @@ object PostureDetector {
         cfg: PostureConfig = PostureConfig(),
     ): List<PostureChange> {
         val fs = gravity.fsHz
-        require(fs > 0.0) { "fsHz doit etre > 0" }
+        require(fs > 0.0) { "fsHz must be > 0" }
         val tau = samplesOf(cfg.tauSec, fs).coerceAtLeast(1)
         val stableLen = samplesOf(cfg.stableSec, fs).coerceAtLeast(1)
         val out = ArrayList<PostureChange>()
 
         for (seg in segments) {
             val first = seg.fromIdx + tau
-            val last = seg.toIdx - tau // exclu
+            val last = seg.toIdx - tau // excluded
             var i = first
             while (i < last) {
                 val d = Gravity.angleDeg(gravity, i - tau, i + tau)
@@ -65,9 +65,9 @@ object PostureDetector {
                     i++
                     continue
                 }
-                // Plage maximale ou la rotation depasse le seuil : c'est la transition entiere,
-                // depuis son amorce jusqu'a son terme. On ne coupe pas au premier index stable,
-                // sans quoi l'angle net ne mesurerait que la fin de la rotation.
+                // Maximal range where the rotation exceeds the threshold: this is the whole
+                // transition, from its start to its end. We do not cut at the first stable index,
+                // otherwise the net angle would only measure the end of the rotation.
                 var end = i
                 var peakIdx = i
                 var peakDeg = d
@@ -80,8 +80,8 @@ object PostureDetector {
                         peakIdx = end
                     }
                 }
-                // Condition de stabilisation : il faut qu'au moins un instant de la transition relie
-                // deux orientations tenues dans un cone de `stableDeg` pendant `stableSec`.
+                // Settling condition: at least one instant of the transition must link two
+                // orientations held within a `stableDeg` cone for `stableSec`.
                 if (isSettled(gravity, i, end, tau, seg, stableLen, cfg.stableDeg)) {
                     val fromIdx = i - tau
                     val toIdx = (end + tau).coerceAtMost(seg.toIdx - 1)
@@ -100,18 +100,18 @@ object PostureDetector {
     }
 
     /**
-     * Vrai si un instant de la transition relie deux orientations **tenues**.
+     * True if one instant of the transition links two **held** orientations.
      *
-     * La specification §3.1 n'ecrit que la condition d'arrivee (« g_u reste dans un cone de
-     * `stableDeg` pendant `stableSec` »). La condition de depart est ajoutee ici, symetrique, et il
-     * faut le signaler : sans elle, la regle se declenche sur tout mouvement ample qui **revient** a
-     * sa position. Avec `tau = 2 s`, il existe alors toujours un instant `t` ou `g_u(t - tau)` est
-     * pris au sommet du mouvement et `g_u(t + tau)` apres son retour — l'angle depasse le seuil et
-     * l'arrivee est parfaitement stable puisqu'elle est l'orientation d'origine. Un simple grand
-     * mouvement de jambe fabriquerait donc un faux changement de posture, qui exclurait a tort les
-     * CLM voisins par la fenetre de garde et couperait les fenetres d'estimation du plancher. Un
-     * changement de posture est une transition **entre deux orientations persistantes** ; c'est ce
-     * que dit deja le tableau §6.4 de `stableSec` (« distingue un changement durable d'un mouvement »).
+     * Specification §3.1 only writes the arrival condition ("g_u stays within a `stableDeg` cone
+     * for `stableSec`"). The departure condition is added here, symmetrically, and this must be
+     * flagged: without it, the rule fires on any large movement that **returns** to its position.
+     * With `tau = 2 s`, there is then always an instant `t` where `g_u(t - tau)` is taken at the
+     * peak of the movement and `g_u(t + tau)` after its return — the angle exceeds the threshold
+     * and the arrival is perfectly stable since it is the original orientation. A plain large leg
+     * movement would therefore manufacture a false posture change, which would wrongly exclude the
+     * neighbouring CLM through the guard window and cut the floor estimation windows. A posture
+     * change is a transition **between two persistent orientations**; that is already what table
+     * §6.4 says of `stableSec` ("distinguishes a durable change from a movement").
      */
     private fun isSettled(
         g: TriAxial,
@@ -137,7 +137,7 @@ object PostureDetector {
         return false
     }
 
-    /** `g_u` reste-t-il dans le cone `stableDeg` autour de `g_u(ref)` sur `[from, to)` ? */
+    /** Does `g_u` stay within the `stableDeg` cone around `g_u(ref)` over `[from, to)`? */
     private fun holdsCone(g: TriAxial, ref: Int, from: Int, to: Int, stableDeg: Double): Boolean {
         var j = from
         while (j < to) {
@@ -149,16 +149,16 @@ object PostureDetector {
     }
 }
 
-// --- Helpers geometriques partages par le paquet detect ---
+// --- Geometric helpers shared by the detect package ---
 
 /**
- * Nombre d'echantillons couvrant `sec` a `fs`. Delegue a `com.pendulum.algo.dsp.Numeric.samples` pour
- * qu'une duree en secondes donne **le meme** nombre d'echantillons partout dans la chaine : une
- * fenetre de morphologie de 0,50 s et une fenetre d'enveloppe de 0,50 s doivent compter pareil.
+ * Number of samples covering `sec` at `fs`. Delegates to `com.pendulum.algo.dsp.Numeric.samples` so
+ * that a duration in seconds gives **the same** number of samples everywhere in the chain: a
+ * 0.50 s morphology window and a 0.50 s envelope window must count the same.
  */
 internal fun samplesOf(sec: Double, fs: Double): Int = Numeric.samples(sec, fs)
 
-// L'angle entre deux orientations vient de `Gravity.angleDeg` (`dsp`), qui le calcule par
-// `atan2(||a x b||, a.b)` et non par `acos`. Ce detail compte ici : on compare `g` a lui-meme
-// decale de 2 s, donc deux vecteurs presque colineaires, ou l'`acos` perdrait la moitie des
-// chiffres significatifs — juste dans la zone du degre ou vit `minExcursionDeg` (1,5 deg).
+// The angle between two orientations comes from `Gravity.angleDeg` (`dsp`), which computes it as
+// `atan2(||a x b||, a.b)` and not as `acos`. That detail matters here: we compare `g` with itself
+// shifted by 2 s, hence two almost collinear vectors, where `acos` would lose half the significant
+// digits — right in the one-degree region where `minExcursionDeg` (1.5 deg) lives.

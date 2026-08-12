@@ -2,229 +2,229 @@ package com.pendulum.phone.ui
 
 import com.pendulum.phone.db.ComparabilityRule
 import com.pendulum.phone.db.ComparableNight
-import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.model.EtatNuit
+import com.pendulum.phone.ui.model.Aggregate
 import com.pendulum.phone.ui.model.Mapping
+import com.pendulum.phone.ui.model.NightState
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.text.texte
+import com.pendulum.phone.ui.text.text
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * La traduction base → ecran.
+ * The database to screen translation.
  *
- * Elle merite des tests pour une raison precise : c'est elle qui a remplace le jeu de donnees
- * d'apercu sur lequel toute la navigation etait cablee. Le defaut qu'on veut rendre impossible
- * n'est pas un plantage, c'est **un chiffre qui s'affiche alors qu'il ne devrait pas exister** —
- * et ce genre de defaut passe une revue visuelle sans se faire remarquer.
+ * It deserves tests for a precise reason: it is what replaced the preview data set on which the
+ * whole navigation used to be wired. The defect we want to make impossible is not a crash, it is
+ * **a figure that gets displayed when it should not exist** — and that kind of defect goes through
+ * a visual review unnoticed.
  */
 class MappingTest {
 
     // -------------------------------------------------------------------------------------
-    // La regle qui compte : aucun agregat sous trois nuits
+    // The rule that matters: no aggregate below three nights
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("aucun agregat n'existe sous trois nuits eligibles")
-    fun `pas d agregat sous trois nuits`() {
+    @DisplayName("no aggregate exists below three eligible nights")
+    fun `no aggregate below three nights`() {
         for (n in 0..2) {
-            val resultat = Mapping.agregat(
-                Aggregat.Grandeur.RYTHME_SECONDES,
-                List(n) { nuit(hex = "n$it", fundamentalSec = 21.0) },
+            val result = Mapping.aggregate(
+                Aggregate.Quantity.RHYTHM_SECONDS,
+                List(n) { night(hex = "n$it", fundamentalSec = 21.0) },
             ) { it.fundamentalSec }
 
-            assertThat(resultat)
+            assertThat(result)
                 .withFailMessage(
-                    "Sur %d nuit(s), `agregat` a renvoye une valeur. C'est le garde-fou central du " +
-                        "produit : sous %d nuits eligibles il ne doit exister aucun chemin de code " +
-                        "produisant une mediane, parce que l'ecran choisit sa branche sur cette " +
-                        "nullite et non sur un booleen qu'on peut oublier de tester.",
-                    n, Aggregat.MIN_NUITS_AGREGAT,
+                    "On %d night(s), `aggregate` returned a value. This is the central guard rail " +
+                        "of the product: below %d eligible nights there must exist no code path " +
+                        "producing a median, because the screen chooses its branch on that " +
+                        "nullity and not on a boolean one can forget to test.",
+                    n, Aggregate.MIN_NIGHTS_AGGREGATE,
                 )
                 .isNull()
         }
     }
 
     @Test
-    @DisplayName("a exactement trois nuits, l'agregat existe et porte son intervalle et son n")
-    fun `agregat a trois nuits`() {
-        val nuits = listOf(
-            nuit("a", fundamentalSec = 19.0),
-            nuit("b", fundamentalSec = 21.0),
-            nuit("c", fundamentalSec = 24.0),
+    @DisplayName("at exactly three nights, the aggregate exists and carries its interval and its n")
+    fun `aggregate at three nights`() {
+        val nights = listOf(
+            night("a", fundamentalSec = 19.0),
+            night("b", fundamentalSec = 21.0),
+            night("c", fundamentalSec = 24.0),
         )
 
-        val r = Mapping.agregat(Aggregat.Grandeur.RYTHME_SECONDES, nuits) { it.fundamentalSec }
+        val r = Mapping.aggregate(Aggregate.Quantity.RHYTHM_SECONDS, nights) { it.fundamentalSec }
 
         assertThat(r).isNotNull
-        assertThat(r!!.mediane).isEqualTo(21.0)
-        assertThat(r.nuits).isEqualTo(3)
-        assertThat(r.ciBas).isLessThanOrEqualTo(r.mediane)
-        assertThat(r.ciHaut).isGreaterThanOrEqualTo(r.mediane)
+        assertThat(r!!.median).isEqualTo(21.0)
+        assertThat(r.nights).isEqualTo(3)
+        assertThat(r.ciLow).isLessThanOrEqualTo(r.median)
+        assertThat(r.ciHigh).isGreaterThanOrEqualTo(r.median)
     }
 
     @Test
-    @DisplayName("meme ensemble de nuits, meme intervalle — la graine ne depend pas de l'ordre")
-    fun `l intervalle est stable`() {
-        val nuits = listOf(nuit("a", 19.0), nuit("b", 21.0), nuit("c", 24.0), nuit("d", 27.0))
+    @DisplayName("same set of nights, same interval — the seed does not depend on the order")
+    fun `the interval is stable`() {
+        val nights = listOf(night("a", 19.0), night("b", 21.0), night("c", 24.0), night("d", 27.0))
 
-        val direct = Mapping.agregat(Aggregat.Grandeur.RYTHME_SECONDES, nuits) { it.fundamentalSec }
-        val inverse = Mapping.agregat(
-            Aggregat.Grandeur.RYTHME_SECONDES,
-            nuits.reversed(),
+        val direct = Mapping.aggregate(Aggregate.Quantity.RHYTHM_SECONDS, nights) { it.fundamentalSec }
+        val reversed = Mapping.aggregate(
+            Aggregate.Quantity.RHYTHM_SECONDS,
+            nights.reversed(),
         ) { it.fundamentalSec }
 
-        // Un intervalle qui bouge entre deux affichages du meme jeu de nuits detruit la confiance
-        // dans tout l'ecran : l'utilisateur qui rouvre l'application dix minutes plus tard doit
-        // relire exactement le meme nombre.
-        assertThat(inverse!!.ciBas).isEqualTo(direct!!.ciBas)
-        assertThat(inverse.ciHaut).isEqualTo(direct.ciHaut)
+        // An interval that moves between two displays of the same set of nights destroys trust in
+        // the whole screen: a user who reopens the application ten minutes later must read exactly
+        // the same number again.
+        assertThat(reversed!!.ciLow).isEqualTo(direct!!.ciLow)
+        assertThat(reversed.ciHigh).isEqualTo(direct.ciHigh)
     }
 
     // -------------------------------------------------------------------------------------
-    // Les trois etats d'une nuit
+    // The three states of a night
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("une nuit comparable et publiable est eligible, sans motif")
-    fun `nuit eligible`() {
-        val ui = Mapping.nuitUi(nuit("a"), finWallMs = null, sourceSommeil = texte("Oura"))
+    @DisplayName("a comparable and publishable night is eligible, with no reason")
+    fun `eligible night`() {
+        val ui = Mapping.nightUi(night("a"), endWallMs = null, sleepSource = text("Oura"))
 
-        assertThat(ui.etat).isEqualTo(EtatNuit.ELIGIBLE)
-        assertThat(ui.motif).isNull()
+        assertThat(ui.state).isEqualTo(NightState.ELIGIBLE)
+        assertThat(ui.reason).isNull()
     }
 
     @Test
-    @DisplayName("une nuit comparable dont le gate n'est pas complet est provisoire, pas ecartee")
-    fun `nuit provisoire`() {
-        val ui = Mapping.nuitUi(
-            nuit("a", gate = "NO_PLMI"),
-            finWallMs = null,
-            sourceSommeil = texte("Oura"),
+    @DisplayName("a comparable night whose gate is not full is provisional, not excluded")
+    fun `provisional night`() {
+        val ui = Mapping.nightUi(
+            night("a", gate = "NO_PLMI"),
+            endWallMs = null,
+            sleepSource = text("Oura"),
         )
 
-        // La difference n'est pas cosmetique. Une nuit provisoire a ete mesuree correctement : ce
-        // qui manque est son denominateur, parce que l'hypnogramme n'est pas encore arrive. Elle
-        // sera recalculee toute seule. La ranger avec les nuits ecartees ferait lire comme une
-        // panne le cas le plus frequent au reveil.
-        assertThat(ui.etat).isEqualTo(EtatNuit.PROVISOIRE)
-        assertThat(ui.motif).isNull()
+        // The difference is not cosmetic. A provisional night was measured correctly: what is
+        // missing is its denominator, because the hypnogram has not arrived yet. It will be
+        // recomputed on its own. Filing it with the excluded nights would make the most frequent
+        // case at waking read as a breakage.
+        assertThat(ui.state).isEqualTo(NightState.PROVISIONAL)
+        assertThat(ui.reason).isNull()
     }
 
     @Test
-    @DisplayName("une nuit ecartee garde sa valeur et porte son motif traduit")
-    fun `nuit ecartee`() {
-        val ui = Mapping.nuitUi(
-            nuit("a", comparable = false, exclusionReason = ComparabilityRule.TOO_SHORT, plmi = 22.0),
-            finWallMs = null,
-            sourceSommeil = texte("Oura"),
+    @DisplayName("an excluded night keeps its value and carries its translated reason")
+    fun `excluded night`() {
+        val ui = Mapping.nightUi(
+            night("a", comparable = false, exclusionReason = ComparabilityRule.TOO_SHORT, plmi = 22.0),
+            endWallMs = null,
+            sleepSource = text("Oura"),
         )
 
-        assertThat(ui.etat).isEqualTo(EtatNuit.ECARTEE)
-        assertThat(ui.motif).isNotNull()
-        // La valeur reste visible : une nuit invisible est une nuit qu'on oublie d'expliquer.
-        assertThat(ui.comptePlmi).isEqualTo(22.0)
+        assertThat(ui.state).isEqualTo(NightState.EXCLUDED)
+        assertThat(ui.reason).isNotNull()
+        // The value stays visible: an invisible night is a night one forgets to explain.
+        assertThat(ui.plmiCount).isEqualTo(22.0)
     }
 
     // -------------------------------------------------------------------------------------
-    // Le rythme : absent est le cas normal
+    // The rhythm: absent is the normal case
     // -------------------------------------------------------------------------------------
 
     /**
-     * Le defaut que ce test fixe.
+     * The defect this test pins down.
      *
-     * `:algo` refuse la plupart des ajustements de rythme — 2 acceptes sur 20 nuits nominales — et
-     * deux de ses six motifs de refus (`MISS_RATE_SATURATED`, `SIGMA_SATURATED`) laissent un
-     * `fundamentalSec` **fini** dans la colonne. L'interface lisait cette colonne sans consulter
-     * `rhythmValid` : elle affichait donc, avec la meme mise en forme qu'un rythme mesure, une
-     * periode que le modele avait refuse de publier.
+     * `:algo` refuses most rhythm fits — 2 accepted out of 20 nominal nights — and two of its six
+     * refusal reasons (`MISS_RATE_SATURATED`, `SIGMA_SATURATED`) leave a **finite** `fundamentalSec`
+     * in the column. The interface was reading that column without consulting `rhythmValid`: it
+     * therefore displayed, with the same formatting as a measured rhythm, a period the model had
+     * refused to publish.
      */
     @Test
-    @DisplayName("un ajustement refuse n'a pas de rythme, meme quand la colonne porte un nombre fini")
-    fun `rythme refuse`() {
-        assertThat(Mapping.rythmeSec(nuit("a", fundamentalSec = 42.0, rhythmValid = false))).isNull()
-        assertThat(Mapping.rythmeSec(nuit("a", fundamentalSec = 21.0, rhythmValid = true))).isEqualTo(21.0)
+    @DisplayName("a refused fit has no rhythm, even when the column carries a finite number")
+    fun `refused rhythm`() {
+        assertThat(Mapping.rhythmSec(night("a", fundamentalSec = 42.0, rhythmValid = false))).isNull()
+        assertThat(Mapping.rhythmSec(night("a", fundamentalSec = 21.0, rhythmValid = true))).isEqualTo(21.0)
     }
 
     /**
-     * `NaN` est ce que `:algo` ecrit quand il n'a meme pas pu tenter l'ajustement — « pas de
-     * valeur » doit empoisonner visiblement tout calcul aval. `Math.round(NaN)` vaut 0, donc
-     * l'ecran affichait « 0 s » : un rythme nul, qui est la seule valeur physiquement impossible.
+     * `NaN` is what `:algo` writes when it could not even attempt the fit — "no value" must poison
+     * every downstream computation visibly. `Math.round(NaN)` is 0, so the screen displayed "0 s":
+     * a null rhythm, which is the one physically impossible value.
      */
     @Test
-    @DisplayName("un rythme absent ne s'arrondit jamais en 0 s")
-    fun `rythme absent`() {
-        assertThat(Mapping.rythmeSec(nuit("a", fundamentalSec = Double.NaN))).isNull()
-        // Le contenu **et** l'identifiant : « 0 s » est la seule valeur physiquement impossible,
-        // donc c'est le texte rendu qui doit etre verifie, pas seulement la branche choisie.
-        assertThat(Ressources.resoudre(Mapping.rythmeLisible(null))).doesNotContain("0 s")
-        assertThat(Mapping.rythmeLisible(null))
-            .isEqualTo(texte(R.string.night_detail_rhythm_not_fitted))
-        assertThat(Ressources.resoudre(Mapping.rythmeLisible(21.4))).isEqualTo("21 s")
+    @DisplayName("an absent rhythm never rounds to 0 s")
+    fun `absent rhythm`() {
+        assertThat(Mapping.rhythmSec(night("a", fundamentalSec = Double.NaN))).isNull()
+        // The content **and** the identifier: "0 s" is the one physically impossible value, so it
+        // is the rendered text that must be checked, not only the branch taken.
+        assertThat(Resources.resolve(Mapping.readableRhythm(null))).doesNotContain("0 s")
+        assertThat(Mapping.readableRhythm(null))
+            .isEqualTo(text(R.string.night_detail_rhythm_not_fitted))
+        assertThat(Resources.resolve(Mapping.readableRhythm(21.4))).isEqualTo("21 s")
     }
 
     // -------------------------------------------------------------------------------------
-    // Mise en forme
+    // Formatting
     // -------------------------------------------------------------------------------------
 
     @Test
-    @DisplayName("une duree se lit en heures et minutes, jamais en decimal d'heure")
-    fun `duree lisible`() {
-        assertThat(Mapping.dureeLisible(312.0)).isEqualTo("5 h 12")
-        assertThat(Mapping.dureeLisible(60.0)).isEqualTo("1 h 00")
-        assertThat(Mapping.dureeLisible(0.0)).isEqualTo("—")
+    @DisplayName("a duration reads in hours and minutes, never in decimal hours")
+    fun `readable duration`() {
+        assertThat(Mapping.readableDuration(312.0)).isEqualTo("5 h 12")
+        assertThat(Mapping.readableDuration(60.0)).isEqualTo("1 h 00")
+        assertThat(Mapping.readableDuration(0.0)).isEqualTo("—")
     }
 
     @Test
-    @DisplayName("la source dit explicitement quand le denominateur vient du meme capteur")
-    fun `libelle de source`() {
-        // C'est la seule information qui permette de savoir si le chiffre repose sur un
-        // denominateur independant du numerateur : elle ne doit jamais etre remplacee par un
-        // nom d'application qui laisserait croire a une source tierce.
-        assertThat(Mapping.libelleSource(Mapping.MASQUE_ACCELERO, "com.oura.app"))
-            .isEqualTo(texte(R.string.settings_accel_mask_only))
-        // Le nom de l'application vient de Health Connect : il n'est pas traduisible, donc il sort
-        // en `UiText.Brut` et non en ressource.
-        assertThat(Mapping.libelleSource("HEALTH_CONNECT", "com.oura.app")).isEqualTo(texte("App"))
-        // Paquet inconnu : ce qui manque est le **nom de l'application**, pas l'origine du
-        // denominateur — `maskSource` la porte. Rendre « source non identifiee » ici mettait
-        // l'ecran de detail en contradiction avec sa propre ligne de controle qualite, qui
-        // ecrivait « Health Connect » pour la meme nuit.
-        assertThat(Mapping.libelleSource("HEALTH_CONNECT", null))
-            .isEqualTo(texte(R.string.settings_health_connect))
+    @DisplayName("the source says explicitly when the denominator comes from the same sensor")
+    fun `source label`() {
+        // This is the only piece of information that tells whether the figure rests on a
+        // denominator independent of the numerator: it must never be replaced by an application
+        // name, which would suggest a third-party source.
+        assertThat(Mapping.sourceLabel(Mapping.ACCEL_MASK, "com.oura.app"))
+            .isEqualTo(text(R.string.settings_accel_mask_only))
+        // The application name comes from Health Connect: it is not translatable, so it goes out as
+        // `UiText.Raw` and not as a resource.
+        assertThat(Mapping.sourceLabel("HEALTH_CONNECT", "com.oura.app")).isEqualTo(text("App"))
+        // Unknown package: what is missing is the **name of the application**, not the origin of
+        // the denominator — `maskSource` carries that. Rendering "unidentified source" here put the
+        // night detail screen in contradiction with its own quality check row, which wrote
+        // "Health Connect" for the same night.
+        assertThat(Mapping.sourceLabel("HEALTH_CONNECT", null))
+            .isEqualTo(text(R.string.settings_health_connect))
     }
 
     @Test
-    @DisplayName("le masque accelerometrique est le premier drapeau : il change la nature du chiffre")
-    fun `ordre des drapeaux`() {
-        val drapeaux = Mapping.drapeaux(
-            nuit("a", maskSource = Mapping.MASQUE_ACCELERO, truncated = true),
+    @DisplayName("the accelerometric mask is the first flag: it changes the nature of the figure")
+    fun `flag order`() {
+        val flags = Mapping.flags(
+            night("a", maskSource = Mapping.ACCEL_MASK, truncated = true),
             gapCount = 2,
             gapTotalMs = 47_000,
             batteryPctLast = 8,
         )
 
-        assertThat(drapeaux).hasSizeGreaterThanOrEqualTo(4)
-        assertThat(drapeaux.first().libelle)
-            .isEqualTo(texte(R.string.nights_flag_accel_mask))
+        assertThat(flags).hasSizeGreaterThanOrEqualTo(4)
+        assertThat(flags.first().label)
+            .isEqualTo(text(R.string.nights_flag_accel_mask))
     }
 
     @Test
-    @DisplayName("une nuit sans anomalie ne porte aucun drapeau")
-    fun `pas de drapeau sans motif`() {
-        val drapeaux = Mapping.drapeaux(nuit("a"), gapCount = 0, gapTotalMs = 0, batteryPctLast = 62)
-        assertThat(drapeaux).isEmpty()
+    @DisplayName("a night with no anomaly carries no flag")
+    fun `no flag without a reason`() {
+        val flags = Mapping.flags(night("a"), gapCount = 0, gapTotalMs = 0, batteryPctLast = 62)
+        assertThat(flags).isEmpty()
     }
 
     // -------------------------------------------------------------------------------------
 
-    private fun nuit(
+    private fun night(
         hex: String,
         fundamentalSec: Double = 21.0,
         rhythmValid: Boolean = true,
         plmi: Double = 18.0,
-        gate: String = Mapping.GATE_COMPLET,
+        gate: String = Mapping.GATE_FULL,
         comparable: Boolean = true,
         exclusionReason: String = ComparabilityRule.OK,
         maskSource: String = "HEALTH_CONNECT",

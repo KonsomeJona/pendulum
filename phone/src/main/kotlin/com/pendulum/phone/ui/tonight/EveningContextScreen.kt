@@ -25,111 +25,112 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
-import com.pendulum.phone.data.SaisieDuSoir
+import com.pendulum.phone.data.EveningEntry
 import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.common.BoutonMotive
-import com.pendulum.phone.ui.common.Paragraphe
+import com.pendulum.phone.ui.common.Paragraph
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
+import com.pendulum.phone.ui.common.ReasonedButton
 import com.pendulum.phone.ui.common.SectionHeader
-import com.pendulum.phone.ui.ResultatScellement
+import com.pendulum.phone.ui.SealingResult
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 /**
- * Le formulaire du soir — l'ecran qui manquait, et la seule porte du produit.
+ * The evening form — the screen that was missing, and the only gate of the product.
  *
- * `tonight_seal_title` et `tonight_seal_confirmation` etaient ecrits depuis le debut et
- * n'etaient references par aucun composable : la specification decrivait cet ecran, le bouton
- * existait sur la carte « Ce soir », et il appelait un `onSceller = {}`. Pendant ce temps la
- * montre refusait de demarrer en renvoyant ici.
+ * `tonight_seal_title` and `tonight_seal_confirmation` had been written from the start and were
+ * referenced by no composable: the specification described this screen, the button existed on the
+ * "Tonight" card, and it called an `onSeal = {}`. All that time the watch refused to start,
+ * sending the user back here.
  *
- * ### Ce qui est demande, et ce qui ne l'est pas
+ * ### What is asked, and what is not
  *
- * Exactement les colonnes de `NightContextEntity`, ni plus ni moins. Un formulaire qui collecte
- * plus que ce que la base scelle collecte des donnees de sante que rien ne protege ; un
- * formulaire qui en collecte moins laisse des colonnes vides dont personne ne saura dire, six
- * mois plus tard, si elles sont fausses ou simplement absentes.
+ * Exactly the columns of `NightContextEntity`, no more and no less. A form that collects more than
+ * what the database seals collects health data that nothing protects; a form that collects less
+ * leaves empty columns of which nobody will be able to say, six months later, whether they are
+ * wrong or simply absent.
  *
- * ### Pourquoi une confirmation, alors que le reste de l'application n'en a pas
+ * ### Why a confirmation, when the rest of the application has none
  *
- * Le scellement est le seul geste irreversible de l'application : les declencheurs SQLite
- * refusent ensuite toute modification. Une confirmation ne sert donc pas a proteger d'une faute
- * de frappe — elle sert a ce que l'utilisateur sache **avant** que la jambe et le cran de serrage
- * qu'il vient de saisir ne pourront plus etre corriges. Les corriger au matin, apres avoir vu le
- * chiffre, est precisement ce que le garde-fou empeche.
+ * Sealing is the only irreversible gesture of the application: the SQLite triggers then refuse any
+ * modification. A confirmation is therefore not there to protect against a typing mistake — it is
+ * there so that the user knows **before** that the leg and the tightness notch just entered can no
+ * longer be corrected. Correcting them in the morning, after seeing the figure, is precisely what
+ * the guard rail prevents.
  *
- * ### Les trois issues ne sont pas la meme issue
+ * ### The three outcomes are not the same outcome
  *
- * [ResultatScellement] en porte trois et l'appelant les traitait de facon identique : l'ecran se
- * fermait. Une seule des trois est un succes.
+ * [SealingResult] carries three of them and the caller treated them identically: the screen
+ * closed. Only one of the three is a success.
  *
- * [ResultatScellement.PublicationEchouee] est la plus couteuse parce qu'elle est silencieuse **et**
- * contradictoire : la base a le contexte, donc l'accueil affiche qu'il est scelle, pendant que la
- * montre — qui n'a pas recu le `DataItem` — continue d'afficher « remplissez le formulaire du
- * soir ». Les deux appareils se contredisent et aucun des deux ne se trompe. L'ecran reste donc
- * ouvert et dit quoi faire : attendre le rejeu, qui est enfile, sans rien resaisir.
+ * [SealingResult.PublicationFailed] is the costliest because it is silent **and** contradictory:
+ * the database has the context, so home displays it as sealed, while the watch — which has not
+ * received the `DataItem` — keeps displaying "fill in the evening form". The two devices
+ * contradict each other and neither of them is wrong. The screen therefore stays open and says
+ * what to do: wait for the replay, which is enqueued, without entering anything again.
  *
- * [ResultatScellement.DejaScelle] est un `OnConflictStrategy.ABORT` qui a leve. Ce qu'il faut dire
- * est que la saisie qui vient d'etre faite **n'a pas ete enregistree** — se fermer sans le dire
- * laisserait croire qu'elle a remplace la precedente, c'est-a-dire exactement la retouche que le
- * garde-fou existe pour empecher.
+ * [SealingResult.AlreadySealed] is an `OnConflictStrategy.ABORT` that threw. What has to be said is
+ * that the entry just made **was not recorded** — closing without saying it would let one believe
+ * it replaced the previous one, that is to say exactly the touch-up the guard rail exists to
+ * prevent.
  */
 @Composable
 fun EveningContextScreen(
-    repereDeSerrage: String,
+    strapReference: String,
     /**
-     * Le resultat de la derniere tentative, ou `null` tant qu'il n'y en a pas eu. Sur
-     * [ResultatScellement.Scelle] cet ecran n'a rien a afficher : l'appelant le ferme.
+     * The result of the last attempt, or `null` as long as there has been none. On
+     * [SealingResult.Sealed] this screen has nothing to display: the caller closes it.
      */
-    resultat: ResultatScellement?,
-    onSceller: (SaisieDuSoir) -> Unit,
-    onAnnuler: () -> Unit,
+    result: SealingResult?,
+    onSeal: (EveningEntry) -> Unit,
+    onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
 
-    var jambe by remember { mutableStateOf(SaisieDuSoir.JAMBE_DROITE) }
-    // Pre-rempli avec le repere note a l'assistant : il doit etre identique d'une nuit a l'autre,
-    // donc le retaper chaque soir serait a la fois penible et une occasion de divergence.
-    var bracelet by remember { mutableStateOf(repereDeSerrage) }
-    var seul by remember { mutableStateOf(true) }
-    var medicaments by remember { mutableStateOf("") }
-    var cafe by remember { mutableStateOf(false) }
-    var alcool by remember { mutableStateOf("") }
-    var exercice by remember { mutableStateOf(false) }
+    var leg by remember { mutableStateOf(EveningEntry.LEG_RIGHT) }
+    // Pre-filled with the reference noted during onboarding: it must be identical from one night to
+    // the next, so retyping it every evening would be both tedious and an opportunity to diverge.
+    var strap by remember { mutableStateOf(strapReference) }
+    var alone by remember { mutableStateOf(true) }
+    var medication by remember { mutableStateOf("") }
+    var coffee by remember { mutableStateOf(false) }
+    var alcohol by remember { mutableStateOf("") }
+    var exercise by remember { mutableStateOf(false) }
     var notes by remember { mutableStateOf("") }
 
     var confirmation by remember { mutableStateOf(false) }
 
-    // Le bracelet est le seul champ exige : c'est un critere de comparabilite dur, et une nuit
-    // scellee sans lui sortira ecartee au matin. Tous les autres ont un defaut defendable.
-    val complet = bracelet.isNotBlank()
+    // The strap is the only required field: it is a hard comparability criterion, and a night
+    // sealed without it will come out excluded in the morning. All the others have a defensible
+    // default value.
+    val complete = strap.isNotBlank()
 
     PendulumScreen(modifier) {
         Text(stringResource(R.string.tonight_seal_title), style = PendulumType.titleL, color = c.textPrimary)
-        Paragraphe(stringResource(R.string.tonight_seal_body))
+        Paragraph(stringResource(R.string.tonight_seal_body))
 
         PendulumCard {
             SectionHeader(stringResource(R.string.tonight_section_wearing))
 
-            // Deux boutons plutot qu'une liste deroulante : il n'y a que deux jambes, et une
-            // liste deroulante cache la valeur courante derriere un geste.
+            // Two buttons rather than a drop-down list: there are only two legs, and a drop-down
+            // list hides the current value behind a gesture.
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s.dp)) {
-                ChoixJambe(stringResource(R.string.tonight_leg_left), jambe == SaisieDuSoir.JAMBE_GAUCHE) {
-                    jambe = SaisieDuSoir.JAMBE_GAUCHE
+                LegChoice(stringResource(R.string.tonight_leg_left), leg == EveningEntry.LEG_LEFT) {
+                    leg = EveningEntry.LEG_LEFT
                 }
-                ChoixJambe(stringResource(R.string.tonight_leg_right), jambe == SaisieDuSoir.JAMBE_DROITE) {
-                    jambe = SaisieDuSoir.JAMBE_DROITE
+                LegChoice(stringResource(R.string.tonight_leg_right), leg == EveningEntry.LEG_RIGHT) {
+                    leg = EveningEntry.LEG_RIGHT
                 }
             }
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedTextField(
-                value = bracelet,
-                onValueChange = { bracelet = it },
+                value = strap,
+                onValueChange = { strap = it },
                 label = { Text(stringResource(R.string.tonight_field_strap)) },
                 supportingText = { Text(stringResource(R.string.tonight_field_strap_help), style = PendulumType.caption) },
                 singleLine = true,
@@ -140,13 +141,13 @@ fun EveningContextScreen(
 
         PendulumCard {
             SectionHeader(stringResource(R.string.tonight_section_evening))
-            Interrupteur(stringResource(R.string.tonight_field_alone), stringResource(R.string.tonight_field_alone_help), seul) { seul = it }
-            Interrupteur(stringResource(R.string.tonight_field_coffee), null, cafe) { cafe = it }
-            Interrupteur(stringResource(R.string.tonight_field_exercise), null, exercice) { exercice = it }
+            SwitchRow(stringResource(R.string.tonight_field_alone), stringResource(R.string.tonight_field_alone_help), alone) { alone = it }
+            SwitchRow(stringResource(R.string.tonight_field_coffee), null, coffee) { coffee = it }
+            SwitchRow(stringResource(R.string.tonight_field_exercise), null, exercise) { exercise = it }
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedTextField(
-                value = alcool,
-                onValueChange = { alcool = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                value = alcohol,
+                onValueChange = { alcohol = it.filter { ch -> ch.isDigit() || ch == '.' } },
                 label = { Text(stringResource(R.string.tonight_field_alcohol)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
@@ -157,11 +158,11 @@ fun EveningContextScreen(
 
         PendulumCard {
             SectionHeader(stringResource(R.string.tonight_section_dose))
-            Paragraphe(stringResource(R.string.tonight_field_dose_help))
+            Paragraph(stringResource(R.string.tonight_field_dose_help))
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedTextField(
-                value = medicaments,
-                onValueChange = { medicaments = it },
+                value = medication,
+                onValueChange = { medication = it },
                 label = { Text(stringResource(R.string.tonight_field_dose)) },
                 shape = PendulumShapes.field,
                 modifier = Modifier.fillMaxWidth(),
@@ -176,20 +177,20 @@ fun EveningContextScreen(
             )
         }
 
-        // Ce que le scellement a donne, quand ce n'est pas un succes. La carte est au-dessus du
-        // bouton et non sous lui : elle explique pourquoi il vient de se griser, et un motif place
-        // apres l'element qu'il motive se lit apres coup.
+        // What the sealing gave, when it is not a success. The card sits above the button and not
+        // under it: it explains why the button has just greyed out, and a reason placed after the
+        // element it justifies is read after the fact.
         //
-        // Ambre et non rouge dans les deux cas. Rien n'est casse : dans le premier, la base a le
-        // contexte et le rejeu est enfile ; dans le second, le refus du doublon est le
-        // comportement voulu. Le rouge reste reserve a ce qui est reellement casse.
-        val bloque = resultat == ResultatScellement.PublicationEchouee ||
-            resultat == ResultatScellement.DejaScelle
-        if (bloque) {
+        // Amber and not red in both cases. Nothing is broken: in the first, the database has the
+        // context and the replay is enqueued; in the second, refusing the duplicate is the intended
+        // behaviour. Red stays reserved for what is really broken.
+        val blocked = result == SealingResult.PublicationFailed ||
+            result == SealingResult.AlreadySealed
+        if (blocked) {
             PendulumCard {
                 Text(
                     stringResource(
-                        if (resultat == ResultatScellement.PublicationEchouee) {
+                        if (result == SealingResult.PublicationFailed) {
                             R.string.tonight_seal_unpublished_title
                         } else {
                             R.string.tonight_seal_already_title
@@ -199,35 +200,35 @@ fun EveningContextScreen(
                     color = c.attention,
                 )
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(
+                Paragraph(
                     stringResource(
-                        if (resultat == ResultatScellement.PublicationEchouee) {
+                        if (result == SealingResult.PublicationFailed) {
                             R.string.tonight_seal_unpublished_body
                         } else {
                             R.string.tonight_seal_already_body
                         },
                     ),
-                    couleur = c.textPrimary,
+                    color = c.textPrimary,
                 )
             }
         }
 
-        // Meme regle qu'a l'avertissement : le libelle de l'etat desactive porte le motif, donc
-        // il doit se lire. Les teintes desactivees par defaut de Material tombent a 3,02:1.
+        // Same rule as on the notice: the label of the disabled state carries the reason, so it has
+        // to be readable. Material's default disabled tints fall to 3.02:1.
         //
-        // Une soiree ne se scelle qu'une fois : apres l'une ou l'autre des deux issues bloquantes,
-        // rejouer le geste ne peut que relever `DejaScelle`. Le bouton est donc grise avec son
-        // motif, plutot que laisse actif pour echouer a nouveau.
-        BoutonMotive(
-            libelle = stringResource(R.string.tonight_seal_button),
-            motifIndisponible = when {
-                bloque -> stringResource(R.string.tonight_seal_locked)
-                !complet -> stringResource(R.string.tonight_field_strap_missing)
+        // An evening is sealed only once: after either of the two blocking outcomes, replaying the
+        // gesture can only raise `AlreadySealed`. The button is therefore greyed out with its
+        // reason, rather than left active so as to fail again.
+        ReasonedButton(
+            label = stringResource(R.string.tonight_seal_button),
+            unavailableReason = when {
+                blocked -> stringResource(R.string.tonight_seal_locked)
+                !complete -> stringResource(R.string.tonight_field_strap_missing)
                 else -> null
             },
             onClick = { confirmation = true },
         )
-        TextButton(onClick = onAnnuler, modifier = Modifier.fillMaxWidth()) {
+        TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.tonight_cancel))
         }
         Spacer(Modifier.height(Spacing.l.dp))
@@ -237,23 +238,23 @@ fun EveningContextScreen(
         AlertDialog(
             onDismissRequest = { confirmation = false },
             title = { Text(stringResource(R.string.tonight_seal_title), style = PendulumType.titleM) },
-            text = { Paragraphe(stringResource(R.string.tonight_seal_confirmation)) },
+            text = { Paragraph(stringResource(R.string.tonight_seal_confirmation)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmation = false
-                    onSceller(
-                        SaisieDuSoir(
-                            jambe = jambe,
-                            bracelet = bracelet.trim(),
-                            seulDansLeLit = seul,
-                            // Le champ est libre et stocke tel quel. Un schema de posologie
-                            // structure supposerait de connaitre la liste des molecules, leurs
-                            // unites et leurs equivalences — et un champ structure a moitie juste
-                            // vaut moins qu'un texte que le medecin lit lui-meme.
-                            medicationJson = medicaments.trim(),
-                            cafeApres16h = cafe,
-                            unitesAlcool = alcool.toDoubleOrNull() ?: 0.0,
-                            exerciceInhabituel = exercice,
+                    onSeal(
+                        EveningEntry(
+                            leg = leg,
+                            strap = strap.trim(),
+                            aloneInBed = alone,
+                            // The field is free-form and stored as it is. A structured dosage
+                            // schema would presuppose knowing the list of molecules, their units
+                            // and their equivalences — and a structured field that is only half
+                            // right is worth less than a text the doctor reads for themselves.
+                            medicationJson = medication.trim(),
+                            caffeineAfter16h = coffee,
+                            alcoholUnits = alcohol.toDoubleOrNull() ?: 0.0,
+                            unusualExercise = exercise,
                             notes = notes.trim().takeIf { it.isNotBlank() },
                         )
                     )
@@ -267,27 +268,27 @@ fun EveningContextScreen(
 }
 
 @Composable
-private fun ChoixJambe(libelle: String, choisi: Boolean, onChoisir: () -> Unit) {
+private fun LegChoice(legLabel: String, selected: Boolean, onSelect: () -> Unit) {
     val c = LocalPendulumColors.current
     Button(
-        onClick = onChoisir,
+        onClick = onSelect,
         shape = PendulumShapes.button,
         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-            containerColor = if (choisi) c.accent else c.surfaceElevated,
-            contentColor = if (choisi) c.background else c.textSecondary,
+            containerColor = if (selected) c.accent else c.surfaceElevated,
+            contentColor = if (selected) c.background else c.textSecondary,
         ),
         modifier = Modifier.width(120.dp),
     ) {
-        Text(libelle, textAlign = TextAlign.Center)
+        Text(legLabel, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
-private fun Interrupteur(
-    libelle: String,
-    aide: String?,
-    valeur: Boolean,
-    onChanger: (Boolean) -> Unit,
+private fun SwitchRow(
+    rowLabel: String,
+    help: String?,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
 ) {
     val c = LocalPendulumColors.current
     Row(
@@ -295,9 +296,9 @@ private fun Interrupteur(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(libelle, style = PendulumType.body, color = c.textPrimary)
-            aide?.let { Text(it, style = PendulumType.caption, color = c.textTertiary) }
+            Text(rowLabel, style = PendulumType.body, color = c.textPrimary)
+            help?.let { Text(it, style = PendulumType.caption, color = c.textTertiary) }
         }
-        Switch(checked = valeur, onCheckedChange = onChanger)
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }

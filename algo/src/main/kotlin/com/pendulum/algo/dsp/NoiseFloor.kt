@@ -7,10 +7,10 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Parametres du plancher de bruit. Valeurs par defaut = tableau §6.2.
+ * Noise floor parameters. Default values = table §6.2.
  *
- * [hopSec] ne figure pas dans la specification : c'est un parametre d'implementation, documente
- * dans [NoiseFloor.estimate].
+ * [hopSec] does not appear in the specification: it is an implementation parameter, documented in
+ * [NoiseFloor.estimate].
  */
 data class NoiseFloorConfig(
     val winSec: Double = 120.0,
@@ -18,61 +18,58 @@ data class NoiseFloorConfig(
     val excludeFactor: Double = 4.0,
     val minValidFraction: Double = 0.25,
     val mode: FloorMode = FloorMode.BILATERAL,
-    /** Utilise seulement si `mode == CAUSAL_LAGGED`. */
+    /** Used only if `mode == CAUSAL_LAGGED`. */
     val causalLagSec: Double = 5.0,
-    /** IMPLEMENTATION — pas de la grille d'evaluation. Voir [NoiseFloor.estimate]. */
+    /** IMPLEMENTATION — step of the evaluation grid. See [NoiseFloor.estimate]. */
     val hopSec: Double = 1.0,
 )
 
 /**
- * Etape 3 — plancher de bruit adaptatif, estimateur **en trois passes, segmente**.
+ * Step 3 — adaptive noise floor, **three-pass, segmented** estimator.
  *
  * ```
- * Passe 1 : floor0(t) = p25 de env sur la fenetre de W = 120 s
- * Passe 2 : masque M = { i : env[i] > k_excl x floor0[i] }        (k_excl = 4)
- * Passe 3 : floor(t)  = mediane de env sur la meme fenetre, restreinte a { i hors de M }
- *           si trop peu d'echantillons survivent -> valeur valide la plus proche, FLOOR_EXTRAPOLATED
- * Puis    : floor(t) <- max(floor(t), Theta_abs / k_on)
+ * Pass 1 : floor0(t) = p25 of env over the window of W = 120 s
+ * Pass 2 : mask M = { i : env[i] > k_excl x floor0[i] }           (k_excl = 4)
+ * Pass 3 : floor(t)  = median of env over the same window, restricted to { i outside M }
+ *          if too few samples survive -> nearest valid value, FLOOR_EXTRAPOLATED
+ * Then   : floor(t) <- max(floor(t), Theta_abs / k_on)
  * ```
  *
- * **Pourquoi l'exclusion iterative plutot qu'un simple percentile bas** (§1.3, contre-analyse
- * chiffree). Une serie de PLMS n'auto-contamine presque pas une mediane : duree moyenne d'un PLM
- * a la cheville 4,2 s, IMI moyen 31,3 s, soit un rapport cyclique de 13 a 18 %, et une mediane ne
- * decroche qu'au-dela de 50 % de contamination. A 18 %, la mediane monte de 16,6 % et un p10 de
- * 11,1 % : le percentile bas seul ne gagne que 5,5 points, ce n'est pas un ordre de grandeur.
- * **Ce qui casse reellement l'estimateur, ce sont les mouvements corporels grossiers** : un
- * retournement de 20 s dans une fenetre de 25 s, c'est 80 % de contamination et un decrochage
- * complet. D'ou les deux vraies protections : `W = 120 s` (le meme retournement n'y pese plus que
- * 17 %) et le masquage explicite des echantillons hauts avant la passe finale.
+ * **Why iterative exclusion rather than a simple low percentile** (§1.3, quantified
+ * counter-analysis). A PLMS series barely self-contaminates a median: mean duration of a PLM at
+ * the ankle 4.2 s, mean IMI 31.3 s, i.e. a duty cycle of 13 to 18 %, and a median only breaks down
+ * beyond 50 % contamination. At 18 %, the median rises by 16.6 % and a p10 by 11.1 %: the low
+ * percentile alone only gains 5.5 points, that is not an order of magnitude. **What really breaks
+ * the estimator is gross body movements**: a 20 s turn inside a 25 s window is 80 % contamination
+ * and a complete breakdown. Hence the two real protections: `W = 120 s` (the same turn then weighs
+ * no more than 17 % in it) and the explicit masking of the high samples before the final pass.
  *
- * **Pourquoi la fenetre ne franchit jamais une frontiere.** Le plancher n'est pas du bruit
- * thermique, c'est un plancher **mecanique** : il change par sauts a chaque changement de posture,
- * parce que le couplage bracelet-cheville-literie change. Une fenetre a cheval sur un saut
- * moyenne deux regimes et donne un seuil faux des deux cotes. C'est exactement le defaut que la
- * fenetre causale decalee ne sait pas traiter (§1.3, raison n° 2) et la raison pour laquelle le
- * mode definitif reste bilateral.
+ * **Why the window never crosses a boundary.** The floor is not thermal noise, it is a
+ * **mechanical** floor: it changes in steps at every posture change, because the
+ * strap-ankle-bedding coupling changes. A window straddling a step averages two regimes and gives
+ * a wrong threshold on both sides. That is exactly the flaw the lagged causal window cannot deal
+ * with (§1.3, reason no. 2) and the reason why the definitive mode stays bilateral.
  */
 object NoiseFloor {
 
     /**
-     * @param boundaries frontieres a ne jamais franchir : **frontieres de segment ET de
-     *   changement de posture** (§3.1, effet de bord (a)). Index de grille, ordre quelconque,
-     *   doublons tolerés.
-     * @param floorMinG plancher du plancher, `Theta_abs / k_on` (0,020 / 8,0 = 2,5 mg avec les
-     *   valeurs par defaut de §6.3). Il est passe en argument plutot que loge dans
-     *   [NoiseFloorConfig] pour ne pas dupliquer ici les parametres de seuil, qui appartiennent a
-     *   l'etape 4 ; l'appelant doit le derivér de sa propre configuration de seuils.
-     * @return le plancher par echantillon, et le drapeau `FLOOR_EXTRAPOLATED` par echantillon.
-     *   Hors segment, le plancher vaut `NaN` et le drapeau est `true`.
+     * @param boundaries boundaries never to be crossed: **segment boundaries AND posture change
+     *   boundaries** (§3.1, side effect (a)). Grid indices, any order, duplicates tolerated.
+     * @param floorMinG floor of the floor, `Theta_abs / k_on` (0.020 / 8.0 = 2.5 mg with the
+     *   default values of §6.3). It is passed as an argument rather than housed in
+     *   [NoiseFloorConfig] so as not to duplicate here the threshold parameters, which belong to
+     *   step 4; the caller must derive it from its own threshold configuration.
+     * @return the floor per sample, and the `FLOOR_EXTRAPOLATED` flag per sample. Outside a
+     *   segment, the floor is `NaN` and the flag is `true`.
      *
-     * **IMPLEMENTATION — grille d'evaluation a pas `hopSec`.** Recalculer deux percentiles sur
-     * 6 000 echantillons a chacun des 1,44 x 10^6 points de la nuit couterait ~10^10 operations.
-     * Le plancher est donc evalue tous les `hopSec` (1 s par defaut) puis **interpole
-     * lineairement**. C'est licite parce que la fenetre fait 120 s : entre deux points distants
-     * de 1 s, 99,2 % du contenu de la fenetre est commun, et la variation du plancher entre les
-     * deux est necessairement infime. Le cout est ramene a ~6 x 10^8 operations. La sortie reste
-     * bit-identique d'une execution a l'autre pour un `hopSec` donne ; changer `hopSec` change le
-     * resultat de facon marginale mais reelle, il fait donc partie du hash des parametres.
+     * **IMPLEMENTATION — evaluation grid with step `hopSec`.** Recomputing two percentiles over
+     * 6 000 samples at each of the night's 1.44 x 10^6 points would cost ~10^10 operations. The
+     * floor is therefore evaluated every `hopSec` (1 s by default) then **linearly interpolated**.
+     * This is licit because the window is 120 s long: between two points 1 s apart, 99.2 % of the
+     * window content is shared, and the variation of the floor between the two is necessarily
+     * minute. The cost is brought down to ~6 x 10^8 operations. The output stays bit-identical
+     * from one run to the next for a given `hopSec`; changing `hopSec` changes the result
+     * marginally but really, so it is part of the parameter hash.
      */
     fun estimate(
         env: Signal1D,
@@ -96,10 +93,10 @@ object NoiseFloor {
             estimateInterval(env, interval, win, hop, lag, minValid, cfg, floor, extrapolated, scratch)
         }
 
-        // Coherence avec le plancher absolu (§1.3, derniere ligne) : un plancher mesure sous
-        // `Theta_abs / k_on` ne peut de toute facon pas produire un seuil sous `Theta_abs`.
-        // Le borner ici evite qu'une nuit anormalement calme ne fasse exploser le rapport
-        // signal/plancher et ne rende toutes les statistiques de qualite illisibles.
+        // Consistency with the absolute floor (§1.3, last line): a floor measured below
+        // `Theta_abs / k_on` cannot produce a threshold below `Theta_abs` anyway.
+        // Bounding it here prevents an abnormally quiet night from blowing up the signal/floor
+        // ratio and making all the quality statistics unreadable.
         for (i in 0 until n) {
             val f = floor[i]
             if (!f.isNaN() && f < floorMinG) floor[i] = floorMinG
@@ -108,8 +105,8 @@ object NoiseFloor {
     }
 
     /**
-     * Decoupe les segments aux frontieres fournies. Une frontiere interieure a un segment le
-     * coupe en deux intervalles homogenes ; les frontieres hors segment sont ignorees.
+     * Cuts the segments at the supplied boundaries. A boundary interior to a segment cuts it into
+     * two homogeneous intervals; boundaries outside a segment are ignored.
      */
     internal fun splitAtBoundaries(segments: List<Segment>, boundaries: IntArray, n: Int): List<Segment> {
         val sorted = boundaries.filter { it in 0..n }.distinct().sorted()
@@ -142,8 +139,8 @@ object NoiseFloor {
         val len = iv.length
         if (len <= 0) return
 
-        // Points d'evaluation : tous les `hop`, plus le dernier echantillon pour que
-        // l'interpolation couvre l'intervalle entier sans extrapoler.
+        // Evaluation points: every `hop`, plus the last sample so that the interpolation covers
+        // the whole interval without extrapolating.
         val evalCount = ((len - 1) / hop) + 1
         val evalIdx = IntArray(evalCount + 1)
         for (j in 0 until evalCount) evalIdx[j] = iv.fromIdx + j * hop
@@ -154,7 +151,7 @@ object NoiseFloor {
         val f3 = FloatArray(nEval) { Float.NaN }
         val ext = BooleanArray(nEval)
 
-        // --- Passe 1 : p25 brut -----------------------------------------------------------
+        // --- Pass 1: raw p25 --------------------------------------------------------------
         for (j in 0 until nEval) {
             val e = evalIdx[j]
             val lo: Int
@@ -163,9 +160,9 @@ object NoiseFloor {
                 lo = max(iv.fromIdx, e - win / 2)
                 hi = min(iv.toIdx, e + win - win / 2)
             } else {
-                // CAUSAL_LAGGED : fenetre [t - lag - W, t - lag]. Le decalage de 5 s empeche
-                // l'evenement en cours de contaminer son propre plancher ; le biais de retard de
-                // 35 s qui en resulte est acceptable en mode provisoire, jamais en definitif.
+                // CAUSAL_LAGGED: window [t - lag - W, t - lag]. The 5 s shift prevents the current
+                // event from contaminating its own floor; the resulting 35 s lag bias is
+                // acceptable in provisional mode, never in the definitive one.
                 hi = min(iv.toIdx, max(iv.fromIdx, e - lag))
                 lo = max(iv.fromIdx, hi - win)
             }
@@ -173,16 +170,16 @@ object NoiseFloor {
                 Numeric.percentile(env.v, lo, hi, cfg.pass1Percentile.toDouble(), scratch)
             } else Float.NaN
         }
-        // `f0` peut contenir des NaN (fenetre entierement dans un trou) : on les comble avant de
-        // s'en servir comme reference d'exclusion, sinon le masque de la passe 2 laisserait
-        // passer n'importe quoi a cet endroit.
+        // `f0` may contain NaNs (window entirely inside a hole): they are filled in before being
+        // used as the exclusion reference, otherwise the pass 2 mask would let anything through at
+        // that spot.
         fillNearest(f0)
 
-        // --- Passe 1bis : floor0 par echantillon (support du masque de la passe 2) ---------
+        // --- Pass 1bis: floor0 per sample (support for the pass 2 mask) -------------------
         val floor0Sample = FloatArray(len)
         interpolate(evalIdx, f0, nEval, iv, floor0Sample)
 
-        // --- Passes 2 et 3 : mediane sur les echantillons non masques ----------------------
+        // --- Passes 2 and 3: median over the unmasked samples -----------------------------
         for (j in 0 until nEval) {
             val e = evalIdx[j]
             val lo: Int
@@ -199,10 +196,10 @@ object NoiseFloor {
                 val v = env.v[i]
                 if (v.isNaN()) continue
                 val ref = floor0Sample[i - iv.fromIdx]
-                // Masquage : tout ce qui depasse `k_excl x floor0` est presume evenement, pas
-                // bruit de fond. `k_excl = 4` est volontairement SOUS `k_on = 8` : on veut aussi
-                // ecarter les CLM sous-seuil, qui sont du signal meme s'ils ne seront pas
-                // comptes, sans quoi ils remonteraient le plancher et s'auto-elimineraient.
+                // Masking: anything exceeding `k_excl x floor0` is presumed to be event, not
+                // background noise. `k_excl = 4` is deliberately BELOW `k_on = 8`: we also want to
+                // exclude the sub-threshold CLMs, which are signal even though they will not be
+                // counted, failing which they would raise the floor and eliminate themselves.
                 if (!ref.isNaN() && v > cfg.excludeFactor * ref) continue
                 scratch[m++] = v
             }
@@ -210,16 +207,16 @@ object NoiseFloor {
                 f3[j] = Numeric.percentileOfCompact(scratch, m, 50.0)
                 ext[j] = false
             } else {
-                // Moins de `minValidFraction x W` echantillons survivants : la fenetre est
-                // dominee par de l'evenement ou par du trou. On ne publie pas une mediane sur
-                // 3 echantillons — on reprend la valeur valide la plus proche et on le dit.
-                // Ce cas est SYSTEMATIQUE sur les dernieres secondes d'une nuit tronquee (§3.7.2).
+                // Fewer than `minValidFraction x W` surviving samples: the window is dominated by
+                // event or by hole. We do not publish a median over 3 samples — we take back the
+                // nearest valid value and we say so.
+                // This case is SYSTEMATIC on the last seconds of a truncated night (§3.7.2).
                 f3[j] = Float.NaN
                 ext[j] = true
             }
         }
-        // Repli : valeur valide la plus proche ; a defaut de toute valeur valide dans
-        // l'intervalle, la passe 1 (§1.3 le prevoit explicitement ainsi).
+        // Fallback: nearest valid value; failing any valid value at all in the interval, pass 1
+        // (§1.3 explicitly provides for it this way).
         val anyValid = (0 until nEval).any { !f3[it].isNaN() }
         if (anyValid) {
             fillNearest(f3)
@@ -227,13 +224,13 @@ object NoiseFloor {
             for (j in 0 until nEval) f3[j] = f0[j]
         }
 
-        // --- Restitution par echantillon ---------------------------------------------------
+        // --- Per-sample restitution --------------------------------------------------------
         val out = FloatArray(len)
         interpolate(evalIdx, f3, nEval, iv, out)
         for (i in 0 until len) floor[iv.fromIdx + i] = out[i]
 
-        // Un echantillon est extrapole des lors que **l'un des deux** points d'evaluation qui
-        // l'encadrent l'est : un plancher interpole depuis une valeur extrapolee reste extrapole.
+        // A sample is extrapolated as soon as **one of the two** evaluation points bracketing it
+        // is: a floor interpolated from an extrapolated value stays extrapolated.
         var j = 0
         for (i in iv.fromIdx until iv.toIdx) {
             while (j + 1 < nEval && evalIdx[j + 1] < i) j++
@@ -242,7 +239,7 @@ object NoiseFloor {
         }
     }
 
-    /** Comble les `NaN` d'un tableau par la valeur valide la plus proche (arriere puis avant). */
+    /** Fills the `NaN`s of an array with the nearest valid value (backward then forward). */
     private fun fillNearest(a: FloatArray) {
         val n = a.size
         var last = Float.NaN
@@ -255,7 +252,7 @@ object NoiseFloor {
         }
     }
 
-    /** Interpolation lineaire des valeurs aux points d'evaluation vers tous les echantillons. */
+    /** Linear interpolation from the values at the evaluation points to every sample. */
     private fun interpolate(evalIdx: IntArray, values: FloatArray, nEval: Int, iv: Segment, out: FloatArray) {
         if (nEval == 1) {
             java.util.Arrays.fill(out, values[0])

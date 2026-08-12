@@ -6,17 +6,16 @@ import com.pendulum.phone.ingest.TimeAnchor
 import com.pendulum.phone.work.AnalysisParams
 
 /**
- * Traduction d'un hypnogramme Health Connect vers ce que `:algo` sait lire.
+ * Translation of a Health Connect hypnogram into what `:algo` can read.
  *
- * Deux operations, et chacune est un piege documente :
- *  - le **changement de repere temporel** (horloge murale UTC -> millisecondes relatives a la
- *    ligne de temps du capteur), qui passe par [TimeAnchor] et jamais par une soustraction
- *    d'horloges murales ;
- *  - le traitement des **trous**, que l'API autorise explicitement entre deux stades.
+ * Two operations, and each of them is a documented trap:
+ *  - the **change of time reference** (UTC wall clock -> milliseconds relative to the sensor
+ *    timeline), which goes through [TimeAnchor] and never through a subtraction of wall clocks;
+ *  - the handling of the **gaps**, which the API explicitly allows between two stages.
  */
 object Hypnogram {
 
-    // Constantes de SleepSessionRecord, recopiees pour que ce fichier reste lisible sans l'API.
+    // Constants from SleepSessionRecord, copied so that this file stays readable without the API.
     const val STAGE_UNKNOWN = 0
     const val STAGE_AWAKE = 1
     const val STAGE_SLEEPING = 2
@@ -26,7 +25,7 @@ object Hypnogram {
     const val STAGE_REM = 6
     const val STAGE_AWAKE_IN_BED = 7
 
-    /** `debutMs:finMs:type;...`, horloge murale UTC. Format de `hc_snapshot.selectedStagesCsv`. */
+    /** `startMs:endMs:type;...`, UTC wall clock. Format of `hc_snapshot.selectedStagesCsv`. */
     fun encodeCsv(stages: List<SleepSourceSelector.StageSpan>): String =
         stages.joinToString(";") { "${it.startMs}:${it.endMs}:${it.stageType}" }
 
@@ -43,23 +42,23 @@ object Hypnogram {
     }
 
     /**
-     * Conversion en fenetres exploitables par `:algo`.
+     * Conversion into windows usable by `:algo`.
      *
-     * ### Les trous
+     * ### The gaps
      *
-     * L'API autorise les trous entre deux stades. Le choix de ce qu'on en fait **change le
-     * denominateur, donc l'index, donc potentiellement une decision** : compter un trou comme du
-     * sommeil gonfle le TST et deflate l'index ; le compter comme de l'eveil fait l'inverse.
-     * C'est pourquoi ce n'est pas une valeur en dur mais un parametre trace dans le hash
-     * ([AnalysisParams.hypnogramHolePolicy]), avec `EXCLUDE` par defaut — un trou n'est pas une
-     * information, et le remplir revient a en inventer une.
+     * The API allows gaps between two stages. What we choose to do with them **changes the
+     * denominator, hence the index, hence potentially a decision**: counting a gap as sleep
+     * inflates the TST and deflates the index; counting it as wake does the opposite. That is why
+     * this is not a hard-coded value but a parameter traced in the hash
+     * ([AnalysisParams.hypnogramHolePolicy]), with `EXCLUDE` by default — a gap is not a piece of
+     * information, and filling it amounts to inventing one.
      *
-     * ### Le cas « duree seule »
+     * ### The "duration only" case
      *
-     * Une source peut ecrire une session sans aucun stade (piege n°1 : techniquement conforme,
-     * inutile pour le controle de plausibilite). On produit alors une unique fenetre
-     * [Stage.SLEEP] couvrant la session : c'est exactement l'information disponible, ni plus —
-     * fabriquer une repartition leger/profond/REM sortie de nulle part serait pire que rien.
+     * A source can write a session without any stage (trap no. 1: technically compliant, useless
+     * for the plausibility check). We then produce a single [Stage.SLEEP] window covering the
+     * session: that is exactly the information available, no more — fabricating a
+     * light/deep/REM breakdown out of nowhere would be worse than nothing.
      */
     fun toWindows(
         stages: List<SleepSourceSelector.StageSpan>,
@@ -95,9 +94,9 @@ object Hypnogram {
         policy: AnalysisParams.HolePolicy,
     ) {
         val stage = when (policy) {
-            // EXCLUDE : on emet quand meme une fenetre, marquee UNKNOWN. Ne rien emettre du tout
-            // laisserait `:algo` interpoler entre les deux stades voisins, ce qui reviendrait a
-            // choisir en silence exactement ce qu'on refuse de choisir.
+            // EXCLUDE: we still emit a window, marked UNKNOWN. Emitting nothing at all would let
+            // `:algo` interpolate between the two neighbouring stages, which would amount to
+            // silently choosing exactly what we are refusing to choose.
             AnalysisParams.HolePolicy.EXCLUDE -> Stage.UNKNOWN
             AnalysisParams.HolePolicy.AS_SLEEP -> Stage.SLEEP
             AnalysisParams.HolePolicy.AS_WAKE -> Stage.WAKE

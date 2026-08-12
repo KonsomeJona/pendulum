@@ -47,13 +47,13 @@ In rough order of value to the project:
 - **Pure functions, explicit sampling rate, no wall clock, no un-seeded randomness.** The whole
   module must be reproducible bit-for-bit from the same input. There is a regression test that
   checks exactly this.
-- **Parameters come from the tables in `docs/03-algorithm.md` §8 (or `docs/fr/ALGO-v2.md` §6, the authoritative French original)**, with their published justification.
+- **Parameters come from the tables in `docs/03-algorithm.md` §8 (or `docs/workings/ALGO-v2.md` §6, the authoritative original)**, with their published justification.
   A parameter without a reason recorded next to it will be questioned.
 - **Every clinical rule cites its source.** AASM v3 and WASM 2016 differ in ways that matter — most
   importantly in how a series is broken — and code that silently picks one is a defect.
 - Comments explain *why*, not *what*. Match the density of the surrounding code, which is
-  deliberately heavy on rationale and light on restating the obvious. Existing comments are in
-  French; new ones may be in French or English.
+  deliberately heavy on rationale and light on restating the obvious. Comments are in English,
+  throughout.
 
 ## Tests
 

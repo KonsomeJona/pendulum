@@ -14,41 +14,41 @@ import com.pendulum.wear.R
 import com.pendulum.wear.ui.MainActivity
 
 /**
- * L'unique notification de la montre en dehors de celle du service d'enregistrement.
+ * The only notification on the watch besides the one of the recording service.
  *
- * ### Pourquoi elle existe
+ * ### Why it exists
  *
- * Le telephone peut demander le demarrage (`/pendulum/start-request`), et la demande arrive dans
- * un service que Google Play Services demarre **depuis l'arriere-plan**. Android 12 y interdit de
- * demarrer un service de premier plan. Quand le refus tombe, la notification est le seul chemin
- * que le systeme garantisse : le tap de l'utilisateur est une exemption explicite au blocage.
+ * The phone can ask for a start (`/pendulum/start-request`), and the request arrives in a service
+ * that Google Play Services starts **from the background**. Android 12 forbids starting a
+ * foreground service from there. When the refusal comes, the notification is the only path the
+ * system guarantees: the user's tap is an explicit exemption from the block.
  *
- * Ce n'est pas un pis-aller a cacher. Elle donne exactement le geste « une tape » recherche, sur
- * l'appareil qui est deja au poignet — et pas sur celui qu'il faut aller chercher.
+ * This is not a makeshift to be hidden. It gives exactly the "one tap" gesture that was sought, on
+ * the device already on the wrist — and not on the one that has to be fetched.
  */
 object WatchNotifications {
 
     /**
-     * « Le contexte est scelle, appuyez pour demarrer. »
+     * "The context is sealed, press to start."
      *
-     * Priorite haute : elle repond a un geste que l'utilisateur vient de faire sur son telephone,
-     * a l'instant ou il attend que quelque chose se passe. Ce n'est pas une sollicitation.
+     * High priority: it answers a gesture the user has just made on their phone, at the very moment
+     * they are waiting for something to happen. It is not a solicitation.
      *
-     * Elle ouvre l'ecran plutot que de demarrer directement, et c'est deliberement plus lent d'un
-     * geste : le preflight est reevalue a l'ouverture, donc un espace disque devenu insuffisant
-     * entre le scellement et le tap est vu avant que la nuit ne commence, pas apres.
+     * It opens the screen rather than starting directly, and that is deliberately one gesture
+     * slower: the preflight is re-evaluated on opening, so disk space that has become insufficient
+     * between the sealing and the tap is seen before the night begins, not after.
      */
-    // `notify` est garde par `peutNotifier` des la premiere ligne, mais lint ne suit pas une garde
-    // a travers un appel de fonction : `PermissionDetector` n'analyse que le corps de la methode
-    // appelante. Inliner le `checkSelfPermission` ici satisferait lint et laisserait la raison de
-    // la garde sans domicile — c'est la KDoc de `peutNotifier` qui la porte, et elle vaut plus que
-    // le warning. Meme forme, meme motif dans `phone/notify/Notifications.kt`.
+    // `notify` is guarded by `canNotify` from the very first line, but lint does not follow a guard
+    // across a function call: `PermissionDetector` only analyses the body of the calling method.
+    // Inlining the `checkSelfPermission` here would satisfy lint and leave the reason for the guard
+    // homeless — it is the KDoc of `canNotify` that carries it, and it is worth more than the
+    // warning. Same shape, same rationale in `phone/notify/Notifications.kt`.
     @android.annotation.SuppressLint("MissingPermission")
-    fun pretADemarrer(ctx: Context) {
-        if (!peutNotifier(ctx)) return
-        creerCanal(ctx)
+    fun readyToStart(ctx: Context) {
+        if (!canNotify(ctx)) return
+        createChannel(ctx)
 
-        val ouvrir = PendingIntent.getActivity(
+        val open = PendingIntent.getActivity(
             ctx,
             0,
             Intent(ctx, MainActivity::class.java)
@@ -57,40 +57,40 @@ object WatchNotifications {
         )
 
         NotificationManagerCompat.from(ctx).notify(
-            ID_PRET,
-            NotificationCompat.Builder(ctx, CANAL)
+            ID_READY,
+            NotificationCompat.Builder(ctx, CHANNEL)
                 .setSmallIcon(R.drawable.ic_pendulum)
                 .setContentTitle(ctx.getString(R.string.notif_ready_title))
                 .setContentText(ctx.getString(R.string.notif_ready_body))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
-                .setContentIntent(ouvrir)
+                .setContentIntent(open)
                 .setAutoCancel(true)
                 .build(),
         )
     }
 
     /**
-     * `POST_NOTIFICATIONS` est une permission d'execution : poster sans l'avoir ne leve pas, cela
-     * ne fait simplement rien. La verifier evite au moins de croire qu'on a prevenu quelqu'un.
+     * `POST_NOTIFICATIONS` is a runtime permission: posting without holding it does not throw, it
+     * simply does nothing. Checking it at least avoids believing someone has been told.
      *
-     * C'est deja un bloqueur du preflight, donc le cas ou elle manque ici est celui d'un
-     * demarrage demande avant que l'utilisateur n'ait ouvert l'application une premiere fois.
+     * It is already a preflight blocker, so the case where it is missing here is that of a start
+     * requested before the user has opened the application for the first time.
      */
-    private fun peutNotifier(ctx: Context): Boolean =
+    private fun canNotify(ctx: Context): Boolean =
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun creerCanal(ctx: Context) {
+    private fun createChannel(ctx: Context) {
         ctx.getSystemService(NotificationManager::class.java)?.createNotificationChannel(
             NotificationChannel(
-                CANAL,
+                CHANNEL,
                 ctx.getString(R.string.notif_channel_action),
                 NotificationManager.IMPORTANCE_HIGH,
             ),
         )
     }
 
-    private const val CANAL = "pendulum.action"
-    private const val ID_PRET = 2
+    private const val CHANNEL = "pendulum.action"
+    private const val ID_READY = 2
 }

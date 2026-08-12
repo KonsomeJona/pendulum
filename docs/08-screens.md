@@ -6,21 +6,20 @@
 > [what this is, and what it is not](../README.md#what-this-is-and-what-it-is-not).
 
 **These are real screenshots.** They were captured with `adb exec-out screencap` from the application
-running on emulators: an Android 14 phone profile, and a small round Wear OS 5 target for the watch. The interface is in English; the working documents under `docs/fr/` are not, and that is
-deliberate — they are the record of how the decisions were made, not user-facing text.
+running on emulators: an Android 14 phone profile, and a small round Wear OS 5 target for the watch.
 
-> **A caution about the French strings quoted further down this file.** Several passages below quote
-> the interface in French — `Réessayer maintenant`, `masque accéléro`, `Hypnogramme indisponible`,
-> *pour le médecin*, and others. **None of these is on screen.** They are quotations from
-> [`fr/UX.md`](fr/UX.md), written before the interface was translated, and never updated when it
-> was. Where a sentence below is presented as the words the user reads, take the string from
+> **A caution about the interface copy quoted further down this file.** Several passages below quote
+> what a screen says. Do not take those quotations as the strings the application ships.
+> [`workings/UX.md`](workings/UX.md) specified this copy before the interface existed and was never
+> updated when it changed, and this file has in places followed it rather than the build. Where a
+> sentence below is presented as the words the user reads, take the string from
 > **`phone/src/main/res/values/strings.xml`**, which is the only authority on what the application
-> says, and which `ui/TextesTest.kt` guards against a list of forbidden word stems.
+> says, and which `ui/TextsTest.kt` guards against a list of forbidden word stems.
 >
 > That authority moved, and the move is the point. The strings used to be 461 English constants
 > compiled into a Kotlin `object`, on the argument that an object can be unit-tested and a
 > `strings.xml` cannot. The argument was true and it cost the translation — a string compiled into
-> an object does not localise, however well it is tested. `ui/text/Textes.kt` is now the bridge
+> an object does not localise, however well it is tested. `ui/text/Texts.kt` is now the bridge
 > rather than the source: the pure functions that assemble half of this product's text return a
 > **resource id and its arguments** instead of a string, so they stay testable on the JVM with no
 > `Context`, and Compose resolves them at the last moment in the device's locale.
@@ -82,34 +81,34 @@ drawing cannot expose because the person drawing it lays the text out by hand:
 ## On real hardware, 4 August 2026
 
 Taken on a Pixel 10 Pro Fold and a Pixel Watch 3 during the screen-by-screen review recorded in
-[`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) §14. These are the current interface. **The database is
+[`workings/BENCH-LOG.md`](workings/BENCH-LOG.md) §14. These are the current interface. **The database is
 empty**, as it is on a fresh installation — which is why no screen here shows a night, a trend
 chart or a night detail: those five screens have no door on a new install, and the project
 deliberately refuses to inject fake nights in order to photograph them.
 
 | Screen | What it shows |
 |---|---|
-| ![First-run notice, top](images/screens/revue-avertissement-avant.png) | **The first-run notice, before scrolling.** The gate of the whole product. It cannot be swiped past and the button below cannot be reached without reading through. |
-| ![First-run notice, button blocked](images/screens/revue-avertissement-bouton-bloque.png) | **The same notice, button disabled — and saying why.** The rule of the house: never a grey button without its reason next to it. Here the reason is that the four confirmations are not all ticked. |
-| ![First-run notice, confirmed](images/screens/revue-avertissement-confirme.png) | **Four confirmations ticked, button live.** The counter is written on the way *out* of the step, not on the way in, so a half-read notice is not recorded as read. |
-| ![Home](images/screens/revue-accueil.png) | **Home, on an empty database.** Three cards whose order never changes, and two disabled buttons each carrying its own reason. A card with nothing to say is disabled, never removed — a target that moves between 23:00 and 05:00 is worse than a card that admits it has nothing. |
-| ![Evening form](images/screens/revue-formulaire-du-soir.png) | **The evening record, before sealing.** The only door of the product: the watch will not start until this is sealed, and once sealed it cannot be edited. |
-| ![Pairing step](images/screens/revue-assistant-appairage.png) | **Assistant, pairing step.** The sensor check that tells you whether the watch is reachable at all, before the first night rather than after it. |
-| ![Sleep source step](images/screens/revue-assistant-source-sommeil.png) | **Assistant, sleep source.** The second device is not optional: one sensor cannot honestly measure both the movements and the sleep they happen in. |
-| ![Trend refused](images/screens/revue-tendance-refus.png) | **Trend, refused under three nights.** Not a warning over a figure — there is no figure. The refusal is carried by the type, not by the display: no branch of code produces an aggregate below three nights. |
-| ![Settings](images/screens/revue-reglages.png) | **Settings.** Where the counting rule and the parameter profile live, both shown as values rather than as controls, because neither is adjustable yet. |
-| ![P1 report](images/screens/revue-rapport-p1.png) | **The P1 report.** The only blocking milestone of the project, instrumented and not yet passed. Each night gets a verdict on three criteria, and *undetermined* is a verdict like the others. |
-| ![Erase everything](images/screens/revue-effacement.png) | **Erase everything.** Local data, local erasure, and a confirmation that has to be typed. |
-| ![Watch, at rest](images/screens/revue-montre-repos.png) | **The watch, blocked on an unsealed context.** Amber and not red: this is a step the user has not taken yet, not a fault of the device. |
+| ![First-run notice, top](images/screens/notice-before.png) | **The first-run notice, before scrolling.** The gate of the whole product. It cannot be swiped past and the button below cannot be reached without reading through. |
+| ![First-run notice, button blocked](images/screens/notice-button-blocked.png) | **The same notice, button disabled — and saying why.** The rule of the house: never a grey button without its reason next to it. Here the reason is that the four confirmations are not all ticked. |
+| ![First-run notice, confirmed](images/screens/notice-confirmed.png) | **Four confirmations ticked, button live.** The counter is written on the way *out* of the step, not on the way in, so a half-read notice is not recorded as read. |
+| ![Home](images/screens/home.png) | **Home, on an empty database.** Three cards whose order never changes, and two disabled buttons each carrying its own reason. A card with nothing to say is disabled, never removed — a target that moves between 23:00 and 05:00 is worse than a card that admits it has nothing. |
+| ![Evening form](images/screens/evening-form.png) | **The evening record, before sealing.** The only door of the product: the watch will not start until this is sealed, and once sealed it cannot be edited. |
+| ![Pairing step](images/screens/onboarding-pairing.png) | **Assistant, pairing step.** The sensor check that tells you whether the watch is reachable at all, before the first night rather than after it. |
+| ![Sleep source step](images/screens/onboarding-sleep-source.png) | **Assistant, sleep source.** The second device is not optional: one sensor cannot honestly measure both the movements and the sleep they happen in. |
+| ![Trend refused](images/screens/trend-refusal.png) | **Trend, refused under three nights.** Not a warning over a figure — there is no figure. The refusal is carried by the type, not by the display: no branch of code produces an aggregate below three nights. |
+| ![Settings](images/screens/settings.png) | **Settings.** Where the counting rule and the parameter profile live, both shown as values rather than as controls, because neither is adjustable yet. |
+| ![P1 report](images/screens/p1-report.png) | **The P1 report.** The only blocking milestone of the project, instrumented and not yet passed. Each night gets a verdict on three criteria, and *undetermined* is a verdict like the others. |
+| ![Erase everything](images/screens/erasure.png) | **Erase everything.** Local data, local erasure, and a confirmation that has to be typed. |
+| ![Watch, at rest](images/screens/watch-idle.png) | **The watch, blocked on an unsealed context.** Amber and not red: this is a step the user has not taken yet, not a fault of the device. |
 
 ## What is faithful, and what is not
 
 | Faithful | Source |
 |---|---|
-| French strings | [`fr/UX.md`](fr/UX.md), verbatim wherever it wrote them |
-| Dark palette, exact hex | [`fr/UX.md`](fr/UX.md) §5.1 |
-| Spacing scale, 14 dp card radius, 1 dp borders, no shadows | [`fr/UX.md`](fr/UX.md) §5.3 |
-| Layer order, marker shapes, axis conventions of the plots | [`fr/UX.md`](fr/UX.md) §4 |
+| Interface copy | [`workings/UX.md`](workings/UX.md), verbatim wherever it wrote them |
+| Dark palette, exact hex | [`workings/UX.md`](workings/UX.md) §5.1 |
+| Spacing scale, 14 dp card radius, 1 dp borders, no shadows | [`workings/UX.md`](workings/UX.md) §5.3 |
+| Layer order, marker shapes, axis conventions of the plots | [`workings/UX.md`](workings/UX.md) §4 |
 
 Not faithful, and deliberately so: the typeface. The specification calls for Roboto Flex with tabular
 figures; these files use a system font stack so that they render the same in a browser, in a Markdown
@@ -120,7 +119,7 @@ paragraphs fit on the warning screen at a legible size.
 Three strings on these screens are **not** in the specification and were written for the mock-up. They
 are marked in the sections below: the evening-record form, the sentence explaining why the result is
 hidden on waking, and the two captions under the trend plot. Each corresponds to a decision recorded in
-[`01-overview.md`](01-overview.md) §4 that never reached [`fr/UX.md`](fr/UX.md), which was written
+[`01-overview.md`](01-overview.md) §4 that never reached [`workings/UX.md`](workings/UX.md), which was written
 before it.
 
 ---
@@ -138,11 +137,11 @@ dismissed by everyone within a week; a warning that costs a scroll and a deliber
 scrolled past deliberately. The same four limits are reproduced verbatim in the exported PDF, so a
 physician reading the report sees exactly what the user agreed to at install time.
 
-The limits are stated as permanent — *quatre limites qui ne disparaîtront jamais* — rather than as
+The limits are stated as permanent — *four limits that will never go away* — rather than as
 caveats, because three of them are properties of the sensor and its position, not defects to be fixed in
 a later version. No amount of signal processing gives an ankle accelerometer a respiratory channel.
 
-## The bedtime ritual — "Ce soir", and the seal
+## The bedtime ritual — "Tonight", and the seal
 
 ![Tonight card showing watch battery, strap and sleep source, above the evening-record form and its seal button](images/tonight.svg)
 
@@ -158,8 +157,8 @@ it twice a day, and a hard-coded time window is wrong for shift work and for any
 zone. The state comes from a persisted state machine; the clock only breaks ties. See
 [`06-interface.md`](06-interface.md) §2.2.
 
-The battery line is advice: below 85 % it turns amber and says `98 % recommandé — une nuit consomme
-40 à 70 %`, and it blocks nothing. The thing that does block is the second card. **The watch refuses to
+The battery line is advice: below 85 % it turns amber and says `98% recommended — one night draws
+40 to 70%.`, and it blocks nothing. The thing that does block is the second card. **The watch refuses to
 start until the evening record is sealed**, append-only, not editable afterwards — the first guard rail
 in [`01-overview.md`](01-overview.md) §4. Its purpose is narrow and worth stating: it prevents the
 context from being adjusted after the result is known. Someone who sees a bad night and then remembers
@@ -167,7 +166,7 @@ they had a drink is not being dishonest; they are being human, and the only plac
 structurally difficult is in the code, before the number exists.
 
 *The fields of this card are written for the mock-up.* `01-overview.md` names them — dose, context, which
-leg, which strap, alone in the bed — but `fr/UX.md` predates the decision and never wrote the screen.
+leg, which strap, alone in the bed — but `workings/UX.md` predates the decision and never wrote the screen.
 
 ## Waking — the provisional state
 
@@ -179,10 +178,10 @@ not for hours — the manufacturer's own documentation describes watch-to-phone 
 the watch's battery policy, with no guaranteed delay.
 
 So the design constraint is: **this must not look like a failure.** Nothing on it is red. The title is
-neutral and factual, there is no error code, and the flag is an amber `masque accéléro` chip, which is a
+neutral and factual, there is no error code, and the flag is an amber `accel mask` chip, which is a
 flag and not a diagnosis of the app's health. The body text says outright that this synchronisation
 often happens several hours after waking and that the figure will be recomputed automatically with
-nothing to do. `Réessayer maintenant` exists for the impatient; the retry ladder — 30 min, 1 h, 2 h, 4 h,
+nothing to do. `Try again now` exists for the impatient; the retry ladder — 30 min, 1 h, 2 h, 4 h,
 8 h, give up at T+36 h — runs whether it is pressed or not. If the interface presented a missing
 hypnogram as an anomaly, the user would conclude the app was broken every single morning, and would stop
 believing the one flag that does mean something.
@@ -199,13 +198,13 @@ Read it from the top, because the order is the argument.
 
 **The verdict comes before the number.** The first line says the variation is indistinguishable from
 night-to-night variability; the figure follows. Reverse those two and the number is read and the caution
-is not. The words *amélioration*, *aggravation*, *efficace* exist nowhere in the string resources, and a
+is not. The words *improvement*, *worsening*, *effective* exist nowhere in the string resources, and a
 unit test asserts that on the resource file itself.
 
 **The number is a rhythm in seconds, not an hourly count.** Night-to-night variability of the mean log
 inter-movement interval is 3.6 % against 43.2 % for the hourly count (Skeba et al. 2016) — twelve times
 more stable, and it needs no denominator. The hourly count stays, one line down, in tertiary type,
-labelled *pour le médecin*, because that is the language sleep physicians read.
+labelled *for the physician*, because that is the language sleep physicians read.
 
 **The uncertainty is measured, not decorative.** The CI band is a percentile bootstrap over the user's
 own nights with a fixed seed, so the interval does not move between recompositions. The wider band is the
@@ -250,8 +249,8 @@ Three details are load-bearing:
 
 - **Dots, not a progress bar.** A bar suggests a score that is rising and rewards the user for filling
   it. Two filled discs and one empty one state a fact about how many nights exist.
-- **The reason is given in figures.** *Le seuil de 15 mouvements par heure n'est dépassé que sur environ
-  une nuit sur trois* — even in people whose disorder is confirmed. The intended user is technical, and a
+- **The reason is given in figures.** *The threshold of 15 movements per hour is passed on about one
+  night in three* — even in people whose disorder is confirmed. The intended user is technical, and a
   quantified reason persuades where an instruction irritates.
 - **The export button stays visible and disabled, with its reason written on the button itself.** Never
   an enabled button that fails, and never a silently missing one.
@@ -284,8 +283,8 @@ The hypnogram sits directly below, same width, same X transform, three lanes: th
 the Health Connect stages in laboratory order with wake at the top, and a lane of amber hatching where
 the two disagree. REM is the only stage with a distinct treatment, hatched rather than merely coloured,
 because few periodic movements are expected there. Where no hypnogram exists that middle lane is not
-drawn empty; it is replaced by a muted band carrying `Hypnogramme indisponible — masque d'immobilité
-accéléro utilisé`.
+drawn empty; it is replaced by a muted band carrying `Hypnogram unavailable — accelerometer
+immobility mask used.`.
 
 The quality block lists each check with its measured value, its threshold and its state. A single failed
 check makes the night ineligible, and the reason is then shown at the top in amber — not red, because a
@@ -318,7 +317,7 @@ by looking at a screen. Five of them can be checked on these files as they stand
 
 | # | Constraint | Where to check it |
 |---|---|---|
-| **P1** | No aggregation below three eligible nights | [`images/trend-refused.svg`](images/trend-refused.svg), and the real capture [`images/screens/revue-tendance-refus.png`](images/screens/revue-tendance-refus.png) — no plot, no median, no category, export disabled with its reason |
+| **P1** | No aggregation below three eligible nights | [`images/trend-refused.svg`](images/trend-refused.svg), and the real capture [`images/screens/trend-refusal.png`](images/screens/trend-refusal.png) — no plot, no median, no category, export disabled with its reason |
 | **P2** | Every aggregate figure carries its uncertainty in the same line | [`images/screenshots/trend-numbers.png`](images/screenshots/trend-numbers.png) — the interval and the eligible-night count sit on the figure's own line, and the hourly count carries its own |
 | **P4** | At most three pieces of information above the fold on waking, at most one action | [`images/screenshots/waking-provisional.png`](images/screenshots/waking-provisional.png) — status, hidden aggregate, one button |
 | **P5** | No truncated scale, no mean hiding an extremum | [`images/screenshots/night-detail.png`](images/screenshots/night-detail.png) — min/max decimation; and the trend's zero-anchor exception, argued above rather than assumed |

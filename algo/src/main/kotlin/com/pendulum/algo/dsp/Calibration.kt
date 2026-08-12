@@ -7,95 +7,93 @@ import com.pendulum.algo.model.NightCalibration
 import kotlin.math.abs
 
 /**
- * §3.3 — normalisation inter-nuits. **Un seul mecanisme subsiste**,
- * [fromGrossBodyMovements] : `gainCal` estime le gain de la chaine cheville -> bracelet ->
- * boitier -> MEMS a partir des retournements du corps, qui sont les seuls gestes d'amplitude
- * connue qu'une nuit fournit gratuitement.
+ * §3.3 — inter-night normalisation. **A single mechanism remains**,
+ * [fromGrossBodyMovements]: `gainCal` estimates the gain of the ankle -> strap -> case -> MEMS
+ * chain from body turns, which are the only gestures of known amplitude that a night supplies for
+ * free.
  *
- * Historiquement il portait le nom de **volet B**, parce qu'il en existait un volet A
- * (autocalibration statique du capteur) et, un temps, un rituel guide. Les deux ont ete retires,
- * et les deux sections ci-dessous disent pourquoi. Le critere applique est le meme dans les deux
- * cas, et c'est le seul qui vaille : du code ecrit, teste, et documente comme actif alors
- * qu'aucun appelant de production ne l'invoque ment sur ce que fait reellement le produit.
+ * Historically it went by the name of **part B**, because there existed a part A (static sensor
+ * autocalibration) and, for a time, a guided ritual. Both have been removed, and the two sections
+ * below say why. The criterion applied is the same in both cases, and it is the only one that
+ * counts: code that is written, tested and documented as active while no production caller invokes
+ * it lies about what the product actually does.
  *
- * ### Le rituel guide, et pourquoi il n'existe plus
+ * ### The guided ritual, and why it no longer exists
  *
- * Un troisieme mecanisme a vecu ici : un rituel de 70 s — 30 s d'immobilite, dix dorsiflexions au
- * metronome, 10 s de retour au calme — dont la KDoc annoncait « c'est celui qui compte ». Il
- * mesurait le gain sur un geste impose plutot que sur un geste subi, ce qui est effectivement
- * meilleur.
+ * A third mechanism lived here: a 70 s ritual — 30 s of immobility, ten metronome-paced
+ * dorsiflexions, 10 s of return to calm — whose KDoc announced "this is the one that counts". It
+ * measured the gain on an imposed gesture rather than on an undergone one, which is indeed better.
  *
- * **Il a ete retire le 2026-08-05 parce qu'il n'a jamais ete branche.** La fonction etait ecrite,
- * testee, documentee, et aucun appelant de production ne l'a jamais invoquee : l'ecran qui aurait
- * guide l'utilisateur n'existait pas cote montre, et il ne pouvait pas exister simplement — ce
- * module n'est pas dans l'APK publie de la montre (`debugImplementation`), donc le calcul aurait
- * demande de capturer le rituel comme une session et de le renvoyer au telephone. Le cout etait
- * reel, la fonction dormante donnait l'impression contraire.
+ * **It was removed on 2026-08-05 because it was never wired up.** The function was written,
+ * tested, documented, and no production caller ever invoked it: the screen that would have guided
+ * the user did not exist on the watch side, and it could not exist easily — this module is not in
+ * the watch's published APK (`debugImplementation`), so the computation would have required
+ * capturing the ritual as a session and sending it back to the phone. The cost was real, the
+ * dormant function gave the opposite impression.
  *
- * Consequence a assumer plutot qu'a cacher : la comparabilite inter-nuits repose desormais
- * entierement sur [fromGrossBodyMovements] et sur la consigne « meme bracelet, meme trou, meme
- * jambe », que la v1 qualifiait de voeu et non de solution. C'est toujours vrai. Le voeu est
- * simplement redevenu visible.
+ * A consequence to own rather than hide: inter-night comparability now rests entirely on
+ * [fromGrossBodyMovements] and on the instruction "same strap, same hole, same leg", which v1
+ * called a wish and not a solution. That is still true. The wish has simply become visible again.
  *
- * ### Le volet A, autocalibration statique, et pourquoi il n'existe plus non plus
+ * ### Part A, static autocalibration, and why it no longer exists either
  *
- * Il faisait ce que fait GGIR / van Hees, entierement derive de la nuit elle-meme et sans aucune
- * action de l'utilisateur : reperer les fenetres statiques (`sd < 13 mg` sur 10 s), exiger que les
- * points couvrent la sphere (`max - min >= 0,30 g` sur chacun des trois axes, sans quoi le
- * probleme est mal pose et les moindres carres rendent un resultat confiant et faux), puis cinq
- * iterations de Gauss-Newton sur `(offset o, gain diagonal S)`, avec rejet si `||o|| > 0,10 g` ou
- * `max|S - 1| > 0,05` — au-dela ce n'est plus une derive de MEMS, c'est un capteur suspect.
+ * It did what GGIR / van Hees does, entirely derived from the night itself and with no user action
+ * at all: locate the static windows (`sd < 13 mg` over 10 s), require the points to cover the
+ * sphere (`max - min >= 0.30 g` on each of the three axes, failing which the problem is ill-posed
+ * and least squares return a confident and false result), then five Gauss-Newton iterations on
+ * `(offset o, diagonal gain S)`, with rejection if `||o|| > 0.10 g` or `max|S - 1| > 0.05` —
+ * beyond that it is no longer MEMS drift, it is a suspect sensor.
  *
- * **Retire le 2026-08-07, meme critere que le rituel : aucun appelant de production.**
- * `NightAnalyzer` construisait toujours `sensor = null`. Contrairement au rituel, l'excuse ne
- * pouvait pas etre le cout d'un ecran — ses deux entrees, le signal brut et les segments, sont
- * disponibles des la passe 0. Ce qui manquait n'etait pas une entree, c'etait une **sortie**, et
- * c'est ce qui a decide du retrait plutot que du branchement :
+ * **Removed on 2026-08-07, same criterion as the ritual: no production caller.**
+ * `NightAnalyzer` always built `sensor = null`. Unlike the ritual, the excuse could not be the
+ * cost of a screen — its two inputs, the raw signal and the segments, are available from pass 0
+ * onwards. What was missing was not an input, it was an **output**, and that is what settled
+ * removal rather than wiring:
  *
- * 1. **Le resultat n'avait aucun lecteur.** `NightCalibration.sensor` est ecrit et jamais lu :
- *    `Preprocess` ne consulte que `gainCalG`, et la base ne persiste que `gainCalG` et
- *    `gainSource`. Le brancher la aurait paye un Gauss-Newton par nuit pour ne changer aucun
- *    chiffre — le defaut du rituel, plus un cout de calcul.
- * 2. **La seule vraie sortie est hors de ce module.** Corriger le signal suppose de le faire
- *    entre la construction de la ligne de temps et la separation gravite / mouvement :
- *    `Preprocess.run` recoit des blocs, alors que la correction s'applique a un `TriAxial` qui
- *    n'existe qu'apres `TimelineBuilder`. Brancher honnetement demande d'ouvrir cette couture-la,
- *    pas deux lignes dans l'orchestrateur.
- * 3. **Corriger les blocs en amont aurait desarme un controle d'integrite.**
- *    `Integrity.collectStaticNorm` utilise exactement le meme critere de 13 mg pour verifier que
- *    la norme statique vaut bien 1 g, et alimente `decodeSuspect`, lequel commande
- *    `IntegrityReport.acceptable`. Pre-corriger les echantillons rendait ce controle incapable de
- *    se declencher. La KDoc de l'autocalibration disait elle-meme qu'au-dela de ses seuils
- *    « le corriger masquerait la panne » : le pre-appliquer aveuglement faisait precisement cela.
+ * 1. **The result had no reader.** `NightCalibration.sensor` is written and never read:
+ *    `Preprocess` only consults `gainCalG`, and the database only persists `gainCalG` and
+ *    `gainSource`. Wiring it there would have paid for one Gauss-Newton per night without changing
+ *    a single figure — the ritual's flaw, plus a computation cost.
+ * 2. **The only real output lies outside this module.** Correcting the signal means doing it
+ *    between the construction of the timeline and the gravity / movement separation:
+ *    `Preprocess.run` receives blocks, whereas the correction applies to a `TriAxial` that only
+ *    exists after `TimelineBuilder`. Wiring it honestly requires opening that seam, not two lines
+ *    in the orchestrator.
+ * 3. **Correcting the blocks upstream would have disarmed an integrity check.**
+ *    `Integrity.collectStaticNorm` uses exactly the same 13 mg criterion to verify that the static
+ *    norm really is 1 g, and feeds `decodeSuspect`, which commands
+ *    `IntegrityReport.acceptable`. Pre-correcting the samples made that check incapable of firing.
+ *    The autocalibration KDoc itself said that beyond its thresholds
+ *    "correcting it would mask the failure": blindly pre-applying it did precisely that.
  *
- * Reste une raison de fond, qui explique que son absence n'ait jamais ete remarquee — elle est
- * **estimee et non mesuree**, a verifier si quelqu'un rouvre le sujet : la chaine de detection est
- * passe-haut a 0,50 Hz, ce qui elimine le terme d'offset avant meme l'enveloppe, et le terme de
- * gain est borne a 5 % par la regle de rejet ci-dessus tout en se simplifiant largement dans le
- * rapport enveloppe / plancher, le plancher etant estime sur le meme signal. L'effet attendu sur
- * le PLMI etait donc du second ordre, pour un cout de premier ordre.
+ * One underlying reason remains, which explains why its absence was never noticed — it is
+ * **estimated and not measured**, to be verified if anyone reopens the subject: the detection
+ * chain is high-pass at 0.50 Hz, which eliminates the offset term even before the envelope, and
+ * the gain term is bounded to 5 % by the rejection rule above while largely cancelling out in the
+ * envelope / floor ratio, the floor being estimated on the same signal. The expected effect on the
+ * PLMI was therefore second order, for a first-order cost.
  *
- * Le code retire est dans l'historique git ; le rebrancher veut dire ouvrir la couture du point 2
- * et trancher le point 3, pas restaurer la fonction telle quelle.
+ * The removed code is in the git history; rewiring it means opening the seam of point 2 and
+ * settling point 3, not restoring the function as it was.
  */
 object Calibration {
 
-    /** Tolerance inter-nuits de §3.3 : au-dela, la nuit est marquee `CALIB_OUTLIER`. */
+    /** Inter-night tolerance of §3.3: beyond it, the night is flagged `CALIB_OUTLIER`. */
     const val DEFAULT_OUTLIER_TOLERANCE = 0.35
 
     /**
-     * **Le seul etalon de gain du produit** depuis le retrait du rituel guide.
+     * **The product's only gain reference** since the guided ritual was removed.
      *
-     * Etalon interne : la **mediane des amplitudes crete des mouvements corporels grossiers** de
-     * la nuit. Les retournements sont un evenement physiologiquement stereotype, frequent
-     * (20 a 60 par nuit) et d'amplitude relativement stable (Sicbaldi : 377 +/- 63 mg pendant le
-     * sommeil, soit un CV de 17 % a travers les sujets). C'est un geste **subi** et non impose :
-     * son amplitude varie avec la position de depart, la literie et la profondeur du sommeil, la
-     * ou un geste guide aurait ete reproductible. C'est la limite connue de cet etalon, et il n'y
-     * en a pas d'autre.
+     * Internal standard: the **median of the peak amplitudes of the night's gross body
+     * movements**. Turns are a physiologically stereotyped event, frequent (20 to 60 per night)
+     * and of relatively stable amplitude (Sicbaldi: 377 +/- 63 mg during sleep, i.e. a CV of 17 %
+     * across subjects). It is an **undergone** gesture and not an imposed one: its amplitude
+     * varies with the starting position, the bedding and the depth of sleep, where a guided
+     * gesture would have been reproducible. That is the known limit of this standard, and there is
+     * no other.
      *
-     * `gainSource` doit accompagner **chaque** PLMI publie : il ne vaut plus que `GROSS_BODY` ou
-     * `NONE`, et cette derniere valeur signifie qu'aucune comparaison inter-nuits n'est fondee.
+     * `gainSource` must accompany **every** published PLMI: it is now only ever `GROSS_BODY` or
+     * `NONE`, and that latter value means that no inter-night comparison is founded.
      */
     fun fromGrossBodyMovements(
         clms: List<Clm>,
@@ -116,8 +114,9 @@ object Calibration {
         val floor = if (floors.isEmpty()) Float.NaN else Numeric.median(floors.toFloatArray())
         val snr = if (floor.isNaN() || floor <= 0f) Float.NaN else gain / floor
         return NightCalibration(
-            // Plus aucun producteur depuis le retrait du volet A. Le champ survit dans `Model.kt`,
-            // ou il n'a desormais ni ecrivain ni lecteur : a supprimer par qui touchera au modele.
+            // No producer at all since part A was removed. The field survives in `Model.kt`,
+            // where it now has neither writer nor reader: to be deleted by whoever touches the
+            // model.
             sensor = null,
             gainCalG = gain,
             floorCalG = floor,
@@ -128,8 +127,8 @@ object Calibration {
     }
 
     /**
-     * Controle qualite inter-nuits (§3.3). `true` = nuit non comparable a sa campagne :
-     * « serrage du bracelet probablement different — resserrer et refaire ».
+     * Inter-night quality check (§3.3). `true` = night not comparable to its campaign:
+     * "strap tightness probably different — retighten and redo".
      */
     private fun isOutlier(gainCalG: Float, baselineGainG: Float?, tolerance: Double = DEFAULT_OUTLIER_TOLERANCE): Boolean {
         val b = baselineGainG ?: return false

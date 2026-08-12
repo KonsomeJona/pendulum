@@ -4,21 +4,20 @@ import com.pendulum.format.wire.ChunkMeta
 import com.pendulum.format.wire.WireFormatException
 
 /**
- * Le contenu exact d'un `DataItem` `/pendulum/chunk/<hex>/<idx>` : les metadonnees puis les octets
- * du fichier.
+ * The exact contents of a `/pendulum/chunk/<hex>/<idx>` `DataItem`: the metadata, then the bytes
+ * of the file.
  *
  * ```
- * [u32 metaLen][metaLen octets de ChunkMeta.encode()][le fichier de chunk, tel quel]
+ * [u32 metaLen][metaLen bytes of ChunkMeta.encode()][the chunk file, as it is]
  * ```
  *
- * **Pourquoi pas un `DataMap`.** Un `DataMap` est un dictionnaire : renommer une cle cote
- * emetteur donne un `null` cote recepteur, sans erreur, et le symptome apparait des semaines
- * plus tard sous la forme d'une nuit vide. Ici une divergence de layout echoue au premier
- * champ, avec un message.
+ * **Why not a `DataMap`.** A `DataMap` is a dictionary: renaming a key on the sender side yields a
+ * `null` on the receiver side, with no error, and the symptom shows up weeks later in the form of
+ * an empty night. Here a layout divergence fails on the first field, with a message.
  *
- * Ce n'est pas dans `:format` uniquement parce que l'enveloppe est une convention de transport
- * entre `:wear` et `:phone` et non une structure de fil versionnee — `ChunkMeta`, qui l'est,
- * porte deja le numero de version du protocole en tete de ses octets.
+ * This is not in `:format` solely because the envelope is a transport convention between `:wear`
+ * and `:phone` and not a versioned wire structure — `ChunkMeta`, which is one, already carries the
+ * protocol version number at the head of its bytes.
  */
 object ChunkEnvelope {
 
@@ -37,13 +36,13 @@ object ChunkEnvelope {
     data class Decoded(val meta: ChunkMeta, val chunkBytes: ByteArray)
 
     fun decode(payload: ByteArray): Decoded {
-        if (payload.size < 4) throw WireFormatException("enveloppe de chunk trop courte")
+        if (payload.size < 4) throw WireFormatException("chunk envelope too short")
         val metaLen = (payload[0].toInt() and 0xFF) or
             ((payload[1].toInt() and 0xFF) shl 8) or
             ((payload[2].toInt() and 0xFF) shl 16) or
             ((payload[3].toInt() and 0xFF) shl 24)
         if (metaLen < 0 || 4 + metaLen > payload.size) {
-            throw WireFormatException("longueur de metadonnees invalide : $metaLen")
+            throw WireFormatException("invalid metadata length: $metaLen")
         }
         val meta = ChunkMeta.decode(payload.copyOfRange(4, 4 + metaLen))
         return Decoded(meta, payload.copyOfRange(4 + metaLen, payload.size))

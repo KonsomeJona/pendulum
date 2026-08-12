@@ -42,42 +42,42 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.pendulum.phone.R
-import com.pendulum.phone.data.AppairageMontre
-import com.pendulum.phone.export.PorteP1Exporter
+import com.pendulum.phone.data.WatchPairing
+import com.pendulum.phone.export.P1GateExporter
 import com.pendulum.phone.health.SleepReader
-import com.pendulum.phone.temps.Durees
+import com.pendulum.phone.time.Durations
 import com.pendulum.phone.ui.export.ExportScreen
-import com.pendulum.phone.ui.model.TendanceUiState
+import com.pendulum.phone.ui.model.TrendUiState
 import com.pendulum.phone.ui.home.HomeScreen
 import com.pendulum.phone.ui.nights.NightDetailScreen
 import com.pendulum.phone.ui.nights.NightListScreen
-import com.pendulum.phone.ui.onboarding.AssistantActions
-import com.pendulum.phone.ui.onboarding.AssistantUi
+import com.pendulum.phone.ui.onboarding.OnboardingActions
+import com.pendulum.phone.ui.onboarding.OnboardingUi
 import com.pendulum.phone.ui.onboarding.OnboardingPager
-import com.pendulum.phone.ui.onboarding.RepriseAssistant
+import com.pendulum.phone.ui.onboarding.OnboardingResume
 import com.pendulum.phone.ui.quiz.ScreeningQuizScreen
 import com.pendulum.phone.ui.model.Mapping
-import com.pendulum.phone.ui.settings.AvertissementScreen
-import com.pendulum.phone.ui.settings.EffacementScreen
-import com.pendulum.phone.ui.settings.RapportP1Screen
+import com.pendulum.phone.ui.settings.NoticeScreen
+import com.pendulum.phone.ui.settings.ErasureScreen
+import com.pendulum.phone.ui.settings.P1ReportScreen
 import com.pendulum.phone.ui.settings.SettingsScreen
-import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.text.NomsDeFichier
-import com.pendulum.phone.ui.text.texte
+import com.pendulum.phone.ui.model.Aggregate
+import com.pendulum.phone.ui.text.FileNames
+import com.pendulum.phone.ui.text.text
 import com.pendulum.phone.ui.tonight.EveningContextScreen
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.trend.ComparePeriodsScreen
 import com.pendulum.phone.ui.trend.TrendScreen
-import com.pendulum.phone.work.DeclencheurOpportuniste
+import com.pendulum.phone.work.OpportunisticTrigger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * L'unique activite du telephone.
+ * The phone's single activity.
  *
- * `launchMode="singleTask"` est declare au manifeste : la notification du matin doit ramener sur
- * l'instance existante, pas en empiler une seconde.
+ * `launchMode="singleTask"` is declared in the manifest: the morning notification has to come back
+ * to the existing instance, not stack a second one.
  */
 class MainActivity : ComponentActivity() {
 
@@ -86,235 +86,233 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // Le theme choisi dans les reglages, applique a la racine.
+            // The theme chosen in the settings, applied at the root.
             //
-            // `PendulumTheme` etait appele **sans argument**, donc toujours sur son defaut sombre.
-            // La preference existait pourtant de bout en bout — stockee, ecrite par les reglages,
-            // et affichee par eux avec sa valeur : l'ecran montrait « System » ou « Light » et
-            // l'application restait sombre. Un reglage qui affiche un etat qu'il n'a pas est de
-            // la meme famille que les boutons muets deja retires, en plus trompeur : celui-ci
-            // repond quelque chose.
+            // `PendulumTheme` was called **without an argument**, so always on its dark default.
+            // The preference existed from end to end though — stored, written by the settings, and
+            // displayed by them with its value: the screen showed "System" or "Light" and the
+            // application stayed dark. A setting that displays a state it does not have is of the
+            // same family as the mute buttons already removed, only more misleading: this one
+            // answers something.
             //
-            // `null` tant que le DataStore n'a pas rendu sa premiere valeur : on garde le sombre
-            // d'ici la, plutot que d'ouvrir en clair pour basculer en sombre un instant apres —
-            // a 7 h du matin, cet eclair est exactement ce que le theme sombre existe pour eviter.
-            val jeton by prefs.theme.collectAsStateWithLifecycle(initialValue = null)
-            PendulumTheme(mode = modeDeTheme(jeton)) {
-                PortailPendulum()
+            // `null` as long as the DataStore has not returned its first value: dark is kept until
+            // then, rather than opening in light and switching to dark an instant later — at 7 am,
+            // that flash is exactly what the dark theme exists to avoid.
+            val token by prefs.theme.collectAsStateWithLifecycle(initialValue = null)
+            PendulumTheme(mode = themeMode(token)) {
+                PendulumPortal()
             }
         }
     }
 
     /**
-     * Le second declencheur opportuniste de la lecture Health Connect.
+     * The second opportunistic trigger of the Health Connect read.
      *
-     * L'echelle de reprise de `FetchSchedule` fait un repli exponentiel parce qu'elle ignore quand
-     * l'hypnogramme arrivera. Mais la synchronisation **est correlee a l'usage** : l'application
-     * source ecrit dans Health Connect quand on l'ouvre, c'est-a-dire souvent quelques secondes
-     * avant qu'on ouvre Pendulum pour regarder sa nuit. Attendre le rang T+4 h alors que la donnee
-     * est arrivee a T+2 h 05 coute deux heures de latence percue pour rien.
+     * `FetchSchedule`'s retry ladder uses an exponential backoff because it does not know when the
+     * hypnogram will arrive. But synchronisation **is correlated with usage**: the source app
+     * writes to Health Connect when it is opened, that is, often a few seconds before Pendulum is
+     * opened to look at the night. Waiting for the T+4 h rung when the data arrived at T+2 h 05
+     * costs two hours of perceived latency for nothing.
      *
-     * Le premier declencheur est le branchement du chargeur (`PowerConnectedReceiver`). Ni l'un ni
-     * l'autre ne consomme l'echelle : voir `FetchSchedule.INDEX_OPPORTUNISTE`.
+     * The first trigger is plugging in the charger (`PowerConnectedReceiver`). Neither of the two
+     * consumes the ladder: see `FetchSchedule.OPPORTUNISTIC_INDEX`.
      */
     override fun onResume() {
         super.onResume()
         lifecycleScope.launch {
-            runCatching { DeclencheurOpportuniste.declencher(this@MainActivity) }
+            runCatching { OpportunisticTrigger.trigger(this@MainActivity) }
         }
     }
 }
 
 /**
- * Le portail : l'assistant, ou l'application.
+ * The portal: the onboarding, or the application.
  *
- * ### Ce qu'il repare
+ * ### What it repairs
  *
- * `OnboardingPager` etait ecrit, complet, en cinq etapes, et **n'avait aucun appelant**. La
- * consequence n'etait pas cosmetique : le seul `rememberLauncherForActivityResult` de
- * l'application vivait dans cet ecran inatteignable, donc aucun chemin utilisateur n'accordait
- * jamais les permissions Health Connect. Chaque nuit etait alors scoree par le seul masque
- * accelerometrique, sans que rien ne le dise — la circularite numerateur/denominateur que tout le
- * projet existe pour eviter.
+ * `OnboardingPager` was written, complete, in five steps, and **had no caller at all**. The
+ * consequence was not cosmetic: the application's only `rememberLauncherForActivityResult` lived
+ * in that unreachable screen, so no user path ever granted the Health Connect permissions. Every
+ * night was then scored by the accelerometric mask alone, without anything saying so — the
+ * numerator/denominator circularity that the whole project exists to avoid.
  *
- * ### Rien tant que le compteur n'est pas lu
+ * ### Nothing until the counter has been read
  *
- * Le compteur d'etapes vient du DataStore, donc d'une lecture asynchrone. Composer la navigation
- * en attendant la ferait apparaitre une fraction de seconde avant que l'assistant ne la remplace,
- * ce qui apprend a l'utilisateur que l'application clignote au demarrage. Meme regle qu'a
- * l'accueil : on n'affiche rien plutot qu'un etat provisoire.
+ * The step counter comes from the DataStore, hence from an asynchronous read. Composing the
+ * navigation while waiting would make it appear for a fraction of a second before the onboarding
+ * replaced it, which teaches the user that the application flickers on start-up. Same rule as on
+ * the home screen: nothing is displayed rather than a provisional state.
  */
 @Composable
-fun PortailPendulum() {
+fun PendulumPortal() {
     val vm: OnboardingViewModel = viewModel()
-    val etape by vm.etape.collectAsStateWithLifecycle()
+    val step by vm.step.collectAsStateWithLifecycle()
 
-    val e = etape ?: return
-    if (!RepriseAssistant.assistantAFaire(e)) {
+    val s = step ?: return
+    if (!OnboardingResume.onboardingPending(s)) {
         PendulumNavHost()
         return
     }
 
-    val montre by vm.montre.collectAsStateWithLifecycle()
-    val sante by vm.sante.collectAsStateWithLifecycle()
-    val sourcePreferee by vm.sourcePreferee.collectAsStateWithLifecycle()
+    val watch by vm.watch.collectAsStateWithLifecycle()
+    val health by vm.health.collectAsStateWithLifecycle()
+    val preferredSource by vm.preferredSource.collectAsStateWithLifecycle()
     val installation by vm.installation.collectAsStateWithLifecycle()
-    val contexte = LocalContext.current
+    val context = LocalContext.current
 
     OnboardingPager(
-        etatUi = AssistantUi(
-            startPage = RepriseAssistant.pageDeDepart(e),
-            montre = montre,
-            sante = sante,
-            sourcePreferee = sourcePreferee,
+        uiState = OnboardingUi(
+            startPage = OnboardingResume.startPage(s),
+            watch = watch,
+            health = health,
+            preferredSource = preferredSource,
             installation = installation,
         ),
-        actions = AssistantActions(
-            onEtapeFranchie = vm::franchir,
-            onOuvrirCompagnon = { AppairageMontre.ouvrirLApplicationCompagnon(contexte) },
-            onInstallerSurLaMontre = vm::installerSurLaMontre,
-            onRelireLaSante = vm::relireLaSante,
-            onChoisirSource = vm::choisirSource,
-            onRepere = vm::poserLeRepere,
+        actions = OnboardingActions(
+            onStepCrossed = vm::crossStep,
+            onOpenCompanion = { WatchPairing.openCompanionApp(context) },
+            onInstallOnWatch = vm::installOnWatch,
+            onRereadHealth = vm::rereadHealth,
+            onChooseSource = vm::chooseSource,
+            onStrapReference = vm::setStrapReference,
         ),
     )
 }
 
 /**
- * Trois destinations racines, et **Accueil en destination de depart**.
+ * Three root destinations, and **Home as the start destination**.
  *
- * Trois et pas quatre : au-dela, la hierarchie se dilue et l'utilisateur cherche
- * (`06-interface.md` §6). Le questionnaire, la liste des nuits, le detail d'une nuit, la
- * comparaison et l'export sont des destinations empilees, sans barre de navigation — ce sont des
- * taches, pas des lieux.
+ * Three and not four: beyond that the hierarchy dilutes and the user starts searching
+ * (`06-interface.md` §6). The questionnaire, the night list, a night's detail, the
+ * comparison and the export are stacked destinations, without a navigation bar — they are tasks,
+ * not places.
  *
- * ### Pourquoi Tendance n'est plus l'accueil
+ * ### Why Trend is no longer the home screen
  *
- * Elle l'etait, et l'ecran de depart melangeait alors deux regimes cognitifs incompatibles : le
- * geste quotidien — rapide, memorise, fait d'une main — et la lecture d'un resultat statistique,
- * lente et chargee. Le premier se payait du second : on venait appuyer sur un bouton et on lisait
- * un chiffre en chemin, a l'heure ou l'on est le moins capable de le juger. La Tendance reste une
- * destination racine ; elle n'est plus la porte d'entree.
+ * It was, and the start screen then mixed two incompatible cognitive regimes: the daily gesture —
+ * fast, memorised, done one-handed — and the reading of a statistical result, slow and heavy. The
+ * first paid for the second: you came to press a button and read a figure on the way, at the hour
+ * when you are least able to judge it. Trend remains a root destination; it is no longer the front
+ * door.
  *
- * ### Pourquoi Nuits sort de la barre
+ * ### Why Nights leaves the bar
  *
- * La liste des nuits est une consultation, pas un lieu de sejour : on y va depuis la carte
- * HISTORIQUE de l'accueil, avec une question en tete, et on en revient. Lui garder une entree
- * permanente aurait fait quatre destinations racines, ce que `06-interface.md` §6 exclut
- * explicitement — « trois destinations suffisent ; au-dela la hierarchie se dilue ».
+ * The night list is a consultation, not a place to stay: you go there from the HISTORY card on the
+ * home screen, with a question in mind, and you come back. Keeping a permanent entry for it would
+ * have made four root destinations, which `06-interface.md` §6 excludes explicitly — "three
+ * destinations are enough; beyond that the hierarchy dilutes".
  *
- * Pas de bouton d'action flottant : il n'existe aucune action de creation sur le telephone.
- * L'enregistrement demarre sur la montre, et la seule porte est le scellement du contexte.
+ * No floating action button: there is no creation action on the phone. Recording starts on the
+ * watch, and the only gate is the sealing of the context.
  */
-enum class Destination(val route: String, @StringRes val libelle: Int) {
-    ACCUEIL("home", R.string.home_title),
-    TENDANCE("trend", R.string.trend_title),
-    REGLAGES("settings", R.string.settings_title),
+enum class Destination(val route: String, @StringRes val label: Int) {
+    HOME("home", R.string.home_title),
+    TREND("trend", R.string.trend_title),
+    SETTINGS("settings", R.string.settings_title),
 }
 
-/** La liste des nuits, atteinte depuis la carte HISTORIQUE. Empilee : c'est une consultation. */
-const val ROUTE_NUITS = "nights"
+/** The night list, reached from the HISTORY card. Stacked: it is a consultation. */
+const val ROUTE_NIGHTS = "nights"
 
 /**
- * Le formulaire du soir. Empile, sans barre de navigation : c'est une tache, pas un lieu.
+ * The evening form. Stacked, without a navigation bar: it is a task, not a place.
  *
- * Il n'est pas une quatrieme entree de navigation, et ce n'est pas qu'une question de hierarchie.
- * On ne « va » pas dans le contexte du soir comme on va dans les reglages : on le remplit une
- * fois, le soir, et il devient inaccessible — les declencheurs SQLite refusent toute modification
- * ensuite. Une entree permanente vers un ecran qu'on ne peut ouvrir qu'une fois par jour, et qui
- * echoue si on l'ouvre deux fois, serait une invitation a l'erreur.
+ * It is not a fourth navigation entry, and that is not merely a question of hierarchy. You do not
+ * "go" into the evening context the way you go into the settings: you fill it in once, in the
+ * evening, and it becomes inaccessible — the SQLite triggers refuse any modification afterwards. A
+ * permanent entry to a screen that can only be opened once a day, and that fails if you open it
+ * twice, would be an invitation to error.
  */
-const val ROUTE_SOIR = "evening"
+const val ROUTE_EVENING = "evening"
 
 /**
- * Le rapport de la porte P1, atteint depuis Reglages › Mesure. Empile, sans barre de navigation :
- * on y va pour verifier un chiffre, et on en revient.
+ * The P1 gate report, reached from Settings > Measurement. Stacked, without a navigation bar: you
+ * go there to check a figure, and you come back.
  */
 const val ROUTE_P1 = "p1"
 
 /**
- * L'avertissement, relu depuis Reglages › A propos.
+ * The notice, re-read from Settings > About.
  *
- * `06-interface.md` demande qu'il reste accessible en permanence : quelqu'un qui consulte un
- * chiffre trois mois plus tard doit pouvoir relire, en deux gestes, pourquoi ce chiffre n'est pas
- * un diagnostic. La ligne existait et appelait un `{}`.
+ * `06-interface.md` requires it to stay permanently accessible: somebody consulting a figure three
+ * months later must be able to re-read, in two gestures, why that figure is not a diagnosis. The
+ * row existed and called a `{}`.
  */
-const val ROUTE_AVERTISSEMENT = "notice"
+const val ROUTE_NOTICE = "notice"
 
 /**
- * L'effacement total. Empile, et non une boite de dialogue posee sur les reglages : le texte qui
- * dit ce qui part fait dix lignes, et une modale de dix lignes se ferme sans etre lue.
+ * Total erasure. Stacked, and not a dialog laid over the settings: the text saying what goes away
+ * runs to ten lines, and a ten-line modal gets dismissed without being read.
  */
-const val ROUTE_EFFACER = "erase"
+const val ROUTE_ERASE = "erase"
 
 /**
- * Les trois icones sont dessinees a la main, en contour, plutot que tirees d'un jeu importe.
+ * The three icons are drawn by hand, in outline, rather than taken from an imported set.
  *
- * Deux raisons. Le jeu `Filled` de Material est ecarte par principe — il est visuellement lourd
- * et lit « consommateur » — et le jeu `Outlined` complet est une dependance de plusieurs
- * megaoctets pour trois glyphes. Trois traits suffisent, et ils suivent exactement l'epaisseur du
- * reste de l'interface.
+ * Two reasons. Material's `Filled` set is ruled out on principle — it is visually heavy and reads
+ * as "consumer" — and the complete `Outlined` set is a multi-megabyte dependency for three glyphs.
+ * Three strokes are enough, and they follow exactly the stroke weight of the rest of the interface.
  */
-private fun DrawScope.iconeDestination(d: Destination, couleur: Color) {
+private fun DrawScope.destinationIcon(d: Destination, color: Color) {
     val e = size.minDimension * 0.09f
     val s = size.minDimension
     when (d) {
-        // Accueil : un toit et son mur. Le glyphe le plus lu de toute l'informatique grand
-        // public, et c'est exactement la raison de le prendre — cette entree-la ne doit demander
-        // aucune interpretation, puisqu'elle est celle qu'on vise a 23 h et a 7 h.
-        Destination.ACCUEIL -> {
-            drawLine(couleur, Offset(s * 0.14f, s * 0.46f), Offset(s * 0.5f, s * 0.18f), e)
-            drawLine(couleur, Offset(s * 0.5f, s * 0.18f), Offset(s * 0.86f, s * 0.46f), e)
-            drawLine(couleur, Offset(s * 0.24f, s * 0.42f), Offset(s * 0.24f, s * 0.82f), e)
-            drawLine(couleur, Offset(s * 0.76f, s * 0.42f), Offset(s * 0.76f, s * 0.82f), e)
-            drawLine(couleur, Offset(s * 0.2f, s * 0.82f), Offset(s * 0.8f, s * 0.82f), e)
+        // Home: a roof and its wall. The most-read glyph in all of consumer computing, and that is
+        // exactly the reason to take it — this entry must call for no interpretation at all, since
+        // it is the one aimed at at 11 pm and at 7 am.
+        Destination.HOME -> {
+            drawLine(color, Offset(s * 0.14f, s * 0.46f), Offset(s * 0.5f, s * 0.18f), e)
+            drawLine(color, Offset(s * 0.5f, s * 0.18f), Offset(s * 0.86f, s * 0.46f), e)
+            drawLine(color, Offset(s * 0.24f, s * 0.42f), Offset(s * 0.24f, s * 0.82f), e)
+            drawLine(color, Offset(s * 0.76f, s * 0.42f), Offset(s * 0.76f, s * 0.82f), e)
+            drawLine(color, Offset(s * 0.2f, s * 0.82f), Offset(s * 0.8f, s * 0.82f), e)
         }
-        // Tendance : trois points a des hauteurs differentes, sans ligne qui les relie —
-        // exactement ce que le graphe de tendance fait, et pour la meme raison.
-        Destination.TENDANCE -> {
-            drawCircle(couleur, e, Offset(s * 0.2f, s * 0.72f))
-            drawCircle(couleur, e, Offset(s * 0.5f, s * 0.38f))
-            drawCircle(couleur, e, Offset(s * 0.8f, s * 0.55f))
+        // Trend: three dots at different heights, with no line joining them — exactly what the
+        // trend chart does, and for the same reason.
+        Destination.TREND -> {
+            drawCircle(color, e, Offset(s * 0.2f, s * 0.72f))
+            drawCircle(color, e, Offset(s * 0.5f, s * 0.38f))
+            drawCircle(color, e, Offset(s * 0.8f, s * 0.55f))
         }
-        // Reglages : deux curseurs, la metaphore la plus directe pour des parametres.
-        Destination.REGLAGES -> {
-            drawLine(couleur, Offset(s * 0.15f, s * 0.35f), Offset(s * 0.85f, s * 0.35f), e)
-            drawLine(couleur, Offset(s * 0.15f, s * 0.68f), Offset(s * 0.85f, s * 0.68f), e)
-            drawCircle(couleur, e * 1.6f, Offset(s * 0.62f, s * 0.35f))
-            drawCircle(couleur, e * 1.6f, Offset(s * 0.34f, s * 0.68f))
+        // Settings: two sliders, the most direct metaphor for parameters.
+        Destination.SETTINGS -> {
+            drawLine(color, Offset(s * 0.15f, s * 0.35f), Offset(s * 0.85f, s * 0.35f), e)
+            drawLine(color, Offset(s * 0.15f, s * 0.68f), Offset(s * 0.85f, s * 0.68f), e)
+            drawCircle(color, e * 1.6f, Offset(s * 0.62f, s * 0.35f))
+            drawCircle(color, e * 1.6f, Offset(s * 0.34f, s * 0.68f))
         }
     }
 }
 
-/** `E-HC-02` : la permission de lecture du sommeil a ete retiree. Voir `Situations.sommeil`. */
-private const val CODE_PERMISSION_REVOQUEE = "E-HC-02"
+/** `E-HC-02`: the sleep read permission has been revoked. See `Situations.sleep`. */
+private const val CODE_PERMISSION_REVOKED = "E-HC-02"
 
 
 /**
- * La nuit dont la bande d'etat parle. Elle vient de l'etat et non d'une seconde lecture : l'action
- * doit porter sur la nuit que l'utilisateur a sous les yeux, pas sur la plus recente au moment ou
- * il appuie.
+ * The night the status strip is talking about. It comes from the state and not from a second read:
+ * the action must apply to the night the user has in front of them, not to the most recent one at
+ * the moment they press.
  */
-private fun sessionDeLaBande(etat: TendanceUiState): String? = when (etat) {
-    is TendanceUiState.Pret -> etat.sessionReveil
-    is TendanceUiState.Refus -> etat.sessionReveil
-    TendanceUiState.Chargement -> null
+private fun stripSession(state: TrendUiState): String? = when (state) {
+    is TrendUiState.Ready -> state.wakingSession
+    is TrendUiState.Refusal -> state.wakingSession
+    TrendUiState.Loading -> null
 }
 
-private fun codeSituationSommeil(etat: TendanceUiState): String? = when (etat) {
-    is TendanceUiState.Pret -> etat.situationSommeil?.code
-    is TendanceUiState.Refus -> etat.situationSommeil?.code
-    TendanceUiState.Chargement -> null
+private fun sleepSituationCode(state: TrendUiState): String? = when (state) {
+    is TrendUiState.Ready -> state.sleepSituation?.code
+    is TrendUiState.Refusal -> state.sleepSituation?.code
+    TrendUiState.Loading -> null
 }
 
 /**
- * Ouvre l'ecran Health Connect. `runCatching` parce que l'action n'est pas resolue partout : sur
- * un appareil ou Health Connect a ete desinstalle entre l'affichage de la carte et l'appui, une
- * `ActivityNotFoundException` non rattrapee ferait planter l'application sur un bouton d'aide.
+ * Opens the Health Connect screen. `runCatching` because the action does not resolve everywhere:
+ * on a device where Health Connect has been uninstalled between the display of the card and the
+ * press, an uncaught `ActivityNotFoundException` would crash the application on a help button.
  */
-private fun ouvrirHealthConnect(contexte: android.content.Context) {
+private fun openHealthConnect(context: android.content.Context) {
     runCatching {
-        contexte.startActivity(
+        context.startActivity(
             android.content.Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS),
         )
     }
@@ -322,30 +320,30 @@ private fun ouvrirHealthConnect(contexte: android.content.Context) {
 
 @Composable
 fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
-    val entree by nav.currentBackStackEntryAsState()
-    val routeCourante = entree?.destination?.route
+    val entry by nav.currentBackStackEntryAsState()
+    val currentRoute = entry?.destination?.route
 
     Scaffold(
         bottomBar = {
-            // La barre disparait sur les destinations empilees : une tache en cours ne propose
-            // pas de partir ailleurs d'un pouce distrait.
-            if (Destination.entries.any { it.route == routeCourante }) {
+            // The bar disappears on stacked destinations: a task under way does not offer to leave
+            // for somewhere else under a distracted thumb.
+            if (Destination.entries.any { it.route == currentRoute }) {
                 NavigationBar {
                     Destination.entries.forEach { d ->
                         NavigationBarItem(
-                            selected = routeCourante == d.route,
+                            selected = currentRoute == d.route,
                             onClick = {
                                 nav.navigate(d.route) {
-                                    popUpTo(Destination.ACCUEIL.route) { saveState = true }
+                                    popUpTo(Destination.HOME.route) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
                             },
                             icon = {
-                                val teinte = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
-                                Canvas(Modifier.size(22.dp)) { iconeDestination(d, teinte) }
+                                val tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                                Canvas(Modifier.size(22.dp)) { destinationIcon(d, tint) }
                             },
-                            label = { Text(stringResource(d.libelle), style = PendulumType.label) },
+                            label = { Text(stringResource(d.label), style = PendulumType.label) },
                         )
                     }
                 }
@@ -354,61 +352,61 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
     ) { padding ->
         NavHost(
             navController = nav,
-            startDestination = Destination.ACCUEIL.route,
+            startDestination = Destination.HOME.route,
             modifier = Modifier.padding(padding),
         ) {
-            composable(Destination.ACCUEIL.route) {
+            composable(Destination.HOME.route) {
                 val vm: HomeViewModel = viewModel()
-                val etat by vm.etat.collectAsStateWithLifecycle()
-                val retourDemarrage by vm.demarrage.collectAsStateWithLifecycle()
-                val contexteAccueil = LocalContext.current
+                val state by vm.state.collectAsStateWithLifecycle()
+                val startFeedback by vm.startFeedback.collectAsStateWithLifecycle()
+                val homeContext = LocalContext.current
 
-                // Le meme mecanisme que sur la tendance, et pour la meme raison : la boite ne
-                // s'affiche plus apres deux refus, et il faut alors emmener dans Health Connect
-                // plutot que de proposer une demande qui ne montrerait rien.
-                var demandeAccueilA by remember { mutableLongStateOf(0L) }
-                var accueilEtouffe by remember { mutableStateOf(false) }
-                val lanceurAccueil = rememberLauncherForActivityResult(
+                // The same mechanism as on the trend screen, and for the same reason: the dialog
+                // stops being shown after two refusals, and you then have to take the user into
+                // Health Connect rather than offer a request that would show nothing.
+                var homeRequestedAt by remember { mutableLongStateOf(0L) }
+                var homeSuppressed by remember { mutableStateOf(false) }
+                val homeLauncher = rememberLauncherForActivityResult(
                     contract = SleepReader.permissionRequestContract(),
-                ) { accordees ->
-                    val ecoule = SystemClock.elapsedRealtime() - demandeAccueilA
-                    accueilEtouffe = !accordees.containsAll(SleepReader.REQUIRED_PERMISSIONS) &&
-                        ecoule < SleepReader.DELAI_DIALOGUE_ETOUFFE_MS
-                    vm.relireLaSante()
+                ) { granted ->
+                    val elapsed = SystemClock.elapsedRealtime() - homeRequestedAt
+                    homeSuppressed = !granted.containsAll(SleepReader.REQUIRED_PERMISSIONS) &&
+                        elapsed < SleepReader.SUPPRESSED_DIALOG_MS
+                    vm.rereadHealth()
                 }
 
-                // La permission se donne hors de l'application : au retour, on relit.
+                // The permission is granted outside the application: on return, we re-read.
                 LifecycleResumeEffect(Unit) {
-                    vm.relireLaSante()
+                    vm.rereadHealth()
                     onPauseOrDispose { }
                 }
 
-                // Rien tant que la premiere lecture n'a pas abouti. Pas de squelette anime, pas
-                // de cartes vides : trois cartes qui se remplissent apres coup deplaceraient
-                // exactement ce que cet ecran existe pour ne plus deplacer.
-                etat?.let { a ->
+                // Nothing until the first read has completed. No animated skeleton, no empty
+                // cards: three cards filling in after the fact would move exactly what this screen
+                // exists to stop moving.
+                state?.let { home ->
                     HomeScreen(
-                        etat = a,
-                        onSceller = { nav.navigate(ROUTE_SOIR) },
-                        onFinDeNuit = { a.sessionAFermer?.let(vm::finDeNuit) },
-                        onDemarrer = vm::demarrerSurLaMontre,
-                        retourDemarrage = retourDemarrage,
-                        // Un seul geste : la trace est ecrite et l'ecran de detail s'ouvre dans
-                        // la foulee. Deux appuis pour un chiffre qu'on a le droit de voir
-                        // seraient un peage, pas un ralentisseur.
-                        onDevoiler = { hex ->
-                            vm.devoiler(hex)
+                        state = home,
+                        onSeal = { nav.navigate(ROUTE_EVENING) },
+                        onEndOfNight = { home.sessionToClose?.let(vm::endOfNight) },
+                        onStart = vm::startOnWatch,
+                        startFeedback = startFeedback,
+                        // A single gesture: the trace is written and the detail screen opens in
+                        // the same movement. Two taps for a figure one is entitled to see would be
+                        // a toll, not a speed bump.
+                        onReveal = { hex ->
+                            vm.reveal(hex)
                             nav.navigate("night/$hex")
                         },
-                        onHistorique = { nav.navigate(ROUTE_NUITS) },
-                        onSituationSommeil = {
-                            if (accueilEtouffe) {
-                                SleepReader.intentPermissionsManuelles(contexteAccueil)
-                                    ?.let(contexteAccueil::startActivity)
-                                    ?: ouvrirHealthConnect(contexteAccueil)
+                        onHistory = { nav.navigate(ROUTE_NIGHTS) },
+                        onSleepSituation = {
+                            if (homeSuppressed) {
+                                SleepReader.manualPermissionsIntent(homeContext)
+                                    ?.let(homeContext::startActivity)
+                                    ?: openHealthConnect(homeContext)
                             } else {
-                                demandeAccueilA = SystemClock.elapsedRealtime()
-                                lanceurAccueil.launch(
+                                homeRequestedAt = SystemClock.elapsedRealtime()
+                                homeLauncher.launch(
                                     SleepReader.REQUIRED_PERMISSIONS +
                                         SleepReader.OPTIONAL_PERMISSIONS,
                                 )
@@ -416,284 +414,283 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                         },
                     )
 
-                    // Le compte rendu du demarrage s'efface tout seul, de deux facons.
+                    // The start feedback clears itself in two ways.
                     //
-                    // Par le temps d'abord : c'est le resultat d'un geste, pas un etat. Une phrase
-                    // qui resterait sous le bouton jusqu'au lendemain finirait par decrire une
-                    // demande qui n'a plus rien a voir avec la nuit en cours.
+                    // By time first: it is the result of a gesture, not a state. A sentence that
+                    // stayed under the button until the next day would end up describing a request
+                    // that has nothing to do with the current night any more.
                     //
-                    // Par la transition ensuite : des que la phase change — typiquement quand la
-                    // montre ouvre sa session et que l'accueil passe en ENREGISTREMENT — la carte
-                    // dit elle-meme ce qui se passe, et repeter « demande envoyee » sous une carte
-                    // qui affiche « RECORDING » ferait douter de celle des deux qu'il faut croire.
-                    LaunchedEffect(retourDemarrage) {
-                        if (retourDemarrage != null) {
-                            delay(Durees.ACTIVES.retourDemarrageMs)
-                            vm.demarrageConsomme()
+                    // By the transition next: as soon as the phase changes — typically when the
+                    // watch opens its session and the home screen moves to RECORDING — the card
+                    // says for itself what is going on, and repeating "request sent" under a card
+                    // showing "RECORDING" would make you wonder which of the two to believe.
+                    LaunchedEffect(startFeedback) {
+                        if (startFeedback != null) {
+                            delay(Durations.ACTIVE.startFeedbackMs)
+                            vm.startFeedbackConsumed()
                         }
                     }
-                    LaunchedEffect(a.phase) { vm.demarrageConsomme() }
+                    LaunchedEffect(home.phase) { vm.startFeedbackConsumed() }
                 }
             }
-            composable(Destination.TENDANCE.route) {
+            composable(Destination.TREND.route) {
                 val vm: TrendViewModel = viewModel()
-                val etat by vm.etat.collectAsStateWithLifecycle()
-                val contexte = LocalContext.current
+                val state by vm.state.collectAsStateWithLifecycle()
+                val context = LocalContext.current
 
-                // La reparation de `E-HC-02` est une demande de permission, pas un lien vers un
-                // ecran : envoyer quelqu'un dans les reglages de Health Connect pour retrouver
-                // une case a cocher alors que le systeme sait afficher la boite de dialogue est
-                // exactement le genre de detour qui fait abandonner.
-                // La boite de dialogue cesse d'apparaitre apres deux refus, et le contrat rend
-                // alors la main immediatement, sans rien montrer. Aucune API ne distingue ce cas
-                // d'un refus ordinaire : le temps ecoule est le seul signal. En dessous du seuil,
-                // on arrete de proposer une demande qui ne peut plus aboutir et on montre le
-                // chemin manuel.
-                var demandeLanceeA by remember { mutableLongStateOf(0L) }
-                var dialogueEtouffe by remember { mutableStateOf(false) }
-                val lanceurSante = rememberLauncherForActivityResult(
+                // Repairing `E-HC-02` is a permission request, not a link to a screen: sending
+                // somebody into the Health Connect settings to hunt for a checkbox when the system
+                // knows how to show the dialog is exactly the kind of detour that makes people
+                // give up.
+                // The dialog stops appearing after two refusals, and the contract then returns
+                // immediately, without showing anything. No API distinguishes that case from an
+                // ordinary refusal: the elapsed time is the only signal. Below the threshold, we
+                // stop offering a request that can no longer succeed and we show the manual path.
+                var requestedAt by remember { mutableLongStateOf(0L) }
+                var dialogSuppressed by remember { mutableStateOf(false) }
+                val healthLauncher = rememberLauncherForActivityResult(
                     contract = SleepReader.permissionRequestContract(),
-                ) { accordees ->
-                    val ecoule = SystemClock.elapsedRealtime() - demandeLanceeA
-                    val manquantes = !accordees.containsAll(SleepReader.REQUIRED_PERMISSIONS)
-                    dialogueEtouffe =
-                        manquantes && ecoule < SleepReader.DELAI_DIALOGUE_ETOUFFE_MS
-                    vm.relireLaSante()
+                ) { granted ->
+                    val elapsed = SystemClock.elapsedRealtime() - requestedAt
+                    val missing = !granted.containsAll(SleepReader.REQUIRED_PERMISSIONS)
+                    dialogSuppressed =
+                        missing && elapsed < SleepReader.SUPPRESSED_DIALOG_MS
+                    vm.rereadHealth()
                 }
 
                 TrendScreen(
-                    etat = etat,
-                    onNuit = { nav.navigate("night/$it") },
-                    onNuits = { nav.navigate(ROUTE_NUITS) },
-                    onComparer = { nav.navigate("compare") },
+                    state = state,
+                    onNight = { nav.navigate("night/$it") },
+                    onNights = { nav.navigate(ROUTE_NIGHTS) },
+                    onCompare = { nav.navigate("compare") },
                     onQuestionnaire = { nav.navigate("quiz") },
                     onExport = { nav.navigate("export") },
-                    onActionReveil = { sessionDeLaBande(etat)?.let(vm::relancerLeReveil) },
-                    onSituationSommeil = {
-                        val permission = codeSituationSommeil(etat) == CODE_PERMISSION_REVOQUEE
+                    onWakingAction = { stripSession(state)?.let(vm::retryWaking) },
+                    onSleepSituation = {
+                        val permission = sleepSituationCode(state) == CODE_PERMISSION_REVOKED
                         when {
-                            permission && !dialogueEtouffe -> {
-                                demandeLanceeA = SystemClock.elapsedRealtime()
-                                lanceurSante.launch(
+                            permission && !dialogSuppressed -> {
+                                requestedAt = SystemClock.elapsedRealtime()
+                                healthLauncher.launch(
                                     SleepReader.REQUIRED_PERMISSIONS +
                                         SleepReader.OPTIONAL_PERMISSIONS,
                                 )
                             }
-                            // Le systeme ne montrera plus rien : le seul geste qui reste est
-                            // manuel, et il faut y emmener plutot que de le decrire.
-                            permission -> SleepReader.intentPermissionsManuelles(contexte)
-                                ?.let(contexte::startActivity)
-                                ?: ouvrirHealthConnect(contexte)
-                            else -> ouvrirHealthConnect(contexte)
+                            // The system will show nothing more: the only gesture left is manual,
+                            // and the user has to be taken there rather than told about it.
+                            permission -> SleepReader.manualPermissionsIntent(context)
+                                ?.let(context::startActivity)
+                                ?: openHealthConnect(context)
+                            else -> openHealthConnect(context)
                         }
                     },
-                    permissionEtouffee = dialogueEtouffe,
+                    permissionSuppressed = dialogSuppressed,
                 )
             }
-            // La liste des nuits : empilee, atteinte depuis la carte HISTORIQUE de l'accueil.
-            composable(ROUTE_NUITS) {
+            // The night list: stacked, reached from the HISTORY card on the home screen.
+            composable(ROUTE_NIGHTS) {
                 val vm: NightsViewModel = viewModel()
-                val nuits by vm.nuits.collectAsStateWithLifecycle()
-                NightListScreen(nuits, onNuit = { nav.navigate("night/$it") })
+                val nights by vm.nights.collectAsStateWithLifecycle()
+                NightListScreen(nights, onNight = { nav.navigate("night/$it") })
             }
-            composable(Destination.REGLAGES.route) {
+            composable(Destination.SETTINGS.route) {
                 val vm: SettingsViewModel = viewModel()
-                val reglages by vm.reglages.collectAsStateWithLifecycle()
+                val settings by vm.settings.collectAsStateWithLifecycle()
 
-                // Le retour du paquet d'une nuit. `OpenDocument` et non `GetContent` : le premier
-                // rend un `Uri` de document persistable et laisse choisir dans n'importe quel
-                // fournisseur, le second passe par une intention de partage que tous n'honorent
-                // pas. Le filtre est `*/*` parce qu'un `.bundle` n'a pas de type MIME enregistre :
-                // filtrer sur un type inconnu grise le seul fichier que l'on cherche.
-                val ouvreur = rememberLauncherForActivityResult(
+                // Reading a night bundle back in. `OpenDocument` and not `GetContent`: the first
+                // returns a persistable document `Uri` and lets you choose from any provider, the
+                // second goes through a share intent that not all of them honour. The filter is
+                // `*/*` because a `.bundle` has no registered MIME type: filtering on an unknown
+                // type greys out the very file being looked for.
+                val opener = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.OpenDocument(),
-                ) { uri -> uri?.let(vm::importerNuit) }
+                ) { uri -> uri?.let(vm::importNight) }
 
-                // L'espace occupe est relu a chaque entree sur l'ecran : il vient d'une lecture
-                // disque, et un effacement ou un import a pu avoir lieu entre deux passages.
-                LaunchedEffect(Unit) { vm.relireLEspace() }
+                // The space used is re-read on every entry to the screen: it comes from a disk
+                // read, and an erasure or an import may have taken place between two visits.
+                LaunchedEffect(Unit) { vm.rereadSpace() }
 
                 SettingsScreen(
-                    reglages,
-                    onRelireAvertissement = { nav.navigate(ROUTE_AVERTISSEMENT) },
-                    onEffacer = { nav.navigate(ROUTE_EFFACER) },
-                    onImporterNuit = { ouvreur.launch(arrayOf("*/*")) },
-                    onRapportP1 = { nav.navigate(ROUTE_P1) },
+                    settings,
+                    onReadNoticeAgain = { nav.navigate(ROUTE_NOTICE) },
+                    onErase = { nav.navigate(ROUTE_ERASE) },
+                    onImportNight = { opener.launch(arrayOf("*/*")) },
+                    onP1Report = { nav.navigate(ROUTE_P1) },
                 )
             }
-            // L'avertissement, en lecture seule. Pas de defilement bloquant ni de cases a cocher :
-            // la porte est celle de l'assistant, et la redemander a chaque relecture ferait de la
-            // relecture une corvee, donc une chose qu'on ne fait pas.
-            composable(ROUTE_AVERTISSEMENT) { AvertissementScreen() }
-            composable(ROUTE_EFFACER) {
-                val vm: EffacementViewModel = viewModel()
-                val espace by vm.espace.collectAsStateWithLifecycle()
-                val efface by vm.efface.collectAsStateWithLifecycle()
-                EffacementScreen(espaceOccupe = espace, efface = efface, onEffacer = vm::effacer)
+            // The notice, read-only. No blocking scroll and no checkboxes: the gate is the
+            // onboarding's, and asking for it again on every re-reading would make re-reading a
+            // chore, hence something one does not do.
+            composable(ROUTE_NOTICE) { NoticeScreen() }
+            composable(ROUTE_ERASE) {
+                val vm: ErasureViewModel = viewModel()
+                val spaceUsed by vm.spaceUsed.collectAsStateWithLifecycle()
+                val erased by vm.erased.collectAsStateWithLifecycle()
+                ErasureScreen(spaceUsed = spaceUsed, erased = erased, onErase = vm::erase)
             }
-            // Le rapport de la porte P1. Empile : c'est une verification, pas un lieu.
+            // The P1 gate report. Stacked: it is a check, not a place.
             composable(ROUTE_P1) {
-                val vm: RapportP1ViewModel = viewModel()
-                val rapport by vm.rapport.collectAsStateWithLifecycle()
-                val contexte = LocalContext.current
-                val portee = rememberCoroutineScope()
+                val vm: P1ReportViewModel = viewModel()
+                val report by vm.report.collectAsStateWithLifecycle()
+                val context = LocalContext.current
+                val scope = rememberCoroutineScope()
 
-                // Le meme chemin SAF que l'export d'une nuit : l'utilisateur choisit
-                // l'emplacement, geste par geste. L'application n'a aucun repertoire a elle dans
-                // le stockage partage, et aucune permission reseau pour envoyer le fichier
-                // ailleurs.
-                val createur = rememberLauncherForActivityResult(
+                // The same SAF path as a night's export: the user chooses the location, gesture by
+                // gesture. The application has no directory of its own in shared storage, and no
+                // network permission to send the file anywhere else.
+                val creator = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("text/csv"),
                 ) { uri ->
-                    uri?.let { portee.launch { PorteP1Exporter.exportVers(contexte, it) } }
+                    uri?.let { scope.launch { P1GateExporter.exportTo(context, it) } }
                 }
 
-                // Rien tant que la lecture n'a pas abouti : un verdict qui s'affiche avant d'etre
-                // calcule est un verdict qu'on a lu faux une fois.
-                rapport?.let {
-                    RapportP1Screen(
-                        etat = it,
-                        onExporter = { createur.launch(NomsDeFichier.RAPPORT_P1) },
+                // Nothing until the read has completed: a verdict displayed before it is computed
+                // is a verdict that has been read wrong once.
+                report?.let {
+                    P1ReportScreen(
+                        state = it,
+                        onExport = { creator.launch(FileNames.P1_REPORT) },
                     )
                 }
             }
-            // Destinations empilees : pas de barre de navigation, ce sont des taches.
+            // Stacked destinations: no navigation bar, they are tasks.
             //
-            // Le formulaire du soir en fait partie, et c'est la plus consequente : c'est la seule
-            // porte du produit. Tant qu'il n'a pas ete rempli et scelle, la montre refuse de
-            // demarrer — non par avertissement, mais parce que le `DataItem` que `Preflight`
-            // attend n'existe pas.
-            composable(ROUTE_SOIR) {
+            // The evening form is one of them, and the most consequential: it is the product's
+            // only gate. Until it has been filled in and sealed, the watch refuses to start — not
+            // as a warning, but because the `DataItem` that `Preflight` expects does not exist.
+            composable(ROUTE_EVENING) {
                 val vm: EveningViewModel = viewModel()
-                val repere by vm.repereDeSerrage.collectAsStateWithLifecycle()
-                val resultat by vm.resultat.collectAsStateWithLifecycle()
+                val reference by vm.strapReference.collectAsStateWithLifecycle()
+                val result by vm.result.collectAsStateWithLifecycle()
 
                 EveningContextScreen(
-                    repereDeSerrage = repere,
-                    resultat = resultat,
-                    onSceller = { vm.sceller(it) },
-                    onAnnuler = { nav.popBackStack() },
+                    strapReference = reference,
+                    result = result,
+                    onSeal = { vm.seal(it) },
+                    onCancel = { nav.popBackStack() },
                 )
 
-                // Le retour n'a lieu que sur `Scelle`, et sur lui seul.
+                // The return only happens on `Sealed`, and on that alone.
                 //
-                // Les trois issues etaient traitees a l'identique — l'ecran se fermait — et les
-                // deux autres ne sont pas des succes. `PublicationEchouee` est la pire des trois
-                // parce qu'elle est silencieuse et contradictoire : la base a le contexte, donc
-                // l'accueil dit qu'il est scelle, pendant que la montre, qui n'a pas recu le
-                // `DataItem`, continue de reclamer le formulaire du soir. Fermer l'ecran a cet
-                // instant, c'est envoyer chercher pendant dix minutes pourquoi START reste bloque.
+                // The three outcomes used to be treated identically — the screen closed — and the
+                // other two are not successes. `PublicationFailed` is the worst of the three
+                // because it is silent and contradictory: the database has the context, so the
+                // home screen says it is sealed, while the watch, which did not receive the
+                // `DataItem`, keeps asking for the evening form. Closing the screen at that moment
+                // means sending somebody off to spend ten minutes wondering why START stays
+                // blocked.
                 //
-                // Sur les deux autres, l'ecran reste et dit quoi faire. Le resultat n'est donc pas
-                // consomme : il porte ce que la carte affiche, et l'ecran ne se quitte plus que
-                // par « Not now ».
-                LaunchedEffect(resultat) {
-                    if (resultat == ResultatScellement.Scelle) {
-                        vm.resultatConsomme()
+                // On the other two, the screen stays and says what to do. The result is therefore
+                // not consumed: it carries what the card displays, and the screen can now only be
+                // left through "Not now".
+                LaunchedEffect(result) {
+                    if (result == SealingResult.Sealed) {
+                        vm.resultConsumed()
                         nav.popBackStack()
                     }
                 }
             }
-            composable("night/{hex}") { entree ->
-                val hex = entree.arguments?.getString("hex").orEmpty()
+            composable("night/{hex}") { entry ->
+                val hex = entry.arguments?.getString("hex").orEmpty()
                 val vm: NightDetailViewModel = viewModel()
                 val detail by vm.detail.collectAsStateWithLifecycle()
-                val ecriture by vm.ecriture.collectAsStateWithLifecycle()
-                LaunchedEffect(hex) { vm.charger(hex) }
+                val feedback by vm.feedback.collectAsStateWithLifecycle()
+                LaunchedEffect(hex) { vm.load(hex) }
 
-                // Rien tant que la lecture n'a pas abouti. Pas de squelette anime, pas de valeurs
-                // par defaut : un ecran de detail qui affiche des zeros pendant deux cents
-                // millisecondes apprend a lire des chiffres avant qu'ils ne soient vrais.
-                // Les deux sorties d'une nuit, par le meme chemin SAF que tout le reste :
-                // `ACTION_CREATE_DOCUMENT`, emplacement choisi par l'utilisateur. L'application
-                // n'ecrit dans aucun repertoire partage de sa propre initiative et ne declare pas
-                // la permission `INTERNET` — le fichier ne peut aller qu'ou il a ete demande.
-                // Le nom propose est retenu jusqu'au retour du selecteur : c'est lui que le compte
-                // rendu affiche ensuite. Meme motif qu'a l'ecran d'export — le recalculer dans le
-                // rappel donnerait un autre nom si le choix de l'emplacement a traverse minuit.
-                var nomPropose by remember { mutableStateOf("") }
-                val createurRapport = rememberLauncherForActivityResult(
+                // Nothing until the read has completed. No animated skeleton, no default values: a
+                // detail screen showing zeros for two hundred milliseconds teaches you to read
+                // figures before they are true.
+                // The two ways out of a night, by the same SAF path as everything else:
+                // `ACTION_CREATE_DOCUMENT`, location chosen by the user. The application writes
+                // into no shared directory of its own initiative and does not declare the
+                // `INTERNET` permission — the file can only go where it was asked to go.
+                // The proposed name is held until the picker returns: it is the one the feedback
+                // displays afterwards. Same reason as on the export screen — recomputing it in the
+                // callback would give a different name if choosing the location crossed midnight.
+                var proposedName by remember { mutableStateOf("") }
+                val reportCreator = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("text/markdown"),
-                ) { uri -> uri?.let { vm.exporterRapport(hex, it, nomPropose) } }
-                val createurPaquet = rememberLauncherForActivityResult(
+                ) { uri -> uri?.let { vm.exportReport(hex, it, proposedName) } }
+                val bundleCreator = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("application/octet-stream"),
-                ) { uri -> uri?.let { vm.exporterPaquet(hex, it, nomPropose) } }
+                ) { uri -> uri?.let { vm.exportBundle(hex, it, proposedName) } }
 
                 detail?.let { d ->
-                    val jour = Mapping.jourIso(
-                        d.nuit.startWallMs,
+                    val day = Mapping.isoDay(
+                        d.night.startWallMs,
                         java.time.ZoneId.systemDefault().id,
                     )
                     NightDetailScreen(
                         detail = d,
-                        onVoirTendance = { nav.popBackStack() },
-                        onAppliquerATout = vm::appliquerATout,
-                        onDevoiler = { vm.devoiler(hex) },
-                        onExporterRapport = {
-                            nomPropose = NomsDeFichier.rapportDeNuit(jour)
-                            createurRapport.launch(nomPropose)
+                        onSeeTrend = { nav.popBackStack() },
+                        onApplyToAll = vm::applyToAll,
+                        onReveal = { vm.reveal(hex) },
+                        onExportReport = {
+                            proposedName = FileNames.nightReport(day)
+                            reportCreator.launch(proposedName)
                         },
-                        onExporterPaquet = {
-                            nomPropose = NomsDeFichier.paquetDeNuit(jour)
-                            createurPaquet.launch(nomPropose)
+                        onExportBundle = {
+                            proposedName = FileNames.nightBundle(day)
+                            bundleCreator.launch(proposedName)
                         },
-                        ecriture = ecriture,
+                        writeFeedback = feedback,
                     )
                 }
             }
-            // La comparaison de deux periodes n'a pas de selecteur de dates, donc pas de
-            // periodes a comparer. L'ecran affichait jusqu'ici un refus assorti de deux
-            // etiquettes fabriquees — « 1-15 February », « 1-15 March » — c'est-a-dire le meme
-            // defaut que la navigation cablee sur le jeu d'apercu : pas un chiffre invente, mais
-            // un contexte invente, ce qui se lit tout aussi bien comme une donnee reelle.
+            // The comparison of two periods has no date picker, hence no periods to compare. Up to
+            // now the screen displayed a refusal accompanied by two fabricated labels — "1-15
+            // February", "1-15 March" — that is, the same defect as the navigation wired onto the
+            // preview data set: not an invented figure, but an invented context, which reads just
+            // as well as real data.
             //
-            // Les etiquettes sont donc vides tant que le selecteur n'existe pas. `Aggregat.comparer`
-            // est ecrit et teste et n'attend que lui ; c'est une fonctionnalite a faire, pas un
-            // cablage a poser, et l'ecran doit dire qu'elle n'est pas la plutot que la mimer.
+            // The labels are therefore empty as long as the picker does not exist.
+            // `Aggregate.compare` is written and tested and waits for nothing else; it is a feature
+            // still to be built, not a wiring to be laid, and the screen must say it is not there
+            // rather than mimic it.
             composable("compare") {
                 ComparePeriodsScreen(
-                    resultat = null,
-                    motifIndisponible = texte(R.string.compare_period_a) to Aggregat.MIN_NUITS_COMPARAISON,
-                    libellePeriodeA = "",
-                    libellePeriodeB = "",
+                    result = null,
+                    unavailableReason = text(R.string.compare_period_a) to Aggregate.MIN_NIGHTS_COMPARISON,
+                    periodALabel = "",
+                    periodBLabel = "",
                 )
             }
             composable("quiz") {
                 val vm: QuizViewModel = viewModel()
-                val issue by vm.issue.collectAsStateWithLifecycle()
+                val outcome by vm.outcome.collectAsStateWithLifecycle()
                 ScreeningQuizScreen(
-                    issue = issue,
-                    onOui = { vm.repondre(true) },
-                    onNon = { vm.repondre(false) },
-                    onRevoir = vm::revoir,
+                    outcome = outcome,
+                    onYes = { vm.answer(true) },
+                    onNo = { vm.answer(false) },
+                    onReview = vm::review,
                 )
             }
-            // L'export du rapport pour le medecin — le seul but que `README.md` juge defendable,
-            // et qu'aucun geste n'atteignait : les cinq lambdas de cet ecran etaient vides et
-            // `ReportExporter` n'avait aucun appelant.
+            // The export of the report for the doctor — the only purpose `README.md` considers
+            // defensible, and one that no gesture reached: this screen's five lambdas were empty
+            // and `ReportExporter` had no caller.
             composable("export") {
                 val vm: ExportViewModel = viewModel()
-                val etat by vm.etat.collectAsStateWithLifecycle()
+                val state by vm.state.collectAsStateWithLifecycle()
 
-                // Le nom propose est retenu jusqu'au retour du selecteur : c'est lui que l'ecran
-                // affiche ensuite. Le recalculer dans le rappel donnerait un autre nom si le
-                // choix de l'emplacement a traverse minuit.
-                var nomPropose by remember { mutableStateOf("") }
-                val createur = rememberLauncherForActivityResult(
+                // The proposed name is held until the picker returns: it is the one the screen
+                // displays afterwards. Recomputing it in the callback would give a different name
+                // if choosing the location crossed midnight.
+                var proposedName by remember { mutableStateOf("") }
+                val creator = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.CreateDocument("text/markdown"),
-                ) { uri -> uri?.let { vm.enregistrer(it, nomPropose) } }
+                ) { uri -> uri?.let { vm.save(it, proposedName) } }
 
-                // Rien tant que la lecture n'a pas abouti : un compteur de nuits eligibles qui
-                // s'affiche a zero avant d'etre lu ferait apparaitre le bouton desactive avec son
-                // motif, puis actif — c'est-a-dire un refus qui se retracte.
-                etat?.let {
+                // Nothing until the read has completed: an eligible night counter displayed at
+                // zero before being read would show the button disabled with its reason, then
+                // enabled — that is, a refusal that retracts itself.
+                state?.let {
                     ExportScreen(
-                        etat = it,
-                        onQuestionnaire = vm::poserQuestionnaire,
-                        onEcartees = vm::poserEcartees,
-                        onEnregistrer = {
-                            nomPropose = vm.nomFichier()
-                            createur.launch(nomPropose)
+                        state = it,
+                        onQuestionnaire = vm::setQuestionnaire,
+                        onExcluded = vm::setExcluded,
+                        onSave = {
+                            proposedName = vm.fileName()
+                            creator.launch(proposedName)
                         },
                     )
                 }
@@ -703,11 +700,11 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
 }
 
 /**
- * Le jeton stocke vers le mode du theme. `null` — premiere lecture non aboutie — vaut sombre,
- * comme le defaut du produit.
+ * The stored token to the theme mode. `null` — first read not yet completed — means dark, like the
+ * product's default.
  */
-private fun modeDeTheme(jeton: String?): ThemeMode = when (jeton) {
-    PendulumPreferences.THEME_SYSTEME -> ThemeMode.System
-    PendulumPreferences.THEME_CLAIR -> ThemeMode.Light
+private fun themeMode(token: String?): ThemeMode = when (token) {
+    PendulumPreferences.THEME_SYSTEM -> ThemeMode.System
+    PendulumPreferences.THEME_LIGHT -> ThemeMode.Light
     else -> ThemeMode.Dark
 }

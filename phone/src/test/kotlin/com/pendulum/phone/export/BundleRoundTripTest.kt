@@ -14,33 +14,33 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * **Le test qui justifie l'existence du bundle.**
+ * **The test that justifies the existence of the bundle.**
  *
- * L'affirmation a prouver : une base reconstruite depuis un bundle donne un resultat identique
- * au bit pres. Sans cette propriete, l'export est un souvenir, pas une sauvegarde — et la
- * promesse « on pourra rescorer quand l'algorithme changera » ne tient plus, puisqu'on ne saurait
- * meme pas reproduire le chiffre d'aujourd'hui.
+ * The claim to prove: a database rebuilt from a bundle gives a bit-for-bit identical result. Without
+ * that property, the export is a memory, not a backup — and the promise "we will be able to rescore
+ * when the algorithm changes" no longer holds, since we would not even be able to reproduce today's
+ * figure.
  *
- * Le chemin exerce est complet : generation d'une nuit synthetique -> ecriture de vrais fichiers
- * de chunks -> analyse -> mise en bundle -> relecture du bundle -> reecriture des fichiers ->
- * seconde analyse -> comparaison champ par champ.
+ * The path exercised is the complete one: generation of a synthetic night -> writing of real chunk
+ * files -> analysis -> bundling -> reading the bundle back -> rewriting the files -> second
+ * analysis -> field-by-field comparison.
  *
- * Ce test tourne sur JVM parce que ni [NightBundle], ni `SessionReassembler`, ni [NightAnalyzer]
- * ne dependent d'Android. C'est la raison pour laquelle ils n'en dependent pas.
+ * This test runs on the JVM because neither [NightBundle], nor `SessionReassembler`, nor
+ * [NightAnalyzer] depend on Android. That is the reason why they do not.
  */
 class BundleRoundTripTest {
 
     @Test
-    fun `une nuit reconstruite depuis un bundle donne exactement le meme resultat`(
+    fun `a night rebuilt from a bundle gives exactly the same result`(
         @TempDir tmp: File,
     ) {
-        val origine = File(tmp, "origine").apply { mkdirs() }
-        val restaure = File(tmp, "restaure").apply { mkdirs() }
+        val origin = File(tmp, "origin").apply { mkdirs() }
+        val restored = File(tmp, "restored").apply { mkdirs() }
 
-        val chunks = SyntheticNight.write(origine)
-        val avant = analyse(origine)
+        val chunks = SyntheticNight.write(origin)
+        val before = analyse(origin)
 
-        // --- Export puis reimport ---------------------------------------------------------
+        // --- Export then reimport ---------------------------------------------------------
         val bundle = NightBundle.toByteArray(
             NightBundle.Content(
                 manifest = mapOf(
@@ -62,45 +62,45 @@ class BundleRoundTripTest {
             )
         )
 
-        val relu = NightBundle.read(bundle.inputStream())
-        assertThat(relu.sessionHex).isEqualTo(SESSION_HEX)
-        for ((idx, bytes) in relu.chunks) {
-            // Les octets doivent etre identiques : le bundle transporte le brut, il ne le
-            // transcode pas. Un re-encodage, meme sans perte apparente, ferait diverger les
-            // valeurs quantifiees et donc le resultat.
+        val readBack = NightBundle.read(bundle.inputStream())
+        assertThat(readBack.sessionHex).isEqualTo(SESSION_HEX)
+        for ((idx, bytes) in readBack.chunks) {
+            // The bytes must be identical: the bundle carries the raw data, it does not transcode
+            // it. A re-encoding, even one with no apparent loss, would make the quantised values
+            // diverge and therefore the result too.
             assertThat(bytes).isEqualTo(chunks.getValue(idx).readBytes())
-            File(restaure, "%05d.pendulum".format(idx)).writeBytes(bytes)
+            File(restored, "%05d.pendulum".format(idx)).writeBytes(bytes)
         }
 
-        val apres = analyse(restaure)
+        val after = analyse(restored)
 
-        // --- La comparaison qui compte ------------------------------------------------------
-        assertThat(canonique(apres)).isEqualTo(canonique(avant))
+        // --- The comparison that counts ------------------------------------------------------
+        assertThat(canonical(after)).isEqualTo(canonical(before))
     }
 
     @Test
-    fun `deux exports du meme contenu produisent le meme fichier`(@TempDir tmp: File) {
-        // Determinisme : sans horodatage fige et sans tri des cles, deux exports du meme fond
-        // donneraient deux fichiers differents, et il deviendrait impossible de verifier par
-        // simple comparaison qu'un export n'a pas altere son contenu.
-        val dir = File(tmp, "nuit").apply { mkdirs() }
+    fun `two exports of the same content produce the same file`(@TempDir tmp: File) {
+        // Determinism: without a frozen timestamp and without sorting the keys, two exports of the
+        // same material would give two different files, and it would become impossible to check by
+        // simple comparison that an export has not altered its content.
+        val dir = File(tmp, "night").apply { mkdirs() }
         val chunks = SyntheticNight.write(dir).mapValues { it.value.readBytes() }
-        val contenu = NightBundle.Content(
+        val content = NightBundle.Content(
             manifest = mapOf("sessionHex" to SESSION_HEX, "zoneId" to "Europe/Paris"),
             context = mapOf("leg" to "RIGHT"),
             baseline = emptyMap(),
             hypnogramCsv = "1:2:4;2:3:5",
             chunks = chunks,
         )
-        assertThat(NightBundle.toByteArray(contenu)).isEqualTo(NightBundle.toByteArray(contenu))
+        assertThat(NightBundle.toByteArray(content)).isEqualTo(NightBundle.toByteArray(content))
     }
 
     @Test
-    fun `le sidecar survit a l'aller-retour, retours a la ligne compris`() {
+    fun `the sidecar survives the round trip, line breaks included`() {
         val map = mapOf(
-            "notes" to "reveil difficile\nsecond paragraphe",
+            "notes" to "difficult waking\nsecond paragraph",
             "leg" to "LEFT",
-            "chemin" to """C:\donnees""",
+            "path" to """C:\data""",
         )
         assertThat(NightBundle.decodeMap(NightBundle.encodeMap(map))).isEqualTo(map)
     }
@@ -128,11 +128,11 @@ class BundleRoundTripTest {
     }
 
     /**
-     * Serialisation exhaustive du resultat. On ne compare pas avec `equals` : `PlmiResult.equals`
-     * ne regarde que quelques champs, et un test qui passe grace a un `equals` partiel ne prouve
-     * rien de ce qu'on veut prouver ici.
+     * Exhaustive serialisation of the result. We do not compare with `equals`: `PlmiResult.equals`
+     * only looks at a few fields, and a test that passes thanks to a partial `equals` proves
+     * nothing of what we want to prove here.
      */
-    private fun canonique(r: NightAnalyzer.Result): String = buildString {
+    private fun canonical(r: NightAnalyzer.Result): String = buildString {
         appendLine("fs=${r.fsHz}")
         appendLine("analysableMin=${r.analysableMin}")
         appendLine("analysableTstMin=${r.analysableTstMin}")
@@ -177,13 +177,13 @@ class BundleRoundTripTest {
 }
 
 /**
- * Une nuit synthetique minimale : gravite constante, bruit deterministe, et une salve de
- * mouvements toutes les 22 secondes.
+ * A minimal synthetic night: constant gravity, deterministic noise, and a burst of movements every
+ * 22 seconds.
  *
- * Elle n'a pas vocation a etre realiste — `:algo` a son propre generateur pour ca, avec verite
- * terrain. Ici on a besoin d'un signal **reproductible** qui traverse toute la chaine et produise
- * des evenements : ce qui est teste est l'invariance du resultat a l'aller-retour, pas la
- * justesse de la detection.
+ * It is not meant to be realistic — `:algo` has its own generator for that, with ground truth. Here
+ * what is needed is a **reproducible** signal that crosses the whole chain and produces events:
+ * what is being tested is the invariance of the result across the round trip, not the correctness
+ * of the detection.
  */
 private object SyntheticNight {
 
@@ -244,7 +244,7 @@ private object SyntheticNight {
         return out
     }
 
-    /** Salve de 1 s a 3 Hz toutes les 22 s, fenetree pour ne pas creer de discontinuite. */
+    /** A 1 s burst at 3 Hz every 22 s, windowed so as not to create a discontinuity. */
     private fun burstAt(tSec: Double): Double {
         val phase = tSec % 22.0
         if (phase >= 1.0) return 0.0
@@ -252,7 +252,7 @@ private object SyntheticNight {
         return 3.0 * window * sin(2 * PI * 3.0 * phase)
     }
 
-    /** Bruit deterministe : meme entree, meme sortie, sans quoi le test ne prouverait rien. */
+    /** Deterministic noise: same input, same output, without which the test would prove nothing. */
     private fun noise(n: Long): Double {
         var h = n * 6_364_136_223_846_793_005L + 1_442_695_040_888_963_407L
         h = h xor (h ushr 33)

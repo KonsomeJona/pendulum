@@ -1,17 +1,17 @@
 package com.pendulum.format.wire
 
 /**
- * `/pendulum/session/<sessionHex>` — montre -> telephone, `setUrgent()`.
+ * `/pendulum/session/<sessionHex>` — watch -> phone, `setUrgent()`.
  *
- * Pose a l'ouverture ([SessionState.OPEN]), reecrit a la fermeture propre. C'est ce qui permet
- * au telephone de savoir qu'une nuit **existe** avant d'en avoir recu la fin : sans cet item,
- * une nuit interrompue est indiscernable d'une nuit qui n'a jamais eu lieu.
+ * Posted on opening ([SessionState.OPEN]), rewritten on clean close. This is what lets the phone
+ * know that a night **exists** before it has received its end: without this item, an interrupted
+ * night is indistinguishable from a night that never took place.
  *
- * @param zoneId identifiant IANA (`Europe/Paris`). Il vit ici et dans le sidecar, pas dans
- *   l'entete binaire du chunk, qui ne porte que l'offset en minutes — voir la KDoc de
- *   `ChunkFormat` pour la justification.
- * @param plannedStopWallMs heure d'arret prevue, connue des l'ouverture : le telephone peut
- *   ainsi distinguer « la nuit n'est pas finie » de « la montre ne repond plus ».
+ * @param zoneId IANA identifier (`Europe/Paris`). It lives here and in the sidecar, not in the
+ *   binary chunk header, which carries only the offset in minutes — see the KDoc of
+ *   `ChunkFormat` for the justification.
+ * @param plannedStopWallMs planned stop time, known from the opening: the phone can thereby
+ *   tell "the night is not over" from "the watch is no longer answering".
  */
 data class SessionHeader(
     val sessionHex: String,
@@ -63,15 +63,15 @@ data class SessionHeader(
 }
 
 /**
- * `/pendulum/chunk/<sessionHex>/<idx:05d>` — montre -> telephone. Metadonnees accompagnant les
- * octets exacts du fichier de chunk.
+ * `/pendulum/chunk/<sessionHex>/<idx:05d>` — watch -> phone. Metadata accompanying the exact
+ * bytes of the chunk file.
  *
- * Le telephone recalcule [crc32] sur les octets recus avant d'inserer quoi que ce soit :
- * c'est la seule verification qui couvre le transport, la ou le CRC16 par bloc ne couvre que
- * le contenu. Un index dont le CRC32 ne retombe pas juste part dans `needResend` de l'ack.
+ * The phone recomputes [crc32] on the received bytes before inserting anything: it is the only
+ * check that covers transport, where the per-block CRC16 covers only the content. An index whose
+ * CRC32 does not come out right goes into `needResend` of the ack.
  *
- * @param flagsOr `OU` de tous les `flags` des blocs du chunk : permet de reperer un chunk
- *   contenant de la saturation ou un trou sans le decoder.
+ * @param flagsOr `OR` of all the `flags` of the chunk's blocks: makes it possible to spot a chunk
+ *   containing saturation or a hole without decoding it.
  */
 data class ChunkMeta(
     val sessionHex: String,
@@ -114,17 +114,17 @@ data class ChunkMeta(
 }
 
 /**
- * `/pendulum/live/<sessionHex>` — montre -> telephone, `setUrgent()`, **remplace** a chaque salve
- * et jamais accumule : c'est un etat, pas un journal.
+ * `/pendulum/live/<sessionHex>` — watch -> phone, `setUrgent()`, **replaced** on every burst and
+ * never accumulated: it is a state, not a log.
  *
- * Repond au besoin reel derriere « je veux voir le graphe de mouvement » : savoir que
- * l'enregistrement est vivant, et voir la forme du signal, pour ~1 Ko toutes les 5 min au lieu
- * des 300 o/s du brut.
+ * It answers the real need behind "I want to see the movement chart": knowing that the recording
+ * is alive, and seeing the shape of the signal, for ~1 KB every 5 min instead of the 300 B/s of
+ * the raw signal.
  *
- * @param envU8 enveloppe RMS a 1 Hz quantifiee u8 logarithmique, [PreviewEnvelopeCodec.LENGTH]
- *   octets = 15 min glissantes. Voir [PreviewEnvelopeCodec].
- * @param syncBacklogged vrai quand le plafond d'items en vol est atteint : l'enregistrement
- *   continue sans degradation, seul le transfert est en retard. A afficher, pas a alarmer.
+ * @param envU8 1 Hz RMS envelope quantised to logarithmic u8, [PreviewEnvelopeCodec.LENGTH]
+ *   bytes = 15 min sliding. See [PreviewEnvelopeCodec].
+ * @param syncBacklogged true when the ceiling of in-flight items is reached: the recording
+ *   continues without degradation, only the transfer is behind. To display, not to alarm about.
  */
 class LivePreview(
     val sessionHex: String,
@@ -142,9 +142,9 @@ class LivePreview(
 ) {
     init {
         require(envU8.size == PreviewEnvelopeCodec.LENGTH) {
-            "envU8 doit faire ${PreviewEnvelopeCodec.LENGTH} octets, recu ${envU8.size}"
+            "envU8 must be ${PreviewEnvelopeCodec.LENGTH} bytes, got ${envU8.size}"
         }
-        require(batteryPct in 0..100) { "batteryPct hors bornes : $batteryPct" }
+        require(batteryPct in 0..100) { "batteryPct out of bounds: $batteryPct" }
     }
 
     fun encode(): ByteArray = WireWriter(PreviewEnvelopeCodec.LENGTH + 96)
@@ -163,7 +163,7 @@ class LivePreview(
         .blob(envU8)
         .toByteArray()
 
-    // equals/hashCode manuels : ByteArray a une identite par reference.
+    // Manual equals/hashCode: ByteArray has reference identity.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is LivePreview) return false
@@ -220,17 +220,17 @@ class LivePreview(
 }
 
 /**
- * `/pendulum/ack/<sessionHex>` — telephone -> montre, `setUrgent()`, reecrit a chaque ingestion.
+ * `/pendulum/ack/<sessionHex>` — phone -> watch, `setUrgent()`, rewritten on every ingestion.
  *
- * **L'accuse est un `DataItem`, pas un message** : un message envoye pendant que la montre est
- * hors de portee serait perdu et la montre garderait ses fichiers pour toujours. Ici l'accuse
- * est un *etat convergent* — le relire dix fois donne le meme resultat que le relire une fois,
- * et l'idempotence du protocole est acquise sans compteur.
+ * **The ack is a `DataItem`, not a message**: a message sent while the watch is out of range
+ * would be lost and the watch would keep its files forever. Here the ack is a *convergent state*
+ * — reading it ten times gives the same result as reading it once, and the idempotence of the
+ * protocol is obtained without a counter.
  *
- * @param ackedUpTo tous les index strictement inferieurs sont acquittes et peuvent etre effaces.
- * @param ackedBitmap couvre `[bitmapBase, bitmapBase + 8 * taille)`, bit de poids faible en tete.
- * @param needResend index recus mais dont le **CRC32 est invalide** : a supprimer puis re-poser,
- *   un `putDataItem` identique etant deduplique et ne declenchant rien.
+ * @param ackedUpTo every strictly lower index is acknowledged and can be erased.
+ * @param ackedBitmap covers `[bitmapBase, bitmapBase + 8 * size)`, least significant bit first.
+ * @param needResend indices received but whose **CRC32 is invalid**: to be deleted then re-posted,
+ *   an identical `putDataItem` being deduplicated and triggering nothing.
  */
 class Ack(
     val sessionHex: String,
@@ -240,7 +240,7 @@ class Ack(
     val needResend: IntArray,
     val phoneMs: Long,
 ) {
-    /** Vrai si le chunk [idx] est acquitte, donc supprimable du disque de la montre. */
+    /** True if chunk [idx] is acknowledged, hence deletable from the watch's disk. */
     fun isAcked(idx: Int): Boolean {
         if (idx < ackedUpTo) return true
         val bit = idx - bitmapBase
@@ -260,7 +260,7 @@ class Ack(
         .i64(phoneMs)
         .toByteArray()
 
-    // equals/hashCode manuels : ByteArray et IntArray ont une identite par reference.
+    // Manual equals/hashCode: ByteArray and IntArray have reference identity.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Ack) return false

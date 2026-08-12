@@ -16,11 +16,11 @@ here are now implemented and build; they run on emulators, but **no night has ev
 them**, so every runtime figure below remains an estimate. The byte layout in §3 is read from the code,
 not from the design notes.
 
-Two companions, both in French and both carrying what this file compresses.
-[`fr/ARCHI-CAPTURE.md`](fr/ARCHI-CAPTURE.md) holds the energy arithmetic worked out in
+Two companions, both carrying what this file compresses.
+[`workings/CAPTURE-ARCHITECTURE.md`](workings/CAPTURE-ARCHITECTURE.md) holds the energy arithmetic worked out in
 milliampere-hours for each of the three transport options, the exact payload schema of every
 `DataItem`, and sixteen numbered Wear OS traps sorted into *verified on a primary source*,
-*documented elsewhere* and *folklore*. [`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) is what happened when
+*documented elsewhere* and *folklore*. [`workings/BENCH-LOG.md`](workings/BENCH-LOG.md) is what happened when
 this design met real devices — including the two proposed fixes that measurement then rejected, and
 the one manifest line that silently killed every delivery.
 

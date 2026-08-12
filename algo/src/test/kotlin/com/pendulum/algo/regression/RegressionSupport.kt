@@ -42,37 +42,37 @@ import kotlin.math.exp
 import kotlin.math.ln
 
 /**
- * Outillage commun de la suite de non-regression du tableau `docs/fr/ALGO-v2.md` §5.5.
+ * Shared tooling for the non-regression suite of the `docs/workings/ALGO-v2.md` §5.5 table.
  *
- * Trois choses y sont fixees une fois pour toutes, parce qu'elles conditionnent la lecture de tous
- * les seuils :
+ * Three things are settled here once and for all, because they condition how every threshold is
+ * read:
  *
- *  1. **Les 20 graines.** Chaque test tourne sur au moins 20 nuits ; l'assertion porte sur la
- *     mediane, avec une assertion secondaire sur le pire cas la ou la specification l'indique.
- *  2. **Le masque de sommeil est celui de la verite terrain**, raffine par le temps reellement
- *     analysable de la ligne de temps. La couche masque accelerometrique de §3.6 n'est pas encore
- *     ecrite, et surtout : la faire porter le denominateur ici melangerait l'erreur du detecteur et
- *     celle du masque, alors que §5.5 ne mesure que la premiere. Le denominateur reste donc
- *     `INDEPENDENT_DIARY`, non circulaire par construction.
- *  3. **L'attendu traverse les memes etapes 6 et 7 que la mesure**, avec le **meme** objet masque
- *     ([Analysis.truthResult]). Toute difference restante est imputable a la detection — ce qui est
- *     exactement ce que T6 pretend mesurer.
+ *  1. **The 20 seeds.** Every test runs on at least 20 nights; the assertion bears on the median,
+ *     with a secondary assertion on the worst case where the specification says so.
+ *  2. **The sleep mask is the ground-truth one**, refined by the time actually analysable on the
+ *     timeline. The accelerometric mask layer of §3.6 is not written yet, and above all: making it
+ *     carry the denominator here would mix the detector's error with the mask's, whereas §5.5
+ *     measures only the first. The denominator therefore stays `INDEPENDENT_DIARY`, non-circular by
+ *     construction.
+ *  3. **The expected value goes through the same steps 6 and 7 as the measurement**, with the
+ *     **same** mask object ([Analysis.truthResult]). Any remaining difference is imputable to
+ *     detection — which is exactly what T6 claims to measure.
  */
 internal val SEEDS: List<Long> = (0 until 20).map { 20_260_729L + it * 7_919L }
 
 internal const val FS: Double = 50.0
 
 /**
- * Configuration de detection sous laquelle tourne **toute** la suite de non-regression.
+ * Detection configuration under which **the whole** non-regression suite runs.
  *
- * C'est la valeur publiee du produit, sauf si `-Palgo.calFraction=<x>` est passe a Gradle. Ce
- * crochet existe pour une raison precise et bornee : le balayage de `calFraction`
- * (`ThresholdPolicySweepTest`, `docs/07-validation.md` §4.4) recommande `f_cal` proche de 0,06, et
- * une recommandation de ce genre ne se presente pas sans **la liste de ce qu'elle casse**. Rejouer
- * T1 a T22 sous une autre valeur est la seule facon d'etablir cette liste, et le faire en editant le
- * defaut — meme temporairement — reviendrait a mesurer un arbre de travail que personne ne relira.
+ * This is the product's published value, unless `-Palgo.calFraction=<x>` is passed to Gradle. That
+ * hook exists for one precise and bounded reason: the `calFraction` sweep
+ * (`ThresholdPolicySweepTest`, `docs/07-validation.md` §4.4) recommends `f_cal` close to 0.06, and a
+ * recommendation of that kind is not put forward without **the list of what it breaks**. Replaying
+ * T1 to T22 under another value is the only way to establish that list, and doing it by editing the
+ * default — even temporarily — would amount to measuring a working tree nobody will read again.
  *
- * Sans le drapeau, rien ne change : le defaut du produit reste celui de [ThresholdConfig].
+ * Without the flag, nothing changes: the product default stays the one from [ThresholdConfig].
  */
 internal val REGRESSION_CAL_FRACTION: Double =
     System.getProperty("algo.calFraction")?.toDoubleOrNull() ?: ThresholdConfig().calFraction
@@ -82,11 +82,11 @@ internal val REGRESSION_CLM_CFG: ClmConfig =
     ClmConfig(thresholds = ThresholdConfig(calFraction = REGRESSION_CAL_FRACTION))
 
 // ---------------------------------------------------------------------------------------------
-// Statistiques d'agregation sur les graines
+// Aggregation statistics over the seeds
 // ---------------------------------------------------------------------------------------------
 
 internal fun medianOf(values: List<Double>): Double {
-    require(values.isNotEmpty()) { "mediane d'une liste vide" }
+    require(values.isNotEmpty()) { "median of an empty list" }
     val s = values.filter { !it.isNaN() }.sorted()
     if (s.isEmpty()) return Double.NaN
     val m = s.size / 2
@@ -97,11 +97,11 @@ internal fun worstMax(values: List<Double>): Double = values.filter { !it.isNaN(
 
 internal fun worstMin(values: List<Double>): Double = values.filter { !it.isNaN() }.minOrNull() ?: Double.NaN
 
-/** Ecart relatif entre deux valeurs, rapporte a la premiere. `NaN` si la reference est nulle. */
+/** Relative difference between two values, referred to the first. `NaN` if the reference is zero. */
 internal fun relDiff(a: Double, b: Double): Double = if (a == 0.0) Double.NaN else abs(a - b) / abs(a)
 
 // ---------------------------------------------------------------------------------------------
-// Chaine complete
+// Full chain
 // ---------------------------------------------------------------------------------------------
 
 internal class Analysis(
@@ -116,19 +116,19 @@ internal class Analysis(
     val timeline: Timeline get() = pre.timeline
     val truth: GroundTruth get() = night.truth
 
-    /** CLM retenus, dans l'ordre chronologique. */
+    /** Retained CLM, in chronological order. */
     val retained: List<Clm> get() = clms.filter { it.isClm }
 
-    /** Fraction du temps enregistre reellement analysable. Garde-fou anti-test-vide. */
+    /** Fraction of the recorded time actually analysable. Guard rail against an empty test. */
     val analysableFraction: Double
         get() = if (timeline.signal.n == 0) 0.0
         else timeline.analysableSec / (timeline.signal.n / timeline.signal.fsHz)
 
     /**
-     * Seuil de declenchement `Theta_on`, median sur la nuit. C'est l'amplitude au-dessus de laquelle
-     * un evenement fait partie de ceux que le detecteur est **configure** pour trouver — ce qui n'est
-     * pas la meme chose que ceux qui sont mecaniquement presents dans le signal. Le denominateur de
-     * T6 et la fraction sous seuil de T22 se rapportent tous les deux a cette valeur.
+     * Trigger threshold `Theta_on`, median over the night. This is the amplitude above which an
+     * event belongs to those the detector is **configured** to find — which is not the same thing as
+     * those mechanically present in the signal. T6's denominator and T22's sub-threshold fraction
+     * both refer to this value.
      */
     val thresholdOnG: Double by lazy {
         val v = pre.thresholds.on.v
@@ -143,49 +143,49 @@ internal class Analysis(
     }
 
     /**
-     * Plancher **effectif** du detecteur, `Theta_on / k_on`, median sur la nuit. C'est la reference
-     * d'amplitude reellement utilisee par la decision, et donc l'abscisse de la courbe T5.
+     * **Effective** floor of the detector, `Theta_on / k_on`, median over the night. This is the
+     * amplitude reference actually used by the decision, and therefore the abscissa of the T5 curve.
      *
-     * Derive de [thresholdOnG] plutot que recalcule : la mediane commute avec la division par une
-     * constante positive, et les deux grandeurs doivent rester exactement coherentes — c'est leur
-     * rapport, `k_on`, qui fait tout le sujet du balayage de `ThresholdPolicySweepTest`.
+     * Derived from [thresholdOnG] rather than recomputed: the median commutes with division by a
+     * positive constant, and the two quantities must stay exactly consistent — it is their ratio,
+     * `k_on`, that is the whole subject of the `ThresholdPolicySweepTest` sweep.
      */
     val effectiveFloorG: Double get() = thresholdOnG / kOn
 
     fun result(rule: SeriesRule): PlmiResult = indexOf(clms, rule)
 
     /**
-     * Le meme calcul, applique a une verite terrain et au **meme** masque.
+     * The same computation, applied to a ground truth and to the **same** mask.
      *
-     * @param events par defaut `accelTruth` entier, c'est-a-dire l'indice vrai a l'echelle
-     *   accelerometrique. Le passer restreint aux evenements au-dessus de `Theta_on` donne l'indice
-     *   qu'un detecteur **parfait applique cette politique de seuil** produirait : c'est l'attendu de
-     *   T6, tandis que le rapport entre les deux est ce que T22 publie.
+     * @param events by default the whole `accelTruth`, that is, the true index on the accelerometric
+     *   scale. Passing it restricted to the events above `Theta_on` gives the index that a
+     *   **perfect detector applying this threshold policy** would produce: that is T6's expected
+     *   value, while the ratio between the two is what T22 publishes.
      */
     fun truthResult(rule: SeriesRule, events: List<TruthEvent> = truth.accelLegMovements): PlmiResult =
         indexOf(truthAsClms(events, truth.floorG.toFloat()), rule)
 
-    /** Rythme fondamental estime (`SPEC-v2.md` §5), sur les CLM de sommeil consecutifs. */
+    /** Estimated fundamental rhythm (`SPEC-v2.md` §5), over the consecutive sleep CLM. */
     fun rhythm() = Rhythm.fromClms(retained, mask)
 
-    /** Le meme ajustement, avec ses diagnostics d'adequation. Sortie de `RhythmMeasurementTest`. */
+    /** The same fit, with its goodness-of-fit diagnostics. Output of `RhythmMeasurementTest`. */
     fun rhythmFit() = Rhythm.fitFromClms(retained, mask)
 
     private fun indexOf(events: List<Clm>, rule: SeriesRule): PlmiResult {
         val cfg = if (rule == SeriesRule.AASM_V3) SeriesConfig.aasmV3() else SeriesConfig.wasm2016()
         val built = SeriesBuilder.buildDetailed(events, mask, FS, cfg)
 
-        // `events` et non la liste filtree. `clms` est **la liste complete**, celle qu'on vient de
-        // donner a `SeriesBuilder`, et `Plmi.compute` fait lui-meme la traduction vers les retenus.
+        // `events` and not the filtered list. `clms` is **the complete list**, the one just handed
+        // to `SeriesBuilder`, and `Plmi.compute` does the translation to the retained ones itself.
         //
-        // Ce harnais passait la liste filtree tout en donnant des series indexees sur la liste
-        // complete : les deux bases ne coincidaient pas, et le decalage etait silencieux. T6 l'a
-        // attrape des le premier essai apres que la traduction soit descendue dans `compute` —
-        // c'est precisement ce que le nouveau contrat rend impossible a ecrire sans le voir.
+        // This harness used to pass the filtered list while handing over series indexed on the
+        // complete list: the two bases did not coincide, and the offset was silent. T6 caught it on
+        // the very first run after the translation moved down into `compute` — which is precisely
+        // what the new contract makes impossible to write without seeing it.
         //
-        // `ferriIndex` et `fromClms` filtrent en interne : les deux formes leur sont equivalentes.
-        // On leur passe la meme liste qu'a `compute` pour qu'il n'y ait qu'une seule reponse a la
-        // question « qu'est-ce qu'on passe ici ? ».
+        // `ferriIndex` and `fromClms` filter internally: both forms are equivalent to them. They are
+        // given the same list as `compute` so that there is only one answer to the question "what do
+        // we pass here?".
         val pi = Periodicity.ferriIndex(events, mask, FS)
         val rhythm = Rhythm.fromClms(events, mask)
         return Plmi.compute(
@@ -205,13 +205,13 @@ internal class Analysis(
 }
 
 /**
- * Chaine v2 complete, etapes −1 a 7, sur une nuit synthetique.
+ * Full v2 chain, steps −1 to 7, on a synthetic night.
  *
- * Deux passes de pretraitement, comme le prevoit §3.1 : le detecteur de posture travaille sur
- * `g_chapeau`, donc apres l'etape 1, et ses frontieres coupent ensuite les fenetres du plancher.
+ * Two preprocessing passes, as §3.1 provides: the posture detector works on `g_chapeau`, hence after
+ * step 1, and its boundaries then cut the floor windows.
  *
- * @param calibrated `false` desactive le troisieme terme du seuil (`f_cal x gainCal`). C'est le
- *   bras « calibration inactive » du test T11, dont l'assertion est **inversee**.
+ * @param calibrated `false` disables the third term of the threshold (`f_cal x gainCal`). This is
+ *   the "calibration inactive" arm of test T11, whose assertion is **inverted**.
  */
 internal fun analyse(
     night: SynthNight,
@@ -222,7 +222,7 @@ internal fun analyse(
     calibrated: Boolean = true,
 ): Analysis = analyseBlocks(night, night.blocks, nominalHz, cfg, clmCfg, postureCfg, calibrated)
 
-/** Variante qui analyse un flux de blocs modifie (decimation T9) tout en gardant la verite terrain. */
+/** Variant that analyses a modified block stream (T9 decimation) while keeping the ground truth. */
 internal fun analyseBlocks(
     night: SynthNight,
     blocks: List<SampleBlock>,
@@ -232,8 +232,8 @@ internal fun analyseBlocks(
     postureCfg: PostureConfig = PostureConfig(),
     calibrated: Boolean = true,
 ): Analysis {
-    // Les quatre valeurs de seuil vivent en double dans `dsp` et `detect` : on les synchronise ici,
-    // sinon un balayage T12 sur `kOn` ne toucherait que la moitie de la chaine.
+    // The four threshold values live in duplicate in `dsp` and `detect`: they are synchronised here,
+    // otherwise a T12 sweep on `kOn` would touch only half the chain.
     val effCfg = cfg.copy(thresholds = clmCfg.thresholds.toParams())
     val cal = NightCalibration(
         sensor = null,
@@ -266,12 +266,12 @@ internal fun analyseBlocks(
 }
 
 /**
- * Masque de la verite terrain, dont le temps analysable est recalcule sur la ligne de temps
- * reellement obtenue : segments valides, prives des zones aveugles et de l'off-body.
+ * Ground-truth mask, whose analysable time is recomputed on the timeline actually obtained: valid
+ * segments, minus the blind zones and the off-body ones.
  *
- * C'est la soustraction que fera la couche masque de §3.6 ; la faire ici garde le denominateur de la
- * mesure et celui de l'attendu **identiques**, ce qui est la condition pour que T10 mesure l'effet
- * des trous sur la detection et non sur l'arithmetique du denominateur.
+ * This is the subtraction the §3.6 mask layer will perform; doing it here keeps the denominator of
+ * the measurement and that of the expected value **identical**, which is the condition for T10 to
+ * measure the effect of the holes on detection and not on the arithmetic of the denominator.
  */
 internal fun refinedMask(truth: GroundTruth, timeline: Timeline): SleepMask {
     val n = timeline.signal.n
@@ -300,21 +300,21 @@ internal fun refinedMask(truth: GroundTruth, timeline: Timeline): SleepMask {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Fabriques de nuits
+// Night factories
 // ---------------------------------------------------------------------------------------------
 
-/** Structure veille/sommeil compacte, pour les scenarios courts (T1 a T5). */
+/** Compact wake/sleep structure, for the short scenarios (T1 to T5). */
 internal fun shortSleep(): SleepSpec = SleepSpec(sleepLatencyMin = 1.0, finalWakeMin = 1.0, wasoCount = 0)
 
 /**
- * Nuit nominale de T6 : tous les distracteurs, un `aPLM-i` vrai de l'ordre de 25/h **a l'echelle
- * accelerometrique**.
+ * T6's nominal night: every distractor, a true `aPLM-i` of the order of 25/h **on the
+ * accelerometric scale**.
  *
- * Le nombre de mouvements injectes est volontairement plus grand que le compte vise : 39 % d'entre
- * eux sont des rotations pures de cheville et ne deplacent pas le capteur (Terrill), et la queue
- * basse de la loi d'amplitude passe sous le seuil de visibilite physique. Viser 25/h a l'echelle EMG
- * donnerait environ 15/h a l'echelle accelerometrique — soit exactement au seuil de l'ICSD-3, ce qui
- * ferait basculer la moitie des nuits d'un cote ou de l'autre pour rien.
+ * The number of injected movements is deliberately larger than the targeted count: 39 % of them are
+ * pure ankle rotations and do not move the sensor (Terrill), and the low tail of the amplitude law
+ * falls below the physical visibility threshold. Aiming at 25/h on the EMG scale would give about
+ * 15/h on the accelerometric scale — that is, exactly at the ICSD-3 threshold, which would tip half
+ * the nights to one side or the other for nothing.
  */
 internal fun nominalNight(
     seed: Long,
@@ -326,8 +326,8 @@ internal fun nominalNight(
     NightSpec(
         durationH = durationH,
         fsRealHz = fsRealHz,
-        // Le nombre de series suit la duree : c'est le TAUX qui doit rester constant d'un scenario
-        // a l'autre, sinon une nuit courte deviendrait une nuit tres severe.
+        // The number of series follows the duration: it is the RATE that must stay constant from
+        // one scenario to another, otherwise a short night would become a very severe night.
         trueSeries = listOf(
             SeriesSpec(
                 nSeries = Math.round(4.25 * durationH).toInt().coerceAtLeast(1),
@@ -343,7 +343,7 @@ internal fun nominalNight(
     seed,
 )
 
-/** Nuit negative de T7 : `aPLM-i` vrai de l'ordre de 2/h, tous distracteurs actifs. */
+/** T7's negative night: true `aPLM-i` of the order of 2/h, every distractor active. */
 internal fun negativeNight(seed: Long): SynthNight = NightSynth.generate(
     NightSpec(
         durationH = 8.0,
@@ -354,7 +354,7 @@ internal fun negativeNight(seed: Long): SynthNight = NightSynth.generate(
     seed,
 )
 
-/** Nuit sans aucun mouvement : le distracteur nomme est le seul contenu du signal. */
+/** Night without any movement: the named distractor is the only content of the signal. */
 internal fun distractorOnlyNight(
     seed: Long,
     minutes: Double,
@@ -373,8 +373,8 @@ internal fun distractorOnlyNight(
 )
 
 /**
- * Nuit de CLM isoles a amplitude **imposee sur l'echelle de l'enveloppe grossiere**, pour le
- * balayage de la courbe de sensibilite (T5).
+ * Night of isolated CLM at an amplitude **imposed on the coarse-envelope scale**, for the sweep of
+ * the sensitivity curve (T5).
  */
 internal fun fixedAmplitudeNight(
     seed: Long,
@@ -382,9 +382,9 @@ internal fun fixedAmplitudeNight(
     envelopeAmplitudeG: Double,
     spacingSec: Double = 20.0,
 ): SynthNight {
-    // Espacement quasi regulier plutot que des arrivees exponentielles : deux evenements qui se
-    // recouvrent fusionnent en une seule detection et feraient chuter la sensibilite mesuree pour
-    // une raison qui n'a rien a voir avec l'amplitude.
+    // Near-regular spacing rather than exponential arrivals: two overlapping events merge into a
+    // single detection and would drop the measured sensitivity for a reason that has nothing to do
+    // with amplitude.
     val count = ((minutes * 60.0 - 120.0) / spacingSec).toInt().coerceAtLeast(4)
     return NightSynth.generate(
         NightSpec(
@@ -402,14 +402,13 @@ internal fun fixedAmplitudeNight(
 }
 
 /**
- * Plancher effectif du detecteur sur une nuit de bruit seul, meme specification de bruit.
- * Sert a normaliser l'abscisse du balayage T5 sans faire tourner le detecteur sur la nuit de test.
+ * Effective floor of the detector on a noise-only night, same noise specification.
+ * Used to normalise the abscissa of the T5 sweep without running the detector on the test night.
  *
- * @param clmCfg la configuration dont on sonde le plancher. Elle est un parametre et non une
- *   constante parce que le plancher effectif vaut `Theta_on / k_on` : sur une nuit calme c'est
- *   `Theta_abs` qui l'emporte, donc l'abscisse de T5 **depend** de `k_on`. Sonder avec la
- *   configuration par defaut tout en detectant avec une autre placerait les evenements ailleurs que
- *   la ou l'enonce de T5 les veut.
+ * @param clmCfg the configuration whose floor is being probed. It is a parameter and not a constant
+ *   because the effective floor is `Theta_on / k_on`: on a quiet night it is `Theta_abs` that wins,
+ *   so T5's abscissa **depends** on `k_on`. Probing with the default configuration while detecting
+ *   with another one would place the events somewhere other than where T5's statement wants them.
  */
 internal fun probeEffectiveFloorG(seed: Long, clmCfg: ClmConfig = REGRESSION_CLM_CFG): Double {
     val probe = distractorOnlyNight(seed, minutes = 12.0, distractors = DistractorSpec.NONE)
@@ -417,27 +416,27 @@ internal fun probeEffectiveFloorG(seed: Long, clmCfg: ClmConfig = REGRESSION_CLM
 }
 
 /**
- * Sous-ensemble d'une verite terrain au-dessus d'une amplitude donnee, sur l'echelle de l'enveloppe
- * grossiere — celle que le detecteur compare a `Theta_on`.
+ * Subset of a ground truth above a given amplitude, on the coarse-envelope scale — the one the
+ * detector compares to `Theta_on`.
  *
- * C'est l'operation qui distingue les trois denominateurs de §4.1 du document de validation :
- * « mecaniquement present dans le signal » (`accelTruth` entier), « au-dessus du garde-fou absolu »
- * et « au-dessus du seuil que le detecteur applique reellement cette nuit-la ».
+ * This is the operation that separates the three denominators of §4.1 of the validation document:
+ * "mechanically present in the signal" (the whole `accelTruth`), "above the absolute guard rail"
+ * and "above the threshold the detector actually applies that night".
  */
 internal fun aboveEnvelope(events: List<TruthEvent>, amplitudeG: Double): List<TruthEvent> =
     events.filter { it.envPeakG >= amplitudeG }
 
 /**
- * Rythme fondamental **reellement injecte** cette nuit-la : moyenne geometrique des intervalles
- * onset-a-onset entre mouvements consecutifs d'une meme serie, a l'echelle EMG.
+ * Fundamental rhythm **actually injected** that night: geometric mean of the onset-to-onset
+ * intervals between consecutive movements of the same series, on the EMG scale.
  *
- * Mesure plutot que lue dans `NightSpec.imiMeanSec` : la loi est tronquee a [2 ; 120] s et les series
- * sont placees dans des creneaux, si bien que la valeur realisee n'est pas exactement la valeur
- * demandee. Comparer l'estimation a une consigne plutot qu'a la realisation ferait porter a la
- * deconvolution une erreur qui n'est pas la sienne.
+ * Measured rather than read from `NightSpec.imiMeanSec`: the law is truncated to [2 ; 120] s and the
+ * series are placed in slots, so that the realised value is not exactly the requested one. Comparing
+ * the estimate to a setpoint rather than to the realisation would charge the deconvolution with an
+ * error that is not its own.
  *
- * La moyenne geometrique, et non arithmetique, parce que `fundamentalSec = exp(mu)` est la
- * **mediane** de la log-normale ajustee : c'est la meme grandeur des deux cotes de la comparaison.
+ * The geometric mean, and not the arithmetic one, because `fundamentalSec = exp(mu)` is the
+ * **median** of the fitted log-normal: it is the same quantity on both sides of the comparison.
  */
 internal fun injectedFundamentalSec(truth: GroundTruth): Double {
     val logs = ArrayList<Double>()

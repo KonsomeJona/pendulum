@@ -12,113 +12,114 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
- * Les quatre choses que l'application doit se rappeler d'un lancement a l'autre et qui ne sont
- * pas des donnees de mesure.
+ * The four things the application must remember from one launch to the next and which are not
+ * measurement data.
  *
- * `androidx.datastore.preferences` etait declaree en dependance depuis le debut et **n'etait
- * instanciee nulle part**. `work/Workers.kt` le disait sans detour dans un TODO : le reglage de
- * source preferee etait decoratif, puisque rien ne le persistait et que la lecture retombait
- * toujours sur l'heuristique de `SleepSourceSelector`.
+ * `androidx.datastore.preferences` had been declared as a dependency from the start and **was
+ * instantiated nowhere**. `work/Workers.kt` said it plainly in a TODO: the preferred-source setting
+ * was decorative, since nothing persisted it and the read always fell back on the heuristic of
+ * `SleepSourceSelector`.
  *
- * ### Pourquoi pas dans Room
+ * ### Why not in Room
  *
- * La base porte la mesure, et la mesure est ce qu'on n'a pas le droit de perdre. Une preference
- * d'interface n'a pas ce statut : la melanger aux nuits obligerait a lui ecrire une migration
- * chaque fois qu'on ajoute une case a cocher, sur une base ou une migration fausse coute des
- * nuits irrecuperables. Les deux etages sont separes exprès.
+ * The database carries the measurement, and the measurement is what we have no right to lose. An
+ * interface preference does not have that status: mixing it in with the nights would force a
+ * migration to be written for it every time a checkbox is added, on a database where a wrong
+ * migration costs unrecoverable nights. The two layers are kept apart on purpose.
  *
- * ### Ce qui n'est deliberement pas ici
+ * ### What is deliberately not here
  *
- * Rien de ce qui influence un chiffre. Le jeu de regles de comptage et le profil de parametres
- * vivent dans `param_profile`, en base, parce qu'ils portent un `paramsHash` dont depend le
- * rescore de toutes les nuits. Une preference qu'on peut effacer en vidant le cache n'a pas a
- * pouvoir changer un resultat.
+ * Nothing that influences a figure. The counting rule set and the parameter profile live in
+ * `param_profile`, in the database, because they carry a `paramsHash` on which the rescore of every
+ * night depends. A preference that can be erased by clearing the cache must not be able to change
+ * a result.
  */
 class PendulumPreferences(private val context: Context) {
 
     /**
-     * Numero de l'etape d'assistant **deja franchie**, de 0 a [ETAPES_ASSISTANT].
+     * Number of the onboarding step **already crossed**, from 0 to [ONBOARDING_STEPS].
      *
-     * C'est ce qui rend l'assistant reprenable : quitter a l'etape 3 y ramene, et non au debut —
-     * refaire trois ecrans d'avertissement pour arriver a celui qu'on cherchait est la facon la
-     * plus sure de faire desinstaller une application. Il n'est ecrit qu'a la sortie de chaque
-     * etape, jamais a l'entree : une etape commencee et abandonnee n'est pas une etape franchie.
+     * This is what makes onboarding resumable: leaving at step 3 brings you back there, and not to
+     * the beginning — redoing three notice screens to reach the one you were after is the surest
+     * way to get an application uninstalled. It is written only on leaving each step, never on
+     * entering it: a step started and abandoned is not a step crossed.
      */
-    val etapeAssistant: Flow<Int>
-        get() = context.dataStore.data.map { it[CLE_ETAPE_ASSISTANT] ?: 0 }
+    val onboardingStep: Flow<Int>
+        get() = context.dataStore.data.map { it[KEY_ONBOARDING_STEP] ?: 0 }
 
-    suspend fun poserEtapeAssistant(etape: Int) {
-        context.dataStore.edit { it[CLE_ETAPE_ASSISTANT] = etape.coerceIn(0, ETAPES_ASSISTANT) }
+    suspend fun setOnboardingStep(step: Int) {
+        context.dataStore.edit { it[KEY_ONBOARDING_STEP] = step.coerceIn(0, ONBOARDING_STEPS) }
     }
 
-    val assistantTermine: Flow<Boolean>
-        get() = etapeAssistant.map { it >= ETAPES_ASSISTANT }
+    val onboardingDone: Flow<Boolean>
+        get() = onboardingStep.map { it >= ONBOARDING_STEPS }
 
     /**
-     * Paquet de l'application choisie comme source de sommeil, ou `null` pour laisser
-     * `SleepSourceSelector` decider.
+     * Package of the application chosen as the sleep source, or `null` to let
+     * `SleepSourceSelector` decide.
      *
-     * Ce n'est pas un confort. Quand deux applications ecrivent des sessions de sommeil qui se
-     * chevauchent, le denominateur depend de celle qu'on lit, et un denominateur qui change d'une
-     * nuit a l'autre fabrique une tendance qui n'existe pas.
+     * This is not a convenience. When two applications write sleep sessions that overlap, the
+     * denominator depends on which one is read, and a denominator that changes from one night to
+     * the next manufactures a trend that does not exist.
      */
-    val sourceSommeilPreferee: Flow<String?>
-        get() = context.dataStore.data.map { it[CLE_SOURCE_SOMMEIL] }
+    val preferredSleepSource: Flow<String?>
+        get() = context.dataStore.data.map { it[KEY_SLEEP_SOURCE] }
 
-    suspend fun poserSourceSommeilPreferee(paquet: String?) {
+    suspend fun setPreferredSleepSource(pkg: String?) {
         context.dataStore.edit {
-            if (paquet == null) it.remove(CLE_SOURCE_SOMMEIL) else it[CLE_SOURCE_SOMMEIL] = paquet
+            if (pkg == null) it.remove(KEY_SLEEP_SOURCE) else it[KEY_SLEEP_SOURCE] = pkg
         }
     }
 
-    /** Lecture ponctuelle, pour les workers qui n'ont pas de portee pour collecter un flux. */
-    suspend fun sourceSommeilPreferreeMaintenant(): String? =
-        context.dataStore.data.first()[CLE_SOURCE_SOMMEIL]
+    /** One-off read, for the workers that have no scope in which to collect a flow. */
+    suspend fun preferredSleepSourceNow(): String? =
+        context.dataStore.data.first()[KEY_SLEEP_SOURCE]
 
     /**
-     * Le repere de serrage du bracelet, saisi a la derniere etape de l'assistant et **rejoue
-     * chaque soir**.
+     * The strap tightness reference, entered at the last onboarding step and **replayed every
+     * evening**.
      *
-     * Il etait demande a l'assistant et jete : `OnboardingPager` le remontait a son appelant, qui
-     * n'existait pas. Or c'est lui qui rend deux nuits comparables — le jeu du bracelet fait
-     * varier l'amplitude d'un facteur 2 a 3, ce que `ComparabilityRule.GAIN_TOLERANCE` encaisse
-     * a 35 % sans pouvoir le corriger.
+     * It was asked for during onboarding and thrown away: `OnboardingPager` handed it back to its
+     * caller, which did not exist. Yet it is what makes two nights comparable — the play of the
+     * strap makes the amplitude vary by a factor of 2 to 3, which
+     * `ComparabilityRule.GAIN_TOLERANCE` absorbs at 35 % without being able to correct it.
      */
-    val repereDeSerrage: Flow<String>
-        get() = context.dataStore.data.map { it[CLE_REPERE_SERRAGE] ?: "" }
+    val strapReference: Flow<String>
+        get() = context.dataStore.data.map { it[KEY_STRAP_REFERENCE] ?: "" }
 
-    suspend fun poserRepereDeSerrage(repere: String) {
-        context.dataStore.edit { it[CLE_REPERE_SERRAGE] = repere }
+    suspend fun setStrapReference(reference: String) {
+        context.dataStore.edit { it[KEY_STRAP_REFERENCE] = reference }
     }
 
-    /** `SYSTEME`, `SOMBRE` ou `CLAIR`. Sombre par defaut, et le defaut est un choix. */
+    /** `SYSTEME`, `SOMBRE` or `CLAIR`. Dark by default, and the default is a choice. */
     val theme: Flow<String>
-        get() = context.dataStore.data.map { it[CLE_THEME] ?: THEME_SOMBRE }
+        get() = context.dataStore.data.map { it[KEY_THEME] ?: THEME_DARK }
 
-    suspend fun poserTheme(theme: String) {
-        context.dataStore.edit { it[CLE_THEME] = theme }
+    suspend fun setTheme(theme: String) {
+        context.dataStore.edit { it[KEY_THEME] = theme }
     }
 
     companion object {
-        const val ETAPES_ASSISTANT = 6
+        const val ONBOARDING_STEPS = 6
 
-        const val THEME_SYSTEME = "SYSTEME"
-        const val THEME_SOMBRE = "SOMBRE"
-        const val THEME_CLAIR = "CLAIR"
+        // The three stored tokens keep their original spelling: they are persisted values, and
+        // renaming them would silently discard the theme already chosen by a user.
+        const val THEME_SYSTEM = "SYSTEME"
+        const val THEME_DARK = "SOMBRE"
+        const val THEME_LIGHT = "CLAIR"
 
-        private val CLE_ETAPE_ASSISTANT = intPreferencesKey("etape_assistant")
-        private val CLE_SOURCE_SOMMEIL = stringPreferencesKey("source_sommeil_preferee")
-        private val CLE_REPERE_SERRAGE = stringPreferencesKey("repere_de_serrage")
-        private val CLE_THEME = stringPreferencesKey("theme")
+        private val KEY_ONBOARDING_STEP = intPreferencesKey("etape_assistant")
+        private val KEY_SLEEP_SOURCE = stringPreferencesKey("source_sommeil_preferee")
+        private val KEY_STRAP_REFERENCE = stringPreferencesKey("repere_de_serrage")
+        private val KEY_THEME = stringPreferencesKey("theme")
     }
 }
 
 /**
- * Un seul `DataStore` par processus, impose par la bibliotheque : en instancier deux sur le meme
- * fichier leve une exception a la premiere ecriture. Le delegue d'extension le garantit.
+ * A single `DataStore` per process, imposed by the library: instantiating two of them on the same
+ * file raises an exception at the first write. The extension delegate guarantees it.
  *
- * Le fichier est exclu de la sauvegarde par `res/xml/data_extraction_rules.xml`, comme le reste :
- * une restauration sur un autre telephone rapporterait un etat d'assistant sans les nuits qui
- * vont avec.
+ * The file is excluded from backup by `res/xml/data_extraction_rules.xml`, like the rest: a restore
+ * onto another phone would bring back an onboarding state without the nights that go with it.
  */
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "pendulum")

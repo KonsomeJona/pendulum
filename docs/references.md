@@ -10,7 +10,7 @@ identifier where one exists, and a one-line note on what the project takes from 
 
 ## How to read the access column
 
-The distinction matters and is carried over from the French design documents, where several
+The distinction matters and is carried over from the working documents, where several
 conclusions rest on sources that were never read in full.
 
 | Mark | Meaning |

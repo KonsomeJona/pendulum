@@ -13,7 +13,7 @@ class TimelineTest {
     private val fs = 50.0
     private val stepNs = (1e9 / fs).toLong()
 
-    /** Bloc de [n] echantillons a [fsBlock], commencant a [tStartNs]. */
+    /** Block of [n] samples at [fsBlock], starting at [tStartNs]. */
     private fun block(tStartNs: Long, n: Int, fsBlock: Double = fs, value: (Long) -> Float = { 0f }): SimpleBlock {
         val spanNs = Math.round((n - 1) * 1e9 / fsBlock)
         val x = FloatArray(n); val y = FloatArray(n); val z = FloatArray(n)
@@ -27,7 +27,7 @@ class TimelineTest {
     }
 
     @Test
-    fun `les trous sont classes en MICRO BLIND et SEGMENT_BREAK et decoupent les segments`() {
+    fun `gaps are classified as MICRO BLIND and SEGMENT_BREAK and cut the segments`() {
         val blocks = ArrayList<SimpleBlock>()
         var t = 1_000_000_000L
         fun add(count: Int) {
@@ -38,11 +38,11 @@ class TimelineTest {
             }
         }
         add(5)
-        t += 60_000_000L // micro : 0,06 s d'exces
+        t += 60_000_000L // micro: 0.06 s of excess
         add(5)
-        t += 500_000_000L // aveugle : 0,5 s
+        t += 500_000_000L // blind: 0.5 s
         add(5)
-        t += 3_000_000_000L // rupture : 3 s
+        t += 3_000_000_000L // break: 3 s
         add(5)
 
         val tl = TimelineBuilder.build(blocks, fs)
@@ -56,21 +56,21 @@ class TimelineTest {
         assertThat(micro.durationSec).isCloseTo(0.06, within(1e-3))
         val blind = tl.gaps.first { it.kind == GapKind.BLIND }
         assertThat(blind.durationSec).isCloseTo(0.50, within(1e-3))
-        // 0,5 s a 50 Hz : 25 echantillons manquants, a un pres selon l'alignement de la grille.
+        // 0.5 s at 50 Hz: 25 missing samples, give or take one depending on the grid alignment.
         assertThat(blind.toIdx - blind.fromIdx).isBetween(24, 26)
 
-        // Le trou micro est interpole silencieusement, le trou aveugle ne l'est pas.
+        // The micro gap is interpolated silently, the blind gap is not.
         for (i in micro.fromIdx until micro.toIdx) assertThat(tl.signal.z[i]).isNotNaN()
         for (i in blind.fromIdx until blind.toIdx) assertThat(tl.signal.z[i]).isNaN()
 
-        // Zone aveugle elargie de settleSec = 2 s de chaque cote (100 echantillons).
+        // Blind zone widened by settleSec = 2 s on each side (100 samples).
         val zone = tl.blindZones.first { it.fromIdx <= blind.fromIdx && it.toIdx >= blind.toIdx }
         assertThat(blind.fromIdx - zone.fromIdx).isGreaterThanOrEqualTo(100)
         assertThat(zone.toIdx - blind.toIdx).isGreaterThanOrEqualTo(100)
     }
 
     @Test
-    fun `les warmupSec de chaque segment sont ranges dans les zones aveugles`() {
+    fun `the warmupSec of each segment are filed into the blind zones`() {
         val blocks = ArrayList<SimpleBlock>()
         var t = 1_000_000_000L
         repeat(10) {
@@ -82,21 +82,21 @@ class TimelineTest {
         assertThat(tl.segments).hasSize(1)
         val head = tl.blindZones.first()
         assertThat(head.fromIdx).isEqualTo(0)
-        assertThat(head.toIdx).isEqualTo(250) // warmupSec = 5,0 s x 50 Hz
-        // 100 s enregistrees, 5 s de warmup exclues.
+        assertThat(head.toIdx).isEqualTo(250) // warmupSec = 5.0 s x 50 Hz
+        // 100 s recorded, 5 s of warmup excluded.
         assertThat(tl.analysableSec).isCloseTo(95.0, within(0.1))
     }
 
     @Test
-    fun `le reechantillonnage d une source a 52 Hz reste fidele a 3 Hz`() {
-        // §2 etape 0 borne l'attenuation point a point d'une interpolation lineaire a 3 Hz par
-        // (pi f T)^2 / 2, soit au plus 1,8 %. On asserte la borne verifiable : erreur instantanee
-        // sous 3 %.
+    fun `the resampling of a 52 Hz source stays faithful at 3 Hz`() {
+        // §2 step 0 bounds the point-by-point attenuation of a linear interpolation at 3 Hz by
+        // (pi f T)^2 / 2, that is at most 1.8 %. We assert the verifiable bound: instantaneous
+        // error under 3 %.
         //
-        // Ce commentaire citait « moins de 0,2 % » comme une annonce de la specification, et
-        // proposait de la sauver en la lisant comme une attenuation *moyenne d'enveloppe*. Les
-        // deux sont caduques : la specification a retire ce chiffre le 2026-07-31, et l'encadre
-        // de correction refute nommement l'echappatoire de la moyenne, qui vaut ~1,1 %.
+        // This comment used to cite "less than 0.2 %" as a claim of the specification, and
+        // proposed to rescue it by reading it as an *envelope-average* attenuation. Both are
+        // void: the specification withdrew that figure on 2026-07-31, and the correction box
+        // refutes the averaging loophole by name, which comes out at ~1.1 %.
         val fsSrc = 52.0
         val t0 = 1_000_000_000L
         val f = 3.0
@@ -123,11 +123,11 @@ class TimelineTest {
     }
 
     @Test
-    fun `une montre posee sur la table est marquee off-body`() {
+    fun `a watch left on the table is marked off-body`() {
         val blocks = ArrayList<SimpleBlock>()
         var t = 1_000_000_000L
         val rnd = java.util.Random(7)
-        // 5 min de porte (micro-mouvements), puis 12 min de table (bruit MEMS seul).
+        // 5 min worn (micro-movements), then 12 min on the table (MEMS noise only).
         repeat(700) { b ->
             val worn = b < 150
             val n = 500
@@ -146,7 +146,7 @@ class TimelineTest {
         assertThat(tl.offBody).isNotEmpty()
         val offSec = tl.offBody.sumOf { it.length } / fs
         assertThat(offSec).isGreaterThan(600.0)
-        // Le temps off-body est retire du denominateur.
+        // The off-body time is removed from the denominator.
         assertThat(tl.analysableSec).isLessThan(tl.signal.n / fs - 600.0)
     }
 }

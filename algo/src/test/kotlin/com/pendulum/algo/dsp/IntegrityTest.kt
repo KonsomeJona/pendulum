@@ -19,7 +19,7 @@ class IntegrityTest {
     }
 
     @Test
-    fun `une session saine passe sans rejet`() {
+    fun `a healthy session passes with no rejection`() {
         var t = 1_000_000_000L
         val blocks = (0 until 20).map { sane(t).also { b -> t = b.tLastNs + stepNs } }
         val (kept, report) = Integrity.check(blocks, fs)
@@ -29,13 +29,13 @@ class IntegrityTest {
     }
 
     @Test
-    fun `un repliement de saturation est detecte par le jerk meme si le bloc n est pas sature`() {
+    fun `a saturation wraparound is detected by the jerk even if the block is not saturated`() {
         var t = 1_000_000_000L
         val blocks = ArrayList<SimpleBlock>()
         repeat(5) { blocks.add(sane(t).also { t = it.tLastNs + stepNs }) }
         val n = 100
         val x = FloatArray(n)
-        // Bascule +16 g -> -16 g entre deux echantillons : signature du bug `toRaw` de :format.
+        // Flip +16 g -> -16 g between two samples: signature of the `toRaw` bug in :format.
         x[50] = 15.99f
         x[51] = -15.99f
         blocks.add(SimpleBlock(t, t + Math.round((n - 1) * 1e9 / fs), 0, x, FloatArray(n), FloatArray(n) { 1f }))
@@ -46,13 +46,13 @@ class IntegrityTest {
     }
 
     @Test
-    fun `un bloc majoritairement colle a la butee est corrompu et non sature`() {
+    fun `a block mostly pinned to the stop is corrupt and not saturated`() {
         var t = 1_000_000_000L
         val blocks = ArrayList<SimpleBlock>()
         repeat(5) { blocks.add(sane(t).also { t = it.tLastNs + stepNs }) }
         val n = 100
-        // Butee constante : aucun saut entre voisins, donc le controle de jerk laisse passer.
-        // C'est bien le controle de saturation qui doit attraper le bloc.
+        // Constant stop: no jump between neighbours, so the jerk check lets it through.
+        // It is indeed the saturation check that must catch the block.
         val z = FloatArray(n) { BlockFlags.SATURATION_G }
         blocks.add(SimpleBlock(t, t + Math.round((n - 1) * 1e9 / fs), 0, FloatArray(n), FloatArray(n), z))
 
@@ -63,25 +63,25 @@ class IntegrityTest {
     }
 
     @Test
-    fun `un timestamp qui recule est rejete`() {
+    fun `a timestamp that goes backwards is rejected`() {
         val b0 = sane(1_000_000_000L)
-        val b1 = sane(b0.tLastNs - 5_000_000L) // demarre avant la fin du precedent
+        val b1 = sane(b0.tLastNs - 5_000_000L) // starts before the end of the previous one
         val (kept, report) = Integrity.check(listOf(b0, b1), fs)
         assertThat(kept).containsExactly(b0)
         assertThat(report.byViolation[IntegrityViolation.NON_MONOTONIC]).isEqualTo(1)
     }
 
     @Test
-    fun `deux blocs separes de moins d un demi-echantillon se recouvrent`() {
+    fun `two blocks separated by less than half a sample overlap`() {
         val b0 = sane(1_000_000_000L)
-        val b1 = sane(b0.tLastNs + 5_000_000L) // 5 ms, soit un quart d'echantillon a 50 Hz
+        val b1 = sane(b0.tLastNs + 5_000_000L) // 5 ms, that is a quarter of a sample at 50 Hz
         val (kept, report) = Integrity.check(listOf(b0, b1), fs)
         assertThat(kept).containsExactly(b0)
         assertThat(report.byViolation[IntegrityViolation.OVERLAP]).isEqualTo(1)
     }
 
     @Test
-    fun `une cadence de bloc a plus de 20 pourcent du nominal est rejetee`() {
+    fun `a block rate more than 20 percent off nominal is rejected`() {
         val b0 = sane(1_000_000_000L)
         val n = 100
         val bad = SimpleBlock(
@@ -94,9 +94,9 @@ class IntegrityTest {
     }
 
     @Test
-    fun `une gravite implausible rend la session suspecte sans rejeter de bloc`() {
+    fun `an implausible gravity makes the session suspect without rejecting any block`() {
         var t = 1_000_000_000L
-        // Norme statique a 0,5 g : echelle fausse ou decodage desynchronise.
+        // Static norm at 0.5 g: wrong scale or out-of-sync decoding.
         val blocks = (0 until 10).map {
             val n = 100
             val b = SimpleBlock(t, t + Math.round((n - 1) * 1e9 / fs), 0, FloatArray(n), FloatArray(n), FloatArray(n) { 0.5f })

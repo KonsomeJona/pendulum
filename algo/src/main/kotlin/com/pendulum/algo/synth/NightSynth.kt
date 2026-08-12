@@ -30,22 +30,22 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Generateur de nuits synthetiques a verite terrain injectee. `docs/fr/ALGO-v2.md` §5.
+ * Generator of synthetic nights with injected ground truth. `docs/workings/ALGO-v2.md` §5.
  *
- * Deterministe : meme `seed` -> sortie **bit-identique** (test T13). Aucune horloge, aucune source
- * d'alea non grainee, aucun `hashCode` d'objet dans le chemin de generation.
+ * Deterministic: same `seed` -> **bit-identical** output (test T13). No clock, no unseeded source of
+ * randomness, no object `hashCode` anywhere in the generation path.
  *
- * Deux partis pris qui meritent d'etre lus avant d'utiliser la sortie :
+ * Two stances that deserve to be read before using the output:
  *
- *  1. **Le contenu spectral utile est sous 6 Hz.** Le pic de l'impulsion bipolaire est a
- *     `f_pic ~ 0,8 / T_rise`, soit 1,6 a 5,3 Hz pour `T_rise` dans [0,15 ; 0,50] s. Les « paquets
- *     10-15 Hz » de la v1 sont faux et ne sont pas generes : un generateur qui les produirait
- *     validerait le detecteur contre un signal qui n'existe pas.
- *  2. **Les distracteurs sont generes avec le meme soin que le signal utile.** Un generateur docile
- *     produit un detecteur qui ne marche que sur lui — c'est le defaut F-21 de
- *     `docs/fr/REVUE-CRITIQUE.md`, « validation circulaire ». Les douze familles de §5.2 sont donc
- *     toutes rendues physiquement, y compris celles qui font mal (posture a 120 degres, sonnerie de
- *     matelas a la limite du seuil de morphologie, saut de gain en cours de nuit).
+ *  1. **The useful spectral content is below 6 Hz.** The peak of the bipolar pulse is at
+ *     `f_peak ~ 0.8 / T_rise`, that is 1.6 to 5.3 Hz for `T_rise` in [0.15 ; 0.50] s. The "10-15 Hz
+ *     packets" of v1 are wrong and are not generated: a generator that produced them would validate
+ *     the detector against a signal that does not exist.
+ *  2. **The distractors are generated with the same care as the useful signal.** A docile generator
+ *     produces a detector that only works on it — this is defect F-21 of
+ *     `docs/workings/CRITICAL-REVIEW.md`, "circular validation". The twelve families of §5.2 are therefore
+ *     all rendered physically, including those that hurt (posture at 120 degrees, mattress ringing
+ *     right at the morphology threshold, gain step in the middle of the night).
  */
 object NightSynth {
 
@@ -53,10 +53,10 @@ object NightSynth {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Internes
+// Internals
 // ---------------------------------------------------------------------------------------------
 
-/** Un changement d'orientation du membre : posture (grand) ou mouvement corporel grossier (petit). */
+/** A change of limb orientation: posture (large) or gross body movement (small). */
 private class Reorientation(
     val startSec: Double,
     val durSec: Double,
@@ -67,7 +67,7 @@ private class Reorientation(
     val isPosture: Boolean,
 )
 
-/** Un mouvement de jambe planifie, avant rendu. */
+/** A planned leg movement, before rendering. */
 private class Planned(
     val onsetSec: Double,
     val kind: TruthKind,
@@ -90,12 +90,12 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     private val recordedSec = spec.recordedH * 3600.0
     private val n = (recordedSec * fs).toInt().coerceAtLeast(2)
 
-    // Signal complet, en g. Gravite d'abord, contributions dynamiques ensuite, bruit en dernier.
+    // Complete signal, in g. Gravity first, dynamic contributions next, noise last.
     private val ax = DoubleArray(n)
     private val ay = DoubleArray(n)
     private val az = DoubleArray(n)
 
-    /** Orientation echantillonnee a 1 Hz : reference `g0` du rendu des mouvements. */
+    /** Orientation sampled at 1 Hz: `g0` reference for the rendering of the movements. */
     private val coarseOrientation = Array(3) { DoubleArray(ceil(recordedSec).toInt() + 2) }
 
     private val envWin = Math.round(0.50 * fs).toInt().coerceAtLeast(1)
@@ -103,7 +103,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     private val events = ArrayList<TruthEvent>()
     private val postureTimes = ArrayList<Long>()
 
-    // Couplage mecanique : serrage du bracelet, avec eventuel saut en cours de nuit (famille 12).
+    // Mechanical coupling: strap tightness, with a possible step mid-night (family 12).
     private val gainStepAtSec: Double =
         spec.distractors.gainStepAtFraction.coerceIn(0.0, 1.0) * planHorizonSec
 
@@ -113,7 +113,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         return spec.gainMultiplier * late
     }
 
-    // --- Structure de la nuit ---------------------------------------------------------------
+    // --- Structure of the night -------------------------------------------------------------
 
     private lateinit var sleepIntervals: List<Interval>
     private var offBodyFrom = -1.0
@@ -143,7 +143,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     // -----------------------------------------------------------------------------------------
-    // 1. Structure veille / sommeil
+    // 1. Wake / sleep structure
     // -----------------------------------------------------------------------------------------
 
     private fun buildSleepStructure(root: SynthRandom) {
@@ -151,7 +151,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         val sleepStart = spec.sleep.sleepLatencyMin * 60.0
         val sleepEnd = (planHorizonSec - spec.sleep.finalWakeMin * 60.0).coerceAtLeast(sleepStart + 60.0)
 
-        // Eveils intra-SPT, places sans recouvrement, tries.
+        // Intra-SPT awakenings, placed without overlap, sorted.
         val waso = ArrayList<Interval>()
         var attempts = 0
         while (waso.size < spec.sleep.wasoCount && attempts < 200) {
@@ -167,14 +167,15 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
 
         if (spec.distractors.offBody) {
             val dur = spec.distractors.offBodyMin * 60.0
-            // Realiste : la montre finit sur la table quand le sujet se leve. On la pose donc au
-            // debut d'un eveil intra-SPT s'il en existe un assez long, sinon a 60 % de la nuit.
+            // Realistic: the watch ends up on the table when the subject gets up. It is therefore
+            // laid at the start of an intra-SPT awakening if one is long enough, else at 60 % of
+            // the night.
             val host = waso.firstOrNull { it.length >= 120.0 }
             offBodyFrom = host?.fromSec ?: (0.60 * planHorizonSec)
             offBodyTo = (offBodyFrom + dur).coerceAtMost(planHorizonSec)
         }
 
-        // Intervalles de sommeil = [sleepStart, sleepEnd] prive des eveils et de la plage off-body.
+        // Sleep intervals = [sleepStart, sleepEnd] minus the awakenings and the off-body span.
         val cuts = ArrayList<Interval>()
         cuts.addAll(waso)
         if (offBodyFrom >= 0.0) cuts.add(Interval(offBodyFrom, offBodyTo))
@@ -192,7 +193,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
 
     private val sleepSeconds: Double get() = sleepIntervals.sumOf { it.length }
 
-    /** Convertit une abscisse en « temps de sommeil cumule » vers l'instant mural correspondant. */
+    /** Converts an abscissa in "cumulative sleep time" to the corresponding wall-clock instant. */
     private fun sleepTimeToWall(u: Double): Double {
         var rest = u
         for (iv in sleepIntervals) {
@@ -207,7 +208,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     private fun isOffBody(tSec: Double): Boolean = offBodyFrom >= 0.0 && tSec >= offBodyFrom && tSec < offBodyTo
 
     // -----------------------------------------------------------------------------------------
-    // 2. Reorientations : postures (famille 1) et derive d'orientation des GBM (famille 2)
+    // 2. Reorientations: postures (family 1) and orientation drift of the GBMs (family 2)
     // -----------------------------------------------------------------------------------------
 
     private fun scheduleReorientations(root: SynthRandom): List<Reorientation> {
@@ -217,8 +218,8 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         val pr = root.stream("posture")
         val postureCount = pr.nextIntRange(d.postureCountMin, d.postureCountMax)
         for (k in 0 until postureCount) {
-            // Repartition par tranches egales avec gigue : deux retournements ne se chevauchent
-            // jamais, et l'espacement reste physiologique (jamais deux en 10 s).
+            // Spread over equal slots with jitter: two turns never overlap, and the spacing stays
+            // physiological (never two within 10 s).
             val slot = planHorizonSec / postureCount.coerceAtLeast(1)
             val start = k * slot + pr.uniform(0.05 * slot, 0.85 * slot)
             val dur = pr.uniform(d.postureDurMinSec, d.postureDurMaxSec)
@@ -233,8 +234,8 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             val slot = planHorizonSec / gbmCount.coerceAtLeast(1)
             val start = k * slot + gr.uniform(0.05 * slot, 0.85 * slot)
             val dur = gr.uniform(d.grossBodyDurMinSec, d.grossBodyDurMaxSec)
-            // Un GBM reoriente peu : au-dela de `postureDeg` (20 degres) ce serait un changement de
-            // posture, et la table §5.2 les distingue expressement.
+            // A GBM reorients little: beyond `postureDeg` (20 degrees) it would be a posture
+            // change, and the §5.2 table distinguishes them expressly.
             val delta = Math.toRadians(gr.uniform(0.0, 14.0))
             val (ux, uy, uz) = randomUnitVector(gr)
             out.add(Reorientation(start, dur, ux, uy, uz, delta, isPosture = false))
@@ -250,8 +251,8 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         var gy = cos(tilt0)
         var gz = 0.0
 
-        // Derive posturale lente : deux processus d'Ornstein-Uhlenbeck echantillonnes a 2 Hz puis
-        // interpoles lineairement. Contenu sous 0,01 Hz : entierement dans le canal gravite.
+        // Slow postural drift: two Ornstein-Uhlenbeck processes sampled at 2 Hz then linearly
+        // interpolated. Content below 0.01 Hz: entirely in the gravity channel.
         val wr = root.stream("wander")
         val nodeStep = (fs / 2.0).toInt().coerceAtLeast(1)
         val nodeCount = n / nodeStep + 2
@@ -268,8 +269,8 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
 
         var idx = 0
         var coarseFilled = -1
-        // Axe effectif de chaque reorientation, calcule au moment ou elle commence : c'est la
-        // composante de l'axe tire orthogonale a `g` a cet instant. Voir [orthogonalToG].
+        // Effective axis of each reorientation, computed when it starts: it is the component of the
+        // drawn axis orthogonal to `g` at that instant. See [orthogonalToG].
         val axis = arrayOfNulls<DoubleArray>(reorientations.size)
         fun axisOf(k: Int, bx: Double, by: Double, bz: Double): DoubleArray {
             var a = axis[k]
@@ -317,7 +318,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
                 coarseFilled = c
             }
         }
-        // Queue de la table grossiere : evite un vecteur nul au-dela du dernier index rempli.
+        // Tail of the coarse table: avoids a null vector beyond the last index filled.
         var c = coarseFilled + 1
         while (c < coarseOrientation[0].size) {
             coarseOrientation[0][c] = gx; coarseOrientation[1][c] = gy; coarseOrientation[2][c] = gz
@@ -332,7 +333,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     // -----------------------------------------------------------------------------------------
-    // 3. Mouvements de jambe : series vraies, isoles, salves non periodiques
+    // 3. Leg movements: true series, isolated ones, non-periodic bursts
     // -----------------------------------------------------------------------------------------
 
     private fun schedulePlmMovements(root: SynthRandom): List<Planned> {
@@ -342,7 +343,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         val totalSleep = sleepSeconds
         if (totalSleep <= 0.0) return out
 
-        // --- Series periodiques vraies ---------------------------------------------------
+        // --- True periodic series --------------------------------------------------------
         val totalSeries = spec.trueSeries.sumOf { it.nSeries }.coerceAtLeast(1)
         var slotIndex = 0
         for (pop in spec.trueSeries) {
@@ -363,7 +364,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             }
         }
 
-        // --- Mouvements isoles : arrivees exponentielles sur le temps de sommeil ----------
+        // --- Isolated movements: exponential arrivals over sleep time ---------------------
         if (spec.isolatedClmPerHour > 0.0) {
             val rate = spec.isolatedClmPerHour / 3600.0
             var u = 0.0
@@ -375,7 +376,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             }
         }
 
-        // --- Salves non periodiques (famille 10) -----------------------------------------
+        // --- Non-periodic bursts (family 10) ---------------------------------------------
         val cr = root.stream("clusters")
         val d = spec.distractors
         for (k in 0 until d.clusterCount) {
@@ -419,10 +420,10 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
 
         val g0 = orientationAt(p.onsetSec)
         val tHold = (p.durationSec - 2.0 * p.tRiseSec).coerceAtLeast(0.0)
-        // Maintien actif (§5.1) : la flexion est entretenue par des re-activations successives, a la
-        // cadence balistique propre du mouvement (une par `2 . tRise`). Sans elles, un mouvement de
-        // 4,2 s presenterait ~2,3 s de silence accelerometrique en son milieu et le detecteur en
-        // emettrait deux — ce que le PAM-RL de Sforza, avec son drop-out de 1 s, aurait fait aussi.
+        // Active hold (§5.1): the flexion is sustained by successive re-activations, at the
+        // movement's own ballistic rate (one per `2 . tRise`). Without them, a 4.2 s movement would
+        // show ~2.3 s of accelerometric silence in its middle and the detector would emit two of
+        // them — which Sforza's PAM-RL, with its 1 s drop-out, would have done as well.
         val holdRatio = spec.duration.holdActivityRatio
         val holdCycles = if (tHold > 0.0 && holdRatio > 0.0) {
             Math.round(tHold / (2.0 * p.tRiseSec)).toInt().coerceAtLeast(1)
@@ -439,10 +440,10 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         )
 
         val k = coupling(p.onsetSec)
-        // Rotation pure de la cheville : le boitier est AU-DESSUS de l'axe talo-cruraire, il ne se
-        // deplace quasiment pas (`r_eff ~ 0`) et ne tourne pas du tout. C'est le mecanisme physique
-        // du taux de manques de Terrill, et il doit etre represente explicitement — sans quoi la
-        // verite terrain surestime ce que le capteur peut voir.
+        // Pure ankle rotation: the case is ABOVE the talocrural axis, it barely moves at all
+        // (`r_eff ~ 0`) and does not rotate one bit. This is the physical mechanism behind
+        // Terrill's miss rate, and it must be represented explicitly — failing which the ground
+        // truth overestimates what the sensor can see.
         val radius = if (p.ankleOnly) 0.02 else p.radiusM
         val tiltCoupling = if (p.ankleOnly) 0.0 else k
 
@@ -469,10 +470,10 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     // -----------------------------------------------------------------------------------------
-    // 4. Distracteurs
+    // 4. Distractors
     // -----------------------------------------------------------------------------------------
 
-    /** Famille 2 : mouvements corporels grossiers, 2-20 s, 300-2500 mg. */
+    /** Family 2: gross body movements, 2-20 s, 300-2500 mg. */
     private fun renderGrossBodyMovements(root: SynthRandom, reorientations: List<Reorientation>) {
         val d = spec.distractors
         val rnd = root.stream("gbm")
@@ -482,9 +483,9 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             val from = Math.round(r.startSec * fs).toInt()
             val len = Math.round(r.durSec * fs).toInt()
             if (from < 0 || from >= n || len < 2) continue
-            // Somme de cinq sinusoides 0,5-6 Hz de phases independantes : un retournement n'est pas
-            // une impulsion, c'est une agitation large bande sous 6 Hz. Enveloppe en cosinus
-            // sureleve pour ne pas fabriquer d'echelon artificiel aux bornes.
+            // Sum of five 0.5-6 Hz sinusoids with independent phases: a turn is not a pulse, it is
+            // broadband agitation below 6 Hz. Raised-cosine envelope so as not to manufacture an
+            // artificial step at the bounds.
             val freqs = DoubleArray(5) { rnd.uniform(0.5, 6.0) }
             val phases = DoubleArray(5) { rnd.uniform(0.0, 2.0 * Math.PI) }
             val (ux, uy, uz) = randomUnitVector(rnd)
@@ -524,7 +525,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         }
     }
 
-    /** Famille 3 : artefact respiratoire. Retourne (frequence, phase) pour le couplage des RRLM. */
+    /** Family 3: respiratory artefact. Returns (frequency, phase) for the coupling of the RRLMs. */
     private fun renderRespiratoryArtifact(root: SynthRandom): DoubleArray {
         val d = spec.distractors
         val rnd = root.stream("resp")
@@ -544,7 +545,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         return doubleArrayOf(f, phase)
     }
 
-    /** Famille 11 : RRLM — series a IMI 25-45 s **verrouillees en phase** sur la respiration. */
+    /** Family 11: RRLM — series with a 25-45 s IMI **phase-locked** to respiration. */
     private fun renderRrlm(root: SynthRandom, resp: DoubleArray) {
         val d = spec.distractors
         if (d.rrlmSeriesCount <= 0) return
@@ -553,8 +554,8 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         val totalSleep = sleepSeconds
         if (totalSleep <= 0.0) return
         for (s in 0 until d.rrlmSeriesCount) {
-            // L'IMI est un multiple entier du cycle respiratoire : c'est ce qui rend les RRLM
-            // periodiques, et donc indiscernables des PLMS par la seule periodicite (§3.5).
+            // The IMI is an integer multiple of the respiratory cycle: this is what makes the RRLMs
+            // periodic, and therefore indistinguishable from PLMS by periodicity alone (§3.5).
             val target = rnd.uniform(d.rrlmImiMinSec, d.rrlmImiMaxSec)
             val cycles = Math.round(target / respPeriod).toInt().coerceAtLeast(1)
             val imi = cycles * respPeriod
@@ -569,9 +570,9 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     /**
-     * Famille 4 : vibration de matelas. Transitoires courts, sonnerie amortie 8-20 Hz, **tilt
-     * inchange** — c'est ce dernier point qui les rend indiscernables d'un CLM sur la seule
-     * enveloppe et qui justifie le critere de morphologie WASM 3.2.1-d.
+     * Family 4: mattress vibration. Short transients, damped 8-20 Hz ringing, **tilt unchanged** —
+     * it is that last point which makes them indistinguishable from a CLM on the envelope alone and
+     * which justifies the WASM 3.2.1-d morphology criterion.
      */
     private fun renderMattress(root: SynthRandom) {
         val d = spec.distractors
@@ -587,7 +588,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             val len = Math.round(dur * fs).toInt()
             if (from < 0 || from + len >= n || len < 2) continue
             val (ux, uy, uz) = randomUnitVector(rnd)
-            val decay = 4.0 / dur // l'amplitude tombe a 1,8 % au bout de `dur`
+            val decay = 4.0 / dur // the amplitude falls to 1.8 % after `dur`
             val k2 = coupling(at) * amp
             for (i in 0 until len) {
                 val t = i / fs
@@ -613,12 +614,12 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     /**
-     * Famille 9 : tremblement hypnagogique du pied / ALMA. Bouffee de 10-15 s a 0,3-4 Hz.
+     * Family 9: hypnagogic foot tremor / ALMA. A 10-15 s burst at 0.3-4 Hz.
      *
-     * Rendue comme ce qu'elle est physiologiquement — un **train** de petites activations
-     * successives — et non comme une porteuse sinusoidale : c'est ce qui la rend genante, parce que
-     * l'enveloppe grossiere de 0,5 s peut retomber entre deux activations lentes et fragmenter la
-     * bouffee en evenements de duree admissible.
+     * Rendered as what it physiologically is — a **train** of small successive activations — and not
+     * as a sinusoidal carrier: that is what makes it troublesome, because the coarse 0.5 s envelope
+     * can fall back between two slow activations and fragment the burst into events of admissible
+     * duration.
      */
     private fun renderAlma(root: SynthRandom) {
         val d = spec.distractors
@@ -668,7 +669,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         }
     }
 
-    /** Famille 8 : off-body. Montre sur la table — gravite constante, plus rien d'autre. */
+    /** Family 8: off-body. Watch on the table — constant gravity, nothing else at all. */
     private fun blankOffBody() {
         if (offBodyFrom < 0.0) return
         val from = Math.round(offBodyFrom * fs).toInt().coerceIn(0, n)
@@ -678,7 +679,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         }
     }
 
-    /** Famille 5 : bruit MEMS et quantification. Retourne le plancher d'enveloppe attendu. */
+    /** Family 5: MEMS noise and quantisation. Returns the expected envelope floor. */
     private fun addNoise(root: SynthRandom): Double {
         val rnd = root.stream("noise")
         val density = rnd.uniform(spec.noise.densityMinG, spec.noise.densityMaxG)
@@ -696,50 +697,50 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
                 az[i] = Math.round(az[i] / lsb) * lsb
             }
         }
-        // Enveloppe RMS de la norme d'un bruit blanc tri-axial : sqrt(3 x variance par axe).
-        // Estimation analytique, pas une mesure : elle ne sert qu'a normaliser un axe de rapport.
+        // RMS envelope of the norm of a tri-axial white noise: sqrt(3 x variance per axis).
+        // Analytical estimate, not a measurement: it only serves to normalise a ratio axis.
         val q = if (lsb > 0.0) lsb * lsb / 12.0 else 0.0
         return sqrt(3.0 * (sigma * sigma + q))
     }
 
     /**
-     * Gain de calibration de reference : la crete d'enveloppe grossiere d'une dorsiflexion
-     * volontaire confortable, couplage de la nuit compris.
+     * Reference calibration gain: the coarse envelope peak of a comfortable voluntary dorsiflexion,
+     * coupling of the night included.
      *
-     * ### Ecart connu entre ce generateur et la production, a lire avant d'interpreter un seuil
+     * ### Known gap between this generator and production, to read before interpreting a threshold
      *
-     * Ce rendu simule le **rituel guide** — un geste impose, d'amplitude choisie, execute au
-     * coucher. Ce rituel a ete retire de la production le 2026-08-05 (voir `Calibration.kt`) : il
-     * n'avait jamais ete branche. La production derive donc son `gainCal` des **retournements du
-     * corps**, qui sont un geste subi, plus variable et mesure au milieu de la nuit plutot qu'a
-     * son debut.
+     * This render simulates the **guided ritual** — an imposed gesture, of chosen amplitude,
+     * performed at bedtime. That ritual was removed from production on 2026-08-05 (see
+     * `Calibration.kt`): it had never been wired up. Production therefore derives its `gainCal`
+     * from the **body turns**, which are an undergone gesture, more variable and measured in the
+     * middle of the night rather than at its start.
      *
-     * Conclusion a garder en tete : toute la suite de non-regression tourne sur un gain de
-     * calibration **plus propre que celui que l'application obtient reellement**. Ce n'est pas
-     * anodin — c'est la meme forme de defaut que celui qui avait fait diverger l'indexation des
-     * series, ou le harnais mesurait un cablage que la production n'avait pas.
+     * Conclusion to keep in mind: the whole non-regression suite runs on a calibration gain
+     * **cleaner than the one the application actually obtains**. This is not harmless — it is the
+     * same shape of defect as the one that had made the series indexing diverge, where the harness
+     * measured a wiring that production did not have.
      *
-     * Il n'est pas corrige ici, et volontairement : rebaser le generateur sur les retournements
-     * deplacerait les valeurs de reference de T1 a T22 d'un montant que personne n'a mesure. La
-     * bonne sequence est de mesurer d'abord l'ecart, puis de decider — pas de bouger vingt seuils
-     * pour faire disparaitre un commentaire genant.
+     * It is not corrected here, and deliberately so: rebasing the generator on the turns would move
+     * the reference values of T1 to T22 by an amount nobody has measured. The right sequence is to
+     * measure the gap first, then decide — not to move twenty thresholds to make an awkward
+     * comment go away.
      */
     private fun renderRitualGain(): Float {
         val r = spec.ritual
         val len = Math.round((2.0 * r.tRiseSec + r.holdSec) * fs).toInt() + 1
         val kin = MovementKinematics(Math.toRadians(r.thetaMaxDeg), r.tRiseSec, r.holdSec, r.tRiseSec)
         val tilt0 = Math.toRadians(spec.initialTiltDeg)
-        // Le rituel est fait au coucher : le couplage est celui du debut de nuit.
+        // The ritual is done at bedtime: the coupling is that of the start of the night.
         val k = coupling(0.0)
         val render = renderMovementTilted(kin, r.radiusM, k, k, sin(tilt0), cos(tilt0), 0.0, fs, len)
         return coarseEnvelopePeak(render, envWin, fs).toFloat()
     }
 
     // -----------------------------------------------------------------------------------------
-    // 5. Trous FIFO, blocs, horloge
+    // 5. FIFO gaps, blocks, clock
     // -----------------------------------------------------------------------------------------
 
-    /** Famille 6 : trous FIFO. Retourne les intervalles d'echantillons absents, tries et disjoints. */
+    /** Family 6: FIFO gaps. Returns the intervals of missing samples, sorted and disjoint. */
     private fun scheduleHoles(root: SynthRandom): List<IntArray> {
         val d = spec.distractors
         val rnd = root.stream("gaps")
@@ -769,8 +770,8 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     /**
-     * Horloge du capteur. `fs` derive lineairement de `fsRealHz` a `fsRealHz x (1 + fsDriftPct/100)`
-     * sur la duree enregistree ; le temps cumule est donc quadratique en `k`.
+     * Sensor clock. `fs` drifts linearly from `fsRealHz` to `fsRealHz x (1 + fsDriftPct/100)` over
+     * the recorded duration; the cumulative time is therefore quadratic in `k`.
      */
     private fun tNs(k: Int): Long {
         val drift = spec.fsDriftPct / 100.0
@@ -782,7 +783,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     private fun msAt(k: Int): Long = Math.round((tNs(k) - spec.startNs) / 1e6)
 
     private fun emitBlocks(holes: List<IntArray>): List<SampleBlock> {
-        // Plages d'echantillons effectivement transmises, complement des trous.
+        // Sample ranges actually transmitted, the complement of the gaps.
         val runs = ArrayList<IntArray>()
         var cursor = 0
         for (h in holes) {
@@ -800,8 +801,8 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             var s = run[0]
             while (s < run[1]) {
                 var len = minOf(spec.blockSamples, run[1] - s)
-                // Un bloc d'un seul echantillon ne porte pas de cadence : on le rattache au
-                // precedent plutot que de produire un bloc que l'etape −1 ne saurait pas juger.
+                // A single-sample block carries no rate: it is attached to the preceding one rather
+                // than producing a block that step −1 would not know how to judge.
                 if (run[1] - s - len == 1) len++
                 if (len < 2) break
                 val bx = FloatArray(len); val by = FloatArray(len); val bz = FloatArray(len)
@@ -827,7 +828,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     // -----------------------------------------------------------------------------------------
-    // 6. Verite terrain
+    // 6. Ground truth
     // -----------------------------------------------------------------------------------------
 
     private fun truthMask(holes: List<IntArray>): SleepMask {
@@ -848,9 +849,9 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
         val sptMin = windows.filter { it.stage != Stage.OUT_OF_BED }.sumOf { it.durationMin }
         val wasoMin = (sptMin - tstMin).coerceAtLeast(0.0)
 
-        // Temps analysable vrai : le sommeil prive des trous, elargis de la duree d'etablissement
-        // des filtres (zones aveugles de l'etape 0). C'est la meme soustraction que celle que fera
-        // la couche masque ; la faire ici garde `expectedPlmi*` sur le meme denominateur.
+        // True analysable time: the sleep minus the gaps, widened by the settling time of the
+        // filters (blind zones of step 0). It is the same subtraction the mask layer will make;
+        // doing it here keeps `expectedPlmi*` on the same denominator.
         var lostMin = 0.0
         for (h in holes) {
             val fromMs = msAt(h[0]) - 2000
@@ -893,13 +894,13 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     private fun assembleTruth(holes: List<IntArray>, floorG: Double, gainCalG: Float): GroundTruth {
-        // Un evenement planifie pendant la plage off-body n'a pas ete rendu : la montre etait sur la
-        // table. Il ne peut donc figurer dans aucune des deux echelles.
+        // An event planned during the off-body span was not rendered: the watch was on the table.
+        // It can therefore appear in neither of the two scales.
         val emg = events
             .filter { !isOffBody(it.onsetMsRel / 1000.0) }
             .sortedBy { it.onsetMsRel }
-        // `accelTruth` = `emgTruth` prive des rotations pures de cheville (Terrill) et de ce qui
-        // tombe sous le seuil de visibilite physique. C'est la SEULE reference des scores.
+        // `accelTruth` = `emgTruth` minus the pure ankle rotations (Terrill) and whatever falls
+        // below the physical visibility threshold. It is the ONLY reference for the scores.
         val accel = emg.filter { !it.ankleOnly && it.peakG >= spec.visibilityG }
         val mask = truthMask(holes)
 
@@ -915,9 +916,9 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
             Gap(fromIdx, toIdx, kind, durSec)
         }
 
-        // Les indices attendus sont obtenus en faisant traverser a la verite terrain les MEMES
-        // etapes 6 et 7 que la detection. Toute difference restante est donc imputable au
-        // detecteur, ce qui est exactement ce que T6 pretend mesurer.
+        // The expected indices are obtained by making the ground truth cross the SAME steps 6 and 7
+        // as the detection. Any remaining difference is therefore imputable to the detector, which
+        // is exactly what T6 claims to measure.
         val truthClms = truthAsClms(accel.filter { it.isLegMovement }, floorG.toFloat())
         val pi = Periodicity.ferriIndex(truthClms, mask, TARGET_FS_HZ)
         val rhythm = Rhythm.fromClms(truthClms, mask)
@@ -969,7 +970,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     // -----------------------------------------------------------------------------------------
-    // Utilitaires
+    // Utilities
     // -----------------------------------------------------------------------------------------
 
     private fun addRender(r: MovementRender, from: Int) {
@@ -981,7 +982,7 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
     }
 
     private fun randomUnitVector(rnd: SynthRandom): Triple<Double, Double, Double> {
-        // Marsaglia : distribution uniforme sur la sphere, sans biais aux poles.
+        // Marsaglia: uniform distribution on the sphere, without bias at the poles.
         val z = rnd.uniform(-1.0, 1.0)
         val phi = rnd.uniform(0.0, 2.0 * Math.PI)
         val r = sqrt((1.0 - z * z).coerceAtLeast(0.0))
@@ -990,21 +991,21 @@ private class Generator(private val spec: NightSpec, private val seed: Long) {
 }
 
 /**
- * Composante de l'axe `u` orthogonale a `g`, renormalisee.
+ * Component of the axis `u` orthogonal to `g`, renormalised.
  *
- * Une rotation d'angle `delta` autour d'un axe quelconque ne fait tourner `g` que de
- * `2.asin(sin(delta/2).sin(alpha))`, ou `alpha` est l'angle entre l'axe et `g` — donc **strictement
- * moins que `delta`**, et exactement zero quand l'axe est colineaire a `g`. Or le tableau §5.2
- * specifie la famille 1 comme une « **rotation de ĝ** de 20-120 degres » : c'est la reorientation
- * observable qui est tiree, pas l'angle d'une rotation autour d'un axe arbitraire. Tirer un axe
- * uniforme sur la sphere fabriquait des changements de posture inscrits dans la verite terrain mais
- * physiquement invisibles (mesure : 6,7 a 16,1 degres de rotation reelle de ĝ pour un `delta` tire
- * dans [20 ; 120]), que le detecteur ne pouvait pas trouver — un plafond de rappel de l'ordre de
- * 0,89, sous le seuil de 0,95 de T4, pour une raison qui n'est pas la sienne.
+ * A rotation of angle `delta` about an arbitrary axis only turns `g` by
+ * `2.asin(sin(delta/2).sin(alpha))`, where `alpha` is the angle between the axis and `g` — hence
+ * **strictly less than `delta`**, and exactly zero when the axis is collinear with `g`. Yet the
+ * §5.2 table specifies family 1 as a "**rotation of ĝ** of 20-120 degrees": what is drawn is the
+ * observable reorientation, not the angle of a rotation about an arbitrary axis. Drawing an axis
+ * uniform on the sphere manufactured posture changes recorded in the ground truth but physically
+ * invisible (measured: 6.7 to 16.1 degrees of real rotation of ĝ for a `delta` drawn in
+ * [20 ; 120]), which the detector could not find — a recall ceiling of the order of 0.89, below
+ * the 0.95 threshold of T4, for a reason that is not its own.
  *
- * En prenant l'axe perpendiculaire a `g`, `delta` est **exactement** la rotation de ĝ. L'azimut de
- * l'axe dans le plan orthogonal reste tire au hasard : c'est lui qui porte la variete des
- * retournements, et il n'a aucun effet sur l'amplitude de la reorientation.
+ * By taking the axis perpendicular to `g`, `delta` is **exactly** the rotation of ĝ. The azimuth of
+ * the axis in the orthogonal plane is still drawn at random: it is what carries the variety of the
+ * turns, and it has no effect on the magnitude of the reorientation.
  */
 private fun orthogonalToG(
     ux: Double, uy: Double, uz: Double,
@@ -1018,8 +1019,8 @@ private fun orthogonalToG(
     var pz = uz - k * gz
     var norm = sqrt(px * px + py * py + pz * pz)
     if (norm < 1e-6) {
-        // Axe tire quasi colineaire a `g` : on prend une perpendiculaire deterministe, obtenue en
-        // croisant `g` avec l'axe de base le moins aligne avec lui.
+        // Drawn axis nearly collinear with `g`: a deterministic perpendicular is taken, obtained by
+        // crossing `g` with the basis axis least aligned with it.
         val ax = abs(gx); val ay = abs(gy); val az = abs(gz)
         val bx: Double; val by: Double; val bz: Double
         if (ax <= ay && ax <= az) { bx = 1.0; by = 0.0; bz = 0.0 }
@@ -1034,7 +1035,7 @@ private fun orthogonalToG(
     return doubleArrayOf(px / norm, py / norm, pz / norm)
 }
 
-/** Rotation de Rodrigues d'un vecteur autour d'un axe unitaire. */
+/** Rodrigues rotation of a vector about a unit axis. */
 private fun rotate(
     vx: Double, vy: Double, vz: Double,
     ux: Double, uy: Double, uz: Double,
@@ -1055,12 +1056,12 @@ private fun rotate(
 }
 
 /**
- * Variante de [renderMovement] a deux couplages distincts : `inertialCoupling` pour les termes
- * tangentiel et centripete, `tiltCoupling` pour la rotation du vecteur gravite.
+ * Variant of [renderMovement] with two distinct couplings: `inertialCoupling` for the tangential
+ * and centripetal terms, `tiltCoupling` for the rotation of the gravity vector.
  *
- * Les deux ne sont differents que dans un cas, mais il est central : la **rotation pure de la
- * cheville**, ou le boitier ne tourne pas du tout (`tiltCoupling = 0`) alors qu'il subit encore un
- * residu inertiel a tres court bras de levier.
+ * The two differ in one case only, but a central one: the **pure ankle rotation**, where the case
+ * does not rotate at all (`tiltCoupling = 0`) while it still undergoes an inertial residue at a
+ * very short lever arm.
  */
 internal fun renderMovementTilted(
     kin: MovementKinematics,

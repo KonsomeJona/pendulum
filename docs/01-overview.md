@@ -283,7 +283,7 @@ to have followed it is. And the risk the ordering was written to avoid is exactl
 carried: the detector, its thresholds and the entire test suite are calibrated against a synthetic
 signal, and the hardware has never been asked whether it can deliver the samples that signal assumes.
 
-What has changed is that the gate is now **instrumented**. `PorteP1.kt` computes the verdict per
+What has changed is that the gate is now **instrumented**. `P1Gate.kt` computes the verdict per
 night and per campaign from `night_session` alone, Settings › Measurement displays it, and a CSV
 export carries it out of the application. Three criteria per night, each with its measured value,
 its threshold and its state: coverage at or above 99 % — read from the same function the rest of the
@@ -314,6 +314,6 @@ None of that is a night. Thirty-two minutes says nothing about eight hours, the 
 dock rather than at an ankle, and **the battery — the most discriminating P1 criterion — has not been
 measured at all**, because a charging watch cannot measure it.
 
-[`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) is the record, in French: every command with the output it
+[`workings/BENCH-LOG.md`](workings/BENCH-LOG.md) is the record: every command with the output it
 produced, and a §12.6 headed *what this session proves, and what it does not* that is stricter than
 this paragraph. Read that section before quoting any of it.

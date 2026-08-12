@@ -1,41 +1,40 @@
 #!/usr/bin/env bash
-# Sonde du Data Layer sur MATERIEL REEL, par instrumentation.
+# Data Layer probe on REAL HARDWARE, by instrumentation.
 #
-# Pourquoi ce detour. Le telephone du banc reel est l'appareil du quotidien de l'utilisateur : il
-# est verrouille par un code. `uiautomator` ne dumpe alors que l'ecran de verrouillage, `wm
-# dismiss-keyguard` ne fait qu'afficher le clavier du code, et `am start` refuse jusqu'a demarrer
-# le processus. Tout le pilotage par taps du §7.4 — ecrit pour un emulateur, qui n'a pas de code —
-# est donc inapplicable. `am instrument` traverse : le runner demarre DANS le processus
-# `com.pendulum`, avec son UID, donc avec l'identite que GMS controle, et le verrou ne le concerne
-# pas.
+# Why this detour. The real bench's phone is the user's everyday device: it is locked by a PIN.
+# `uiautomator` then only dumps the lock screen, `wm dismiss-keyguard` only brings up the PIN pad,
+# and `am start` refuses even to start the process. All the tap-driven steering of §7.4 — written
+# for an emulator, which has no PIN — is therefore inapplicable. `am instrument` goes through: the
+# runner starts INSIDE the `com.pendulum` process, with its UID, hence with the identity GMS
+# checks, and the lock does not concern it.
 #
-# Les sondes appellent le meme code que le produit (`Preflight.check`, le meme `PutDataRequest` que
-# `EveningContextSealer.publier`) ; elles ne le simulent pas.
+# The probes call the same code as the product (`Preflight.check`, the same `PutDataRequest` as
+# `ContextPublication.put`); they do not simulate it.
 #
-# Usage, depuis la racine d'une copie du depot :
+# Usage, from the root of a checkout:
 #     bash tools/banc/datalayer.sh deploy
 #     bash tools/banc/datalayer.sh build  phone|wear
-#     bash tools/banc/datalayer.sh push   phone|wear <serie>
-#     bash tools/banc/datalayer.sh run    phone|wear <serie> <methode> [-e cle valeur ...]
+#     bash tools/banc/datalayer.sh push   phone|wear <serial>
+#     bash tools/banc/datalayer.sh run    phone|wear <serial> <method> [-e key value ...]
 #
-# Chaque commande emet un marqueur `DATALAYER_*` : ssh via Tailscale ne propage pas les codes de
-# sortie, l'appelant distant doit lire le marqueur et non `$?`.
+# Every command emits a `DATALAYER_*` marker: ssh over Tailscale does not propagate exit codes, so
+# the remote caller must read the marker and not `$?`.
 set -o pipefail
 
 ADB="${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}"
-RACINE="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$RACINE" || exit 1
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT" || exit 1
 
-# Les sondes sont **copiees** dans les source sets androidTest des deux modules et n'y sont pas
-# versionnees : elles vivent dans `tools/banc/` pour qu'un fichier de test du banc ne se retrouve
-# jamais dans l'APK d'une variante ordinaire par distraction.
+# The probes are **copied** into the androidTest source sets of both modules and are not versioned
+# there: they live in `tools/banc/` so that a bench test file never ends up in the APK of an
+# ordinary variant by inattention.
 #
-# Ce deploiement ne touche plus aux fichiers de build. Il les modifiait, avec la mention « a ne
-# pas commiter » — c'est-a-dire une consigne que seul un humain attentif applique, et le depot a
-# porte ce correctif pendant toute une session. Les quatre dependances `androidTestImplementation`
-# dont les sondes ont besoin sont desormais declarees dans `wear/build.gradle.kts` et
-# `phone/build.gradle.kts`, ou elles ne coutent rien : `androidTestImplementation` n'est ni sur le
-# chemin de compilation ni sur le chemin d'execution des variantes publiees.
+# This deployment no longer touches the build files. It used to modify them, with a "do not commit"
+# note — that is to say, an instruction only an attentive human applies, and the repository carried
+# that patch for a whole session. The four `androidTestImplementation` dependencies the probes need
+# are now declared in `wear/build.gradle.kts` and `phone/build.gradle.kts`, where they cost
+# nothing: `androidTestImplementation` is neither on the compile path nor on the runtime path of
+# the published variants.
 deploy() {
   mkdir -p phone/src/androidTest/kotlin/com/pendulum/phone
   mkdir -p wear/src/androidTest/kotlin/com/pendulum/wear
@@ -61,14 +60,15 @@ push() {
 run() {
   local m="$1" s="$2" meth="$3"
   shift 3
-  # Ce qui reste est passe tel quel a `am instrument` : c'est par la que `purgerBanc` recoit
-  # `-e session <hex>`. Sans ce passe-plat, une sonde parametrable devrait deviner son argument.
+  # What is left is passed as it is to `am instrument`: that is how `purgerBanc` receives
+  # `-e session <hex>`. Without this pass-through, a parametrable probe would have to guess its
+  # argument.
   local extra=("$@")
   local cls
   case "$m" in
     phone) cls="com.pendulum.phone.BancDataLayer" ;;
     wear)  cls="com.pendulum.wear.BancDataLayer" ;;
-    *) echo "DATALAYER_RUN_FAIL module inconnu: $m"; return 1 ;;
+    *) echo "DATALAYER_RUN_FAIL unknown module: $m"; return 1 ;;
   esac
   "$ADB" -s "$s" logcat -c 2>/dev/null
   "$ADB" -s "$s" shell am instrument -w -r \
@@ -86,5 +86,5 @@ case "$1" in
   build)  build "$2" ;;
   push)   push "$2" "$3" ;;
   run)    run "$2" "$3" "$4" "${@:5}" ;;
-  *) echo "DATALAYER_FAIL commande inconnue: $1" ;;
+  *) echo "DATALAYER_FAIL unknown command: $1" ;;
 esac

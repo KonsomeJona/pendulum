@@ -10,31 +10,31 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // **Partage avec le module `wear`.** Le Wearable Data Layer n'echange qu'entre
-        // applications de meme `applicationId` et de meme signature : si les deux modules
-        // declarent des identifiants differents, la montre et le telephone ne se voient tout
-        // simplement jamais, sans le moindre message d'erreur. Seul le `namespace` differe.
-        // Consequence : plus aucun nom relatif (`.Xxx`) dans le manifeste, puisqu'un nom
-        // relatif se resout sur `applicationId` et non sur `namespace`.
+        // **Shared with the `wear` module.** The Wearable Data Layer only exchanges between
+        // applications with the same `applicationId` and the same signature: if the two modules
+        // declare different identifiers, the watch and the phone simply never see each other,
+        // without the slightest error message. Only the `namespace` differs.
+        // Consequence: no more relative names (`.Xxx`) in the manifest, since a relative name
+        // resolves against `applicationId` and not against `namespace`.
         applicationId = "com.pendulum"
         minSdk = 30
         targetSdk = 35
-        // Injectees par le workflow de publication depuis le tag Git, defaut de developpement
-        // sinon. Le detail est dans le `build.gradle.kts` de la racine, qui les definit une fois
-        // pour les deux applications — elles doivent rester identiques, le Data Layer n'echangeant
-        // qu'entre paquets de meme `applicationId`.
+        // Injected by the publication workflow from the Git tag, development default otherwise.
+        // The detail is in the root `build.gradle.kts`, which defines them once for both
+        // applications — they must stay identical, the Data Layer exchanging only between
+        // packages with the same `applicationId`.
         versionCode = rootProject.extra["pendulumVersionCode"] as Int
         versionName = rootProject.extra["pendulumVersionName"] as String
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Signature de publication.
+    // Publication signing.
     //
-    // Le keystore n'est **jamais** dans le depot : la CI le materialise depuis un secret encode en
-    // base64, et en local il est simplement absent. Dans ce cas on ne bascule pas silencieusement
-    // sur la cle de debug — un artefact signe en debug qui se fait passer pour une release est
-    // exactement le genre de confusion qui finit par etre publie. `assembleRelease` echoue donc
-    // proprement en local, et seule la CI produit des artefacts signes.
+    // The keystore is **never** in the repository: CI materialises it from a base64-encoded
+    // secret, and locally it is simply absent. In that case we do not silently fall back on the
+    // debug key — a debug-signed artefact passing itself off as a release is exactly the kind of
+    // confusion that ends up being published. `assembleRelease` therefore fails cleanly locally,
+    // and only CI produces signed artefacts.
     val keystoreFile = rootProject.file("release.keystore")
     val hasKeystore = keystoreFile.exists() &&
         System.getenv("PENDULUM_KEYSTORE_PASSWORD") != null
@@ -51,37 +51,37 @@ android {
         }
     }
 
-    // Diviseur de temps du banc instrumente.
+    // Time divisor of the instrumented bench.
     //
-    // Le champ n'est declare **que** dans le bloc `debug`, exactement comme dans `:wear`. C'est ce
-    // qui donne au jumeau `src/release/.../EchelleTemps.kt` sa garantie : la variante release
-    // compile contre un `BuildConfig` qui ne porte pas ce champ.
+    // The field is declared **only** in the `debug` block, exactly as in `:wear`. That is what
+    // gives the `src/release/.../TimeScaling.kt` twin its guarantee: the release variant compiles
+    // against a `BuildConfig` that does not carry this field.
     //
-    // Sur le banc : `./gradlew -Ppendulum.temps.diviseur=600 :wear:assembleDebug :phone:assembleDebug`,
-    // en une seule invocation — rien dans le code ne peut constater que les deux moities ont recu
-    // la meme valeur.
-    val diviseurTemps = (project.findProperty("pendulum.temps.diviseur") as String?)
+    // On the bench: `./gradlew -Ppendulum.temps.diviseur=600 :wear:assembleDebug :phone:assembleDebug`,
+    // in a single invocation — nothing in the code can establish that the two halves received the
+    // same value.
+    val timeDivisor = (project.findProperty("pendulum.temps.diviseur") as String?)
         ?.toLongOrNull()
-        ?.also { require(it >= 1L) { "pendulum.temps.diviseur doit valoir au moins 1, recu $it" } }
+        ?.also { require(it >= 1L) { "pendulum.temps.diviseur must be at least 1, got $it" } }
         ?: 1L
 
     buildTypes {
         release {
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")
-            // Pas de minification pour l'instant : Room + KSP + reflexion des workers
-            // demandent des regles de conservation qu'on n'ecrira pas avant d'en avoir besoin.
+            // No minification for now: Room + KSP + worker reflection call for keep rules that
+            // we will not write before we need them.
             isMinifyEnabled = false
         }
         debug {
-            buildConfigField("long", "TEMPS_DIVISEUR", "${diviseurTemps}L")
+            buildConfigField("long", "TEMPS_DIVISEUR", "${timeDivisor}L")
         }
     }
 
     buildFeatures {
         compose = true
-        // `BuildConfig.VERSION_NAME` alimente la ligne « version » de l'ecran Reglages. Elle y
-        // etait ecrite en dur (« 0.1.0 »), donc juste jusqu'au premier bump et fausse ensuite —
-        // exactement le genre de valeur qu'un utilisateur cite dans un rapport de defaut.
+        // `BuildConfig.VERSION_NAME` feeds the "version" line of the Settings screen. It used to
+        // be hard-coded there ("0.1.0"), so correct until the first bump and wrong afterwards —
+        // exactly the kind of value a user quotes in a defect report.
         buildConfig = true
     }
 
@@ -95,8 +95,8 @@ android {
     }
 
     testOptions {
-        // `:format` et `:algo` sont testes en JUnit 5 ; les tests JVM de `:phone` partagent
-        // leurs fixtures, donc la meme plateforme.
+        // `:format` and `:algo` are tested with JUnit 5; the JVM tests of `:phone` share their
+        // fixtures, hence the same platform.
         unitTests.all { it.useJUnitPlatform() }
         unitTests.isReturnDefaultValues = true
     }
@@ -107,10 +107,10 @@ android {
 }
 
 ksp {
-    // Les schemas Room sont **versionnes** : ce sont eux qui rendent une migration verifiable.
-    // Sans export de schema, `fallbackToDestructiveMigration` devient la seule issue quand une
-    // migration se revele fausse — et c'est precisement ce qu'on s'interdit ici, parce que les
-    // chunks bruts sont la seule chose qui permettra de rescorer quand l'algorithme changera.
+    // The Room schemas are **versioned**: they are what makes a migration verifiable. Without
+    // schema export, `fallbackToDestructiveMigration` becomes the only way out when a migration
+    // turns out to be wrong — and that is precisely what we forbid ourselves here, because the raw
+    // chunks are the only thing that will make it possible to rescore when the algorithm changes.
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
@@ -140,47 +140,47 @@ dependencies {
 
     implementation(libs.health.connect.client)
     implementation(libs.play.services.wearable)
-    // `RemoteActivityHelper` : ouvrir la fiche Play Store **sur la montre** depuis l'assistant.
-    // C'est le seul chemin qui ne se fasse pas bloquer, parce que le lancement est execute
-    // la-bas par les services Google Play et non par notre processus. La bibliotheque etait
-    // deja au catalogue, utilisee par `:wear` dans l'autre sens.
+    // `RemoteActivityHelper`: opening the Play Store listing **on the watch** from the onboarding.
+    // It is the only path that does not get blocked, because the launch is carried out over there
+    // by Google Play Services and not by our process. The library was already in the catalogue,
+    // used by `:wear` in the other direction.
     implementation(libs.androidx.wear.remote.interactions)
-    // `startRemoteActivity` rend un `ListenableFuture`, et cette classe **n'est pas** sur le
-    // chemin de compilation de `:phone` : `androidx.health.connect` tire Guava complet, ce qui
-    // fait remplacer `com.google.guava:listenablefuture` par l'artefact
-    // `9999.0-empty-to-avoid-conflict-with-guava`, un jar litteralement vide. Le symptome est
-    // « Cannot access class ListenableFuture » alors que la meme ligne compile dans `:wear`, ou
-    // Guava complet est absent et ou l'artefact reel est donc conserve.
+    // `startRemoteActivity` returns a `ListenableFuture`, and this class is **not** on the
+    // compilation path of `:phone`: `androidx.health.connect` pulls in the full Guava, which makes
+    // `com.google.guava:listenablefuture` be replaced by the
+    // `9999.0-empty-to-avoid-conflict-with-guava` artefact, a literally empty jar. The symptom is
+    // "Cannot access class ListenableFuture" while the same line compiles in `:wear`, where the
+    // full Guava is absent and the real artefact is therefore kept.
     //
-    // `compileOnly` et pas `implementation` : Guava est **deja** dans l'APK par la voie de
-    // Health Connect, donc le declarer ici ne coute pas un octet de plus — il ne fait que rendre
-    // le type visible au compilateur. La version suit celle que resout deja le chemin d'execution.
+    // `compileOnly` and not `implementation`: Guava is **already** in the APK by way of Health
+    // Connect, so declaring it here does not cost one more byte — it only makes the type visible
+    // to the compiler. The version follows the one the runtime path already resolves.
     compileOnly("com.google.guava:guava:31.1-android")
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testRuntimeOnly(libs.junit.platform.launcher)
 
-    // Tests instrumentes. Ils tournent sur appareil et valident ce qu'aucun test JVM ne peut
-    // atteindre : que les garde-fous tiennent dans l'application reellement assemblee, avec sa
-    // navigation, son theme et sa base SQLite. JUnit 4 et non 5 : l'orchestrateur Android
-    // n'execute pas la plateforme JUnit 5.
+    // Instrumented tests. They run on device and validate what no JVM test can reach: that the
+    // guard rails hold in the application as it is actually assembled, with its navigation, its
+    // theme and its SQLite database. JUnit 4 and not 5: the Android orchestrator does not run the
+    // JUnit 5 platform.
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
-    // Remonte Espresso au-dessus de ce que le BOM Compose epingle. Le detail du defaut qu'on evite
-    // ainsi est dans `libs.versions.toml`. Il est declare ici et pas dans `:wear` parce que c'est le
-    // seul module dont les tests instrumentes passent par Compose, donc le seul qui touche Espresso.
+    // Raises Espresso above what the Compose BOM pins. The detail of the defect thereby avoided is
+    // in `libs.versions.toml`. It is declared here and not in `:wear` because this is the only
+    // module whose instrumented tests go through Compose, hence the only one that touches Espresso.
     androidTestImplementation(libs.androidx.test.espresso.core)
-    // `room-testing` a ete retire le 7 aout 2026 : il n'apportait que `MigrationTestHelper`, dont
-    // meme l'ancien `MigrationTest` ne se servait pas, et il n'a plus aucun objet depuis que la
-    // base est repartie en v1 sans migration. Il reviendra avec la premiere vraie migration —
-    // c'est lui qui permet de reconstruire une base d'une version anterieure a partir des schemas
-    // exportes, et c'est pour cela que `exportSchema` reste a `true`.
-    // Pour les sondes de `tools/banc/`, qui se posent dans ce source set. Les avoir ici evite le
-    // correctif de build applique au vol par `datalayer.sh`, qui portait la mention « a ne pas
-    // commiter » — c'est-a-dire une consigne que seul un humain attentif applique.
+    // `room-testing` was removed on 7 August 2026: it brought nothing but `MigrationTestHelper`,
+    // which even the old `MigrationTest` did not use, and it has had no purpose since the database
+    // restarted at v1 with no migration. It will come back with the first real migration — it is
+    // what makes it possible to rebuild a database of an earlier version from the exported
+    // schemas, and that is why `exportSchema` stays at `true`.
+    // For the probes of `tools/banc/`, which land in this source set. Having them here avoids the
+    // build fix applied on the fly by `datalayer.sh`, which carried the note "not to be committed"
+    // — that is, an instruction that only an attentive human applies.
     androidTestImplementation(project(":format"))
     androidTestImplementation(libs.play.services.wearable)
     debugImplementation(libs.compose.ui.test.manifest)

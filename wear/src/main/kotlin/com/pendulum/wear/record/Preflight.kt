@@ -13,64 +13,63 @@ import com.pendulum.wear.transfer.DataLayerTransfer
 import java.io.File
 
 /**
- * Verification d'avant-nuit. C'est le seul moment ou l'utilisateur regarde la montre, donc le
- * seul moment ou un message a une chance d'etre lu : chaque bloqueur est formule en action, et
- * la separation bloqueurs / avertissements est une decision, pas une nuance de couleur.
+ * Pre-night verification. This is the only moment when the user looks at the watch, therefore the
+ * only moment when a message stands a chance of being read: every blocker is phrased as an action,
+ * and the blockers / warnings split is a decision, not a shade of colour.
  *
- * **Le telephone injoignable n'est jamais bloquant.** Toute l'architecture de transfert existe
- * pour que ce cas soit sans consequence : le signaler comme une erreur serait mentir a
- * l'utilisateur et l'inciter a ne pas enregistrer sa nuit.
+ * **An unreachable phone is never blocking.** The whole transfer architecture exists so that this
+ * case carries no consequence: reporting it as an error would be lying to the user and would talk
+ * them out of recording their night.
  */
 object Preflight {
 
-    /** En dessous, on refuse de commencer : une nuit pese ~9 Mo, mais la marge protege des
-     *  reliquats non acquittes qu'on ne supprimera jamais de force. */
+    /** Below this we refuse to start: a night weighs ~9 MB, but the margin protects the
+     *  unacknowledged leftovers that we will never delete by force. */
     const val MIN_FREE_BYTES = 300L * 1024 * 1024
 
-    /** Plafond du repertoire de chunks : ~22 nuits. */
+    /** Ceiling for the chunk directory: ~22 nights. */
     const val CHUNK_DIR_CAP_BYTES = 200L * 1024 * 1024
 
     const val PREFS = "pendulum"
 
-    /** Pose par le service quand `startForeground` a ete refuse : le seul moyen de faire
-     *  remonter a l'ecran du coucher un echec qui, sinon, ne vit que dans logcat. */
+    /** Set by the service when `startForeground` was refused: the only way to surface, on the
+     *  bedtime screen, a failure that otherwise lives only in logcat. */
     const val PREF_FGS_REFUSED = "fgs_refused"
 
-    /** Pose par le service quand [echelleDesaccordee] a refuse un demarrage. Meme mecanique que
-     *  [PREF_FGS_REFUSED], et pour la meme raison : le refus se decide au moment ou la source est
-     *  connue, c'est-a-dire trop tard pour l'ecran qui l'a declenche. */
-    const val PREF_ECHELLE_DESACCORDEE = "echelle_desaccordee"
+    /** Set by the service when [scaleMismatch] refused a start. Same mechanism as
+     *  [PREF_FGS_REFUSED], and for the same reason: the refusal is decided at the moment the source
+     *  is known, that is to say too late for the screen that triggered it. */
+    const val PREF_SCALE_MISMATCH = "echelle_desaccordee"
 
     /**
-     * **Le diviseur de temps du banc ne s'applique qu'au rejeu synthetique.** Vrai quand une
-     * compilation compressee s'appreterait a enregistrer le vrai capteur, ce qui ne comprime rien
-     * et desaccorde tout.
+     * **The bench time divisor only applies to synthetic replay.** True when a compressed build is
+     * about to record the real sensor, which compresses nothing and throws everything out of tune.
      *
-     * La compression est celle du temps **mural** : elle divise les durees de `Durees`. Le rejeu
-     * de `SourceSynthetique` compresse en face le temps **capteur**, du meme facteur, et c'est
-     * cette egalite que `CoherenceEchelleTest` protege. Avec l'accelerometre reel il n'y a aucun
-     * rejeu : le temps capteur avance a 1x pendant que le temps mural avance a 250x, et le facteur
-     * n'a plus rien a egaliser.
+     * The compression is of **wall-clock** time: it divides the durations in `Durations`. The
+     * replay in `SyntheticSource` compresses **sensor** time on the other side, by the same factor,
+     * and it is that equality which `ScaleConsistencyTest` protects. With the real accelerometer
+     * there is no replay at all: sensor time advances at 1x while wall-clock time advances at 250x,
+     * and the factor has nothing left to equalise.
      *
-     * Ce que ca produit, mesure et non redoute (`BANC-ESSAI.md` §11.5.3) : la latence de salve du
-     * FIFO vaut 30 s de temps capteur, materielle et non comprimable, tandis que le delai de garde
-     * de l'heure butoir tombe de 1 h a 14,4 s. L'enregistrement s'arrete donc **avant** que le
-     * capteur n'ait livre son premier octet — 14,636 s, zero chunk, zero message. Un banc qui se
-     * desaccorde en silence est pire qu'un banc absent : il rend des chiffres.
+     * What this produces, measured and not merely feared (`BENCH-LOG.md` §11.5.3): the FIFO burst
+     * latency is 30 s of sensor time, hardware-bound and not compressible, while the guard delay of
+     * the cut-off time falls from 1 h to 14.4 s. Recording therefore stops **before** the sensor
+     * has delivered its first byte — 14.636 s, zero chunks, zero messages. A bench that goes out of
+     * tune in silence is worse than no bench at all: it returns figures.
      *
-     * Le choix est de **refuser de demarrer** plutot que de neutraliser le diviseur a l'execution.
-     * Neutraliser reviendrait a faire tourner une compilation qui n'est pas celle qu'on croit
-     * lancer, et `Durees.ACTIVES` est un catalogue construit une fois pour toutes a partir d'une
-     * valeur compilee : il n'y a pas d'endroit honnete ou le corriger. Refuser dit quoi faire.
+     * The choice is to **refuse to start** rather than to neutralise the divisor at run time.
+     * Neutralising would amount to running a build that is not the one you think you launched, and
+     * `Durations.ACTIVE` is a catalogue built once and for all from a compiled value: there is no
+     * honest place to correct it. Refusing says what to do.
      */
-    fun echelleDesaccordee(diviseur: Long, sourceSynthetique: Boolean): Boolean =
-        diviseur != 1L && !sourceSynthetique
+    fun scaleMismatch(divisor: Long, syntheticSource: Boolean): Boolean =
+        divisor != 1L && !syntheticSource
 
     /**
-     * @param nowMs l'horloge, en parametre plutot que lue au fond de la fonction. C'est elle qui
-     *   determine la cle de nuit, donc *quel* contexte du soir est cherche : le defaut qui a
-     *   coute le plus cher a ce produit — un contexte scelle sous une cle et lu sous une autre —
-     *   se rejoue ici a une milliseconde pres, et sans ce parametre il n'est pas reproductible.
+     * @param nowMs the clock, as a parameter rather than read deep inside the function. It is what
+     *   determines the night key, hence *which* evening context is looked for: the defect that cost
+     *   this product the most — a context sealed under one key and read under another — replays
+     *   here to the millisecond, and without this parameter it is not reproducible.
      */
     fun check(ctx: Context, nowMs: Long = System.currentTimeMillis()): PreflightResult {
         val blockers = mutableListOf<Issue>()
@@ -81,8 +80,8 @@ object Preflight {
         val sensor = wakeUp ?: sm?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (sensor == null) blockers += Issue(IssueId.NO_ACCELEROMETER)
 
-        // Sans notification, le systeme ne peut pas afficher le service de premier plan, et il
-        // finit par l'arreter : la permission n'est pas cosmetique.
+        // Without a notification the system cannot display the foreground service, and it ends up
+        // stopping it: the permission is not cosmetic.
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -94,7 +93,7 @@ object Preflight {
         val free = ctx.filesDir.usableSpace
         val occupied = dirSize(store.chunksRoot)
         if (free < MIN_FREE_BYTES || occupied > CHUNK_DIR_CAP_BYTES * 95 / 100) {
-            // Refuser de commencer une nuit vaut mieux que d'en ecraser une silencieusement.
+            // Refusing to begin a night is better than silently overwriting one.
             blockers += Issue(IssueId.STORAGE_FULL, listOf(formatBytes(free), pending.toString()))
         }
 
@@ -102,7 +101,7 @@ object Preflight {
         val sealed = try {
             DataLayerTransfer.isEveningContextSealed(ctx, nightKey)
         } catch (e: Exception) {
-            Log.w(TAG, "lecture du verrou de contexte impossible", e)
+            Log.w(TAG, "could not read the context lock", e)
             false
         }
         if (!sealed) blockers += Issue(IssueId.CONTEXT_NOT_SEALED)
@@ -111,10 +110,10 @@ object Preflight {
         if (prefs.getBoolean(PREF_FGS_REFUSED, false)) {
             blockers += Issue(IssueId.FGS_REFUSED)
         }
-        if (prefs.getBoolean(PREF_ECHELLE_DESACCORDEE, false)) {
+        if (prefs.getBoolean(PREF_SCALE_MISMATCH, false)) {
             blockers += Issue(
                 IssueId.BENCH_SCALE_MISMATCH,
-                listOf(com.pendulum.wear.temps.EchelleTemps.DIVISEUR.toString()),
+                listOf(com.pendulum.wear.time.TimeScaling.DIVISOR.toString()),
             )
         }
 
@@ -124,12 +123,12 @@ object Preflight {
         if (sensor != null && wakeUp == null) warnings += Issue(IssueId.NO_WAKEUP_SENSOR)
         if (pending > 0) warnings += Issue(IssueId.PENDING_SYNC, listOf(pending.toString()))
         if (!phoneReachable(ctx)) warnings += Issue(IssueId.PHONE_UNREACHABLE)
-        // Une derogation de banc doit se voir. Le diviseur de temps a le sien depuis le
-        // debut ; celle-ci merite le meme traitement, sinon une compilation de banc
-        // enregistre sur le chargeur sans que rien ne le dise. Avertissement et non
-        // bloqueur : c'est exactement ce qu'on a demande a la compilation de faire.
-        if (com.pendulum.wear.temps.Banc.IGNORER_CHARGEUR) {
-            warnings += Issue(IssueId.BANC_CHARGEUR_IGNORE)
+        // A bench override has to be visible. The time divisor has had its own from the start;
+        // this one deserves the same treatment, otherwise a bench build records on the
+        // charger with nothing saying so. A warning and not a blocker: it is exactly what
+        // the build was asked to do.
+        if (com.pendulum.wear.time.Bench.IGNORE_CHARGER) {
+            warnings += Issue(IssueId.BENCH_CHARGER_IGNORED)
         }
 
         return PreflightResult(blockers, warnings, battery, free, pending)
@@ -147,38 +146,37 @@ object Preflight {
     }
 
     /**
-     * **La liste des noeuds non vide, et rien de plus.** Extrait de son appelant pour etre
-     * testable sans GMS : c'est un predicat sur une liste, et c'est la seule partie qui puisse
-     * se tromper.
+     * **A non-empty node list, and nothing more.** Extracted from its caller so that it can be
+     * tested without GMS: it is a predicate over a list, and it is the only part that can get it
+     * wrong.
      *
-     * ### Ce qu'on sait de ce predicat, et ce qu'on ne sait pas
+     * ### What is known about this predicate, and what is not
      *
-     * Sur emulateur, il ment : l'emulateur telephone tue, `connectedNodes` rend toujours la montre
-     * appairee et l'avertissement `PHONE_UNREACHABLE` ne s'affiche jamais (§7.1). C'est le defaut
-     * connu, et il n'a **pas encore ete reproduit sur materiel reel** — faute d'avoir pu produire
-     * un telephone reellement injoignable sans perdre le lien `adb` qui sert a le mesurer.
+     * On the emulator it lies: with the phone emulator killed, `connectedNodes` still returns the
+     * paired watch and the `PHONE_UNREACHABLE` warning never appears (§7.1). That is the known
+     * defect, and it has **not yet been reproduced on real hardware** — for want of being able to
+     * produce a genuinely unreachable phone without losing the `adb` link used to measure it.
      *
-     * ### Les deux corrections proposees, et pourquoi aucune n'est appliquee
+     * ### The two proposed fixes, and why neither is applied
      *
-     * `getCapability(…, FILTER_REACHABLE)` : rend un noeud dans exactement les memes cas. Mesure
-     * du §11.3.
+     * `getCapability(…, FILTER_REACHABLE)`: returns a node in exactly the same cases. Measured in
+     * §11.3.
      *
-     * `nodes.any { it.isNearby }` : **faux rouge mesure** (§12.2). Bluetooth coupe et les deux
-     * appareils sur le meme WiFi, `isNearby` passe a `false` des deux cotes — et le Data Layer
-     * continue de transporter : un item publie par le telephone arrive sur la montre en moins de
-     * 45 s, une suppression en moins de 60 s. La liaison bascule sur le WiFi, ce que « proximite »
-     * ne decrit plus. Ce que le §11.3 lisait comme un transport mort etait une fenetre d'attente
-     * de 45 s trop courte. Appliquer cette correction ferait afficher « telephone injoignable »
-     * pendant que la synchronisation se fait.
+     * `nodes.any { it.isNearby }`: **a measured false red** (§12.2). With Bluetooth off and both
+     * devices on the same WiFi, `isNearby` turns `false` on both sides — and the Data Layer keeps
+     * carrying: an item published by the phone reaches the watch in under 45 s, a deletion in under
+     * 60 s. The link switches to WiFi, which "proximity" no longer describes. What §11.3 read as a
+     * dead transport was a 45 s waiting window that was too short. Applying this fix would display
+     * "phone unreachable" while synchronisation is happening.
      *
-     * `MessageClient.sendMessage`, seule API du Data Layer qui echoue quand le noeud est hors de
-     * portee : mesuree a `ok=true` en 8 a 13 ms dans **tous** les etats radio produits, y compris
-     * ceux ou `isNearby` valait `false`. Onze millisecondes ne sont pas un aller-retour : c'est
-     * une acceptation locale. Aucun etat reellement injoignable n'ayant pu etre produit, rien ne
-     * dit qu'elle echouerait, et on ne remplace pas un predicat par un autre sur une intuition.
+     * `MessageClient.sendMessage`, the only Data Layer API that fails when the node is out of
+     * range: measured at `ok=true` in 8 to 13 ms in **every** radio state that could be produced,
+     * including those where `isNearby` was `false`. Eleven milliseconds is not a round trip: it is
+     * a local acceptance. Since no genuinely unreachable state could be produced, nothing says it
+     * would fail, and one predicate is not swapped for another on a hunch.
      *
-     * L'avertissement n'est de toute facon jamais bloquant : il dit « recording carries on, sync
-     * will happen later », ce qui reste vrai dans les deux sens d'erreur.
+     * The warning is never blocking in any case: it says "recording carries on, sync will happen
+     * later", which stays true in both directions of error.
      */
     fun phoneReachable(nodes: List<com.google.android.gms.wearable.Node>): Boolean =
         nodes.isNotEmpty()
@@ -192,13 +190,13 @@ object Preflight {
         dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     /**
-     * Un volume libre, **valeur et unite solidaires**.
+     * A free volume, **value and unit held together**.
      *
-     * Espace insecable (U+00A0) et non espace ordinaire : sur l'ecran rond de la montre, la ligne
-     * « Free space 12.2 GB » se coupait entre le nombre et son unite, laissant « GB » seul a la
-     * ligne suivante. Le banc l'avait note, et la correction a ete crue faite deux fois — sur une
-     * capture ou la valeur tenait par chance. Rien dans le code ne l'empechait : c'est le
-     * caractere lui-meme qui doit interdire la coupure, pas la largeur du nombre du jour.
+     * A non-breaking space (U+00A0) and not an ordinary space: on the round screen of the watch,
+     * the line "Free space 12.2 GB" broke between the number and its unit, leaving "GB" alone on
+     * the next line. The bench had noted it, and the fix was twice believed done — on a screenshot
+     * where the value happened to fit. Nothing in the code prevented it: it is the character itself
+     * that must forbid the break, not the width of that day's number.
      */
     fun formatBytes(bytes: Long): String = when {
         bytes >= 1024L * 1024 * 1024 -> "%.1f\u00A0GB".format(Locale.UK, bytes / 1024.0 / 1024 / 1024)
@@ -209,21 +207,21 @@ object Preflight {
 }
 
 enum class IssueId {
-    // bloqueurs
+    // blockers
     CONTEXT_NOT_SEALED,
     NOTIFICATIONS_DENIED,
     NO_ACCELEROMETER,
     STORAGE_FULL,
     FGS_REFUSED,
 
-    /** Compilation de banc — temps mural comprime — sur le vrai capteur. Voir
-     *  [Preflight.echelleDesaccordee]. N'existe pas en release : le diviseur y vaut 1. */
+    /** Bench build — compressed wall-clock time — on the real sensor. See
+     *  [Preflight.scaleMismatch]. Does not exist in release: the divisor is 1 there. */
     BENCH_SCALE_MISMATCH,
 
-    /** Compilation de banc : l'arret sur chargeur est desactive. Voir `Banc.IGNORER_CHARGEUR`. */
-    BANC_CHARGEUR_IGNORE,
+    /** Bench build: stopping on the charger is disabled. See `Bench.IGNORE_CHARGER`. */
+    BENCH_CHARGER_IGNORED,
 
-    // avertissements
+    // warnings
     LOW_BATTERY,
     PHONE_UNREACHABLE,
     NO_WAKEUP_SENSOR,
@@ -231,22 +229,22 @@ enum class IssueId {
 }
 
 /**
- * Ce qui est **casse**, par opposition a ce qui n'est **pas encore fait**.
+ * What is **broken**, as opposed to what is **not yet done**.
  *
- * Bloquer le demarrage et etre une panne sont deux choses differentes, et la couleur encode la
- * seconde, pas la premiere. La regle est celle de `PendulumColors` cote telephone : le rouge est
- * reserve a ce qui est casse ; une situation que l'utilisateur peut lever lui-meme est ambre.
+ * Blocking the start and being a failure are two different things, and the colour encodes the
+ * second, not the first. The rule is the one of `PendulumColors` on the phone side: red is reserved
+ * for what is broken; a situation the user can clear themselves is amber.
  *
- * Le defaut repare ici se voyait en mettant les deux ecrans cote a cote : pour le **meme** fait —
- * le contexte du soir pas encore scelle — le telephone affichait de l'ambre et la montre du rouge.
- * Deux appareils, deux verdicts, un seul etat. Le telephone avait raison : remplir un formulaire
- * qu'on n'a pas encore rempli n'est pas une panne.
+ * The defect repaired here only showed up with the two screens side by side: for the **same** fact
+ * — the evening context not yet sealed — the phone displayed amber and the watch red. Two devices,
+ * two verdicts, one single state. The phone was right: filling in a form you have not filled in yet
+ * is not a failure.
  *
- * `NO_ACCELEROMETER`, `STORAGE_FULL` et `FGS_REFUSED` restent rouges : l'utilisateur ne peut rien
- * y faire depuis cet ecran. `BENCH_SCALE_MISMATCH` aussi — une compilation de banc branchee sur le
- * vrai capteur produirait des mesures fausses, et c'est le pire cas silencieux du projet.
+ * `NO_ACCELEROMETER`, `STORAGE_FULL` and `FGS_REFUSED` stay red: there is nothing the user can do
+ * about them from this screen. `BENCH_SCALE_MISMATCH` too — a bench build wired to the real sensor
+ * would produce false measurements, and that is the worst silent case in the project.
  */
-val IssueId.estUnePanne: Boolean
+val IssueId.isFailure: Boolean
     get() = when (this) {
         IssueId.NO_ACCELEROMETER,
         IssueId.STORAGE_FULL,
@@ -255,20 +253,19 @@ val IssueId.estUnePanne: Boolean
 
         IssueId.CONTEXT_NOT_SEALED,
         IssueId.NOTIFICATIONS_DENIED,
-        // Pas une panne : la derogation est exactement ce qu'on a demande a la compilation de
-        // faire. Elle merite d'etre vue, pas d'etre signalee comme casse — et contrairement a
-        // `BENCH_SCALE_MISMATCH`, elle ne fausse aucune mesure, elle laisse seulement tourner un
-        // enregistrement qui n'est pas une nuit.
-        IssueId.BANC_CHARGEUR_IGNORE -> false
+        // Not a failure: the override is exactly what the build was asked to do. It deserves to be
+        // seen, not to be reported as broken — and unlike `BENCH_SCALE_MISMATCH`, it falsifies no
+        // measurement, it only lets a recording run that is not a night.
+        IssueId.BENCH_CHARGER_IGNORED -> false
 
-        // Les avertissements sont ambre par construction ; la question ne se pose pas pour eux.
+        // Warnings are amber by construction; the question does not arise for them.
         IssueId.LOW_BATTERY,
         IssueId.PHONE_UNREACHABLE,
         IssueId.NO_WAKEUP_SENSOR,
         IssueId.PENDING_SYNC -> false
     }
 
-/** Un probleme et ses arguments deja formates. Les libelles vivent dans `strings.xml`. */
+/** An issue and its already-formatted arguments. The labels live in `strings.xml`. */
 data class Issue(val id: IssueId, val args: List<String> = emptyList())
 
 data class PreflightResult(

@@ -15,81 +15,81 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.common.BandeauProfilPersonnalise
-import com.pendulum.phone.ui.common.BoutonMotive
-import com.pendulum.phone.ui.common.Paragraphe
+import com.pendulum.phone.ui.common.CustomProfileBanner
+import com.pendulum.phone.ui.common.Paragraph
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
+import com.pendulum.phone.ui.common.ReasonedButton
 import com.pendulum.phone.ui.common.SectionHeader
-import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.model.CompteRendu
-import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.model.Aggregate
+import com.pendulum.phone.ui.model.Feedback
+import com.pendulum.phone.ui.text.resolve
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 data class ExportUi(
-    val inclureQuestionnaire: Boolean,
-    /** Par defaut **oui** : masquer les nuits ratees a un medecin est trompeur. */
-    val inclureEcartees: Boolean,
-    val nuitsEligibles: Int,
-    val periode: String,
-    val profilPersonnalise: String?,
+    val includeQuestionnaire: Boolean,
+    /** **Yes** by default: hiding the failed nights from a doctor is misleading. */
+    val includeExcluded: Boolean,
+    val eligibleNights: Int,
+    val period: String,
+    val customProfile: String?,
     /**
-     * Ce que la derniere ecriture a donne, ou `null` tant qu'il n'y en a pas eu.
+     * What the last write gave, or `null` as long as there has been none.
      *
-     * Le champ portait le seul **nom du fichier**, pose inconditionnellement apres un
-     * `runCatching` qui jetait son exception : « Written: … » s'affichait donc aussi quand rien
-     * n'avait ete ecrit. Sur le document qu'on emporte chez le medecin sans le rouvrir, c'est le
-     * pire endroit ou taire un echec.
+     * The field carried the **file name** alone, set unconditionally after a `runCatching` that
+     * threw its exception away: "Written: ..." was therefore displayed even when nothing had been
+     * written. On the document one takes to the doctor without opening it again, that is the worst
+     * place to keep a failure quiet.
      */
-    val ecriture: CompteRendu? = null,
+    val writeFeedback: Feedback? = null,
 )
 
 /**
- * L'export d'un rapport pour le medecin.
+ * The export of a report for the doctor.
  *
- * ### Ce qui est impose dans le document
+ * ### What is imposed in the document
  *
- * Le bandeau de tete reprend l'avertissement mot pour mot : mesure personnelle, pas un examen
- * medical, aucun diagnostic, aucune decision de traitement. Puis la periode et les compteurs, le
- * resultat avec son intervalle et son `n`, le graphe de tendance, le tableau par nuit, un graphe
- * de nuit avec son hypnogramme, la methode en six lignes, les quatre limites reprises
- * litteralement de l'ecran d'accueil, et le questionnaire si inclus.
+ * The header banner repeats the notice word for word: personal measurement, not a medical
+ * examination, no diagnosis, no treatment decision. Then the period and the counters, the result
+ * with its interval and its `n`, the trend chart, the per-night table, a night chart with its
+ * hypnogram, the method in six lines, the four limits taken literally from the home screen, and
+ * the questionnaire if it is included.
  *
- * Le rapport medecin met le **compte horaire** en premier rang, contrairement a l'ecran : c'est
- * la langue des somnologues et les seuils publies reposent dessus. Le rythme fondamental y figure
- * aussi, avec sa justification.
+ * The doctor's report puts the **hourly count** first, unlike the screen: it is the language of
+ * sleep physicians and the published thresholds rest on it. The fundamental rhythm appears there
+ * too, with its justification.
  *
- * ### Ce qui n'existe pas
+ * ### What does not exist
  *
- * Aucun chemin reseau. L'application ne declare pas la permission `INTERNET` : c'est une garantie
- * **verifiable** — un `aapt dump permissions` suffit — la ou une politique de confidentialite est
- * une promesse.
+ * No network path. The application does not declare the `INTERNET` permission: that is a
+ * **verifiable** guarantee — an `aapt dump permissions` is enough — where a privacy policy is a
+ * promise.
  *
- * Et **aucun `ACTION_SEND` non plus** : il exigerait un `FileProvider` au manifeste, c'est-a-dire
- * une seconde surface de sortie, en plus de celle que SAF ouvre deja. Le fichier est ecrit a
- * l'endroit que l'utilisateur designe, geste par geste ; ce qu'il en fait ensuite appartient a
- * son gestionnaire de fichiers, qui sait deja partager. Une porte de sortie de moins a defendre.
+ * And **no `ACTION_SEND` either**: it would require a `FileProvider` in the manifest, that is, a
+ * second outbound surface on top of the one SAF already opens. The file is written at the place
+ * the user designates, gesture by gesture; what they then do with it belongs to their file
+ * manager, which already knows how to share. One way out fewer to defend.
  *
- * ### Si l'export est impossible
+ * ### If the export is impossible
  *
- * Le bouton reste visible mais desactive, **avec le motif ecrit dessus**. Jamais un bouton actif
- * qui echoue : quelqu'un qui appuie sur « Exporter » et recoit une erreur apprend a se mefier de
- * tous les boutons de l'application.
+ * The button stays visible but disabled, **with the reason written on it**. Never an active button
+ * that fails: someone who presses "Export" and receives an error learns to distrust every button
+ * in the application.
  */
 @Composable
 fun ExportScreen(
-    etat: ExportUi,
+    state: ExportUi,
     onQuestionnaire: (Boolean) -> Unit,
-    onEcartees: (Boolean) -> Unit,
-    onEnregistrer: () -> Unit,
+    onExcluded: (Boolean) -> Unit,
+    onSave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
-    val motif = if (etat.nuitsEligibles < Aggregat.MIN_NUITS_AGREGAT) {
-        stringResource(R.string.export_unavailable, Aggregat.MIN_NUITS_AGREGAT)
+    val unavailableReason = if (state.eligibleNights < Aggregate.MIN_NIGHTS_AGGREGATE) {
+        stringResource(R.string.export_unavailable, Aggregate.MIN_NIGHTS_AGGREGATE)
     } else {
         null
     }
@@ -98,62 +98,62 @@ fun ExportScreen(
         Text(stringResource(R.string.export_title), style = PendulumType.titleL, color = c.textPrimary)
 
         PendulumCard {
-            // Le bandeau qui ouvrira le document, montre ici tel quel : ce que le medecin lira
-            // en premier ne doit pas etre une surprise pour celui qui l'imprime.
-            Paragraphe(stringResource(R.string.notice_export_banner), couleur = c.textPrimary)
+            // The banner that will open the document, shown here as it is: what the doctor reads
+            // first must not be a surprise for the one who prints it.
+            Paragraph(stringResource(R.string.notice_export_banner), color = c.textPrimary)
         }
 
-        BandeauProfilPersonnalise(etat.profilPersonnalise)
+        CustomProfileBanner(state.customProfile)
 
         PendulumCard {
             SectionHeader(stringResource(R.string.export_section_format))
-            Paragraphe(stringResource(R.string.export_format_note))
+            Paragraph(stringResource(R.string.export_format_note))
         }
 
         PendulumCard {
             SectionHeader(stringResource(R.string.export_section_content))
             Text(
-                stringResource(R.string.export_period, etat.periode),
+                stringResource(R.string.export_period, state.period),
                 style = PendulumType.body,
                 color = c.textSecondary,
             )
             Text(
-                stringResource(R.string.export_eligible_nights, etat.nuitsEligibles),
+                stringResource(R.string.export_eligible_nights, state.eligibleNights),
                 style = PendulumType.bodyNum,
                 color = c.textSecondary,
             )
             Spacer(Modifier.height(Spacing.s.dp))
-            Case(etat.inclureQuestionnaire, stringResource(R.string.export_include_questionnaire), null, onQuestionnaire)
-            Case(
-                etat.inclureEcartees,
+            CheckboxRow(state.includeQuestionnaire, stringResource(R.string.export_include_questionnaire), null, onQuestionnaire)
+            CheckboxRow(
+                state.includeExcluded,
                 stringResource(R.string.export_include_excluded),
                 stringResource(R.string.export_include_excluded_note),
-                onEcartees,
+                onExcluded,
             )
         }
 
-        if (motif != null) {
+        if (unavailableReason != null) {
             PendulumCard {
                 Text(stringResource(R.string.error_exp_01_title), style = PendulumType.titleM, color = c.textPrimary)
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(stringResource(R.string.error_exp_01_cause))
+                Paragraph(stringResource(R.string.error_exp_01_cause))
                 Spacer(Modifier.height(Spacing.s.dp))
-                Paragraphe(stringResource(R.string.error_exp_01_action))
+                Paragraph(stringResource(R.string.error_exp_01_action))
                 Text("E-EXP-01", style = PendulumType.caption, color = c.textTertiary)
             }
         }
 
-        BoutonMotive(stringResource(R.string.export_save), motif, onEnregistrer)
+        ReasonedButton(stringResource(R.string.export_save), unavailableReason, onSave)
         Text(stringResource(R.string.export_no_network), style = PendulumType.caption, color = c.textTertiary)
-        // Le compte rendu de l'ecriture, dans les deux cas. En succes, le nom du fichier et rien
-        // d'autre : le chemin complet d'un `Uri` SAF est un identifiant de fournisseur illisible,
-        // et l'afficher ferait chercher un dossier qui n'existe pas sous ce nom. En echec, ce qui
-        // est verifiable — rien n'a ete ecrit — et le geste qui marche.
-        etat.ecriture?.let {
+        // The feedback from the write, in both cases. On success, the file name and nothing else:
+        // the full path of a SAF `Uri` is an unreadable provider identifier, and displaying it
+        // would send the user looking for a folder that does not exist under that name. On
+        // failure, what is verifiable — nothing was written — and the gesture that works.
+        state.writeFeedback?.let {
             Text(
-                it.message.resoudre(),
+                it.message.resolve(),
                 style = PendulumType.caption,
-                color = if (it.echec) c.attention else c.textSecondary,
+                color = if (it.failed) c.attention else c.textSecondary,
             )
         }
         Spacer(Modifier.height(Spacing.l.dp))
@@ -161,12 +161,12 @@ fun ExportScreen(
 }
 
 @Composable
-private fun Case(coche: Boolean, titre: String, note: String?, onChange: (Boolean) -> Unit) {
+private fun CheckboxRow(checked: Boolean, rowTitle: String, note: String?, onChange: (Boolean) -> Unit) {
     val c = LocalPendulumColors.current
     Row(Modifier.fillMaxWidth().padding(vertical = Spacing.xs.dp), verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = coche, onCheckedChange = onChange)
+        Checkbox(checked = checked, onCheckedChange = onChange)
         Column {
-            Text(titre, style = PendulumType.body, color = c.textPrimary)
+            Text(rowTitle, style = PendulumType.body, color = c.textPrimary)
             note?.let { Text(it, style = PendulumType.caption, color = c.textTertiary) }
         }
     }
@@ -174,12 +174,12 @@ private fun Case(coche: Boolean, titre: String, note: String?, onChange: (Boolea
 
 @Preview(name = "Export — possible", widthDp = 411, heightDp = 1000, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
-private fun ApercuExport() = PendulumTheme {
+private fun ExportPreview() = PendulumTheme {
     ExportScreen(ExportUi(true, true, 6, "1–15 March", null), {}, {}, {})
 }
 
 @Preview(name = "Export — refused below 3 nights", widthDp = 411, heightDp = 1000, showBackground = true, backgroundColor = 0xFF0E1116)
 @Composable
-private fun ApercuExportRefus() = PendulumTheme {
+private fun ExportRefusedPreview() = PendulumTheme {
     ExportScreen(ExportUi(true, true, 2, "1–15 March", "threshold 6×"), {}, {}, {})
 }

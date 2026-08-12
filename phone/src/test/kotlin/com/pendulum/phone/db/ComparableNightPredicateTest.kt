@@ -4,11 +4,11 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * Le predicat de comparabilite est le garde-fou qui remplace le bouton « exclure cette nuit ».
- * S'il est faux, l'exclusion redevient une decision, et une decision prise apres avoir vu le
- * chiffre est exactement le mecanisme d'auto-tromperie que tout le projet cherche a empecher.
+ * The comparability predicate is the guard rail that replaces the "exclude this night" button. If
+ * it is wrong, exclusion becomes a decision again, and a decision taken after seeing the figure is
+ * exactly the self-deception mechanism the whole project sets out to prevent.
  *
- * D'ou une couverture exhaustive : chaque critere, dans les deux sens, plus l'ordre de priorite.
+ * Hence exhaustive coverage: every criterion, in both directions, plus the priority order.
  */
 class ComparableNightPredicateTest {
 
@@ -30,42 +30,41 @@ class ComparableNightPredicateTest {
     )
 
     @Test
-    fun `une nuit nominale est comparable`() {
+    fun `a nominal night is comparable`() {
         assertThat(ComparabilityRule.evaluate(facts())).isEqualTo(ComparabilityRule.OK)
         assertThat(ComparabilityRule.isComparable(facts())).isTrue()
     }
 
     @Test
-    fun `sans contexte scelle, rien n'est comparable`() {
-        // Et le motif doit etre NO_CONTEXT, pas « bracelet different » : dire a quelqu'un qui a
-        // oublie le formulaire du soir que son bracelet a change serait un diagnostic faux.
+    fun `without a sealed context, nothing is comparable`() {
+        // And the reason must be NO_CONTEXT, not "different strap": telling someone who forgot the
+        // evening form that their strap changed would be a false diagnosis.
         assertThat(ComparabilityRule.evaluate(facts(hasContext = false)))
             .isEqualTo(ComparabilityRule.NO_CONTEXT)
     }
 
     @Test
-    fun `changer de jambe rend la nuit incomparable`() {
+    fun `changing leg makes the night incomparable`() {
         assertThat(ComparabilityRule.evaluate(facts(leg = "LEFT")))
             .isEqualTo(ComparabilityRule.LEG_CHANGED)
     }
 
     @Test
-    fun `changer de bracelet rend la nuit incomparable`() {
+    fun `changing strap makes the night incomparable`() {
         assertThat(ComparabilityRule.evaluate(facts(strapId = "strap-b")))
             .isEqualTo(ComparabilityRule.STRAP_CHANGED)
     }
 
     @Test
-    fun `un partenaire dans le lit rend la nuit incomparable`() {
+    fun `a partner in the bed makes the night incomparable`() {
         assertThat(ComparabilityRule.evaluate(facts(aloneInBed = false)))
             .isEqualTo(ComparabilityRule.NOT_ALONE)
     }
 
     @Test
-    fun `un gain inconnu n'est pas un gain conforme`() {
-        // Le cas piege : on ne peut pas verifier, donc on n'affirme pas. Traiter « inconnu »
-        // comme « conforme » ferait passer en tendance une nuit dont rien ne dit qu'elle est
-        // comparable.
+    fun `an unknown gain is not a compliant gain`() {
+        // The trap case: we cannot check, so we do not assert. Treating "unknown" as "compliant"
+        // would let into the trend a night that nothing says is comparable.
         assertThat(ComparabilityRule.evaluate(facts(gainCalG = null)))
             .isEqualTo(ComparabilityRule.CAL_GAIN_UNKNOWN)
         assertThat(ComparabilityRule.evaluate(facts(refGainCalG = null)))
@@ -75,7 +74,7 @@ class ComparableNightPredicateTest {
     }
 
     @Test
-    fun `le gain est tolere jusqu'a 35 pourcent d'ecart, exclu au-dela`() {
+    fun `the gain is tolerated up to 35 percent of deviation, excluded beyond`() {
         assertThat(ComparabilityRule.evaluate(facts(gainCalG = 1.35, refGainCalG = 1.0)))
             .isEqualTo(ComparabilityRule.OK)
         assertThat(ComparabilityRule.evaluate(facts(gainCalG = 0.65, refGainCalG = 1.0)))
@@ -87,7 +86,7 @@ class ComparableNightPredicateTest {
     }
 
     @Test
-    fun `quatre heures analysables sont un plancher inclusif`() {
+    fun `four analysable hours are an inclusive floor`() {
         assertThat(ComparabilityRule.evaluate(facts(analysableMin = 240.0)))
             .isEqualTo(ComparabilityRule.OK)
         assertThat(ComparabilityRule.evaluate(facts(analysableMin = 239.9)))
@@ -95,51 +94,52 @@ class ComparableNightPredicateTest {
     }
 
     @Test
-    fun `la nuit du changement d'heure est ecartee`() {
-        // Le seul critere qui se lit sur deux entiers plutot que sur un calcul de calendrier :
-        // les deux offsets sont enregistres precisement pour ca.
+    fun `the night of the clock change is excluded`() {
+        // The only criterion that reads off two integers rather than off a calendar computation:
+        // the two offsets are recorded for precisely this.
         assertThat(ComparabilityRule.evaluate(facts(tzStart = 60, tzEnd = 120)))
             .isEqualTo(ComparabilityRule.DST_NIGHT)
     }
 
     @Test
-    fun `l'ordre de priorite va du plus structurel au plus circonstanciel`() {
-        // Une nuit qui viole tout ne doit rapporter qu'un motif, et c'est le plus fondamental.
-        val toutFaux = facts(
+    fun `the priority order goes from the most structural to the most circumstantial`() {
+        // A night that violates everything must report only one reason, and it is the most
+        // fundamental one.
+        val allWrong = facts(
             hasContext = false, leg = "LEFT", strapId = "strap-b",
             aloneInBed = false, gainCalG = null, analysableMin = 10.0, tzEnd = 120,
         )
-        assertThat(ComparabilityRule.evaluate(toutFaux)).isEqualTo(ComparabilityRule.NO_CONTEXT)
+        assertThat(ComparabilityRule.evaluate(allWrong)).isEqualTo(ComparabilityRule.NO_CONTEXT)
 
-        val contexteOk = toutFaux.copy(hasContext = true)
-        assertThat(ComparabilityRule.evaluate(contexteOk)).isEqualTo(ComparabilityRule.LEG_CHANGED)
+        val contextOk = allWrong.copy(hasContext = true)
+        assertThat(ComparabilityRule.evaluate(contextOk)).isEqualTo(ComparabilityRule.LEG_CHANGED)
 
-        val jambeOk = contexteOk.copy(leg = "RIGHT")
-        assertThat(ComparabilityRule.evaluate(jambeOk)).isEqualTo(ComparabilityRule.STRAP_CHANGED)
+        val legOk = contextOk.copy(leg = "RIGHT")
+        assertThat(ComparabilityRule.evaluate(legOk)).isEqualTo(ComparabilityRule.STRAP_CHANGED)
 
-        val braceletOk = jambeOk.copy(strapId = "strap-a")
-        assertThat(ComparabilityRule.evaluate(braceletOk)).isEqualTo(ComparabilityRule.NOT_ALONE)
+        val strapOk = legOk.copy(strapId = "strap-a")
+        assertThat(ComparabilityRule.evaluate(strapOk)).isEqualTo(ComparabilityRule.NOT_ALONE)
 
-        val seulOk = braceletOk.copy(aloneInBed = true)
-        assertThat(ComparabilityRule.evaluate(seulOk)).isEqualTo(ComparabilityRule.CAL_GAIN_UNKNOWN)
+        val aloneOk = strapOk.copy(aloneInBed = true)
+        assertThat(ComparabilityRule.evaluate(aloneOk)).isEqualTo(ComparabilityRule.CAL_GAIN_UNKNOWN)
 
-        val gainOk = seulOk.copy(gainCalG = 1.0)
+        val gainOk = aloneOk.copy(gainCalG = 1.0)
         assertThat(ComparabilityRule.evaluate(gainOk)).isEqualTo(ComparabilityRule.TOO_SHORT)
 
-        val dureeOk = gainOk.copy(analysableMin = 480.0)
-        assertThat(ComparabilityRule.evaluate(dureeOk)).isEqualTo(ComparabilityRule.DST_NIGHT)
+        val durationOk = gainOk.copy(analysableMin = 480.0)
+        assertThat(ComparabilityRule.evaluate(durationOk)).isEqualTo(ComparabilityRule.DST_NIGHT)
 
-        assertThat(ComparabilityRule.evaluate(dureeOk.copy(tzOffsetEndMin = 60)))
+        assertThat(ComparabilityRule.evaluate(durationOk.copy(tzOffsetEndMin = 60)))
             .isEqualTo(ComparabilityRule.OK)
     }
 
     /**
-     * Le double Kotlin et le SQL sont deux implementations du meme predicat : ce test ne peut
-     * pas prouver qu'ils sont d'accord (il faudrait une base), mais il attrape le cas de loin le
-     * plus probable — un critere ajoute d'un cote et oublie de l'autre.
+     * The Kotlin double and the SQL are two implementations of the same predicate: this test
+     * cannot prove that they agree (that would take a database), but it catches by far the most
+     * likely case — a criterion added on one side and forgotten on the other.
      */
     @Test
-    fun `le SQL de la vue mentionne les six criteres et les deux constantes`() {
+    fun `the view's SQL mentions the six criteria and the two constants`() {
         val sql = ComparableNightSql.SQL
         assertThat(sql).contains("c.leg <> ref.refLeg")
         assertThat(sql).contains("c.strapId <> ref.refStrapId")
@@ -148,13 +148,13 @@ class ComparableNightPredicateTest {
         assertThat(sql).contains("s.analysableMin < 240.0")
         assertThat(sql).contains("s.tzOffsetStartMin <> s.tzOffsetEndMin")
 
-        // Les constantes SQL sont ecrites en dur (SQLite ne lit pas une constante Kotlin) :
-        // on verifie au moins qu'elles n'ont pas diverge de leur source.
+        // The SQL constants are hard-coded (SQLite cannot read a Kotlin constant):
+        // we at least check that they have not drifted away from their source.
         assertThat(sql).contains(ComparabilityRule.GAIN_TOLERANCE.toString())
         assertThat(sql).contains(ComparabilityRule.MIN_ANALYSABLE_MIN.toString())
 
-        // Tous les motifs du Kotlin doivent exister dans le SQL, faute de quoi l'interface
-        // recevrait un motif qu'elle ne sait pas traduire.
+        // Every reason in the Kotlin must exist in the SQL, failing which the interface would
+        // receive a reason it does not know how to translate.
         listOf(
             ComparabilityRule.NO_CONTEXT,
             ComparabilityRule.LEG_CHANGED,
@@ -169,12 +169,12 @@ class ComparableNightPredicateTest {
     }
 
     /**
-     * La vue **annote**, elle ne filtre pas : une nuit ecartee doit rester visible avec son
-     * motif. Un `WHERE` dans la vue la ferait disparaitre, et une nuit invisible est une nuit
-     * qu'on oublie d'expliquer.
+     * The view **annotates**, it does not filter: an excluded night must stay visible with its
+     * reason. A `WHERE` in the view would make it disappear, and an invisible night is a night one
+     * forgets to explain.
      */
     @Test
-    fun `la vue ne filtre pas les nuits ecartees`() {
+    fun `the view does not filter out excluded nights`() {
         assertThat(ComparableNightSql.SQL.uppercase()).doesNotContain("WHERE COMPARABLE")
         assertThat(ComparableNightSql.SQL).contains("AS comparable")
         assertThat(ComparableNightSql.SQL).contains("AS exclusionReason")

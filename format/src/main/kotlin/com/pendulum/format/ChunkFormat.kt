@@ -1,29 +1,28 @@
 package com.pendulum.format
 
 /**
- * Format binaire des chunks d'enregistrement accelerometrique Pendulum.
+ * Binary format of the Pendulum accelerometer recording chunks.
  *
- * Contraintes de conception :
- *  - **append-only** : on n'ecrit jamais en arriere, jamais de patch d'entete a la fermeture.
- *    Une session tuee brutalement (OOM, reboot, batterie) laisse un fichier exploitable.
- *  - **blocs auto-delimites et proteges par CRC** : un bloc corrompu est saute a la lecture,
- *    jamais la nuit entiere. Un unique fichier de 8 h sans delimiteurs serait un point de
- *    defaillance unique inacceptable.
- *  - **pas de timestamp par echantillon** : le FIFO materiel echantillonne uniformement, donc
- *    (tFirstNs, tLastNs) par bloc + interpolation lineaire suffisent, et on economise 8 o
- *    par echantillon (soit ~11 Mo par nuit). Cette economie n'est licite que si un bloc ne
- *    chevauche jamais deux vidages du FIFO : c'est un contrat impose a l'ecriture
- *    ([ChunkWriter.writeBlock]) et re-verifie a la lecture.
+ * Design constraints:
+ *  - **append-only**: we never write backwards, never patch the header on close. A session
+ *    killed abruptly (OOM, reboot, battery) leaves a usable file.
+ *  - **self-delimited, CRC-protected blocks**: a corrupt block is skipped on reading, never the
+ *    whole night. A single 8 h file without delimiters would be an unacceptable single point of
+ *    failure.
+ *  - **no per-sample timestamp**: the hardware FIFO samples uniformly, so (tFirstNs, tLastNs)
+ *    per block + linear interpolation are enough, and 8 B per sample are saved (that is, ~11 MB
+ *    per night). That saving is only legitimate if a block never straddles two FIFO flushes:
+ *    this is a contract enforced on writing ([ChunkWriter.writeBlock]) and re-checked on reading.
  *
- * ### Entete de fichier — 80 octets, petit-boutiste
+ * ### File header — 80 bytes, little-endian
  * ```
- * off  taille  champ                    type
+ * off  size    field                    type
  *   0       8  FILE_MAGIC "PENDCHNK"    ascii
  *   8       2  formatVersion            u16
- *  10       2  headerSize               u16   taille totale de l'entete (80 en v1)
+ *  10       2  headerSize               u16   total header size (80 in v1)
  *  12       2  nominalRateHz            u16
  *  14       2  fifoMaxEventCount        u16
- *  16      16  sessionUuid              octets
+ *  16      16  sessionUuid              bytes
  *  32       8  startWallMs              i64
  *  40       8  startElapsedRealtimeNs   i64
  *  48       8  firstEventTimestampNs    i64
@@ -31,240 +30,242 @@ package com.pendulum.format
  *  60       4  sensorMaxRange           f32
  *  64       4  chunkIndex               i32
  *  68       2  modeFlags                u16
- *  70       2  tzOffsetMin              i16   offset UTC local a l'ouverture, en minutes
- *  72       6  reserve, a zero
- *  78       2  headerCrc                u16 = crc16(entete[0, headerSize - 2))
+ *  70       2  tzOffsetMin              i16   local UTC offset at opening, in minutes
+ *  72       6  reserved, zero
+ *  78       2  headerCrc                u16 = crc16(header[0, headerSize - 2))
  * ```
- * **Regle d'evolution du format** (F-32) : le CRC occupe *toujours* les deux derniers octets
- * de l'entete, et `headerSize` en donne la longueur. Un lecteur ancien relit donc un fichier
- * produit par un ecrivain plus recent qui n'aurait fait qu'*ajouter* des champs en queue :
- * il lit ce qu'il connait a offset fixe, verifie le CRC a `headerSize - 2` et ignore le reste.
- * `formatVersion` n'est incremente que pour un changement *incompatible* (layout de bloc,
- * quantification, semantique d'un champ existant).
+ * **Format evolution rule** (F-32): the CRC *always* occupies the last two bytes of the header,
+ * and `headerSize` gives its length. An old reader therefore reads back a file produced by a
+ * newer writer that has only *appended* fields at the tail: it reads what it knows at fixed
+ * offsets, checks the CRC at `headerSize - 2` and ignores the rest. `formatVersion` is
+ * incremented only for an *incompatible* change (block layout, quantisation, semantics of an
+ * existing field).
  *
- * **Fuseau horaire** (F-09) : un identifiant IANA (`Europe/Paris`, jusqu'a 32 octets) ne tient
- * pas dans l'entete sans la faire exploser, et le stocker par bloc serait absurde. Le choix
- * retenu est donc de mettre ici le seul champ dont la relecture binaire a besoin —
- * l'**offset UTC en minutes** (i16, couvre -18:00..+18:00) — et de laisser l'identifiant IANA
- * complet au sidecar JSON et a [com.pendulum.format.wire.SessionHeader.zoneId], qui ne sont pas
- * contraints en taille. Consequence a faire respecter par ailleurs : **aucune duree ne se
- * calcule par difference d'horloge murale**, l'offset ne sert qu'a afficher une heure locale.
+ * **Time zone** (F-09): an IANA identifier (`Europe/Paris`, up to 32 bytes) does not fit in the
+ * header without blowing it up, and storing it per block would be absurd. The choice made is
+ * therefore to put here the only field the binary read-back needs — the **UTC offset in minutes**
+ * (i16, covers -18:00..+18:00) — and to leave the full IANA identifier to the JSON sidecar and to
+ * [com.pendulum.format.wire.SessionHeader.zoneId], which are not size-constrained. Consequence to
+ * be enforced elsewhere: **no duration is ever computed as a wall-clock difference**, the offset
+ * serves only to display a local time.
  *
- * ### Entete de bloc — 32 octets, petit-boutiste
+ * ### Block header — 32 bytes, little-endian
  * ```
- * off  taille  champ
+ * off  size    field
  *   0       4  BLOCK_MAGIC "BLK!"
- *   4       2  count       u16   nombre d'echantillons
+ *   4       2  count       u16   number of samples
  *   6       8  tFirstNs    i64
  *  14       8  tLastNs     i64
  *  22       2  flags       u16
- *  24       2  crc         u16 = crc16(entete[0, 24) puis payload)
- *  26       6  reserve, a zero
+ *  24       2  crc         u16 = crc16(header[0, 24) then payload)
+ *  26       6  reserved, zero
  * ```
- * Le CRC couvre l'entete de bloc **et** le payload (F-02) : les six octets d'un echantillon
- * sont localement redondants et une corruption y est benigne, alors que `count`, `tFirstNs`
- * et `tLastNs` sont uniques — les corrompre decale toute la base de temps de la nuit, ou
- * fait lire une longueur de payload fausse. Le champ `crc` est ecrit en dernier, ce qui
- * permet de le calculer en une passe sur les 24 premiers octets puis sur le payload.
+ * The CRC covers the block header **and** the payload (F-02): the six bytes of a sample are
+ * locally redundant and a corruption there is benign, whereas `count`, `tFirstNs` and `tLastNs`
+ * are unique — corrupting them shifts the whole time base of the night, or makes a wrong payload
+ * length be read. The `crc` field is written last, which allows it to be computed in one pass
+ * over the first 24 bytes then over the payload.
  *
- * ### Bloc de telemetrie — entete de 16 octets, puis `count` points de [TELEMETRY_POINT_SIZE]
+ * ### Telemetry block — 16-byte header, then `count` points of [TELEMETRY_POINT_SIZE]
  * ```
- * off  taille  champ
+ * off  size    field
  *   0       4  TELEMETRY_MAGIC "TLM!"
- *   4       2  count       u16   nombre de points
- *   6       2  pointSize   u16   taille d'un point, en octets
- *   8       2  flags       u16   reserve, a zero
- *  10       2  crc         u16 = crc16(entete[0, 10) puis payload)
- *  12       4  reserve, a zero
+ *   4       2  count       u16   number of points
+ *   6       2  pointSize   u16   size of one point, in bytes
+ *   8       2  flags       u16   reserved, zero
+ *  10       2  crc         u16 = crc16(header[0, 10) then payload)
+ *  12       4  reserved, zero
  * ```
- * **Pourquoi la telemetrie voyage dans les chunks, et pas sur un canal a elle.**
+ * **Why telemetry travels inside the chunks, and not on a channel of its own.**
  *
- *  1. Elle herite de toute la durabilite deja construite **et deja verifiee sur materiel reel** :
- *     ecriture append-only, CRC-16 par bloc, CRC-32 de transport, poussee toutes les 15 min,
- *     accuse, suppression seulement apres accuse. Il n'y a rien de neuf a fiabiliser.
- *  2. Un second chemin de transport serait un second mode de panne. La lecon constante de ce
- *     depot est que **le Data Layer echoue par le silence** — la permission `BIND_WEARABLE_LISTENER`
- *     manquante, le `start-request` que personne n'emettait, la cle de nuit qui vivait d'un seul
- *     cote. Chaque chemin de plus est une occasion de plus d'echouer sans rien dire.
- *  3. Le debit est derisoire : un point par minute contre cinquante echantillons par seconde,
- *     soit ~23 Ko contre ~9 Mo sur une nuit de huit heures. Aucun arbitrage de taille n'est
- *     deplace — et **surtout pas** [com.pendulum.format.wire.WireProtocol.CHUNK_ROTATION_BYTES],
- *     qui reste le garde-fou dur du plafond de 100 Ko d'un `DataItem`.
+ *  1. It inherits all the durability already built **and already verified on real hardware**:
+ *     append-only writing, per-block CRC-16, transport CRC-32, push every 15 min, ack, deletion
+ *     only after ack. There is nothing new to make reliable.
+ *  2. A second transport path would be a second failure mode. The constant lesson of this
+ *     repository is that **the Data Layer fails by silence** — the missing `BIND_WEARABLE_LISTENER`
+ *     permission, the `start-request` that nobody emitted, the night key that lived on one side
+ *     only. Each extra path is one more opportunity to fail without saying anything.
+ *  3. The throughput is negligible: one point per minute against fifty samples per second, that
+ *     is, ~23 KB against ~9 MB over an eight-hour night. No size trade-off is displaced — and
+ *     **least of all** [com.pendulum.format.wire.WireProtocol.CHUNK_ROTATION_BYTES], which
+ *     remains the hard guard rail of the 100 KB ceiling of a `DataItem`.
  *
- * `pointSize` porte pour le point la meme regle d'evolution que `headerSize` pour l'entete de
- * fichier : un ecrivain plus recent peut **ajouter des champs en queue du point**, un lecteur
- * ancien lit ce qu'il connait a offset fixe et saute le reste. Un `pointSize` plus **petit** que
- * [TELEMETRY_POINT_SIZE] est en revanche rejete — il n'y aurait pas de quoi remplir les champs.
+ * `pointSize` carries for the point the same evolution rule as `headerSize` for the file header:
+ * a newer writer may **append fields at the tail of the point**, an old reader reads what it
+ * knows at fixed offsets and skips the rest. A `pointSize` **smaller** than
+ * [TELEMETRY_POINT_SIZE] is on the other hand rejected — there would not be enough to fill the
+ * fields.
  *
- * ### Marqueur de fin de fichier — 32 octets
+ * ### End-of-file marker — 32 bytes
  * ```
- * off  taille  champ
+ * off  size    field
  *   0       8  FILE_FOOTER_MAGIC "ENDPEND!"
  *   8       4  blockCount        u32
  *  12       8  sampleCount       i64
  *  20       8  lastTimestampNs   i64
- *  28       2  telemetryCount    u16   nombre de points de telemetrie du chunk
+ *  28       2  telemetryCount    u16   number of telemetry points in the chunk
  *  30       2  crc               u16 = crc16(footer[0, 30))
  * ```
- * Sans ce marqueur (F-37), rien ne distingue un chunk complet d'un chunk en cours d'ecriture,
- * et le telephone peut acquitter — donc faire supprimer — un fichier partiel (F-13).
- * Les compteurs redondants permettent en prime de chiffrer ce qui a ete perdu a la relecture.
- * `telemetryCount` occupe les deux octets que la v1 laissait a zero : un chunk v1 relu par cette
- * version annonce donc zero point de telemetrie, ce qui est exactement la verite.
+ * Without this marker (F-37), nothing distinguishes a complete chunk from a chunk still being
+ * written, and the phone may acknowledge — hence cause the deletion of — a partial file (F-13).
+ * The redundant counters make it possible, as a bonus, to quantify what was lost on read-back.
+ * `telemetryCount` occupies the two bytes that v1 left at zero: a v1 chunk read back by this
+ * version therefore announces zero telemetry points, which is exactly the truth.
  */
 object ChunkFormat {
 
-    /** Magic de l'entete de fichier. 8 octets ASCII. */
+    /** File header magic. 8 ASCII bytes. */
     val FILE_MAGIC = "PENDCHNK".toByteArray(Charsets.US_ASCII)
 
-    /** Magic du marqueur de fin de fichier. 8 octets ASCII, distincts de [BLOCK_MAGIC]. */
+    /** End-of-file marker magic. 8 ASCII bytes, distinct from [BLOCK_MAGIC]. */
     val FILE_FOOTER_MAGIC = "ENDPEND!".toByteArray(Charsets.US_ASCII)
 
-    /** Magic de debut de bloc. 4 octets ASCII. */
+    /** Block start magic. 4 ASCII bytes. */
     val BLOCK_MAGIC = "BLK!".toByteArray(Charsets.US_ASCII)
 
-    /** Magic de debut de bloc de telemetrie. 4 octets ASCII, distincts de [BLOCK_MAGIC]. */
+    /** Telemetry block start magic. 4 ASCII bytes, distinct from [BLOCK_MAGIC]. */
     val TELEMETRY_MAGIC = "TLM!".toByteArray(Charsets.US_ASCII)
 
     /**
-     * Version du format. A incrementer a chaque changement incompatible de layout.
+     * Format version. To be incremented on every incompatible layout change.
      *
-     * **v2 — le bloc de telemetrie.** L'ajout est additif a l'ecriture, mais il est
-     * *incompatible a la lecture*, et c'est pour cela que la version bouge : un lecteur v1
-     * ne connait pas `TLM!`, le compte comme un magic absent, se resynchronise sur le bloc de
-     * signal suivant, et rend `desynchronised = true`. Il annoncerait donc un fichier **abime**
-     * la ou le fichier est parfaitement sain — exactement le genre de faux rouge qui envoie
-     * chercher une panne inexistante. La version l'annonce avant que ca n'arrive.
+     * **v2 — the telemetry block.** The addition is additive on writing, but it is *incompatible
+     * on reading*, and that is why the version moves: a v1 reader does not know `TLM!`, counts it
+     * as a missing magic, resynchronises on the next signal block, and returns
+     * `desynchronised = true`. It would therefore announce a **damaged** file where the file is
+     * perfectly sound — exactly the kind of false red that sends people hunting for a failure
+     * that does not exist. The version announces it before that happens.
      *
-     * Le sens inverse, lui, est garanti sans reserve : un chunk v1 se decode toujours par cette
-     * version (`ChunkCodecTest.un chunk du format v1 se decode toujours`), parce que le depot ne
-     * supprime jamais du brut — c'est la seule chose qui permettra de rescorer le jour ou
-     * l'algorithme changera.
+     * The reverse direction, on the other hand, is guaranteed without reservation: a v1 chunk
+     * still decodes with this version (`ChunkCodecTest.a v1 format chunk still decodes`), because
+     * the repository never deletes raw data — that is the only thing that will make it possible to
+     * rescore on the day the algorithm changes.
      */
     const val FORMAT_VERSION = 2
 
-    /** Taille de l'entete de fichier ecrite par cette version, en octets. Multiple de 16. */
+    /** Size of the file header written by this version, in bytes. Multiple of 16. */
     const val HEADER_SIZE = 80
 
     /**
-     * Prefixe minimal a lire avant de connaitre `headerSize` : magic + version + headerSize.
-     * Tout lecteur commence par la, quelle que soit la version du fichier.
+     * Minimal prefix to read before `headerSize` is known: magic + version + headerSize.
+     * Every reader starts there, whatever the version of the file.
      */
     const val HEADER_PREFIX_SIZE = 12
 
-    /** Taille du marqueur de fin de fichier, en octets. */
+    /** Size of the end-of-file marker, in bytes. */
     const val FOOTER_SIZE = 32
 
-    /** Taille de l'entete de bloc, en octets. Multiple de 32. */
+    /** Size of the block header, in bytes. Multiple of 32. */
     const val BLOCK_HEADER_SIZE = 32
 
-    /** Offset du champ `crc` dans l'entete de bloc : tout ce qui precede est couvert par lui. */
+    /** Offset of the `crc` field in the block header: everything before it is covered by it. */
     const val BLOCK_CRC_OFFSET = 24
 
-    /** Nombre d'octets par echantillon : 3 axes x i16. */
+    /** Number of bytes per sample: 3 axes x i16. */
     const val BYTES_PER_SAMPLE = 6
 
-    /** Nombre maximal d'echantillons par bloc. */
+    /** Maximum number of samples per block. */
     const val MAX_SAMPLES_PER_BLOCK = 512
 
-    /** Taille de l'entete d'un bloc de telemetrie, en octets. */
+    /** Size of a telemetry block header, in bytes. */
     const val TELEMETRY_HEADER_SIZE = 16
 
-    /** Offset du champ `crc` dans l'entete de telemetrie : tout ce qui precede est couvert par lui. */
+    /** Offset of the `crc` field in the telemetry header: everything before it is covered by it. */
     const val TELEMETRY_CRC_OFFSET = 10
 
-    /** Taille d'un point de telemetrie ecrit par cette version, en octets. Multiple de 8. */
+    /** Size of a telemetry point written by this version, in bytes. Multiple of 8. */
     const val TELEMETRY_POINT_SIZE = 48
 
     /**
-     * Nombre maximal de points dans un bloc de telemetrie. Garde-fou de corruption, comme
-     * [MAX_SAMPLES_PER_BLOCK] : c'est lui qui empeche un `count` corrompu de faire lire une
-     * longueur de payload aberrante. Il est choisi pour qu'un bloc de telemetrie plein reste
-     * plus petit qu'un bloc de signal plein, et donc pour que la fenetre du lecteur — dimensionnee
-     * sur le plus grand bloc — n'ait pas a grandir.
+     * Maximum number of points in a telemetry block. A corruption guard rail, like
+     * [MAX_SAMPLES_PER_BLOCK]: it is what prevents a corrupt `count` from making an aberrant
+     * payload length be read. It is chosen so that a full telemetry block stays smaller than a
+     * full signal block, and therefore so that the reader's window — sized on the largest block —
+     * does not have to grow.
      */
     const val MAX_TELEMETRY_POINTS = 64
 
     /**
-     * Quantification : 1 LSB = 1/2048 g. Un i16 couvre donc -16 g a +15,9995 g
-     * (32767/2048, il manque un LSB du cote positif), bien au-dela de ce qu'une cheville
-     * produit, et la resolution (0,00049 g) reste tres inferieure au plancher de bruit
-     * d'un accelerometre MEMS.
+     * Quantisation: 1 LSB = 1/2048 g. An i16 therefore covers -16 g to +15.9995 g
+     * (32767/2048, one LSB is missing on the positive side), well beyond what an ankle
+     * produces, and the resolution (0.00049 g) stays far below the noise floor of a MEMS
+     * accelerometer.
      */
     const val LSB_PER_G = 2048.0
 
-    /** Acceleration standard de la pesanteur, en m/s^2 (valeur exacte du SI). */
+    /** Standard acceleration of gravity, in m/s^2 (exact SI value). */
     const val G_IN_MS2 = 9.80665
 
     /**
-     * Ecart relatif tolere entre la cadence implicite d'un bloc — `(tLast - tFirst)/(N-1)` —
-     * et la periode nominale `1e9/fs`. Au-dela, le bloc chevauche vraisemblablement deux
-     * vidages du FIFO et l'interpolation lineaire de [DecodedBlock.timestampNs] date *tous*
-     * ses echantillons faux (F-03). Refuse a l'ecriture, signale a la lecture.
+     * Tolerated relative deviation between the implicit rate of a block — `(tLast - tFirst)/(N-1)`
+     * — and the nominal period `1e9/fs`. Beyond it, the block most likely straddles two FIFO
+     * flushes and the linear interpolation of [DecodedBlock.timestampNs] dates *all* of its
+     * samples wrong (F-03). Refused on writing, reported on reading.
      */
     const val TIMEBASE_TOLERANCE = 0.20
 
-    // --- Drapeaux de bloc (champ u16 `flags`) ---
+    // --- Block flags (u16 `flags` field) ---
 
-    /** Ce bloc commence sur une frontiere de vidage du FIFO materiel. */
+    /** This block starts on a hardware FIFO flush boundary. */
     const val FLAG_FIFO_BOUNDARY = 1 shl 0
 
-    /** Un trou est suspecte juste avant ce bloc (ecart de timestamp anormal, ou reprise apres crash). */
+    /** A hole is suspected just before this block (abnormal timestamp gap, or restart after crash). */
     const val FLAG_GAP_BEFORE = 1 shl 1
 
-    /** Le capteur off-body signalait "non porte" pendant ce bloc. */
+    /** The off-body sensor was reporting "not worn" during this block. */
     const val FLAG_OFF_BODY = 1 shl 2
 
     /**
-     * Au moins un echantillon de ce bloc a sature a +/-32767 LSB (F-11). Pose par l'ecrivain :
-     * sans lui, l'ecretage serait indetectable a la relecture, et le distracteur "clipping"
-     * de la phase de verification passerait pour du mouvement reel.
+     * At least one sample of this block saturated at +/-32767 LSB (F-11). Set by the writer:
+     * without it, clipping would be undetectable on read-back, and the "clipping" distractor
+     * of the verification phase would pass for real movement.
      */
     const val FLAG_SATURATED = 1 shl 3
 
     /**
-     * Au moins un echantillon de ce bloc etait NaN ou infini et a ete remplace par 0 (F-11),
-     * ce qui est indiscernable d'une chute libre. Ce drapeau est la seule trace du remplacement.
+     * At least one sample of this block was NaN or infinite and was replaced by 0 (F-11),
+     * which is indistinguishable from free fall. This flag is the only trace of the replacement.
      */
     const val FLAG_NON_FINITE = 1 shl 4
 
     /**
-     * Au moins un echantillon de ce bloc a touche la **dynamique du capteur** — `sensorMaxRange`
-     * de l'entete, typiquement 78,45 m/s2 (8 g) ou 39,23 (4 g).
+     * At least one sample of this block touched the **sensor range** — `sensorMaxRange` from the
+     * header, typically 78.45 m/s2 (8 g) or 39.23 (4 g).
      *
-     * Distinct de [FLAG_SATURATED], qui marque le plafond du **format** a 16 g. Les deux ne se
-     * recouvrent pas : un capteur a 8 g s'ecrete a la moitie de ce que le format sait coder, donc
-     * un mouvement peut etre ecrete par le materiel sans jamais approcher [FLAG_SATURATED] — et
-     * l'ecretage etait alors totalement invisible a la relecture.
+     * Distinct from [FLAG_SATURATED], which marks the ceiling of the **format** at 16 g. The two
+     * do not overlap: a sensor at 8 g clips at half of what the format can encode, so a movement
+     * can be clipped by the hardware without ever coming near [FLAG_SATURATED] — and the clipping
+     * was then completely invisible on read-back.
      *
-     * Ce que ce drapeau explique : au-dela du rail, l'enveloppe du mouvement est artificiellement
-     * **plate au sommet**. L'artefact ressemble a un vrai plateau, il sous-estime l'amplitude, et
-     * c'est l'amplitude qui decide du seuil de detection. Un mouvement retenu ou rejete sur un bloc
-     * qui porte ce drapeau n'a pas ete decide sur le signal, il a ete decide sur son ecretage.
+     * What this flag explains: past the rail, the envelope of the movement is artificially
+     * **flat at the top**. The artefact looks like a genuine plateau, it underestimates the
+     * amplitude, and it is the amplitude that decides the detection threshold. A movement kept or
+     * rejected on a block that carries this flag was not decided on the signal, it was decided on
+     * its clipping.
      */
     const val FLAG_SENSOR_CLIPPED = 1 shl 5
 
-    // --- Drapeaux de mode d'acquisition (champ u16 `modeFlags` de l'entete) ---
+    // --- Acquisition mode flags (u16 `modeFlags` field of the header) ---
 
-    /** Le capteur utilise est la variante wake-up. */
+    /** The sensor in use is the wake-up variant. */
     const val MODE_WAKEUP_SENSOR = 1 shl 0
 
-    /** Un batching materiel est demande (maxReportLatencyUs > 0). */
+    /** Hardware batching is requested (maxReportLatencyUs > 0). */
     const val MODE_BATCHED = 1 shl 1
 
-    /** Un PARTIAL_WAKE_LOCK est detenu pendant l'acquisition. */
+    /** A PARTIAL_WAKE_LOCK is held during acquisition. */
     const val MODE_WAKE_LOCK = 1 shl 2
 
-    /** Le wake lock a ete pris en cours de route par auto-degradation (des trous ont ete detectes). */
+    /** The wake lock was taken along the way by auto-degradation (holes were detected). */
     const val MODE_DEGRADED = 1 shl 3
 
     /**
-     * Convertit une acceleration en m/s^2 vers l'entier quantifie du format, avec saturation.
+     * Converts an acceleration in m/s^2 to the quantised integer of the format, with saturation.
      *
-     * `Math.round(Double)` renvoie un `Long` : les bornes doivent etre des `Long`, sans quoi
-     * aucune surcharge de `coerceIn` ne s'applique et le module ne compile pas.
-     * Une valeur non finie (capteur en defaut) est ramenee a 0, ce qui est indiscernable
-     * d'une chute libre : l'appelant doit compter ces cas et poser un drapeau.
+     * `Math.round(Double)` returns a `Long`: the bounds must be `Long`s, failing which no
+     * overload of `coerceIn` applies and the module does not compile.
+     * A non-finite value (faulty sensor) is brought back to 0, which is indistinguishable
+     * from free fall: the caller must count those cases and set a flag.
      */
     fun toRaw(ms2: Float): Short {
         if (!ms2.isFinite()) return 0
@@ -272,16 +273,16 @@ object ChunkFormat {
         return lsb.coerceIn(Short.MIN_VALUE.toLong(), Short.MAX_VALUE.toLong()).toShort()
     }
 
-    /** Convertit un entier quantifie du format vers une acceleration en m/s^2. */
+    /** Converts a quantised integer of the format to an acceleration in m/s^2. */
     fun toMs2(raw: Short): Float = (raw / LSB_PER_G * G_IN_MS2).toFloat()
 
     /**
-     * CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF, pas de reflexion, pas de xorout).
-     * Choisi pour sa simplicite d'implementation sans table et son cout negligeable :
-     * detecter un bloc corrompu importe plus que la force du code.
+     * CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflection, no xorout).
+     * Chosen for the simplicity of a table-free implementation and its negligible cost:
+     * detecting a corrupt block matters more than the strength of the code.
      *
-     * @param seed etat initial, pour chainer le calcul sur plusieurs tableaux (entete de bloc
-     *   puis payload) sans les concatener en memoire.
+     * @param seed initial state, to chain the computation over several arrays (block header
+     *   then payload) without concatenating them in memory.
      */
     fun crc16(
         data: ByteArray,
@@ -301,15 +302,15 @@ object ChunkFormat {
     }
 
     /**
-     * Cadence implicite d'un bloc, en nanosecondes par echantillon. `NaN` si le bloc n'a
-     * qu'un echantillon (aucun intervalle observable, donc rien a verifier).
+     * Implicit rate of a block, in nanoseconds per sample. `NaN` if the block has only one
+     * sample (no observable interval, hence nothing to check).
      */
     fun meanIntervalNs(count: Int, tFirstNs: Long, tLastNs: Long): Double =
         if (count <= 1) Double.NaN else (tLastNs - tFirstNs).toDouble() / (count - 1)
 
     /**
-     * Vrai si la cadence implicite du bloc est compatible avec `nominalRateHz` a
-     * [TIMEBASE_TOLERANCE] pres. Un bloc a un seul echantillon est toujours accepte.
+     * True if the implicit rate of the block is compatible with `nominalRateHz` to within
+     * [TIMEBASE_TOLERANCE]. A block with a single sample is always accepted.
      */
     fun isTimebasePlausible(count: Int, tFirstNs: Long, tLastNs: Long, nominalRateHz: Int): Boolean {
         val mean = meanIntervalNs(count, tFirstNs, tLastNs)
@@ -321,26 +322,26 @@ object ChunkFormat {
 }
 
 /**
- * Metadonnees d'un fichier de chunk. Toutes ces valeurs sont figees a l'ouverture du
- * fichier et jamais reecrites.
+ * Metadata of a chunk file. All these values are fixed at the opening of the file and never
+ * rewritten.
  *
- * @param sessionUuid identifiant de la nuit (16 octets), commun a tous les chunks d'une session.
- * @param chunkIndex index du chunk dans la session, croissant a partir de 0.
- * @param nominalRateHz frequence *demandee* au capteur. La frequence reelle est recalculee
- *   a l'analyse depuis les timestamps : elle en devie systematiquement (50 -> 50,3 ou 52,6 Hz)
- *   et un fs faux decale les filtres et les durees de mouvement.
- * @param startWallMs horloge murale (epoch ms) a l'ouverture du chunk.
- * @param startElapsedRealtimeNs `SystemClock.elapsedRealtimeNanos()` a l'ouverture du chunk.
- * @param firstEventTimestampNs `SensorEvent.timestamp` du premier echantillon du chunk.
- *   Le triplet des trois horloges permet de detecter la derive : `SensorEvent.timestamp`
- *   n'est pas garanti egal a `elapsedRealtimeNanos` (certains OEM excluent le temps de suspend),
- *   et sans cette detection la fusion avec l'hypnogramme se decale de plusieurs minutes.
- * @param tzOffsetMin offset UTC local en minutes a l'ouverture du chunk. Aucun defaut :
- *   l'oubli du fuseau est precisement le defaut qu'on corrige, il doit couter une decision.
- *   L'identifiant IANA vit dans le sidecar (voir la KDoc de [ChunkFormat]).
- * @param headerSize taille de l'entete telle qu'elle a ete lue. Vaut [ChunkFormat.HEADER_SIZE]
- *   pour un fichier ecrit par cette version ; peut etre plus grande pour un fichier produit
- *   par une version plus recente qui a ajoute des champs en queue.
+ * @param sessionUuid identifier of the night (16 bytes), common to every chunk of a session.
+ * @param chunkIndex index of the chunk in the session, increasing from 0.
+ * @param nominalRateHz frequency *requested* from the sensor. The real frequency is recomputed
+ *   at analysis time from the timestamps: it systematically deviates from it (50 -> 50.3 or
+ *   52.6 Hz) and a wrong fs shifts the filters and the movement durations.
+ * @param startWallMs wall clock (epoch ms) at the opening of the chunk.
+ * @param startElapsedRealtimeNs `SystemClock.elapsedRealtimeNanos()` at the opening of the chunk.
+ * @param firstEventTimestampNs `SensorEvent.timestamp` of the first sample of the chunk.
+ *   The triplet of the three clocks makes drift detectable: `SensorEvent.timestamp`
+ *   is not guaranteed equal to `elapsedRealtimeNanos` (some OEMs exclude suspend time),
+ *   and without that detection the merge with the hypnogram shifts by several minutes.
+ * @param tzOffsetMin local UTC offset in minutes at the opening of the chunk. No default:
+ *   forgetting the time zone is precisely the defect being fixed, it must cost a decision.
+ *   The IANA identifier lives in the sidecar (see the KDoc of [ChunkFormat]).
+ * @param headerSize header size as it was read. Equals [ChunkFormat.HEADER_SIZE] for a file
+ *   written by this version; may be larger for a file produced by a more recent version that
+ *   appended fields at the tail.
  */
 data class ChunkHeader(
     val sessionUuid: ByteArray,
@@ -358,19 +359,19 @@ data class ChunkHeader(
     val headerSize: Int = ChunkFormat.HEADER_SIZE,
 ) {
     init {
-        require(sessionUuid.size == 16) { "sessionUuid doit faire 16 octets, recu ${sessionUuid.size}" }
-        // Les champs u16 tronquaient en silence : un FIFO de 70000 evenements etait enregistre
-        // a 4464, et le budget de latence calcule dessus etait faux d'un facteur 15 (F-26).
-        require(nominalRateHz in 1..0xFFFF) { "nominalRateHz hors u16 : $nominalRateHz" }
-        require(fifoMaxEventCount in 0..0xFFFF) { "fifoMaxEventCount hors u16 : $fifoMaxEventCount" }
-        require(modeFlags in 0..0xFFFF) { "modeFlags hors u16 : $modeFlags" }
-        require(chunkIndex >= 0) { "chunkIndex negatif : $chunkIndex" }
-        // -18:00..+18:00 : la plage effectivement couverte par la base IANA, historique compris.
-        require(tzOffsetMin in -1080..1080) { "tzOffsetMin hors plage : $tzOffsetMin" }
-        require(headerSize >= ChunkFormat.HEADER_SIZE) { "headerSize trop petit : $headerSize" }
+        require(sessionUuid.size == 16) { "sessionUuid must be 16 bytes, got ${sessionUuid.size}" }
+        // The u16 fields were truncating silently: a FIFO of 70000 events was recorded
+        // as 4464, and the latency budget computed on it was wrong by a factor of 15 (F-26).
+        require(nominalRateHz in 1..0xFFFF) { "nominalRateHz outside u16: $nominalRateHz" }
+        require(fifoMaxEventCount in 0..0xFFFF) { "fifoMaxEventCount outside u16: $fifoMaxEventCount" }
+        require(modeFlags in 0..0xFFFF) { "modeFlags outside u16: $modeFlags" }
+        require(chunkIndex >= 0) { "negative chunkIndex: $chunkIndex" }
+        // -18:00..+18:00: the range actually covered by the IANA database, history included.
+        require(tzOffsetMin in -1080..1080) { "tzOffsetMin out of range: $tzOffsetMin" }
+        require(headerSize >= ChunkFormat.HEADER_SIZE) { "headerSize too small: $headerSize" }
     }
 
-    // equals/hashCode manuels : ByteArray a une identite par reference.
+    // Manual equals/hashCode: ByteArray has reference identity.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is ChunkHeader) return false
@@ -408,13 +409,13 @@ data class ChunkHeader(
 }
 
 /**
- * Un bloc decode. Les echantillons sont en m/s^2, deja dequantifies.
+ * A decoded block. The samples are in m/s^2, already dequantised.
  *
- * @param tFirstNs timestamp du premier echantillon (echelle `SensorEvent.timestamp`).
- * @param tLastNs timestamp du dernier echantillon. Egal a `tFirstNs` si le bloc n'a qu'un echantillon.
- * @param suspectTimebase pose par le lecteur quand la cadence implicite du bloc s'ecarte de plus
- *   de [ChunkFormat.TIMEBASE_TOLERANCE] du nominal : les timestamps interpoles sont alors faux
- *   d'un montant inconnu et le bloc ne doit pas servir a dater un evenement.
+ * @param tFirstNs timestamp of the first sample (`SensorEvent.timestamp` scale).
+ * @param tLastNs timestamp of the last sample. Equal to `tFirstNs` if the block has one sample.
+ * @param suspectTimebase set by the reader when the implicit rate of the block deviates by more
+ *   than [ChunkFormat.TIMEBASE_TOLERANCE] from the nominal one: the interpolated timestamps are
+ *   then wrong by an unknown amount and the block must not be used to date an event.
  */
 class DecodedBlock(
     val tFirstNs: Long,
@@ -428,9 +429,9 @@ class DecodedBlock(
     val sampleCount: Int get() = x.size
 
     /**
-     * Timestamp interpole du i-eme echantillon. Valide parce que le FIFO materiel
-     * echantillonne a cadence uniforme entre deux vidages — d'ou l'interdiction faite a
-     * l'ecrivain de laisser un bloc chevaucher deux vidages.
+     * Interpolated timestamp of the i-th sample. Valid because the hardware FIFO samples at a
+     * uniform rate between two flushes — hence the prohibition placed on the writer against
+     * letting a block straddle two flushes.
      */
     fun timestampNs(i: Int): Long {
         if (sampleCount <= 1) return tFirstNs
@@ -440,22 +441,22 @@ class DecodedBlock(
 }
 
 /**
- * L'etat de l'appareil a un instant de la nuit — 48 octets, petit-boutiste.
+ * The state of the device at one instant of the night — 48 bytes, little-endian.
  *
- * Deux usages, et chaque champ sert au moins l'un des deux :
+ * Two uses, and every field serves at least one of the two:
  *
- *  1. **Rendre la porte P1 auto-suffisante.** Son second critere est « batterie > 20 % restants a
- *     huit heures ». La montre tenait deja une serie de batterie complete qu'elle ne publiait
- *     pas : la mesure de veille du 3 aout 2026 (`docs/fr/BANC-ESSAI.md` §12.4) n'a donc pas pu
- *     chiffrer la batterie du tout, et la seule facon envisagee de la chiffrer etait de garder un
- *     lien ADB pendant la nuit — c'est-a-dire de laisser la montre sur son socle, ce qui fausse
- *     precisement la grandeur mesuree.
- *  2. **Expliquer pourquoi un mouvement a ete retenu ou non.** Chacune de ces grandeurs decide du
- *     seuil de detection ou de la datation, et aucune n'etait visible cote telephone.
+ *  1. **Making the P1 gate self-sufficient.** Its second criterion is "battery > 20 % remaining
+ *     at eight hours". The watch already held a complete battery series that it did not publish:
+ *     the standby measurement of 3 August 2026 (`docs/workings/BENCH-LOG.md` §12.4) was therefore
+ *     unable to quantify the battery at all, and the only way considered to quantify it was to
+ *     keep an ADB link during the night — that is, to leave the watch on its dock, which falsifies
+ *     precisely the quantity being measured.
+ *  2. **Explaining why a movement was kept or not.** Each of these quantities decides the
+ *     detection threshold or the dating, and none was visible on the phone side.
  *
- * ### Layout — 48 octets
+ * ### Layout — 48 bytes
  * ```
- * off  taille  champ                 type
+ * off  size    field                 type
  *   0       8  elapsedRealtimeNs     i64
  *   8       8  sensorTsNs            i64
  *  16       4  batteryChargeUah      i32
@@ -470,66 +471,67 @@ class DecodedBlock(
  *  42       1  batteryPct            u8
  *  43       1  offBody               u8
  *  44       1  charging              u8
- *  45       3  reserve, a zero
+ *  45       3  reserved, zero
  * ```
  *
- * **Convention des compteurs** : `fsyncCount`, `fsyncTotalUs`, `fsyncMaxUs` et `clippedSamples`
- * comptent **depuis le point precedent**, pas depuis le debut de la nuit. Le point porte sa propre
- * datation, donc un point perdu coute une minute d'attribution et rien de plus ; des compteurs
- * cumulatifs auraient demande au telephone de differencier une serie dont il ne saurait pas si
- * elle a des trous.
+ * **Counter convention**: `fsyncCount`, `fsyncTotalUs`, `fsyncMaxUs` and `clippedSamples` count
+ * **since the previous point**, not since the start of the night. The point carries its own
+ * dating, so a lost point costs one minute of attribution and nothing more; cumulative counters
+ * would have required the phone to differentiate a series without knowing whether it has holes.
  *
- * @param elapsedRealtimeNs `SystemClock.elapsedRealtimeNanos()` au moment du point. C'est la seule
- *   horloge sur laquelle une duree se calcule — l'horloge murale saute au changement d'heure et a
- *   la resynchronisation NTP —, et l'entete du chunk porte deja de quoi la ramener a une heure
- *   murale (`startWallMs` / `startElapsedRealtimeNs`). D'ou l'absence d'un champ d'horloge murale.
- * @param sensorTsNs dernier `SensorEvent.timestamp` vu au moment du point, ou 0 si aucun.
- *   C'est lui qui ancre la telemetrie sur la **base de temps des echantillons**, la seule qui date
- *   les mouvements : sans elle, aligner « la temperature a chute » sur « ce mouvement a ete
- *   rejete » passerait par une conversion d'horloge dont le §12.4 montre qu'elle derive.
- * @param batteryChargeUah `BATTERY_PROPERTY_CHARGE_COUNTER`, en micro-amperes-heures, ou
- *   [CHARGE_INCONNUE]. C'est **la** grandeur qui rend le critere batterie de P1 mesurable sur une
- *   nuit courte : le pourcentage est quantifie au point qu'une demi-heure de veille le laisse a
- *   100 %, alors que le compteur coulombmetrique donne une pente, et une pente s'extrapole a huit
- *   heures. Le courant moyen instantane n'est **pas** collecte : il est la derivee de deux points
- *   consecutifs de ce compteur, donc redondant.
- * @param maxIntervalUs pire intervalle entre deux echantillons consecutifs sur la derniere fenetre
- *   de mesure close. La moyenne le cache : c'est le pire cas qui borne l'erreur de datation d'un
- *   mouvement, puisque le format interpole lineairement entre `tFirstNs` et `tLastNs`.
- * @param fsyncTotalUs temps cumule passe dans les `fsync` depuis le point precedent, en
- *   microsecondes. Un `fsync` gele brievement le processeur ; c'est le budget de gel de la periode.
- * @param fsyncMaxUs pire `fsync` de la periode. C'est celui-la, et pas le cumul, qui explique une
- *   interruption capteur ratee a un instant precis.
- * @param temperatureDeciC temperature de la batterie en dixiemes de degre Celsius, ou
- *   [TEMPERATURE_INCONNUE]. **Validateur croise de l'off-body** : une chute franche, c'est la perte
- *   du couplage thermique avec la peau, donc la montre retiree. Plus fiable que le detecteur
- *   off-body seul, dont la KDoc de `RecordingService` dit qu'a la cheville il lit tres
- *   probablement « non porte » en permanence.
- * @param measuredRateCentiHz `fs` reellement delivre sur la derniere fenetre close, en centiemes
- *   de hertz (50 Hz -> 5000). Deja calcule par `GapMonitor` et jusqu'ici jamais transmis point par
- *   point : seule sa derniere valeur partait, dans le sidecar.
- * @param jitterStdUs ecart-type des intervalles inter-echantillons sur la derniere fenetre close,
- *   en microsecondes, sature a 65 535. **C'est la dispersion, pas la moyenne, qui decide de la
- *   datation** : une cadence moyenne parfaite obtenue en alternant 10 et 30 ms date chaque
- *   echantillon a 10 ms pres, et le moniteur de trous n'y voyait rien.
- * @param clippedSamples echantillons ayant touche la dynamique du capteur depuis le point
- *   precedent. Voir [ChunkFormat.FLAG_SENSOR_CLIPPED] pour ce que l'ecretage fausse ; le drapeau
- *   localise l'artefact au bloc pres, ce compteur en donne le volume.
- * @param batteryPct 0..100, ou [BATTERIE_INCONNUE].
- * @param offBody [OFF_BODY_PORTE], [OFF_BODY_RETIRE] ou [OFF_BODY_ABSENT]. Lu par
- *   `RecordingService` depuis `TYPE_LOW_LATENCY_OFFBODY_DETECT` depuis toujours, **journalise et
- *   jamais transmis**.
- * @param charging vrai si le chargeur est connecte. Un point sous charge ne dit rien de
- *   l'autonomie et doit sortir de toute regression de pente — c'est exactement le cas du §12.4,
- *   ou la montre est restee sur son socle.
+ * @param elapsedRealtimeNs `SystemClock.elapsedRealtimeNanos()` at the moment of the point. It is
+ *   the only clock on which a duration is computed — the wall clock jumps at a daylight-saving
+ *   change and at NTP resynchronisation —, and the chunk header already carries what is needed to
+ *   bring it back to a wall-clock time (`startWallMs` / `startElapsedRealtimeNs`). Hence the
+ *   absence of a wall-clock field.
+ * @param sensorTsNs last `SensorEvent.timestamp` seen at the moment of the point, or 0 if none.
+ *   It is what anchors the telemetry on the **time base of the samples**, the only one that dates
+ *   movements: without it, aligning "the temperature dropped" with "this movement was rejected"
+ *   would go through a clock conversion that §12.4 shows to drift.
+ * @param batteryChargeUah `BATTERY_PROPERTY_CHARGE_COUNTER`, in microampere-hours, or
+ *   [CHARGE_UNKNOWN]. This is **the** quantity that makes the battery criterion of P1 measurable
+ *   over a short night: the percentage is quantised to the point that half an hour of standby
+ *   leaves it at 100 %, whereas the coulomb counter gives a slope, and a slope extrapolates to
+ *   eight hours. The instantaneous mean current is **not** collected: it is the derivative of two
+ *   consecutive points of this counter, hence redundant.
+ * @param maxIntervalUs worst interval between two consecutive samples over the last closed
+ *   measurement window. The mean hides it: it is the worst case that bounds the dating error of a
+ *   movement, since the format interpolates linearly between `tFirstNs` and `tLastNs`.
+ * @param fsyncTotalUs cumulative time spent in `fsync` since the previous point, in
+ *   microseconds. An `fsync` briefly freezes the processor; this is the freeze budget of the
+ *   period.
+ * @param fsyncMaxUs worst `fsync` of the period. It is that one, and not the total, that explains
+ *   a missed sensor interrupt at a precise instant.
+ * @param temperatureDeciC battery temperature in tenths of a degree Celsius, or
+ *   [TEMPERATURE_UNKNOWN]. **Cross-validator of the off-body signal**: a sharp drop is the loss of
+ *   thermal coupling with the skin, hence the watch removed. More reliable than the off-body
+ *   detector alone, of which the KDoc of `RecordingService` says that at the ankle it very
+ *   probably reads "not worn" permanently.
+ * @param measuredRateCentiHz `fs` actually delivered over the last closed window, in hundredths
+ *   of a hertz (50 Hz -> 5000). Already computed by `GapMonitor` and until now never transmitted
+ *   point by point: only its last value went out, in the sidecar.
+ * @param jitterStdUs standard deviation of the inter-sample intervals over the last closed
+ *   window, in microseconds, saturated at 65 535. **It is the dispersion, not the mean, that
+ *   decides the dating**: a perfect mean rate obtained by alternating 10 and 30 ms dates every
+ *   sample to within 10 ms, and the hole monitor saw nothing of it.
+ * @param clippedSamples samples that touched the sensor range since the previous point. See
+ *   [ChunkFormat.FLAG_SENSOR_CLIPPED] for what clipping falsifies; the flag localises the artefact
+ *   to the block, this counter gives its volume.
+ * @param batteryPct 0..100, or [BATTERY_UNKNOWN].
+ * @param offBody [OFF_BODY_WORN], [OFF_BODY_REMOVED] or [OFF_BODY_ABSENT]. Read by
+ *   `RecordingService` from `TYPE_LOW_LATENCY_OFFBODY_DETECT` since forever, **logged and never
+ *   transmitted**.
+ * @param charging true if the charger is connected. A point while charging says nothing about
+ *   battery life and must be taken out of any slope regression — this is exactly the case of
+ *   §12.4, where the watch stayed on its dock.
  *
- * **Ecartes, et pourquoi.** `modeFlags` et le palier de degradation : ils vivent dans l'entete du
- * chunk, et tout changement de mode **force une rotation** (`RecordingService.applyDegradation`),
- * donc l'entete du fichier decrit deja exactement tous ses blocs et tous ses points — les repeter
- * par point serait une seconde source de verite pour rien. L'espace disque libre : il decide d'un
- * arret (`StopConditions`), il n'explique aucun mouvement. L'etat thermique du systeme
- * (`PowerManager.getCurrentThermalStatus`) : un accelerometre a 50 Hz ne fait pas etrangler une
- * montre, et on ne saurait rien en faire.
+ * **Excluded, and why.** `modeFlags` and the degradation tier: they live in the chunk header, and
+ * any mode change **forces a rotation** (`RecordingService.applyDegradation`), so the file header
+ * already describes exactly all of its blocks and all of its points — repeating them per point
+ * would be a second source of truth for nothing. Free disk space: it decides a stop
+ * (`StopConditions`), it explains no movement. The system thermal state
+ * (`PowerManager.getCurrentThermalStatus`): an accelerometer at 50 Hz does not throttle a watch,
+ * and there would be nothing to do with it.
  */
 data class TelemetryPoint(
     val elapsedRealtimeNs: Long,
@@ -548,53 +550,53 @@ data class TelemetryPoint(
     val charging: Boolean,
 ) {
     init {
-        // Meme discipline que `ChunkHeader` (F-26) : un `.toShort()` silencieux enregistrait un
-        // FIFO de 70 000 evenements a 4 464, et tout ce qui etait budgete dessus etait faux.
-        // Un depassement se refuse ici ; c'est a l'appelant de saturer explicitement, avec
-        // [borneU16] et [borneU32], parce que saturer est une decision.
-        require(maxIntervalUs in 0..0xFFFFFFFFL) { "maxIntervalUs hors u32 : $maxIntervalUs" }
-        require(fsyncTotalUs in 0..0xFFFFFFFFL) { "fsyncTotalUs hors u32 : $fsyncTotalUs" }
-        require(fsyncMaxUs in 0..0xFFFFFFFFL) { "fsyncMaxUs hors u32 : $fsyncMaxUs" }
-        require(temperatureDeciC in -32768..32767) { "temperatureDeciC hors i16 : $temperatureDeciC" }
-        require(measuredRateCentiHz in 0..0xFFFF) { "measuredRateCentiHz hors u16 : $measuredRateCentiHz" }
-        require(jitterStdUs in 0..0xFFFF) { "jitterStdUs hors u16 : $jitterStdUs" }
-        require(clippedSamples in 0..0xFFFF) { "clippedSamples hors u16 : $clippedSamples" }
-        require(fsyncCount in 0..0xFFFF) { "fsyncCount hors u16 : $fsyncCount" }
-        // Bornes de **largeur** uniquement, et pas de plage de valeurs. Toute valeur decodable
-        // depuis un u8 doit pouvoir construire un point : sans cela, un octet corrompu dont le
-        // CRC retomberait juste — ou un ecrivain plus recent ayant ajoute une sentinelle — ferait
-        // lever le lecteur, dont le contrat est de ne lever que sur une entete de fichier
-        // invalide. Un `batteryPct` hors 0..100 et different de [BATTERIE_INCONNUE] est une
-        // lecture a ne pas croire, pas une raison de perdre le reste du chunk.
-        require(batteryPct in 0..0xFF) { "batteryPct hors u8 : $batteryPct" }
-        require(offBody in 0..0xFF) { "offBody hors u8 : $offBody" }
+        // Same discipline as `ChunkHeader` (F-26): a silent `.toShort()` recorded a FIFO of
+        // 70 000 events as 4 464, and everything budgeted on it was wrong.
+        // An overflow is refused here; it is up to the caller to saturate explicitly, with
+        // [clampU16] and [clampU32], because saturating is a decision.
+        require(maxIntervalUs in 0..0xFFFFFFFFL) { "maxIntervalUs outside u32: $maxIntervalUs" }
+        require(fsyncTotalUs in 0..0xFFFFFFFFL) { "fsyncTotalUs outside u32: $fsyncTotalUs" }
+        require(fsyncMaxUs in 0..0xFFFFFFFFL) { "fsyncMaxUs outside u32: $fsyncMaxUs" }
+        require(temperatureDeciC in -32768..32767) { "temperatureDeciC outside i16: $temperatureDeciC" }
+        require(measuredRateCentiHz in 0..0xFFFF) { "measuredRateCentiHz outside u16: $measuredRateCentiHz" }
+        require(jitterStdUs in 0..0xFFFF) { "jitterStdUs outside u16: $jitterStdUs" }
+        require(clippedSamples in 0..0xFFFF) { "clippedSamples outside u16: $clippedSamples" }
+        require(fsyncCount in 0..0xFFFF) { "fsyncCount outside u16: $fsyncCount" }
+        // **Width** bounds only, and no range of values. Any value decodable from a u8 must be
+        // able to build a point: without that, a corrupt byte whose CRC happened to come out
+        // right — or a more recent writer having added a sentinel — would make the reader throw,
+        // whose contract is to throw only on an invalid file header. A `batteryPct` outside
+        // 0..100 and different from [BATTERY_UNKNOWN] is a reading not to be believed, not a
+        // reason to lose the rest of the chunk.
+        require(batteryPct in 0..0xFF) { "batteryPct outside u8: $batteryPct" }
+        require(offBody in 0..0xFF) { "offBody outside u8: $offBody" }
     }
 
     companion object {
 
-        /** Aucune lecture de batterie n'a abouti. Distinct de 0 %, qui est une vraie valeur. */
-        const val BATTERIE_INCONNUE = 255
+        /** No battery reading succeeded. Distinct from 0 %, which is a real value. */
+        const val BATTERY_UNKNOWN = 255
 
-        /** `BATTERY_PROPERTY_CHARGE_COUNTER` non supporte par l'appareil. */
-        const val CHARGE_INCONNUE = Int.MIN_VALUE
+        /** `BATTERY_PROPERTY_CHARGE_COUNTER` not supported by the device. */
+        const val CHARGE_UNKNOWN = Int.MIN_VALUE
 
-        /** Aucune temperature lisible. Vaut -3276,8 degres, donc jamais confondable avec une mesure. */
-        const val TEMPERATURE_INCONNUE = -32768
+        /** No readable temperature. Equals -3276.8 degrees, so never confusable with a measurement. */
+        const val TEMPERATURE_UNKNOWN = -32768
 
-        const val OFF_BODY_PORTE = 0
-        const val OFF_BODY_RETIRE = 1
+        const val OFF_BODY_WORN = 0
+        const val OFF_BODY_REMOVED = 1
 
-        /** L'appareil n'a pas de `TYPE_LOW_LATENCY_OFFBODY_DETECT`. */
+        /** The device has no `TYPE_LOW_LATENCY_OFFBODY_DETECT`. */
         const val OFF_BODY_ABSENT = 255
 
         /**
-         * Saturation explicite vers un u16. Une valeur qui deborde est **plafonnee**, pas
-         * tronquee : un ecart-type de 80 ms tronque ressortirait a 14 464 us, c'est-a-dire a une
-         * cadence saine, et le defaut se lirait comme son contraire.
+         * Explicit saturation to a u16. A value that overflows is **capped**, not truncated: a
+         * standard deviation of 80 ms truncated would come out at 14 464 us, that is, at a
+         * healthy rate, and the defect would read as its opposite.
          */
-        fun borneU16(v: Long): Int = v.coerceIn(0L, 0xFFFFL).toInt()
+        fun clampU16(v: Long): Int = v.coerceIn(0L, 0xFFFFL).toInt()
 
-        /** Voir [borneU16]. */
-        fun borneU32(v: Long): Long = v.coerceIn(0L, 0xFFFFFFFFL)
+        /** See [clampU16]. */
+        fun clampU32(v: Long): Long = v.coerceIn(0L, 0xFFFFFFFFL)
     }
 }

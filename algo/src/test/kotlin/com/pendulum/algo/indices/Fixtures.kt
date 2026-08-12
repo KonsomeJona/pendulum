@@ -13,7 +13,7 @@ import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.roundToLong
 
-/** Fabriques partagees par les tests du paquet `indices`. Aucune horloge, aucun aleatoire cache. */
+/** Factories shared by the tests of the `indices` package. No clock, no hidden randomness. */
 
 internal const val FS_HZ = 50.0
 
@@ -38,7 +38,7 @@ internal fun clmAt(
     reject = reject,
 )
 
-/** Suite de CLM regulierement espaces, le premier a `startSec`. */
+/** Run of evenly spaced CLM, the first one at `startSec`. */
 internal fun clmsEvery(startSec: Double, stepSec: Double, count: Int): List<Clm> =
     (0 until count).map { clmAt(((startSec + it * stepSec) * 1000.0).roundToLong()) }
 
@@ -46,8 +46,8 @@ internal fun clmsAtSec(vararg onsetsSec: Double): List<Clm> =
     onsetsSec.map { clmAt((it * 1000.0).roundToLong()) }
 
 /**
- * Masque de sommeil simple. Par defaut : une seule fenetre de sommeil, denominateur independant,
- * point fixe convergent — c'est-a-dire le cas ou tout est publiable.
+ * Simple sleep mask. By default: a single sleep window, independent denominator, converged fixed
+ * point — that is to say the case where everything is publishable.
  */
 internal fun maskOf(
     windows: List<SleepWindow> = listOf(SleepWindow(0L, 25_200_000L, Stage.SLEEP)),
@@ -73,7 +73,7 @@ internal fun maskOf(
     fixedPointConverged = fixedPointConverged,
 )
 
-/** Serie couvrant les CLM d'indices `[from, to]` de la liste des CLM retenus. */
+/** Series covering the CLM at indices `[from, to]` of the list of retained CLM. */
 internal fun seriesOver(
     clms: List<Clm>,
     from: Int,
@@ -95,10 +95,10 @@ internal fun seriesOver(
 }
 
 /**
- * Simule des intervalles OBSERVES : une suite de mouvements vrais log-normaux dont chacun est
- * manque independamment avec la probabilite `missRate`. C'est exactement le processus que la
- * deconvolution pretend inverser — et le seul endroit du module ou un generateur pseudo-aleatoire
- * est autorise, parce qu'il est graine et n'entre jamais dans le code de production.
+ * Simulates OBSERVED intervals: a run of true log-normal movements, each of which is missed
+ * independently with probability `missRate`. This is exactly the process the deconvolution claims
+ * to invert — and the only place in the module where a pseudo-random generator is allowed, because
+ * it is seeded and never enters production code.
  */
 internal fun simulateObservedIntervalsSec(
     fundamentalSec: Double,

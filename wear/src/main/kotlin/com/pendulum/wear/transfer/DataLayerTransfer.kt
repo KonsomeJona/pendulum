@@ -23,43 +23,42 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.CRC32
 
 /**
- * Poussee incrementale des chunks vers le telephone par `DataClient`.
+ * Incremental push of the chunks to the phone through `DataClient`.
  *
- * **Pourquoi `DataClient` et rien d'autre.** C'est un magasin **replique et persistant** : un
- * item pose a 2 h du matin est deja replique, et la montre qui meurt a 3 h ne le concerne plus.
- * Il est bufferise hors connexion et synchronise a la reconnexion — c'est documente, donc tester
- * la joignabilite du telephone avant d'ecrire reviendrait a reimplementer a la main une logique
- * que la couche fournit, et a se tromper au moment precis ou elle compte. On ecrit, point.
- * `MessageClient` est du fire-and-forget sans file d'attente : jamais pour une donnee qu'on ne
- * peut pas perdre. `ChannelClient` n'a aucune persistance : le canal meurt avec la connexion.
+ * **Why `DataClient` and nothing else.** It is a **replicated and persistent** store: an item put
+ * at 2 a.m. is already replicated, and a watch that dies at 3 a.m. no longer concerns it. It is
+ * buffered offline and synchronised on reconnection — that is documented, so testing whether the
+ * phone is reachable before writing would amount to reimplementing by hand a logic the layer
+ * provides, and to getting it wrong at the exact moment it counts. We write, full stop.
+ * `MessageClient` is fire-and-forget with no queue: never for data that cannot be lost.
+ * `ChannelClient` has no persistence at all: the channel dies with the connection.
  *
- * **Le protocole est idempotent par construction.** Le telephone insere en `INSERT OR IGNORE`
- * sur `(sessionId, idx)`, l'accuse est un `DataItem` — c'est-a-dire un *etat convergent*, relu
- * dix fois pour le meme resultat — et **aucun fichier n'est efface avant son bit d'accuse**.
- * Le disque de la montre reste la source de verite jusqu'a ce que la base du telephone le
- * devienne.
+ * **The protocol is idempotent by construction.** The phone inserts with `INSERT OR IGNORE` on
+ * `(sessionId, idx)`, the acknowledgement is a `DataItem` — that is to say a *convergent state*,
+ * read ten times for the same result — and **no file is erased before its acknowledgement bit**.
+ * The watch's disk stays the source of truth until the phone's database becomes it.
  */
 object DataLayerTransfer {
 
     private const val TAG = "PendulumTransfer"
 
     /**
-     * Plafond d'items en vol : deux heures de nuit, ~2,2 Mo dans le magasin. Le quota reel du
-     * magasin de `DataItem` n'est documente nulle part, et le decouvrir par un plantage a 4 h du
-     * matin n'est pas une methode acceptable. Au-dela, la montre cesse de publier et **continue
-     * d'enregistrer sur le disque sans la moindre degradation**.
+     * Ceiling of items in flight: two hours of night, ~2.2 MB in the store. The real quota of the
+     * `DataItem` store is documented nowhere, and discovering it through a crash at 4 a.m. is not
+     * an acceptable method. Beyond it, the watch stops publishing and **carries on recording to
+     * disk without the slightest degradation**.
      */
     const val MAX_INFLIGHT_ITEMS = 24
 
-    /** Une salve tous les trois chunks fermes, soit un quart d'heure de nuit. */
+    /** One burst every three closed chunks, that is a quarter of an hour of night. */
     const val PUSH_EVERY_N_CHUNKS = 3
 
     private const val TASK_TIMEOUT_S = 60L
 
     private fun client(ctx: Context): DataClient = Wearable.getDataClient(ctx)
 
-    /** URI sans autorite : elle designe le chemin sur tous les noeuds, ce qui est exactement le
-     *  besoin, aussi bien pour lire l'accuse pose par le telephone que pour effacer nos items. */
+    /** URI without an authority: it designates the path on every node, which is exactly what is
+     *  needed, both to read the acknowledgement put by the phone and to erase our own items. */
     private fun uri(path: String): Uri =
         Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(path).build()
 
@@ -77,10 +76,10 @@ object DataLayerTransfer {
     // --- chunks ---
 
     /**
-     * Publie les chunks presents sur le disque et absents du magasin, dans l'ordre des index,
-     * jusqu'a saturation du plafond d'items en vol.
+     * Publishes the chunks present on disk and absent from the store, in index order, until the
+     * ceiling of items in flight is saturated.
      *
-     * @return vrai si le plafond est atteint alors qu'il reste des fichiers a envoyer.
+     * @return true if the ceiling is reached while files are still left to send.
      */
     fun pushChunks(ctx: Context, sessionHex: String, dir: File, urgentLast: Boolean): Boolean {
         val files = dir.listFiles { f -> f.name.endsWith(".pendulum") }
@@ -106,10 +105,10 @@ object DataLayerTransfer {
             slots--
         }
 
-        // `setUrgent()` n'est pose que sur le dernier item de la salve, en pariant — confiance
-        // moyenne, non documente — que le vidage qu'il provoque emporte aussi les items non
-        // urgents deja en file. Si la mesure dit le contraire, marquer tout le monde urgent :
-        // l'impact energetique est nul, ils partent dans le meme reveil.
+        // `setUrgent()` is set only on the last item of the burst, betting — medium confidence,
+        // undocumented — that the flush it causes also carries away the non-urgent items already
+        // queued. If measurement says otherwise, mark every one of them urgent: the energy cost
+        // is nil, they leave in the same wake-up.
         lastReq?.let {
             if (urgentLast) it.setUrgent()
             await(client(ctx).putDataItem(it))
@@ -118,11 +117,11 @@ object DataLayerTransfer {
     }
 
     /**
-     * Construit l'item d'un chunk : `ChunkMeta` puis les octets exacts du fichier.
+     * Builds the item of a chunk: `ChunkMeta` then the exact bytes of the file.
      *
-     * Un chunk **sans marqueur de fin est ignore** : il est en cours d'ecriture, ou bien il est
-     * le reliquat d'un kill brutal. Le publier exposerait le telephone a acquitter — donc a
-     * faire supprimer — un fichier partiel.
+     * A chunk **without an end marker is ignored**: either it is being written, or it is the
+     * leftover of a brutal kill. Publishing it would expose the phone to acknowledging — hence to
+     * having deleted — a partial file.
      */
     private fun buildChunkRequest(sessionHex: String, idx: Int, file: File): PutDataRequest? {
         val bytes = file.readBytes()
@@ -139,9 +138,9 @@ object DataLayerTransfer {
         ).encode()
 
         val payload = ByteArrayOutputStream(meta.size + bytes.size + 4)
-        // Cadre minimal : longueur de la meta sur 4 octets petit-boutistes, puis la meta, puis
-        // le fichier. Pas de `DataMap` : un dictionnaire echoue en silence quand une cle change
-        // de nom, alors qu'ici un changement de layout est rejete au premier octet.
+        // Minimal framing: the meta length on 4 little-endian bytes, then the meta, then the
+        // file. No `DataMap`: a dictionary fails silently when a key is renamed, whereas here a
+        // change of layout is rejected at the first byte.
         payload.write(meta.size and 0xFF)
         payload.write((meta.size shr 8) and 0xFF)
         payload.write((meta.size shr 16) and 0xFF)
@@ -150,10 +149,10 @@ object DataLayerTransfer {
         payload.write(bytes)
         val data = payload.toByteArray()
         if (data.size > WireProtocol.MAX_DATA_ITEM_BYTES) {
-            // Ne devrait pas arriver : la rotation plafonne a 92 160 octets. Si c'est le cas,
-            // le chemin de secours est `Asset.createFromFd()` sur le meme item — une ligne, a
-            // n'ecrire que le jour ou la mesure le demande.
-            Log.e(TAG, "chunk $idx trop gros pour un DataItem : ${data.size} o")
+            // Should not happen: rotation caps at 92 160 bytes. If it does, the fallback path
+            // is `Asset.createFromFd()` on the same item — one line, to be written only the day
+            // a measurement calls for it.
+            Log.e(TAG, "chunk $idx too big for a DataItem: ${data.size} B")
             return null
         }
         return PutDataRequest.create(WirePaths.chunk(sessionHex, idx)).setData(data)
@@ -168,10 +167,10 @@ object DataLayerTransfer {
     )
 
     /**
-     * Relit le fichier pour en tirer ses metadonnees. Ce que la relecture coute (quelques
-     * millisecondes sur 91 Ko) elle le rend en garantie : le CRC-32 de transport et le fait que
-     * le marqueur de fin est bien present sont calcules sur **les octets qui partent**, pas sur
-     * des compteurs tenus en memoire qui pourraient diverger du fichier.
+     * Re-reads the file to extract its metadata. What the re-read costs (a few milliseconds over
+     * 91 KB) it gives back as a guarantee: the transport CRC-32 and the fact that the end marker is
+     * indeed present are computed on **the bytes that leave**, not on counters held in memory that
+     * could drift from the file.
      */
     private fun summarize(bytes: ByteArray): Summary? {
         var first = Long.MAX_VALUE
@@ -186,7 +185,7 @@ object DataLayerTransfer {
                 flags = flags or b.flags
             }
         } catch (e: Exception) {
-            Log.e(TAG, "chunk illisible, non publie", e)
+            Log.e(TAG, "unreadable chunk, not published", e)
             return null
         }
         if (!scan.complete || samples == 0) return null
@@ -194,7 +193,8 @@ object DataLayerTransfer {
         return Summary(crc, samples, first, last, flags)
     }
 
-    /** Index des chunks presents dans le magasin, donc en vol et comptant pour le quota. */
+    /** Indices of the chunks present in the store, therefore in flight and counting towards the
+     *  quota. */
     fun inflightIndices(ctx: Context, sessionHex: String): Set<Int> {
         val prefix = WirePaths.CHUNK_PREFIX + sessionHex + "/"
         val buffer = await(client(ctx).getDataItems(uri(prefix), DataClient.FILTER_PREFIX))
@@ -205,7 +205,7 @@ object DataLayerTransfer {
         }
     }
 
-    // --- apercu ---
+    // --- preview ---
 
     fun putLive(ctx: Context, preview: LivePreview) {
         val req = PutDataRequest.create(WirePaths.live(preview.sessionHex))
@@ -214,12 +214,12 @@ object DataLayerTransfer {
         await(client(ctx).putDataItem(req))
     }
 
-    // --- accuse ---
+    // --- acknowledgement ---
 
     /**
-     * Applique un accuse : suppression des fichiers acquittes **puis** de leurs items, et
-     * renvoi de ceux dont le CRC-32 n'est pas retombe juste. L'ordre compte — un item supprime
-     * avant son fichier laisserait un fichier orphelin qu'aucun accuse ne reclamerait plus.
+     * Applies an acknowledgement: deletion of the acknowledged files **then** of their items, and
+     * resend of those whose CRC-32 did not come out right. The order matters — an item deleted
+     * before its file would leave an orphan file that no acknowledgement would ever claim again.
      */
     fun applyAck(ctx: Context, ack: Ack, dir: File): Int {
         var deleted = 0
@@ -234,8 +234,8 @@ object DataLayerTransfer {
         for (idx in ack.needResend) {
             val f = File(dir, "%05d.pendulum".format(idx))
             if (!f.exists()) continue
-            // Un `putDataItem` identique est deduplique par le Data Layer et ne declencherait
-            // rien du tout : il faut donc supprimer l'item avant de le reposer.
+            // An identical `putDataItem` is deduplicated by the Data Layer and would trigger
+            // nothing at all: the item must therefore be deleted before being put again.
             await(client(ctx).deleteDataItems(uri(WirePaths.chunk(ack.sessionHex, idx))))
             buildChunkRequest(ack.sessionHex, idx, f)?.let {
                 await(client(ctx).putDataItem(it.setUrgent()))
@@ -244,15 +244,15 @@ object DataLayerTransfer {
         return deleted
     }
 
-    // --- contexte du soir ---
+    // --- evening context ---
 
     /**
-     * Verrou du contexte du soir. Le telephone pose un item sous `/pendulum/context/<cle de nuit>`
-     * quand le formulaire est scelle ; la montre refuse de demarrer tant qu'il n'est pas la.
+     * Lock of the evening context. The phone puts an item under `/pendulum/context/<night key>`
+     * when the form is sealed; the watch refuses to start as long as it is not there.
      *
-     * **La presence de l'item suffit.** On ne decode pas son contenu pour decider : si le
-     * telephone ecrit un jour un champ de plus, un decodage strict transformerait une evolution
-     * de format en nuit perdue. Le verrou est un fait binaire, pas une structure.
+     * **The presence of the item is enough.** Its content is not decoded to decide: if the phone
+     * one day writes one more field, a strict decode would turn an evolution of the format into a
+     * lost night. The lock is a binary fact, not a structure.
      */
     fun isEveningContextSealed(ctx: Context, nightKey: String): Boolean {
         val buffer = await(
@@ -266,21 +266,20 @@ object DataLayerTransfer {
     }
 
     /**
-     * Le contexte du soir et sa cle de nuit vivaient ici, et le telephone ne les connaissait pas :
-     * il n'ecrivait donc jamais l'item que `Preflight` exige, et START restait bloque pour
-     * toujours. Les deux sont remontes dans `:format`, le module partage par les deux
-     * applications, parce que le mode de defaillance du Data Layer est le silence et non
-     * l'erreur — deux constantes recopiees qui divergent d'un caractere ne produisent aucun
-     * message, elles produisent une montre qui ne demarre plus.
+     * The evening context and its night key used to live here, and the phone did not know them: it
+     * therefore never wrote the item that `Preflight` requires, and START stayed blocked forever.
+     * Both were moved up into `:format`, the module shared by the two applications, because the
+     * failure mode of the Data Layer is silence and not error — two copied constants that diverge
+     * by one character produce no message at all, they produce a watch that no longer starts.
      *
-     * Les alias sont conserves : ce fichier est le point d'entree du Data Layer cote montre, et
-     * y lire le nom du chemin evite d'avoir a savoir dans quel module il est declare.
+     * The aliases are kept: this file is the entry point of the Data Layer on the watch side, and
+     * reading the name of the path here saves having to know which module declares it.
      */
     const val CONTEXT_PREFIX = WirePaths.CONTEXT_PREFIX
 
     fun nightKey(nowMs: Long): String = WirePaths.nightKey(nowMs)
 
-    // --- fermeture de session ---
+    // --- session close ---
 
     fun closeSession(
         ctx: Context,

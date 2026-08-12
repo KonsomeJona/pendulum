@@ -29,41 +29,40 @@ import com.pendulum.algo.model.SleepMask
 import com.pendulum.algo.model.SleepWindow
 
 /**
- * L'orchestration de `:algo`. **Aucun import Android** : cette classe tourne telle quelle sur
- * JVM, ce qui est ce qui rend testable la propriete la plus importante de l'export — qu'une base
- * reconstruite depuis un bundle redonne le meme resultat au bit pres.
+ * The orchestration of `:algo`. **No Android import**: this class runs as it stands on the JVM,
+ * which is what makes the most important property of the export testable — that a database rebuilt
+ * from a bundle gives back the same result down to the bit.
  *
- * `:algo` n'expose pas de fonction « analyse cette nuit » et c'est deliberé : il expose des
- * etapes pures que quelqu'un doit enchainer. Le quelqu'un, c'est ce fichier, et l'ordre
- * ci-dessous n'est pas negociable.
+ * `:algo` does not expose an "analyse this night" function and that is deliberate: it exposes pure
+ * steps that somebody has to chain together. That somebody is this file, and the order below is
+ * not negotiable.
  *
- * ### Les trois passes de pretraitement, et pourquoi il en faut trois
+ * ### The three preprocessing passes, and why three are needed
  *
- * 1. **Passe 0, sans rien.** Elle ne sert qu'a obtenir le canal gravite, dont le detecteur de
- *    posture a besoin. On jette tout le reste.
- * 2. **Passe 1, avec les frontieres de posture.** Un changement de posture coupe les fenetres
- *    d'estimation du plancher de bruit : sans cette coupure, la rotation contamine le plancher
- *    des minutes qui suivent et le seuil monte pour de mauvaises raisons.
- * 3. **Passe 2, avec la calibration.** Le troisieme terme du seuil depend de l'etalon de gain de
- *    la nuit, lequel se mesure sur les mouvements corporels grossiers, lesquels sont produits
- *    par une premiere detection. La boucle est fermee une fois et une seule : re-detecter apres
- *    la passe 2 n'apporterait rien, l'etalon etant deja stable.
+ * 1. **Pass 0, with nothing.** Its only purpose is to obtain the gravity channel, which the
+ *    posture detector needs. Everything else is thrown away.
+ * 2. **Pass 1, with the posture boundaries.** A posture change cuts the noise floor estimation
+ *    windows: without that cut, the rotation contaminates the floor of the minutes that follow and
+ *    the threshold rises for the wrong reasons.
+ * 3. **Pass 2, with the calibration.** The third term of the threshold depends on the gain
+ *    reference of the night, which is measured on gross body movements, which are produced by a
+ *    first detection. The loop is closed once and only once: re-detecting after pass 2 would bring
+ *    nothing, the gain reference being already stable.
  *
- * ### Le point fixe du masque
+ * ### The fixed point of the mask
  *
- * `ImmobilityMask.fixedPoint` recoit les intervalles de mouvement en lambda. On y branche les
- * CLM **deja detectes**, ce qui est exact ici : la detection ne consulte pas le masque, la
- * dependance ne va que dans un sens. Neutraliser les CLM comme preuve d'eveil est la couche 1 de
- * la reponse a la circularite — un PLMS est par definition un mouvement *pendant* le sommeil, et
- * s'en servir comme preuve d'eveil fait exploser l'index du sujet le plus atteint.
+ * `ImmobilityMask.fixedPoint` receives the movement intervals as a lambda. The **already
+ * detected** CLMs are wired into it, which is correct here: the detection does not consult the
+ * mask, the dependency only goes one way. Neutralising the CLMs as evidence of wake is layer 1 of
+ * the answer to circularity — a PLMS is by definition a movement *during* sleep, and using it as
+ * evidence of wake makes the index of the most affected subject explode.
  */
 object NightAnalyzer {
 
     /**
-     * @param results **quatre lignes** dans le cas nominal : 2 jeux de regles x 2 masques. Deux
-     *   seulement si Health Connect n'a rien rendu. Les deux masques sont toujours calcules et
-     *   rapportes : l'ecart entre eux est en soi une information, et le cacher reviendrait a
-     *   choisir en silence.
+     * @param results **four rows** in the nominal case: 2 rule sets x 2 masks. Only two if Health
+     *   Connect returned nothing. Both masks are always computed and reported: the gap between
+     *   them is information in itself, and hiding it would amount to choosing in silence.
      */
     data class Result(
         val fsHz: Double,
@@ -85,14 +84,14 @@ object NightAnalyzer {
     )
 
     /**
-     * @param hcWindows hypnogramme Health Connect **deja converti** en millisecondes relatives au
-     *   debut de la ligne de temps (voir `TimeAnchor`). La conversion ne se fait pas ici parce
-     *   qu'elle a besoin des trois horloges de l'en-tete de chunk, que `:algo` ne voit pas.
-     * @param diary journal manuel. Il ne rend pas le masque accelerometrique independant : il
-     *   borne la **recherche** du SPT, ce qui empeche une immobilite de canape de prendre la
-     *   place du debut de nuit.
-     * @param baselineGainG etalon de gain de la nuit de reference, pour detecter un bracelet
-     *   resserre differemment. `null` sur la premiere nuit d'une campagne.
+     * @param hcWindows Health Connect hypnogram **already converted** into milliseconds relative
+     *   to the start of the timeline (see `TimeAnchor`). The conversion is not done here because
+     *   it needs the three clocks of the chunk header, which `:algo` does not see.
+     * @param diary manual diary. It does not make the accelerometer mask independent: it bounds
+     *   the **search** for the SPT, which stops a stretch of sofa stillness from taking the place
+     *   of the start of the night.
+     * @param baselineGainG gain reference of the reference night, to detect a strap tightened
+     *   differently. `null` on the first night of a campaign.
      */
     fun analyze(
         blocks: List<SampleBlock>,
@@ -103,7 +102,7 @@ object NightAnalyzer {
         baselineGainG: Float?,
         params: AnalysisParams = AnalysisParams.DEFAULT,
     ): Result {
-        // --- Passe 0 : uniquement pour obtenir la gravite ---------------------------------
+        // --- Pass 0: only to obtain gravity ------------------------------------------------
         val pass0 = Preprocess.run(
             blocks, nominalRateHz.toDouble(), params.preprocess,
             sessionClosedCleanly = sessionClosedCleanly,
@@ -111,15 +110,15 @@ object NightAnalyzer {
         val postures = PostureDetector.detect(pass0.gravity, pass0.timeline.segments, params.posture)
         val postureBoundaries = postures.map { it.atIdx }.toIntArray()
 
-        // --- Passe 1 : plancher de bruit coupe aux frontieres de posture -------------------
+        // --- Pass 1: noise floor cut at the posture boundaries -----------------------------
         val pass1 = Preprocess.run(
             blocks, nominalRateHz.toDouble(), params.preprocess, postureBoundaries,
             calibration = null, sessionClosedCleanly = sessionClosedCleanly,
         )
 
-        // Detection provisoire, uniquement pour mesurer l'etalon de gain. `gainCalG = NaN`
-        // desactive le troisieme terme du seuil : le detecteur travaille alors sur le seul
-        // plancher adaptatif, ce qui suffit largement a reperer un mouvement corporel grossier.
+        // Provisional detection, only to measure the gain reference. `gainCalG = NaN` disables
+        // the third term of the threshold: the detector then works on the adaptive floor alone,
+        // which is amply enough to spot a gross body movement.
         val noCalibration = NightCalibration(
             sensor = null,
             gainCalG = Float.NaN,
@@ -135,7 +134,7 @@ object NightAnalyzer {
         )
         val calibration = Calibration.fromGrossBodyMovements(provisional, baselineGainG)
 
-        // --- Passe 2 : seuils calibres ------------------------------------------------------
+        // --- Pass 2: calibrated thresholds --------------------------------------------------
         val pre = Preprocess.run(
             blocks, nominalRateHz.toDouble(), params.preprocess, postureBoundaries,
             calibration = calibration, sessionClosedCleanly = sessionClosedCleanly,
@@ -151,7 +150,7 @@ object NightAnalyzer {
         val analysableMin = timeline.analysableSec / 60.0
         val coverage = analysableCoverage(timeline.analysableSec, timeline.signal.n, fsHz)
 
-        // --- Masque accelerometrique, point fixe borne a deux iterations ---------------------
+        // --- Accelerometer mask, fixed point bounded to two iterations ----------------------
         val movementIntervals: (SleepMask) -> List<Segment> = {
             clms.filter { c -> c.isClm }.map { c -> Segment(c.onsetIdx, c.offsetIdx) }
         }
@@ -177,20 +176,21 @@ object NightAnalyzer {
             agreement = MaskFusion.align(accelMask, hcWindows, params.fusion)
         }
 
-        // --- Les quatre resultats -----------------------------------------------------------
+        // --- The four results ---------------------------------------------------------------
         val rules = listOf(SeriesConfig.aasmV3(), SeriesConfig.wasm2016())
         val out = ArrayList<PlmiResult>(rules.size * masks.size)
         for ((source, mask) in masks) {
-            // Ces deux mesures sont **hors de la boucle des regles a dessein**. Ni `ferriIndex` ni
-            // `fromClms` ne prennent la regle en parametre : a masque fixe, AASM et WASM leur
-            // donnent le meme resultat. Les laisser dans la boucle interne les faisait calculer
-            // quatre fois pour deux resultats utiles, et `Rhythm.fromClms` n'est pas gratuit —
-            // `Rhythm.fit` enchaine sept departs EM de jusqu'a 300 iterations pleines de `ln` et
-            // d'`exp`, rejoues sur batterie a chaque re-scoring d'une campagne entiere.
+            // These two measurements are **outside the rule loop by design**. Neither
+            // `ferriIndex` nor `fromClms` takes the rule as a parameter: at a fixed mask, AASM and
+            // WASM give them the same result. Leaving them in the inner loop had them computed
+            // four times for two useful results, and `Rhythm.fromClms` is not free —
+            // `Rhythm.fit` chains seven EM starts of up to 300 iterations full of `ln` and `exp`,
+            // replayed on battery at every re-scoring of a whole campaign.
             val pi = Periodicity.ferriIndex(clms, mask, fsHz, params.periodicity)
-            // `fromClms` et non `fromSeries` : la construction de serie a deja filtre les intervalles
-            // hors [10, 90] s, c'est-a-dire precisement les harmoniques hauts que la deconvolution
-            // cherche a modeliser. Partir des series sous-estimerait mecaniquement le taux de manques.
+            // `fromClms` and not `fromSeries`: series construction has already filtered out the
+            // intervals outside [10, 90] s, that is to say precisely the high harmonics the
+            // deconvolution is trying to model. Starting from the series would mechanically
+            // underestimate the miss rate.
             val rhythm = Rhythm.fromClms(clms, mask, params.rhythm)
             for (cfg in rules) {
                 out += computeOne(clms, mask, source, cfg, fsHz, timeline.truncated, params, pi, rhythm)
@@ -218,9 +218,9 @@ object NightAnalyzer {
     }
 
     /**
-     * @param pi et [rhythm] **mesures par l'appelant, une fois par masque**. Ils ne dependent pas
-     *   de [cfg] : les passer plutot que les recalculer ici est ce qui evite de payer deux fois
-     *   la meme deconvolution pour les deux jeux de regles d'un meme masque.
+     * @param pi and [rhythm] **measured by the caller, once per mask**. They do not depend on
+     *   [cfg]: passing them rather than recomputing them here is what avoids paying twice for the
+     *   same deconvolution for the two rule sets of a single mask.
      */
     private fun computeOne(
         clms: List<Clm>,
@@ -249,19 +249,19 @@ object NightAnalyzer {
             truncatedSeriesDropped = built.truncatedSeriesDropped,
             paramsHash = params.paramsHash,
         ).let { r ->
-            // `Plmi.compute` ne connait pas la source du masque ; on la porte ici pour que les
-            // quatre lignes soient distinguables en base.
+            // `Plmi.compute` does not know the source of the mask; it is carried here so that the
+            // four rows are distinguishable in the database.
             if (r.maskSource == source) r else r.copy(maskSource = source)
         }
     }
 
     /**
-     * Fraction du temps effectivement analysable, passee aux constructeurs de masque.
+     * Fraction of the time that is actually analysable, passed to the mask builders.
      *
-     * Elle sert a calculer `analysableTstMin`, qui est **le vrai denominateur** : epoques de
-     * sommeil intersectees avec les epoques reellement couvertes par des blocs valides. Le TST
-     * brut ne fait pas l'affaire — une nuit de 8 h dont 3 h sont trouees n'a pas 8 h de sommeil
-     * analysable, et diviser par 8 h sous-estimerait l'index d'un tiers.
+     * It serves to compute `analysableTstMin`, which is **the real denominator**: sleep epochs
+     * intersected with the epochs actually covered by valid blocks. The raw TST will not do — an
+     * 8 h night of which 3 h are gappy does not have 8 h of analysable sleep, and dividing by 8 h
+     * would underestimate the index by a third.
      */
     private fun analysableCoverage(analysableSec: Double, gridPoints: Int, fsHz: Double): Double {
         if (gridPoints <= 0 || fsHz <= 0.0) return 0.0
@@ -269,6 +269,6 @@ object NightAnalyzer {
         return if (totalSec <= 0.0) 0.0 else (analysableSec / totalSec).coerceIn(0.0, 1.0)
     }
 
-    /** Les deux jeux de regles, exposes pour les tests et pour l'affichage. */
+    /** The two rule sets, exposed for the tests and for the display. */
     val RULES: List<SeriesRule> = listOf(SeriesRule.AASM_V3, SeriesRule.WASM_2016)
 }

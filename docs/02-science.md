@@ -433,4 +433,4 @@ No leg sensor changes that.
 ---
 
 *Sources, with access status for each, are listed in [`references.md`](references.md). The detailed
-design documents — in French, and considerably more quantitative — are in [`fr/`](fr/).*
+design documents — considerably more quantitative than this one — are in [`workings/`](workings/).*

@@ -6,32 +6,31 @@ import kotlin.math.ln
 import kotlin.math.sqrt
 
 /**
- * Generateur pseudo-aleatoire du paquet `synth`. **Seule** source d'alea autorisee ici.
+ * Pseudo-random generator of the `synth` package. The **only** source of randomness allowed here.
  *
- * Trois exigences, dans cet ordre :
+ * Three requirements, in this order:
  *
- *  1. **Determinisme total** (`ALGO-v2.md` §5, test T13). L'algorithme est SplitMix64, ecrit ici en
- *     entier : aucune dependance a `java.util.Random` (dont `nextGaussian` a un etat cache et une
- *     methode polaire a rejet, donc un nombre d'appels variable), aucune horloge, aucun `hashCode`
- *     d'objet. Deux executions avec la meme graine produisent la meme suite, bit pour bit, sur
- *     n'importe quelle JVM.
- *  2. **Sous-flots independants nommes** ([stream]). C'est ce qui rend les tests T8 a T11 possibles :
- *     regenerer une nuit en changeant *un seul* distracteur (trous, gain mecanique, `fs`) ne doit pas
- *     deplacer les mouvements. Si tous les tirages sortaient d'un flot unique, ajouter un trou
- *     consommerait des tirages et decalerait toute la nuit — on comparerait alors deux nuits
- *     differentes en croyant mesurer l'effet du trou.
- *  3. **Loi log-normale de premiere classe** : durees et amplitudes de §5.1 en sont, et le
- *     `sigmaLog` doit rester un parametre (il pilote la pente de la courbe de sensibilite, T5).
+ *  1. **Total determinism** (`ALGO-v2.md` §5, test T13). The algorithm is SplitMix64, written out
+ *     here in full: no dependency on `java.util.Random` (whose `nextGaussian` has hidden state and
+ *     a rejection-based polar method, hence a variable number of calls), no clock, no object
+ *     `hashCode`. Two runs with the same seed produce the same sequence, bit for bit, on any JVM.
+ *  2. **Named independent sub-streams** ([stream]). This is what makes tests T8 to T11 possible:
+ *     regenerating a night while changing *a single* distractor (gaps, mechanical gain, `fs`) must
+ *     not move the movements. If every draw came out of a single stream, adding a gap would consume
+ *     draws and shift the whole night — two different nights would then be compared while believing
+ *     the effect of the gap was being measured.
+ *  3. **First-class log-normal distribution**: the durations and amplitudes of §5.1 follow one, and
+ *     `sigmaLog` must stay a parameter (it drives the slope of the sensitivity curve, T5).
  *
- * La loi normale est tiree par Box-Muller *sans* cache : chaque appel consomme exactement deux
- * uniformes. Un cache rendrait la suite dependante de la parite du nombre d'appels precedents,
- * c'est-a-dire fragile a toute modification du code appelant.
+ * The normal distribution is drawn by Box-Muller *without* a cache: each call consumes exactly two
+ * uniforms. A cache would make the sequence depend on the parity of the number of preceding calls,
+ * that is to say fragile to any modification of the calling code.
  */
 class SynthRandom private constructor(private val rootSeed: Long, private var state: Long) {
 
     constructor(seed: Long) : this(seed, seed)
 
-    /** Sous-flot nomme, derive de la graine **racine** (jamais de l'etat courant). */
+    /** Named sub-stream, derived from the **root** seed (never from the current state). */
     fun stream(label: String): SynthRandom {
         val h = fnv64(label)
         val s = mix64(rootSeed xor h)
@@ -43,31 +42,31 @@ class SynthRandom private constructor(private val rootSeed: Long, private var st
         return mix64(state)
     }
 
-    /** Uniforme dans `[0, 1)`, 53 bits de mantisse. */
+    /** Uniform in `[0, 1)`, 53 mantissa bits. */
     fun nextDouble(): Double = (nextLong() ushr 11).toDouble() * TWO_POW_MINUS_53
 
-    /** Uniforme dans `(0, 1]` — le complement de [nextDouble], pour les logarithmes. */
+    /** Uniform in `(0, 1]` — the complement of [nextDouble], for logarithms. */
     fun nextDoublePositive(): Double = 1.0 - nextDouble()
 
     fun nextInt(boundExclusive: Int): Int {
-        require(boundExclusive > 0) { "borne doit etre > 0" }
+        require(boundExclusive > 0) { "bound must be > 0" }
         return (nextDouble() * boundExclusive).toInt().coerceAtMost(boundExclusive - 1)
     }
 
-    /** Entier uniforme dans `[lo, hi]`, bornes incluses. */
+    /** Uniform integer in `[lo, hi]`, bounds included. */
     fun nextIntRange(lo: Int, hi: Int): Int = if (hi <= lo) lo else lo + nextInt(hi - lo + 1)
 
     fun uniform(lo: Double, hi: Double): Double = lo + (hi - lo) * nextDouble()
 
-    /** Uniforme sur l'echelle logarithmique : donne autant de poids a `[3, 10[` qu'a `[10, 30[`. */
+    /** Uniform on the logarithmic scale: gives as much weight to `[3, 10[` as to `[10, 30[`. */
     fun logUniform(lo: Double, hi: Double): Double {
-        require(lo > 0.0 && hi >= lo) { "bornes log-uniformes invalides" }
+        require(lo > 0.0 && hi >= lo) { "invalid log-uniform bounds" }
         return exp(uniform(ln(lo), ln(hi)))
     }
 
     fun nextBoolean(p: Double): Boolean = nextDouble() < p
 
-    /** Box-Muller, deux uniformes par appel, sans etat cache. */
+    /** Box-Muller, two uniforms per call, no hidden state. */
     fun nextGaussian(): Double {
         val u1 = nextDoublePositive()
         val u2 = nextDouble()
@@ -75,14 +74,14 @@ class SynthRandom private constructor(private val rootSeed: Long, private var st
     }
 
     /**
-     * Log-normale de mediane `median` et d'ecart-type logarithmique `sigmaLog`, tronquee a
-     * `[lo, hi]`. La troncature est faite par **re-tirage** (jusqu'a 64 essais puis ecretage) et non
-     * par ecretage direct : ecreter empilerait une masse de Dirac sur les bornes, ce qui fausserait
-     * la queue basse — precisement celle qui porte les mouvements sous le seuil de detection, donc la
-     * pente de la courbe de sensibilite T5.
+     * Log-normal of median `median` and logarithmic standard deviation `sigmaLog`, truncated to
+     * `[lo, hi]`. The truncation is done by **redrawing** (up to 64 attempts then clipping) and not
+     * by direct clipping: clipping would pile a Dirac mass onto the bounds, which would distort the
+     * low tail — precisely the one that carries the movements below the detection threshold, and so
+     * the slope of the T5 sensitivity curve.
      */
     fun logNormal(median: Double, sigmaLog: Double, lo: Double, hi: Double): Double {
-        require(median > 0.0) { "mediane doit etre > 0" }
+        require(median > 0.0) { "median must be > 0" }
         val mu = ln(median)
         repeat(64) {
             val v = exp(mu + sigmaLog * nextGaussian())
@@ -92,11 +91,11 @@ class SynthRandom private constructor(private val rootSeed: Long, private var st
     }
 
     /**
-     * Log-normale calee sur une **moyenne** et un **ecart-type** arithmetiques (c'est ainsi que la
-     * litterature publie les durees de CLM : 4,2 +/- 1,4 s, Sforza 2005).
+     * Log-normal fitted on an arithmetic **mean** and **standard deviation** (that is how the
+     * literature publishes CLM durations: 4.2 +/- 1.4 s, Sforza 2005).
      */
     fun logNormalFromMeanSd(mean: Double, sd: Double, lo: Double, hi: Double): Double {
-        require(mean > 0.0 && sd >= 0.0) { "moyenne/ecart-type invalides" }
+        require(mean > 0.0 && sd >= 0.0) { "invalid mean/standard deviation" }
         val cv2 = (sd / mean) * (sd / mean)
         val sigma = sqrt(ln(1.0 + cv2))
         val median = mean / exp(sigma * sigma / 2.0)
@@ -115,7 +114,7 @@ class SynthRandom private constructor(private val rootSeed: Long, private var st
             return z xor (z ushr 31)
         }
 
-        /** FNV-1a 64 bits sur les octets UTF-8 du label. Stable entre JVM, contrairement a `hashCode`. */
+        /** FNV-1a 64-bit on the UTF-8 bytes of the label. Stable across JVMs, unlike `hashCode`. */
         fun fnv64(s: String): Long {
             var h = -0x340d631b7bdddcdbL // 0xCBF29CE484222325
             for (b in s.toByteArray(Charsets.UTF_8)) {
@@ -127,5 +126,5 @@ class SynthRandom private constructor(private val rootSeed: Long, private var st
     }
 }
 
-/** Ecart-type logarithmique correspondant a un coefficient de variation en pourcent. */
+/** Logarithmic standard deviation corresponding to a coefficient of variation in percent. */
 internal fun sigmaLogOfCvPct(cvPct: Double): Double = sqrt(ln(1.0 + (cvPct / 100.0) * (cvPct / 100.0)))

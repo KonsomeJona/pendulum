@@ -12,107 +12,107 @@ import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
 import com.pendulum.phone.ui.common.BlockingState
 import com.pendulum.phone.ui.common.InlineValue
-import com.pendulum.phone.ui.common.Paragraphe
+import com.pendulum.phone.ui.common.Paragraph
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
-import com.pendulum.phone.ui.common.formaterValeur
-import com.pendulum.phone.ui.model.Aggregat
-import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.common.formatValue
+import com.pendulum.phone.ui.model.Aggregate
+import com.pendulum.phone.ui.text.resolve
 import com.pendulum.phone.ui.text.UiText
-import com.pendulum.phone.ui.text.texte
+import com.pendulum.phone.ui.text.text
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 /**
- * La comparaison de deux periodes.
+ * The comparison of two periods.
  *
- * ### L'ordre d'affichage est le message (P3)
+ * ### The display order is the message (P3)
  *
- * 1. le verdict de distinguabilite ;
- * 2. les deux estimations avec leurs intervalles ;
- * 3. la difference avec son intervalle ;
- * 4. la dispersion propre de l'utilisateur, comme etalon du bruit ;
- * 5. le nombre de nuits qu'il faudrait pour trancher.
+ * 1. the distinguishability verdict;
+ * 2. the two estimates with their intervals;
+ * 3. the difference with its interval;
+ * 4. the user's own dispersion, as the yardstick for the noise;
+ * 5. the number of nights it would take to decide.
  *
- * Le verdict passe **avant** le chiffre parce qu'un lecteur presse lit la premiere ligne et
- * s'arrete. Mettre « −9/h » en tete et la reserve en dessous, c'est publier « −9/h ».
+ * The verdict comes **before** the figure because a hurried reader reads the first line and stops.
+ * Putting "-9/h" at the top and the reservation underneath is publishing "-9/h".
  *
- * ### Ce que cet ecran ne dit jamais
+ * ### What this screen never says
  *
- * Aucun verbe d'evolution, dans aucun des deux cas. Quand l'ecart est indistinguable, la premiere
- * ligne est « Variation non concluante ». Quand il est distinguable, elle est « Différence
- * supérieure à la variabilité entre vos nuits » — et l'application precise aussitot qu'elle ne
- * sait pas ce qui l'a causee : traitement, sommeil, alcool, fer, literie ou position de la montre
- * produiraient le meme effet a l'ecran.
+ * No verb of evolution, in either case. When the gap is indistinguishable, the first line is
+ * "Inconclusive". When it is distinguishable, it is "Difference larger than the night-to-night
+ * variability" — and the application states at once that it does not know what caused it:
+ * medication, sleep, alcohol, iron, bedding or the position of the watch would produce the same
+ * effect on screen.
  */
 @Composable
 fun ComparePeriodsScreen(
-    resultat: Aggregat.Comparaison?,
-    motifIndisponible: Pair<UiText, Int>?,
-    libellePeriodeA: String,
-    libellePeriodeB: String,
+    result: Aggregate.Comparison?,
+    unavailableReason: Pair<UiText, Int>?,
+    periodALabel: String,
+    periodBLabel: String,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
     PendulumScreen(modifier) {
-        if (motifIndisponible != null || resultat == null) {
-            val (periode, nuits) = motifIndisponible ?: (texte(R.string.compare_period_a) to 0)
+        if (unavailableReason != null || result == null) {
+            val (period, nights) = unavailableReason ?: (text(R.string.compare_period_a) to 0)
             BlockingState(
-                titre = stringResource(R.string.compare_unavailable_title),
-                corps = stringResource(R.string.compare_unavailable_body, periode.resoudre(), nuits),
+                title = stringResource(R.string.compare_unavailable_title),
+                body = stringResource(R.string.compare_unavailable_body, period.resolve(), nights),
             )
             return@PendulumScreen
         }
 
         PendulumCard {
-            // 1. Le verdict, en premier, en gras, sans chiffre.
-            Text(resultat.verdict.resoudre(), style = PendulumType.bodyEmph, color = c.textPrimary)
+            // 1. The verdict, first, in bold, without a figure.
+            Text(result.verdict.resolve(), style = PendulumType.bodyEmph, color = c.textPrimary)
             Spacer(Modifier.height(Spacing.sm.dp))
 
-            // 2. Les deux estimations, chacune avec son intervalle et son n (P2).
+            // 2. The two estimates, each with its interval and its n (P2).
             InlineValue(
                 stringResource(R.string.compare_period_a),
-                ligneEstimation(resultat.a),
-                note = libellePeriodeA,
+                estimateLine(result.a),
+                note = periodALabel,
             )
             InlineValue(
                 stringResource(R.string.compare_period_b),
-                ligneEstimation(resultat.b),
-                note = libellePeriodeB,
+                estimateLine(result.b),
+                note = periodBLabel,
             )
 
-            // 3. La difference, avec son intervalle. Jamais dessinee comme une fleche : une
-            // fleche vers le bas se lit « ca va dans le bon sens ».
+            // 3. The difference, with its interval. Never drawn as an arrow: a downward arrow
+            // reads as "this is going the right way".
             InlineValue(
                 stringResource(R.string.compare_difference),
-                "${signe(resultat.difference)}${formaterValeur(kotlin.math.abs(resultat.difference), resultat.a.grandeur)} " +
-                    "${stringResource(resultat.a.grandeur.unite)}  (95% CI " +
-                    "${signe(resultat.diffCiBas)}${formaterValeur(kotlin.math.abs(resultat.diffCiBas), resultat.a.grandeur)} to " +
-                    "${signe(resultat.diffCiHaut)}${formaterValeur(kotlin.math.abs(resultat.diffCiHaut), resultat.a.grandeur)})",
+                "${sign(result.difference)}${formatValue(kotlin.math.abs(result.difference), result.a.quantity)} " +
+                    "${stringResource(result.a.quantity.unit)}  (95% CI " +
+                    "${sign(result.diffCiLow)}${formatValue(kotlin.math.abs(result.diffCiLow), result.a.quantity)} to " +
+                    "${sign(result.diffCiHigh)}${formatValue(kotlin.math.abs(result.diffCiHigh), result.a.quantity)})",
             )
 
             Spacer(Modifier.height(Spacing.sm.dp))
-            resultat.motifNonConcluant?.let { Paragraphe(it.resoudre()) }
-            if (resultat.distinguable) Paragraphe(stringResource(R.string.compare_no_cause))
+            result.inconclusiveReason?.let { Paragraph(it.resolve()) }
+            if (result.distinguishable) Paragraph(stringResource(R.string.compare_no_cause))
 
             Spacer(Modifier.height(Spacing.s.dp))
-            // 4. L'etalon du bruit : la dispersion des nuits de l'utilisateur lui-meme.
+            // 4. The yardstick for the noise: the dispersion of the user's own nights.
             Text(
                 stringResource(
                     R.string.trend_dispersion,
-                    formaterValeur(resultat.dispersion, resultat.a.grandeur),
-                    stringResource(resultat.a.grandeur.unite),
+                    formatValue(result.dispersion, result.a.quantity),
+                    stringResource(result.a.quantity.unit),
                 ),
                 style = PendulumType.caption,
                 color = c.textTertiary,
             )
 
             Spacer(Modifier.height(Spacing.s.dp))
-            // 5. Le nombre de nuits necessaires — un ordre de grandeur, et le texte le dit.
-            Paragraphe(
-                resultat.nuitsNecessaires
+            // 5. The number of nights needed — an order of magnitude, and the text says so.
+            Paragraph(
+                result.nightsNeeded
                     ?.let { stringResource(R.string.compare_nights_needed, it) }
                     ?: stringResource(R.string.compare_out_of_reach),
             )
@@ -121,22 +121,21 @@ fun ComparePeriodsScreen(
 }
 
 /**
- * La ligne d'estimation d'une periode : la mediane, son intervalle, le nombre de nuits.
+ * The estimate line for a period: the median, its interval, the number of nights.
  *
- * Elle etait assemblee ici a coups de concatenation, ce qui figeait a la fois « CI » et « nights »
- * en anglais **et l'ordre des trois membres** : une langue qui place le nombre de nuits en tete
- * n'avait aucun moyen de le dire. La phrase entiere est donc une seule ressource, a arguments
- * positionnels, et le code ne fournit plus que les valeurs.
+ * It used to be assembled here by concatenation, which froze both "CI" and "nights" in English
+ * **and the order of the three members**: a language that puts the number of nights first had no
+ * way of saying so. The whole sentence is therefore a single resource, with positional arguments,
+ * and the code now supplies nothing but the values.
  */
 @Composable
-private fun ligneEstimation(r: Aggregat.Resultat): String = stringResource(
+private fun estimateLine(r: Aggregate.Result): String = stringResource(
     R.string.compare_estimate_line,
-    formaterValeur(r.mediane, r.grandeur),
-    stringResource(r.grandeur.unite),
-    formaterValeur(r.ciBas, r.grandeur),
-    formaterValeur(r.ciHaut, r.grandeur),
-    r.nuits,
+    formatValue(r.median, r.quantity),
+    stringResource(r.quantity.unit),
+    formatValue(r.ciLow, r.quantity),
+    formatValue(r.ciHigh, r.quantity),
+    r.nights,
 )
 
-private fun signe(v: Double): String = if (v < 0) "−" else "+"
-
+private fun sign(v: Double): String = if (v < 0) "−" else "+"

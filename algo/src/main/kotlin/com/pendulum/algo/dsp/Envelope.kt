@@ -7,26 +7,26 @@ import com.pendulum.algo.model.TriAxial
 import kotlin.math.sqrt
 
 /**
- * Etape 2 — magnitude et enveloppe a deux echelles.
+ * Step 2 — magnitude and two-scale envelope.
  *
- * **Ce que fait la magnitude L2, et ce qu'elle ne fait pas.** `m = sqrt(ax^2 + ay^2 + az^2)` est
- * invariante par **rotation constante** du bracelet : le boitier peut etre tourne d'une nuit a
- * l'autre autour de la cheville sans changer d'un iota l'amplitude mesuree. C'est ce qui rend le
- * detecteur independant de l'orientation de pose, sans aucune calibration d'axe. Elle n'est en
- * revanche invariante ni par changement de **gain** (serrage du bracelet : c'est le volet B de
- * §3.3), ni par rotation *variable* pendant l'evenement.
+ * **What the L2 magnitude does, and what it does not do.** `m = sqrt(ax^2 + ay^2 + az^2)` is
+ * invariant under **constant rotation** of the strap: the case can be turned around the ankle from
+ * one night to the next without changing the measured amplitude one iota. That is what makes the
+ * detector independent of the mounting orientation, with no axis calibration at all. It is on the
+ * other hand invariant neither under a change of **gain** (strap tightness: that is part B of
+ * §3.3), nor under *variable* rotation during the event.
  *
- * **Point statistique a connaitre et a ne surtout pas « corriger »** (§2, etape 2) : sur du bruit
- * gaussien isotrope, `m` suit une loi de Maxwell de moyenne `1,596 sigma` et de coefficient de
- * variation 42 %. **La magnitude L2 n'a pas une moyenne nulle, elle a un piedestal.** Ce n'est
- * pas un probleme tant que le plancher est estime **sur la meme grandeur** — ce que fait
- * l'etape 3 — car le rapport `k_on` devient alors autocoherent. Il faut simplement savoir que
- * « 8 fois le plancher » signifie 8 fois une moyenne de Maxwell, et non 8 fois un ecart-type par
- * axe (ce qui vaudrait 12,8 sigma).
+ * **Statistical point to know and above all not to "fix"** (§2, step 2): on isotropic Gaussian
+ * noise, `m` follows a Maxwell distribution of mean `1.596 sigma` and coefficient of variation
+ * 42 %. **The L2 magnitude does not have a zero mean, it has a pedestal.** This is not a problem
+ * as long as the floor is estimated **on the same quantity** — which is what step 3 does — because
+ * the `k_on` ratio then becomes self-consistent. One simply has to know that "8 times the floor"
+ * means 8 times a Maxwell mean, and not 8 times a per-axis standard deviation (which would be
+ * 12.8 sigma).
  */
 object Envelope {
 
-    /** `m(t) = ||a_lin(t)||`. `NaN` propage : un trou reste un trou. */
+    /** `m(t) = ||a_lin(t)||`. `NaN` propagates: a hole stays a hole. */
     fun magnitudeL2(t: TriAxial): Signal1D {
         val n = t.n
         val v = FloatArray(n)
@@ -39,15 +39,15 @@ object Envelope {
     }
 
     /**
-     * RMS glissant centre, calcule **segment par segment**.
+     * Centred moving RMS, computed **segment by segment**.
      *
-     * Les fenetres sont tronquees sur les `W/2` premieres et dernieres secondes de chaque segment
-     * et normalisees par le nombre d'echantillons valides (§2, etape 2, comportement aux bords).
-     * Ces zones tombent de toute facon dans le `warmup` deja exclu : la troncature sert a ne pas
-     * fabriquer de discontinuite, pas a rendre les bords exploitables.
+     * The windows are truncated over the first and last `W/2` seconds of each segment and
+     * normalised by the number of valid samples (§2, step 2, edge behaviour). Those zones fall
+     * into the already excluded `warmup` anyway: the truncation serves to avoid manufacturing a
+     * discontinuity, not to make the edges usable.
      *
-     * Ne jamais laisser une fenetre franchir une frontiere de segment : de part et d'autre, le
-     * couplage mecanique et l'etat des filtres n'ont plus rien de commun.
+     * Never let a window cross a segment boundary: on either side, the mechanical coupling and the
+     * filter states have nothing in common any more.
      */
     fun rms(s: Signal1D, winSec: Double, segments: List<Segment>): Signal1D {
         val out = FloatArray(s.n) { Float.NaN }
@@ -60,20 +60,20 @@ object Envelope {
     }
 
     /**
-     * Enveloppe a deux echelles.
+     * Two-scale envelope.
      *
-     * **Pourquoi deux, et pourquoi la grossiere porte la decision.** La v1 detectait sur une
-     * fenetre de 0,15 s. C'etait un bug, pas un reglage (§0-b) : a 0,15 s la fenetre ne moyenne
-     * meme pas une demi-periode du contenu spectral d'un CLM (dont le pic est vers 2 Hz, soit
-     * 0,25 s de demi-periode). L'enveloppe garde donc l'ondulation a `2f` du signal redresse, et
-     * cette ondulation traverse le seuil plusieurs fois pendant un unique mouvement : **un CLM
-     * est fragmente en trois ou quatre evenements courts**, chacun trop bref pour survivre au
-     * critere de duree minimale de 0,5 s. On perd le mouvement ET on fabrique du bruit de
-     * comptage. A 0,50 s (>= une periode complete a 2 Hz) l'ondulation est annulee.
+     * **Why two, and why the coarse one carries the decision.** v1 detected on a 0.15 s window.
+     * That was a bug, not a setting (§0-b): at 0.15 s the window does not even average half a
+     * period of the spectral content of a CLM (whose peak is around 2 Hz, i.e. 0.25 s of half
+     * period). The envelope therefore keeps the `2f` ripple of the rectified signal, and that
+     * ripple crosses the threshold several times during a single movement: **a CLM is fragmented
+     * into three or four short events**, each too brief to survive the minimum duration criterion
+     * of 0.5 s. The movement is lost AND counting noise is manufactured. At 0.50 s (>= one full
+     * period at 2 Hz) the ripple is cancelled.
      *
-     * La fine (0,15 s) est conservee **uniquement** pour le recalage des fronts d'un evenement
-     * deja detecte (etape 5.3) et pour le critere de morphologie WASM 3.2.1-d : la ou l'on veut
-     * de la resolution temporelle et non de la stabilite de decision.
+     * The fine one (0.15 s) is kept **only** for realigning the edges of an already detected event
+     * (step 5.3) and for the WASM 3.2.1-d morphology criterion: where one wants temporal
+     * resolution and not decision stability.
      */
     fun dual(
         m: Signal1D,

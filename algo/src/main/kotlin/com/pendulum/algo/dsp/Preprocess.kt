@@ -7,38 +7,38 @@ import com.pendulum.algo.model.Signal1D
 import com.pendulum.algo.model.Timeline
 
 /**
- * **Toutes** les valeurs de parametres du pretraitement, regroupees, avec les defauts **exacts**
- * des tableaux §6.1 (integrite et pretraitement) et §6.2 (enveloppe et plancher).
+ * **All** the preprocessing parameter values, gathered together, with the **exact** defaults of
+ * tables §6.1 (integrity and preprocessing) and §6.2 (envelope and floor).
  *
- * Un seul objet pour une seule raison : ces valeurs entrent dans le hash de parametres qui
- * accompagne chaque `PlmiResult`. Deux nuits calculees avec des reglages differents ne sont pas
- * comparables, et le seul moyen fiable de s'en apercevoir est que le hash change. Eparpiller les
- * constantes dans les appels rendrait ce hash incomplet, donc mensonger.
+ * A single object for a single reason: these values enter the parameter hash that accompanies
+ * every `PlmiResult`. Two nights computed with different settings are not comparable, and the only
+ * reliable way to notice it is that the hash changes. Scattering the constants across the calls
+ * would make that hash incomplete, therefore a lie.
  *
- * Les champs marques INTERPRETATION n'ont pas de ligne dans les tableaux de la specification ;
- * leur justification est donnee a l'endroit ou ils sont consommes.
+ * The fields marked INTERPRETATION have no line in the tables of the specification; their
+ * justification is given where they are consumed.
  */
 data class PreprocessConfig(
-    // --- §6.1 : integrite et ligne de temps ---
+    // --- §6.1: integrity and timeline ---
     val timeline: TimelineConfig = TimelineConfig(),
-    // --- §6.1 : separation gravite / mouvement ---
+    // --- §6.1: gravity / movement separation ---
     val fcGravityHz: Double = 0.15,
     val fcHpHz: Double = 0.50,
     val fcLpHz: Double = 8.0,
     val hpOrder: Int = 2,
-    // --- §6.2 : enveloppes ---
+    // --- §6.2: envelopes ---
     val coarseEnvSec: Double = 0.50,
     val fineEnvSec: Double = 0.15,
-    // --- §6.2 : plancher de bruit ---
+    // --- §6.2: noise floor ---
     val noiseFloor: NoiseFloorConfig = NoiseFloorConfig(),
-    // --- §6.3 : seuils (les quatre valeurs utilisees par l'etape 4) ---
+    // --- §6.3: thresholds (the four values used by step 4) ---
     val thresholds: ThresholdParams = ThresholdParams(),
 ) {
-    /** `Theta_abs / k_on` — borne inferieure du plancher, cf. §1.3 derniere ligne. */
+    /** `Theta_abs / k_on` — lower bound of the floor, cf. §1.3 last line. */
     val floorMinG: Float get() = (thresholds.absFloorG / thresholds.kOn).toFloat()
 }
 
-/** Tout ce que le pretraitement produit, dans l'ordre ou les etapes suivantes le consomment. */
+/** Everything the preprocessing produces, in the order the following steps consume it. */
 data class Preprocessed(
     val timeline: Timeline,
     val gravity: com.pendulum.algo.model.TriAxial,
@@ -51,21 +51,21 @@ data class Preprocessed(
 )
 
 /**
- * Enchainement des etapes −1 a 4. Fonction pure : meme entree -> meme sortie au bit pres.
+ * Chaining of steps −1 to 4. Pure function: same input -> same output down to the bit.
  *
- * L'ordre n'est pas negociable, chaque etape consommant strictement la sortie de la precedente :
- * integrite -> ligne de temps -> gravite/mouvement -> magnitude -> enveloppes -> plancher ->
- * seuils.
+ * The order is not negotiable, each step consuming strictly the output of the previous one:
+ * integrity -> timeline -> gravity/movement -> magnitude -> envelopes -> floor -> thresholds.
  */
 object Preprocess {
 
     /**
-     * @param postureBoundaries frontieres de changement de posture, en index de grille. Elles
-     *   **coupent les fenetres du plancher** au meme titre que les frontieres de segment (§3.1,
-     *   effet de bord (a)). Elles ne sont pas connues au premier passage — le detecteur de
-     *   posture travaille sur `g_chapeau`, donc apres l'etape 1 — d'ou l'appel en deux temps
-     *   possible : un premier `run` sans frontieres pour obtenir `gravity`, puis un second avec.
-     * @param calibration fournit `gainCalG` au troisieme terme du seuil. `null` = terme desactive.
+     * @param postureBoundaries posture change boundaries, as grid indices. They **cut the floor
+     *   windows** just as much as the segment boundaries do (§3.1, side effect (a)). They are not
+     *   known on the first pass — the posture detector works on `g_hat`, therefore after step 1 —
+     *   hence the possible two-stage call: a first `run` without boundaries to obtain `gravity`,
+     *   then a second one with them.
+     * @param calibration supplies `gainCalG` to the third term of the threshold. `null` = term
+     *   disabled.
      */
     fun run(
         blocks: List<SampleBlock>,

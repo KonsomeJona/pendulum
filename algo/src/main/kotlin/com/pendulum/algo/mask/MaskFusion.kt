@@ -12,14 +12,14 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Paramètres de la fusion (`docs/fr/ALGO-v2.md` §3.6.4, tableau §6.6).
+ * Fusion parameters (`docs/workings/ALGO-v2.md` §3.6.4, table §6.6).
  *
- * @param maxLagMs demi-plage de recherche du décalage, ±10 min par défaut (plage 300–900 s).
- * @param lagStepMs pas de la recherche. Vaut la durée d'une époque : chercher plus fin que la
- *   grille sur laquelle on compare n'ajoute aucune information.
- * @param minCoverage recouvrement minimal exigé pour qu'un décalage candidat soit seulement
- *   *éligible*. Sans lui, le décalage maximal gagne toujours : en ne laissant qu'une poignée
- *   d'époques en vis-à-vis, il est trivial d'atteindre 100 % d'accord sur presque rien.
+ * @param maxLagMs half-range of the lag search, ±10 min by default (range 300–900 s).
+ * @param lagStepMs step of the search. Equal to the duration of an epoch: searching finer than the
+ *   grid on which the comparison is made adds no information.
+ * @param minCoverage minimum overlap required for a candidate lag to be merely *eligible*. Without
+ *   it, the maximal lag always wins: by leaving only a handful of epochs facing each other, it is
+ *   trivial to reach 100 % agreement on almost nothing.
  */
 data class FusionConfig(
     val maxLagMs: Long = 600_000,
@@ -28,59 +28,57 @@ data class FusionConfig(
 )
 
 /**
- * Correction apprise du TST accélérométrique vers le TST de référence (§3.6.4, point 3).
+ * Learned correction of the accelerometric TST towards the reference TST (§3.6.4, point 3).
  * `TST_HC ≈ alpha · TST_accel + beta`.
  */
 data class TstCorrection(val alpha: Double, val beta: Double, val nNights: Int, val valid: Boolean)
 
-/** Époque non renseignée par un masque. À ne jamais confondre avec « éveillé » : voir `binarize`. */
+/** Epoch not filled in by a mask. Never to be confused with "awake": see `binarize`. */
 private const val UNDEFINED: Byte = -1
 
 /**
- * Fusion du masque accélérométrique avec un hypnogramme externe et/ou un journal manuel
- * (`docs/fr/ALGO-v2.md` §3.6.4 et §3.6.5).
+ * Fusion of the accelerometric mask with an external hypnogram and/or a manual diary
+ * (`docs/workings/ALGO-v2.md` §3.6.4 and §3.6.5).
  *
- * **La raison d'être de ce fichier est l'indépendance du dénominateur, pas la précision.**
- * `aPLM-i = numérateur(mouvement) / dénominateur(sommeil déduit de l'absence de mouvement)` : les
- * deux termes sortent du même signal et sont anti-corrélés par construction, donc la métrique
- * s'auto-amplifie. Health Connect casse la boucle parce qu'il est *indépendant* — autre poignet,
- * autre capteur, autre algorithme, autre appareil — et non parce qu'il apporte les stades. Le
- * journal manuel la casse encore plus complètement : deux champs saisis à la main ne dépendent
- * d'aucun signal.
+ * **The reason this file exists is denominator independence, not accuracy.**
+ * `aPLM-i = numerator(movement) / denominator(sleep deduced from the absence of movement)`: the two
+ * terms come out of the same signal and are anti-correlated by construction, so the metric
+ * self-amplifies. Health Connect breaks the loop because it is *independent* — other wrist, other
+ * sensor, other algorithm, other device — and not because it brings in the stages. The manual
+ * diary breaks it even more completely: two fields entered by hand depend on no signal at all.
  *
- * **Règle non négociable, appliquée ici et pas dans l'interface** (`SPEC-v2.md` §2.3) : un masque
- * [MaskSource.ACCEL_IMMOBILITY] est [DenominatorIndependence.CIRCULAR] et ne peut jamais porter le
- * résultat principal ni alimenter la tendance. Aucune fonction de ce fichier ne « promeut » son
- * indépendance : ni le recalage, ni la correction apprise ne transforment un dénominateur
- * circulaire en dénominateur indépendant — ils le rendent seulement moins biaisé, ce qui est une
- * tout autre propriété.
+ * **Non-negotiable rule, applied here and not in the interface** (`SPEC-v2.md` §2.3): a
+ * [MaskSource.ACCEL_IMMOBILITY] mask is [DenominatorIndependence.CIRCULAR] and can never carry the
+ * primary result nor feed the trend. No function in this file "promotes" its independence: neither
+ * the realignment nor the learned correction turns a circular denominator into an independent
+ * denominator — they only make it less biased, which is an altogether different property.
  *
- * Fonctions pures : aucune horloge murale, aucun aléa, aucune I/O.
+ * Pure functions: no wall clock, no randomness, no I/O.
  */
 object MaskFusion {
 
-    /** Grille de comparaison, en ms. Identique à `ImmobilityConfig.epochSec` : §3.6.4, point 1. */
+    /** Comparison grid, in ms. Identical to `ImmobilityConfig.epochSec`: §3.6.4, point 1. */
     const val ALIGN_EPOCH_MS: Long = 5_000
 
-    /** Au-delà, drapeau `HC_LAG_SUSPECT` (§3.6.4, point 1). */
+    /** Beyond this, `HC_LAG_SUSPECT` flag (§3.6.4, point 1). */
     const val LAG_SUSPECT_MS: Long = 300_000
 
     fun lagSuspect(agreement: MaskAgreement): Boolean = abs(agreement.bestLagMs) > LAG_SUSPECT_MS
 
     /**
-     * Temps 1 et 2 de §3.6.4 : **recalage temporel** puis **accord**.
+     * Times 1 and 2 of §3.6.4: **temporal realignment** then **agreement**.
      *
-     * Pourquoi le recalage n'est pas une coquetterie : les deux appareils ont deux horloges, et la
-     * latence d'endormissement est réellement différente au poignet et à la cheville. Deux minutes
-     * de décalage suffisent à faire basculer des mouvements de part et d'autre de l'endormissement,
-     * donc à les imputer au mauvais stade — et l'AASM v3 exige justement qu'une partie de chaque
-     * mouvement tombe dans une époque de sommeil. Un décalage non corrigé ne dégrade pas le
-     * résultat « un peu » : il supprime ou fabrique des événements.
+     * Why the realignment is not an affectation: the two devices have two clocks, and the sleep
+     * onset latency really is different at the wrist and at the ankle. Two minutes of lag are
+     * enough to tip movements from one side of sleep onset to the other, and therefore to impute
+     * them to the wrong stage — and the AASM v3 requires precisely that part of each movement fall
+     * within a sleep epoch. An uncorrected lag does not degrade the result "a little": it deletes
+     * or manufactures events.
      *
-     * @return κ de Cohen, ΔTST = `TST_HC − TST_accel` (positif = HC score plus de sommeil),
-     *   recouvrement de Jaccard des périodes de sommeil en %, et le décalage retenu. Toutes les
-     *   grandeurs sont évaluées **après** recalage. `NaN` si l'un des masques est vide : une
-     *   absence de mesure n'est pas un désaccord de zéro.
+     * @return Cohen's κ, ΔTST = `TST_HC − TST_accel` (positive = HC scores more sleep), the
+     *   Jaccard overlap of the sleep periods in %, and the lag retained. All the quantities are
+     *   evaluated **after** realignment. `NaN` if one of the masks is empty: an absence of
+     *   measurement is not a disagreement of zero.
      */
     fun align(accel: SleepMask, hc: List<SleepWindow>, cfg: FusionConfig = FusionConfig()): MaskAgreement {
         val nothing = MaskAgreement(Double.NaN, Double.NaN, Double.NaN, 0L)
@@ -101,9 +99,9 @@ object MaskFusion {
         var bestShift = 0L
         var bestScore = -1.0
         var bestFound = false
-        // Balayage ordonné par |λ| croissant, amélioration **stricte** : à accord égal, le plus
-        // petit décalage l'emporte. Un recalage est une correction d'horloge, pas un degré de
-        // liberté d'ajustement ; à égalité, ne rien corriger est la conclusion honnête.
+        // Sweep ordered by increasing |λ|, with **strict** improvement: at equal agreement, the
+        // smallest lag wins. A realignment is a clock correction, not a fitting degree of freedom;
+        // at a tie, correcting nothing is the honest conclusion.
         var d = 0L
         while (d <= maxShift) {
             for (sign in intArrayOf(1, -1)) {
@@ -129,18 +127,19 @@ object MaskFusion {
     }
 
     /**
-     * Produit le masque qui portera le résultat, par ordre de préférence strict : Health Connect,
-     * puis journal manuel, puis — faute de mieux — le masque accélérométrique inchangé.
+     * Produces the mask that will carry the result, in strict order of preference: Health Connect,
+     * then the manual diary, then — for want of anything better — the accelerometric mask
+     * unchanged.
      *
-     * L'ordre n'est pas un ordre de qualité de mesure, c'est un ordre d'**indépendance**. Un
-     * hypnogramme de montre est moins précis qu'une PSG et probablement moins précis, sur certaines
-     * nuits, que notre propre masque ; il reste préférable parce qu'il ne partage pas sa source
-     * d'erreur avec le numérateur. C'est la couche 3 de §3.6.3.
+     * The order is not an order of measurement quality, it is an order of **independence**. A watch
+     * hypnogram is less accurate than a PSG and probably less accurate, on some nights, than our
+     * own mask; it remains preferable because it does not share its error source with the
+     * numerator. This is layer 3 of §3.6.3.
      *
-     * @param hc fenêtres Health Connect, déjà exprimées dans le même repère `msRel` que le masque
-     *   accélérométrique. `null` ou vide = HC n'a pas répondu.
-     * @param diary journal manuel. Utilisé comme **dénominateur** quand HC manque, et comme simple
-     *   bornage « au lit » quand HC répond.
+     * @param hc Health Connect windows, already expressed in the same `msRel` reference as the
+     *   accelerometric mask. `null` or empty = HC did not answer.
+     * @param diary manual diary. Used as the **denominator** when HC is missing, and as a plain
+     *   "in bed" bounding when HC answers.
      */
     fun fuse(
         accel: SleepMask,
@@ -159,20 +158,20 @@ object MaskFusion {
                 independence = DenominatorIndependence.INDEPENDENT_HC,
                 coverage = coverage,
                 lagAppliedMs = lag,
-                // Le dénominateur est celui de HC : aucune correction apprise ne s'y applique,
-                // même si le masque accélérométrique en portait une.
+                // The denominator is HC's: no learned correction applies to it, even if the
+                // accelerometric mask was carrying one.
                 corrected = false,
             )
         }
         if (diary != null) return fromDiary(diary, coverage, MaskSource.FUSED)
-        // Rien d'indépendant à offrir : on renvoie le masque accélérométrique **tel quel**, avec sa
-        // source et sa circularité. Le renommer `FUSED` laisserait croire qu'une fusion a eu lieu.
+        // Nothing independent to offer: we return the accelerometric mask **as it is**, with its
+        // source and its circularity. Renaming it `FUSED` would suggest that a fusion took place.
         return accel
     }
 
     /**
-     * Masque Health Connect seul, tel qu'il est stocké dans `NightAnalysis.masks`. Aucun recalage :
-     * le recalage n'a de sens que relativement à un autre masque, et c'est [align] qui le porte.
+     * The Health Connect mask alone, as it is stored in `NightAnalysis.masks`. No realignment: a
+     * realignment only makes sense relative to another mask, and it is [align] that carries it.
      */
     fun fromHealthConnect(
         hc: List<SleepWindow>,
@@ -187,16 +186,17 @@ object MaskFusion {
     )
 
     /**
-     * Masque du journal manuel — §3.6.5-a, « la solution la moins chère et la meilleure ».
+     * Manual diary mask — §3.6.5-a, "the cheapest and the best solution".
      *
-     * Le dénominateur produit est le **temps au lit**, strictement indépendant du signal. Il
-     * surestime le TST puisqu'il inclut le WASO : l'indice en ressort **déflaté**, c'est-à-dire
-     * biaisé du côté prudent (on sous-diagnostique plutôt que de sur-diagnostiquer), et surtout
-     * biaisé d'une quantité qui **ne dépend pas du nombre de mouvements**. C'est exactement ce
-     * qu'on cherche : un biais constant se compare d'une nuit à l'autre, une rétroaction non.
+     * The denominator produced is **time in bed**, strictly independent of the signal. It
+     * overestimates the TST since it includes the WASO: the index comes out **deflated**, that is
+     * to say biased on the cautious side (we under-diagnose rather than over-diagnose), and above
+     * all biased by a quantity that **does not depend on the number of movements**. That is
+     * exactly what we are after: a constant bias compares from one night to the next, a feedback
+     * loop does not.
      *
-     * Le stade est [Stage.SLEEP] indifférencié : un journal ne connaît pas les stades, et prétendre
-     * le contraire fabriquerait une répartition N1/N2/N3/REM sortie de nulle part.
+     * The stage is undifferentiated [Stage.SLEEP]: a diary does not know the stages, and claiming
+     * otherwise would manufacture an N1/N2/N3/REM breakdown out of nowhere.
      */
     fun fromDiary(
         diary: DiaryWindow,
@@ -212,19 +212,19 @@ object MaskFusion {
     )
 
     /**
-     * Temps 3 de §3.6.4 — **correction apprise** `TST_HC ≈ alpha · TST_accel + beta`.
+     * Time 3 of §3.6.4 — **learned correction** `TST_HC ≈ alpha · TST_accel + beta`.
      *
-     * @param pairs `(TST_accel, TST_HC)` des nuits disposant des deux masques, en minutes.
+     * @param pairs `(TST_accel, TST_HC)` of the nights that have both masks, in minutes.
      *
-     * Trois régimes, imposés par la taille d'échantillon et non par goût :
-     *  - `n < 3` : **aucune correction**. Deux nuits suffisent à tracer une droite parfaite et à
-     *    exporter n'importe quelle aberration sur toutes les nuits suivantes. Il ne reste alors que
-     *    l'encadrement du temps 4 ;
-     *  - `3 ≤ n < 5` : **médiane du ratio**, `beta = 0`. Un seul paramètre, borné, insensible à un
-     *    point aberrant ;
-     *  - `n ≥ 5` : **Theil-Sen** (médiane des pentes deux à deux, puis médiane des ordonnées à
-     *    l'origine). Point de rupture de 29 %, déterministe, et sans la moindre dépendance externe —
-     *    là où les moindres carrés se laissent emporter par une seule nuit mal segmentée.
+     * Three regimes, imposed by the sample size and not by taste:
+     *  - `n < 3`: **no correction**. Two nights are enough to draw a perfect line and to export any
+     *    aberration whatsoever onto all the following nights. All that remains then is the
+     *    bracketing of time 4;
+     *  - `3 ≤ n < 5`: **median of the ratio**, `beta = 0`. A single parameter, bounded, insensitive
+     *    to an outlying point;
+     *  - `n ≥ 5`: **Theil-Sen** (median of the pairwise slopes, then median of the intercepts).
+     *    Breakdown point of 29 %, deterministic, and without the slightest external dependency —
+     *    where least squares let themselves be carried away by a single badly segmented night.
      */
     fun fitCorrection(pairs: List<Pair<Double, Double>>): TstCorrection {
         val usable = pairs.filter { it.first.isFinite() && it.second.isFinite() && it.first > 0.0 }
@@ -254,15 +254,15 @@ object MaskFusion {
     }
 
     /**
-     * Applique la correction aux **grandeurs scalaires** du masque, jamais à ses fenêtres.
+     * Applies the correction to the **scalar quantities** of the mask, never to its windows.
      *
-     * Redistribuer 40 min de sommeil retrouvé sur des fenêtres précises exigerait de savoir *où*
-     * elles manquaient — information dont on ne dispose précisément pas. Les fenêtres restent donc
-     * le scorage brut (elles servent l'attribution des événements) tandis que le dénominateur porte
-     * la correction ; `corrected = true` signale cette dissociation à l'appelant.
+     * Redistributing 40 min of recovered sleep over specific windows would require knowing *where*
+     * they were missing — precisely the information we do not have. The windows therefore remain
+     * the raw scoring (they serve the attribution of the events) while the denominator carries the
+     * correction; `corrected = true` signals this dissociation to the caller.
      *
-     * `independence` reste [DenominatorIndependence.CIRCULAR] : recaler la moyenne d'un estimateur
-     * ne le rend pas indépendant de ce qu'il mesure. La rétroaction nuit-à-nuit reste entière.
+     * `independence` stays [DenominatorIndependence.CIRCULAR]: recentring the mean of an estimator
+     * does not make it independent of what it measures. The night-to-night feedback remains whole.
      */
     fun applyCorrection(accel: SleepMask, c: TstCorrection): SleepMask {
         if (!c.valid || accel.tstMin <= 0.0) return accel
@@ -276,15 +276,16 @@ object MaskFusion {
         )
     }
 
-    // --- Interne ------------------------------------------------------------------------------
+    // --- Internal -----------------------------------------------------------------------------
 
     /**
-     * Fraction de la nuit réellement analysable, mesurée sur le SPT du masque accélérométrique.
+     * Fraction of the night that is really analysable, measured on the SPT of the accelerometric
+     * mask.
      *
-     * Ce taux est une propriété de l'**enregistrement** — trous, segments rompus, hors-corps — et
-     * non du scorage : il se transfère donc légitimement à un masque construit sur une autre
-     * source, laquelle n'a par définition aucune idée de nos trous à nous. C'est une estimation, et
-     * la seule disponible sans faire remonter toute la ligne de temps jusqu'ici.
+     * This rate is a property of the **recording** — gaps, broken segments, off-body — and not of
+     * the scoring: it therefore transfers legitimately to a mask built on another source, which by
+     * definition has no idea of our own gaps. It is an estimate, and the only one available
+     * without carrying the whole timeline all the way up to here.
      */
     private fun analysableCoverageOf(accel: SleepMask): Double =
         if (accel.sptMin > 0.0) (accel.analysableSptMin / accel.sptMin).coerceIn(0.0, 1.0) else 1.0
@@ -313,9 +314,9 @@ object MaskFusion {
             corrected = corrected,
             lagAppliedMs = lagAppliedMs,
             independence = independence,
-            // Aucun point fixe n'est en jeu : le dénominateur ne sort pas du signal qu'on compte,
-            // il n'y a donc rien qui puisse osciller. Rapporter `false` fermerait la porte de
-            // publication pour une raison qui n'existe pas.
+            // No fixed point is at stake: the denominator does not come out of the signal being
+            // counted, so there is nothing that could oscillate. Reporting `false` would close the
+            // publication gate for a reason that does not exist.
             fixedPointConverged = true,
         )
     }
@@ -339,11 +340,11 @@ object MaskFusion {
     private fun lastEnd(windows: List<SleepWindow>): Long = windows.maxOf { it.endMsRel }
 
     /**
-     * `1` = sommeil, `0` = au lit mais pas endormi, `-1` = **non renseigné**.
+     * `1` = sleep, `0` = in bed but not asleep, `-1` = **not filled in**.
      *
-     * La distinction entre `0` et `-1` est ce qui rend l'accord interprétable : hors de sa fenêtre,
-     * un masque ne dit pas « éveillé », il ne dit rien. Les compter comme des éveils concordants
-     * gonflerait mécaniquement κ avec la seule longueur de l'enregistrement.
+     * The distinction between `0` and `-1` is what makes the agreement interpretable: outside its
+     * window, a mask does not say "awake", it says nothing. Counting those as concordant wakes
+     * would mechanically inflate κ with the length of the recording alone.
      */
     private fun binarize(windows: List<SleepWindow>, nEpochs: Int): ByteArray {
         val out = ByteArray(nEpochs) { UNDEFINED }
@@ -357,7 +358,7 @@ object MaskFusion {
         return out
     }
 
-    /** Accord brut à décalage donné, ou `null` si le recouvrement est insuffisant. */
+    /** Raw agreement at a given lag, or `null` if the overlap is insufficient. */
     private fun agreementAt(
         a: ByteArray,
         h: ByteArray,
@@ -379,12 +380,12 @@ object MaskFusion {
     }
 
     /**
-     * κ de Cohen sur les époques où les deux masques sont renseignés.
+     * Cohen's κ on the epochs where both masks are filled in.
      *
-     * Cas dégénéré traité explicitement : si les deux masques ne voient que du sommeil, `pe = 1` et
-     * κ est de la forme 0/0. Un accord parfait sur une seule catégorie n'apporte aucune information
-     * au-delà du hasard — la convention retenue est donc `κ = 0` en cas de désaccord et `κ = 1`
-     * quand l'accord est parfait, plutôt qu'un `NaN` qui se propagerait dans le rapport.
+     * Degenerate case handled explicitly: if both masks see nothing but sleep, `pe = 1` and κ takes
+     * the form 0/0. A perfect agreement on a single category brings no information beyond chance —
+     * the convention retained is therefore `κ = 0` in case of disagreement and `κ = 1` when the
+     * agreement is perfect, rather than a `NaN` that would propagate into the report.
      */
     private fun kappaAt(a: ByteArray, h: ByteArray, shift: Long): Double {
         var both = 0
@@ -409,7 +410,7 @@ object MaskFusion {
         return (p0 - pe) / (1.0 - pe)
     }
 
-    /** Recouvrement de Jaccard des périodes de sommeil, en %. */
+    /** Jaccard overlap of the sleep periods, in %. */
     private fun jaccardAt(a: ByteArray, h: ByteArray, shift: Long): Double {
         var inter = 0
         var union = 0
@@ -423,7 +424,7 @@ object MaskFusion {
         return if (union == 0) Double.NaN else 100.0 * inter / union
     }
 
-    /** Médiane exacte en `Double` : le fit porte sur quelques nuits, la précision y est gratuite. */
+    /** Exact median in `Double`: the fit bears on a few nights, so the precision is free here. */
     private fun medianD(v: DoubleArray): Double {
         if (v.isEmpty()) return Double.NaN
         val s = v.copyOf()

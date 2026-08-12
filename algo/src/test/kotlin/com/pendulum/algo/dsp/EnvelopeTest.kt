@@ -15,7 +15,7 @@ class EnvelopeTest {
     private val fs = 50.0
 
     @Test
-    fun `la chaine gravite-mouvement-magnitude est invariante par rotation du bracelet`() {
+    fun `the gravity-motion-magnitude chain is invariant under rotation of the strap`() {
         val n = 3000
         val rnd = java.util.Random(42)
         val x = FloatArray(n); val y = FloatArray(n); val z = FloatArray(n)
@@ -27,8 +27,8 @@ class EnvelopeTest {
         }
         val raw = TriAxial(fs, 0L, x, y, z)
 
-        // Rotation constante de 37 degres autour de l'axe z : le boitier est simplement pose
-        // differemment sur la cheville d'une nuit a l'autre.
+        // Constant rotation of 37 degrees about the z axis: the case is simply placed
+        // differently on the ankle from one night to the next.
         val a = Math.toRadians(37.0)
         val rx = FloatArray(n); val ry = FloatArray(n); val rz = FloatArray(n)
         for (i in 0 until n) {
@@ -47,16 +47,16 @@ class EnvelopeTest {
             val d = abs(m1.v[i] - m2.v[i]).toDouble()
             maxRel = maxOf(maxRel, d / maxOf(1e-6, m1.v[i].toDouble()))
         }
-        // Les filtres etant lineaires et identiques par axe, la rotation commute avec eux :
-        // il ne reste que l'arrondi Float.
+        // The filters being linear and identical on each axis, the rotation commutes with them:
+        // only the Float rounding is left.
         assertThat(maxRel).isLessThan(1e-3)
     }
 
     @Test
-    fun `l enveloppe grossiere annule l ondulation a 2f que la fine laisse passer`() {
-        // Un CLM synthetique a 2 Hz. Redressee, une sinusoide oscille a 4 Hz ; une fenetre de
-        // 0,15 s (7,5 echantillons) ne moyenne pas cette ondulation et fragmente l'evenement,
-        // une fenetre de 0,50 s si. C'est le bug de la v1 (§0-b).
+    fun `the coarse envelope cancels the 2f ripple that the fine one lets through`() {
+        // A synthetic CLM at 2 Hz. Rectified, a sinusoid oscillates at 4 Hz; a 0.15 s window
+        // (7.5 samples) does not average out that ripple and fragments the event, whereas a
+        // 0.50 s window does. This is the v1 bug (§0-b).
         val n = 2000
         val v = FloatArray(n) { 0.1f * sin(2 * PI * 2.0 * it / fs).toFloat() }
         val sig = com.pendulum.algo.model.Signal1D(fs, 0L, FloatArray(n) { abs(v[it]) })
@@ -72,12 +72,12 @@ class EnvelopeTest {
     }
 
     @Test
-    fun `une fenetre ne franchit jamais une frontiere de segment`() {
+    fun `a window never crosses a segment boundary`() {
         val n = 400
         val v = FloatArray(n) { if (it < 200) 0.01f else 1.0f }
         val sig = com.pendulum.algo.model.Signal1D(fs, 0L, v)
         val out = Envelope.rms(sig, 0.50, listOf(Segment(0, 200), Segment(200, n)))
-        // Le dernier echantillon du premier segment ne doit rien savoir du second.
+        // The last sample of the first segment must know nothing of the second.
         assertThat(out.v[199].toDouble()).isCloseTo(0.01, within(1e-6))
         assertThat(out.v[200].toDouble()).isCloseTo(1.0, within(1e-6))
     }

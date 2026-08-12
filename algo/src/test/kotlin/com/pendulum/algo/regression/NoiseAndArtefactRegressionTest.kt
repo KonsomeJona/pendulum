@@ -10,49 +10,50 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * T1 a T4 du tableau `docs/fr/ALGO-v2.md` §5.5 — les quatre scenarios **negatifs**.
+ * T1 to T4 of the `docs/workings/ALGO-v2.md` §5.5 table — the four **negative** scenarios.
  *
- * Ce sont les tests les plus importants de la suite et les moins spectaculaires : un detecteur qui
- * echoue ici ne mesure pas des mouvements periodiques, il mesure du bruit ambiant. Chacun tourne sur
- * les 20 graines ; l'assertion porte sur la mediane, et sur le pire cas la ou la specification
- * l'exige (T1).
+ * These are the most important tests of the suite and the least spectacular: a detector that fails
+ * here is not measuring periodic movements, it is measuring ambient noise. Each one runs on the 20
+ * seeds; the assertion bears on the median, and on the worst case where the specification demands it
+ * (T1).
  */
 class NoiseAndArtefactRegressionTest {
 
     /**
-     * **T1 — bruit MEMS seul, 30 min : 0 CLM. Non negociable, pire cas inclus.**
+     * **T1 — MEMS noise alone, 30 min: 0 CLM. Non-negotiable, worst case included.**
      *
-     * Intention : c'est le garde-fou du plancher absolu `Theta_abs` (§1.1). Le seuil relatif seul
-     * tomberait vers 7 mg sur une nuit aussi calme, et le detecteur compterait des micro-vibrations.
+     * Intent: this is the guard rail of the absolute floor `Theta_abs` (§1.1). The relative
+     * threshold alone would drop towards 7 mg on a night this quiet, and the detector would count
+     * micro-vibrations.
      *
-     * L'assertion de fraction analysable n'est pas decorative : le bruit MEMS pur a un ecart-type
-     * bien inferieur au seuil `offBodySdG` de l'etape 0, et sans la derive posturale lente du membre
-     * porteur ([com.pendulum.algo.synth.NoiseSpec.wanderDeg]) la nuit entiere serait classee off-body.
-     * Le test passerait alors **a vide**, ce qui est pire qu'un echec.
+     * The analysable-fraction assertion is not decorative: pure MEMS noise has a standard deviation
+     * well below the `offBodySdG` threshold of step 0, and without the slow postural drift of the
+     * wearing limb ([com.pendulum.algo.synth.NoiseSpec.wanderDeg]) the whole night would be
+     * classified off-body. The test would then pass **on nothing**, which is worse than a failure.
      */
     @Test
-    @DisplayName("T1 — bruit MEMS seul : aucun CLM, sur les 20 graines, pire cas inclus")
+    @DisplayName("T1 — MEMS noise alone: no CLM, over the 20 seeds, worst case included")
     fun t1_memsNoiseOnlyProducesNoClm() {
         val counts = SEEDS.map { seed ->
             val a = analyse(distractorOnlyNight(seed, minutes = 30.0, distractors = DistractorSpec.NONE))
             assertThat(a.analysableFraction)
-                .`as`("graine %d : la nuit doit rester analysable, sinon le test est vide", seed)
+                .`as`("seed %d: the night must stay analysable, otherwise the test is empty", seed)
                 .isGreaterThan(0.80)
             a.retained.size.toDouble()
         }
         assertThat(medianOf(counts)).isEqualTo(0.0)
-        assertThat(worstMax(counts)).`as`("T1 est non negociable : pire cas inclus").isEqualTo(0.0)
+        assertThat(worstMax(counts)).`as`("T1 is non-negotiable: worst case included").isEqualTo(0.0)
     }
 
     /**
-     * **T2 — respiration seule (8 mg a 0,25 Hz), 30 min : 0 CLM.**
+     * **T2 — respiration alone (8 mg at 0.25 Hz), 30 min: 0 CLM.**
      *
-     * Intention : verifier le coude bas du passe-haut (§1.2). A 0,5 Hz et a l'ordre 2, un signal a
-     * 0,25 Hz est attenue d'environ 12 dB ; 8 mg deviennent 2 mg, tres au-dessous du plancher
-     * absolu. C'est ce test qui justifie de garder `fcHpHz = 0,50` plutot que 0,30.
+     * Intent: check the low corner of the high-pass (§1.2). At 0.5 Hz and order 2, a signal at
+     * 0.25 Hz is attenuated by about 12 dB; 8 mg become 2 mg, far below the absolute floor. It is
+     * this test that justifies keeping `fcHpHz = 0.50` rather than 0.30.
      */
     @Test
-    @DisplayName("T2 — artefact respiratoire seul : aucun CLM")
+    @DisplayName("T2 — respiratory artefact alone: no CLM")
     fun t2_respiratoryArtefactProducesNoClm() {
         val onlyRespiration = DistractorSpec.NONE.copy(
             respiratory = true,
@@ -68,18 +69,18 @@ class NoiseAndArtefactRegressionTest {
     }
 
     /**
-     * **T3 — vibrations de matelas seules, 300 transitoires en 30 min : au plus 2 CLM.**
+     * **T3 — mattress vibrations alone, 300 transients in 30 min: at most 2 CLM.**
      *
-     * Intention : mesurer le critere de morphologie WASM 3.2.1-d (§3.2). Une vibration transmise est
-     * une sonnerie de 0,05 a 0,4 s : crete elevee, **mediane faible**, et surtout tilt inchange. La
-     * fenetre de morphologie de 0,5 s est le seul filtre anti-matelas du corpus des regles publiees ;
-     * tout le reste serait une invention.
+     * Intent: measure the WASM 3.2.1-d morphology criterion (§3.2). A transmitted vibration is a
+     * ringing of 0.05 to 0.4 s: high peak, **low median**, and above all unchanged tilt. The 0.5 s
+     * morphology window is the only anti-mattress filter in the corpus of published rules; anything
+     * else would be an invention.
      *
-     * 2 sur 300 vaut 0,7 % de faux positifs. C'est le chiffre de la specification, et il est serre :
-     * la borne haute de la plage d'amplitude (40 mg) est au double du plancher absolu.
+     * 2 out of 300 is 0.7 % of false positives. That is the specification's figure, and it is tight:
+     * the upper bound of the amplitude range (40 mg) is at twice the absolute floor.
      */
     @Test
-    @DisplayName("T3 — 300 vibrations de matelas : au plus 2 CLM (0,7 % de FP)")
+    @DisplayName("T3 — 300 mattress vibrations: at most 2 CLM (0.7 % of FP)")
     fun t3_mattressVibrationsProduceAtMostTwoClm() {
         val onlyMattress = DistractorSpec.NONE.copy(mattressCountMin = 300, mattressCountMax = 300)
         val counts = SEEDS.map { seed ->
@@ -90,20 +91,20 @@ class NoiseAndArtefactRegressionTest {
     }
 
     /**
-     * **T4 — 40 changements de posture seuls : 0 CLM non tague `POSTURAL`, rappel du detecteur de
-     * posture >= 0,95.**
+     * **T4 — 40 posture changes alone: 0 CLM not tagged `POSTURAL`, recall of the posture detector
+     * >= 0.95.**
      *
-     * Intention : la posture est **la premiere source de faux positifs**. Un retournement change la
-     * projection de la gravite d'un axe de jusqu'a 1 g en 0,5 a 3 s ; passe dans le passe-haut a
-     * 0,5 Hz, cet echelon produit un transitoire de 5 a 30 fois l'amplitude d'un vrai CLM et de la
-     * bonne duree pour etre compte. La seule information qui les separe est portee par la gravite.
+     * Intent: posture is **the first source of false positives**. A turn changes the projection of
+     * gravity on an axis by up to 1 g in 0.5 to 3 s; passed through the high-pass at 0.5 Hz, that
+     * step produces a transient of 5 to 30 times the amplitude of a true CLM and of the right
+     * duration to be counted. The only information that separates them is carried by gravity.
      *
-     * Le premier volet se lit litteralement : le drapeau `POSTURAL` entraine le rejet, donc « aucun
-     * CLM sans le drapeau » equivaut a « aucun CLM du tout » sur une nuit ou il n'y a rien d'autre.
-     * Les deux formulations sont ecrites, pour que l'echec designe la bonne cause.
+     * The first part reads literally: the `POSTURAL` flag entails rejection, so "no CLM without the
+     * flag" is equivalent to "no CLM at all" on a night where there is nothing else. Both
+     * formulations are written down, so that the failure points at the right cause.
      */
     @Test
-    @DisplayName("T4 — 40 changements de posture : aucun CLM accepte, rappel de posture >= 0,95")
+    @DisplayName("T4 — 40 posture changes: no CLM accepted, posture recall >= 0.95")
     fun t4_postureChangesAreNeitherCountedNorMissed() {
         val onlyPosture = DistractorSpec.NONE.copy(postureCountMin = 40, postureCountMax = 40)
         val counts = ArrayList<Double>()
@@ -122,9 +123,9 @@ class NoiseAndArtefactRegressionTest {
             val a = analyse(night)
             counts.add(a.clms.count { it.isClm && (it.flags and ClmFlags.POSTURAL) == 0 }.toDouble())
 
-            // Rappel : un changement injecte est retrouve si une transition est datee a moins de 5 s.
-            // La tolerance est large devant `settleMs` et etroite devant l'espacement injecte
-            // (12 min) : elle ne peut pas apparier deux transitions differentes.
+            // Recall: an injected change is found again if a transition is dated within 5 s. The
+            // tolerance is wide compared to `settleMs` and narrow compared to the injected spacing
+            // (12 min): it cannot match two different transitions.
             val detected = a.postures.map { it.atMsRel }
             val matched = night.truth.postures.count { t -> detected.any { abs(it - t) <= 5_000L } }
             recalls.add(if (night.truth.postures.isEmpty()) Double.NaN else matched.toDouble() / night.truth.postures.size)

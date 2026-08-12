@@ -12,55 +12,56 @@ class FiltersTest {
     private val fs = 50.0
 
     @Test
-    fun `le coude d un Butterworth passe-bas est a moins 3 dB`() {
+    fun `the corner of a low-pass Butterworth is at minus 3 dB`() {
         val lp = Filters.butterLowpass(fs, 8.0, 2)
         assertThat(Filters.magnitudeAt(lp, 8.0)).isCloseTo(0.7071, within(1e-3))
         assertThat(Filters.magnitudeAt(lp, 0.5)).isCloseTo(1.0, within(2e-3))
     }
 
     @Test
-    fun `le passe-bande laisse passer 2 Hz et rejette la posture et le haut du spectre`() {
+    fun `the band-pass lets 2 Hz through and rejects posture and the top of the spectrum`() {
         val bp = Filters.butterBandpass(fs, 0.50, 8.0, 2)
         assertThat(Filters.magnitudeAt(bp, 2.0)).isGreaterThan(0.95)
-        // 0,25 Hz : la bande de la respiration. Le tableau de `docs/fr/ALGO-v2.md` §1.2 chiffre les
-        // deux options et **retient l'ordre 2** : |H| = 0,243 (-12,3 dB) a l'ordre 2, 0,062
-        // (-24,1 dB) a l'ordre 4. L'ordre 4 est explicitement rejete (sonnerie de posture 2 s -> 4 s),
-        // et `hpOrder = 2` est la valeur publiee en §6.1. C'est donc 0,243 qu'il faut asserter ici ;
-        // exiger < 0,07 revenait a asserter la ligne « ordre 4 » sur un filtre d'ordre 2.
+        // 0.25 Hz: the breathing band. The table in `docs/workings/ALGO-v2.md` §1.2 puts figures on both
+        // options and **keeps order 2**: |H| = 0.243 (-12.3 dB) at order 2, 0.062 (-24.1 dB) at
+        // order 4. Order 4 is explicitly rejected (posture ringing 2 s -> 4 s), and `hpOrder = 2`
+        // is the value published in §6.1. So it is 0.243 that must be asserted here; requiring
+        // < 0.07 amounted to asserting the "order 4" row on an order 2 filter.
         assertThat(Filters.magnitudeAt(bp, 0.25)).isCloseTo(0.243, within(2e-3))
-        // Le gain a 0,7 Hz (composante d'un CLM lent) doit rester quasi intact. Valeur exacte de
-        // l'ordre 2 : (f/fc)^2 / sqrt(1 + (f/fc)^4) = 1,96 / 2,2004 = 0,891. Le tableau §1.2 portait
-        // 0,915 sur cette case ; c'etait faux, et le tableau a ete corrige (07-validation.md §5.4),
-        // ce qui permet d'asserter la valeur exacte plutot qu'une borne lache.
+        // The gain at 0.7 Hz (component of a slow CLM) must stay nearly intact. Exact value at
+        // order 2: (f/fc)^2 / sqrt(1 + (f/fc)^4) = 1.96 / 2.2004 = 0.891. The §1.2 table carried
+        // 0.915 in that cell; it was wrong, and the table has been corrected (07-validation.md
+        // §5.4), which allows the exact value to be asserted rather than a loose bound.
         assertThat(Filters.magnitudeAt(bp, 0.7)).isCloseTo(0.891, within(2e-3))
-        // 20 Hz : haut du spectre. Aucune case du tableau §1.2 ne chiffre ce point ; la borne 0,03
-        // etait un chiffre rond, et le filtre publie ne la tient pas. Valeur exacte du passe-bas
-        // numerique d'ordre 2 obtenu par transformation bilineaire prewarpee :
-        //   |H| = 1 / sqrt(1 + (tan(pi.20/50) / tan(pi.8/50))^4) = 1 / sqrt(1 + 5,598^4) = 0,0319.
-        // Ce n'est pas la valeur analogique (0,158) : c'est la distorsion de frequence de la
-        // bilineaire pres de Nyquist, et elle joue **en faveur** de la rejection. La borne est donc
-        // relachee a 0,035, ce qui laisse voir une regression de conception sans sur-contraindre.
+        // 20 Hz: top of the spectrum. No cell of the §1.2 table puts a figure on this point; the
+        // 0.03 bound was a round number, and the published filter does not hold it. Exact value
+        // of the order 2 digital low-pass obtained by prewarped bilinear transform:
+        //   |H| = 1 / sqrt(1 + (tan(pi.20/50) / tan(pi.8/50))^4) = 1 / sqrt(1 + 5.598^4) = 0.0319.
+        // This is not the analogue value (0.158): it is the frequency warping of the bilinear
+        // transform near Nyquist, and it works **in favour** of the rejection. The bound is
+        // therefore relaxed to 0.035, which still exposes a design regression without
+        // over-constraining.
         assertThat(Filters.magnitudeAt(bp, 20.0)).isLessThan(0.035)
     }
 
     @Test
-    fun `resetToDc supprime le transitoire de 1 g du passe-bas gravite`() {
+    fun `resetToDc removes the 1 g transient of the gravity low-pass`() {
         val lp = Filters.butterLowpass(fs, 0.15, 2)
         lp.resetToDc(1.0f)
-        // Entree constante a 1 g : la sortie doit valoir 1 g des le premier echantillon.
+        // Constant input at 1 g: the output must read 1 g from the very first sample.
         for (i in 0 until 100) {
             assertThat(lp.step(1.0f).toDouble()).isCloseTo(1.0, within(1e-6))
         }
 
         val naive = Filters.butterLowpass(fs, 0.15, 2)
         naive.reset()
-        // Sans amorcage, le premier echantillon est quasi nul : un transitoire de la taille de
-        // la gravite, soit 5 a 30 fois l'amplitude d'un vrai CLM.
+        // Without priming, the first sample is nearly zero: a transient the size of gravity
+        // itself, that is 5 to 30 times the amplitude of a real CLM.
         assertThat(naive.step(1.0f)).isLessThan(0.01f)
     }
 
     @Test
-    fun `le filtrage en flux est identique quel que soit le decoupage en blocs`() {
+    fun `streaming filtering is identical whatever the split into blocks`() {
         val n = 3000
         val x = FloatArray(n) { 1.0f + 0.05f * sin(2 * PI * 2.0 * it / fs).toFloat() }
 
@@ -68,7 +69,7 @@ class FiltersTest {
         whole.resetToDc(1.0f)
         val ref = whole.process(x)
 
-        // Meme filtre, meme etat, mais alimente par blocs de 512 echantillons.
+        // Same filter, same state, but fed in blocks of 512 samples.
         val streamed = Filters.butterBandpass(fs, 0.50, 8.0, 2)
         streamed.resetToDc(1.0f)
         val out = FloatArray(n)
@@ -78,14 +79,14 @@ class FiltersTest {
             for (k in i until end) out[k] = streamed.step(x[k])
             i = end
         }
-        assertThat(out).isEqualTo(ref) // bit-identique : l'etat ne se perd jamais
+        assertThat(out).isEqualTo(ref) // bit-identical: the state is never lost
     }
 
     @Test
-    fun `reinitialiser le filtre a chaque bloc fabrique un artefact periodique`() {
-        // C'est le piege n° 3 de la v1 : le transitoire se repete a la cadence des blocs et
-        // ressemble a une serie PLM parfaite. Le test verifie qu'on sait le mesurer, donc que
-        // l'implementation stateful n'est pas une precaution decorative.
+    fun `resetting the filter on every block manufactures a periodic artefact`() {
+        // This is pitfall no. 3 of v1: the transient repeats at the block rate and looks like a
+        // perfect PLM series. The test checks that we know how to measure it, hence that the
+        // stateful implementation is not a decorative precaution.
         val n = 3000
         val blockLen = 512
         val x = FloatArray(n) { 1.0f + 0.05f * sin(2 * PI * 2.0 * it / fs).toFloat() }
@@ -99,19 +100,19 @@ class FiltersTest {
         while (i < n) {
             val end = minOf(n, i + blockLen)
             val perBlock = Filters.butterBandpass(fs, 0.50, 8.0, 2)
-            perBlock.reset() // etat nul a chaque bloc : la faute a ne pas commettre
+            perBlock.reset() // zero state on every block: the mistake not to make
             for (k in i until end) out[k] = perBlock.step(x[k])
             i = end
         }
-        // L'erreur maximale est du meme ordre que la gravite elle-meme, soit des dizaines de
-        // fois l'amplitude du signal utile (50 mg ici).
+        // The maximum error is of the same order as gravity itself, that is tens of times the
+        // amplitude of the useful signal (50 mg here).
         var maxErr = 0.0
         for (k in 0 until n) maxErr = maxOf(maxErr, abs(out[k] - ref[k]).toDouble())
         assertThat(maxErr).isGreaterThan(0.5)
     }
 
     @Test
-    fun `snapshot et restore rendent le filtre reprenable a l identique`() {
+    fun `snapshot and restore make the filter resumable identically`() {
         val a = Filters.butterHighpass(fs, 0.5, 2)
         a.resetToDc(1f)
         repeat(200) { a.step(1f + 0.01f * it) }
@@ -126,8 +127,8 @@ class FiltersTest {
     }
 
     @Test
-    fun `le temps d etablissement annonce reste sous le warmup de la specification`() {
+    fun `the announced settling time stays under the warmup of the specification`() {
         val bp = Filters.butterBandpass(fs, 0.50, 8.0, 2)
-        assertThat(bp.settlingTimeSec).isLessThan(5.0) // warmupSec = 5,0 s (§6.1)
+        assertThat(bp.settlingTimeSec).isLessThan(5.0) // warmupSec = 5.0 s (§6.1)
     }
 }

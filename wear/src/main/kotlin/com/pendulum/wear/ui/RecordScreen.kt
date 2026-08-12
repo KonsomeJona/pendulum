@@ -49,7 +49,7 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import com.pendulum.format.wire.StopReason
 import com.pendulum.wear.R
-import com.pendulum.wear.record.estUnePanne
+import com.pendulum.wear.record.isFailure
 import com.pendulum.wear.record.Issue
 import com.pendulum.wear.record.IssueId
 import com.pendulum.wear.record.Preflight
@@ -63,23 +63,23 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /**
- * **Un seul ecran, statique.** Pas de navigation, pas de liste, pas de graphe, pas d'historique,
- * aucun resultat : la montre est un instrument de verification au coucher et de constat au
- * reveil, l'analyse vit sur le telephone.
+ * **A single, static screen.** No navigation, no list, no chart, no history, no result at all: the
+ * watch is an instrument for checking at bedtime and for taking note on waking, the analysis lives
+ * on the phone.
  *
- * Trois raisons de n'avoir aucune animation, dans cet ordre de poids :
+ * Three reasons to have no animation, in this order of weight:
  *
- * 1. **L'energie.** Chaque recomposition reveille le SoC. Sur huit heures, meme une animation
- *    discrete coute plus que l'acquisition a 50 Hz elle-meme.
- * 2. **La contamination de la mesure.** Un ecran qui donne envie d'etre regarde donne envie de
- *    bouger la jambe. L'ecran est a la cheville : le consulter, c'est se pencher, c'est produire
- *    un artefact. Il doit etre ennuyeux exprès.
- * 3. **L'absence de benefice.** Il n'y a rien a regarder en temps reel. Les chiffres affiches
- *    sont des controles de bon fonctionnement, lus deux fois par nuit au plus.
+ * 1. **Energy.** Every recomposition wakes the SoC. Over eight hours, even a discreet animation
+ *    costs more than the 50 Hz acquisition itself.
+ * 2. **Contamination of the measurement.** A screen that makes you want to look at it makes you
+ *    want to move the leg. The screen is at the ankle: consulting it means leaning over, which
+ *    means producing an artefact. It has to be boring on purpose.
+ * 3. **The absence of any benefit.** There is nothing to watch in real time. The figures shown are
+ *    checks that things are working, read twice a night at most.
  *
- * Le critere est testable : **entre le coucher et le reveil, la couche UI ne doit provoquer
- * aucune recomposition.** L'ecran est eteint, [collectAsStateWithLifecycle] est arrete, et le
- * service emet dans le vide.
+ * The criterion is testable: **between going to bed and waking, the UI layer must cause no
+ * recomposition.** The screen is off, [collectAsStateWithLifecycle] is stopped, and the service
+ * emits into the void.
  */
 @Composable
 fun RecordRoute(
@@ -91,11 +91,11 @@ fun RecordRoute(
     val context = LocalContext.current
     var refreshKey by remember { mutableIntStateOf(0) }
     var preflight by remember { mutableStateOf<PreflightResult?>(null) }
-    var ouvertureTelephone by remember { mutableStateOf(OuvertureTelephone.Aucune) }
-    val portee = rememberCoroutineScope()
+    var phoneOpening by remember { mutableStateOf(PhoneOpening.None) }
+    val scope = rememberCoroutineScope()
 
-    // Une seule execution par affichage, jamais periodique : le preflight fait des E/S et une
-    // lecture du Data Layer, ce n'est pas quelque chose qu'on repete en boucle sous la couette.
+    // A single run per display, never periodic: the preflight does I/O and one Data Layer read,
+    // which is not something to repeat in a loop under the duvet.
     LaunchedEffect(refreshKey, state.phase) {
         preflight = if (state.phase == RecordPhase.IDLE) {
             withContext(Dispatchers.IO) { Preflight.check(context) }
@@ -105,65 +105,64 @@ fun RecordRoute(
     }
 
     // ------------------------------------------------------------------------------------
-    // Trois declencheurs de revalidation. Aucun ne s'arme quand l'ecran est eteint.
+    // Three revalidation triggers. None of them arms while the screen is off.
     // ------------------------------------------------------------------------------------
 
-    // 1. L'octroi d'une permission depuis l'application. Le rappel **revalide tout le preflight**
-    //    et pas seulement la permission accordee : accorder les notifications pendant que la
-    //    montre se remplissait ne dit rien de l'espace disque.
-    val demandeNotifications = rememberLauncherForActivityResult(
+    // 1. A permission granted from inside the application. The callback **revalidates the whole
+    //    preflight** and not only the permission just granted: allowing notifications while the
+    //    watch was filling up says nothing about disk space.
+    val notificationsRequest = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { refreshKey++ }
 
-    // Demandee a l'ouverture de l'ecran et pas au moment du START : une invite systeme au
-    // coucher, ecran a la cheville, est exactement ce qu'on ne veut pas faire lire a quelqu'un
-    // d'allonge. Elle vivait dans `MainActivity.onCreate` avec un rappel vide — c'est-a-dire que
-    // l'accorder ne mettait rien a jour et que le bloqueur restait affiche.
+    // Asked when the screen opens and not at START: a system prompt at bedtime, screen at the
+    // ankle, is exactly what we do not want to make someone lying down read. It used to live in
+    // `MainActivity.onCreate` with an empty callback — that is, granting it updated nothing and
+    // the blocker stayed on screen.
     LaunchedEffect(Unit) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            demandeNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            notificationsRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
-    // 2 et 3, dans un seul effet parce qu'ils partagent la meme fenetre de vie : **l'ecran
-    //    allume**.
+    // 2 and 3, in a single effect because they share the same lifetime window: **the screen on**.
     //
-    // 2. Le retour de n'importe ou — et surtout des reglages systeme, ou l'utilisateur peut
-    //    accorder la permission hors de tout `ActivityResultLauncher`. Sans cela, le bouton
-    //    « Open settings » renvoie sur un ecran qui continue d'afficher le bloqueur qu'on vient
-    //    de lever, et la seule issue est de tuer l'application.
+    // 2. Coming back from anywhere — and above all from the system settings, where the user can
+    //    grant the permission outside any `ActivityResultLauncher`. Without this, the "Open
+    //    settings" button returns to a screen that carries on showing the blocker just lifted, and
+    //    the only way out is to kill the application.
     //
-    // 3. Le telephone scelle le contexte du soir. C'est le bloqueur le plus frequent, et le seul
-    //    que l'utilisateur leve depuis un autre appareil : sans ce guetteur, il faut revenir sur
-    //    la montre et appuyer sur « Check again » pour voir disparaitre un bloqueur deja leve.
-    //    Un guetteur du Data Layer, pas une interrogation periodique.
+    // 3. The phone seals the evening context. It is the most frequent blocker, and the only one
+    //    the user lifts from another device: without this listener, one has to come back to the
+    //    watch and press "Check again" to see an already-lifted blocker disappear. A Data Layer
+    //    listener, not a periodic poll.
     //
-    // `LifecycleResumeEffect` plutot qu'un `LifecycleEventObserver` monte a la main : c'est le
-    // meme observateur sur ON_RESUME, en une ligne, avec sa liberation. Et pas
-    // `repeatOnLifecycle`, qui sert a collecter un flux depuis une portee non-Compose.
+    // `LifecycleResumeEffect` rather than a hand-wired `LifecycleEventObserver`: it is the same
+    // observer on ON_RESUME, in one line, with its release. And not `repeatOnLifecycle`, which is
+    // there to collect a flow from a non-Compose scope.
     //
-    // **Le guetteur est enregistre a la reprise et retire a la pause, pas au sort de la
-    // composition.** Un `DisposableEffect` le laisserait arme tant que l'activite existe, donc
-    // ecran eteint, donc pendant la nuit : le telephone qui republie un item a 2 h du matin
-    // reveillerait alors le processus pour recalculer un preflight que personne ne regarde. Le
-    // critere « aucune recomposition entre le coucher et le reveil » se perd exactement par ce
-    // genre de detail. Et un preflight inchange produit un `PreflightResult` structurellement
-    // egal au precedent, que l'egalite structurelle de `mutableStateOf` absorbe sans recomposer.
+    // **The listener is registered on resume and removed on pause, not on the fate of the
+    // composition.** A `DisposableEffect` would leave it armed as long as the activity exists, so
+    // with the screen off, so during the night: the phone republishing an item at 2 a.m. would then
+    // wake the process to recompute a preflight nobody is looking at. The "no recomposition between
+    // going to bed and waking" criterion is lost by exactly this kind of detail. And an unchanged
+    // preflight produces a `PreflightResult` structurally equal to the previous one, which the
+    // structural equality of `mutableStateOf` absorbs without recomposing.
     LifecycleResumeEffect(context) {
         refreshKey++
 
         val client = Wearable.getDataClient(context)
-        val guetteur = DataClient.OnDataChangedListener { refreshKey++ }
+        val listener = DataClient.OnDataChangedListener { refreshKey++ }
         client.addListener(
-            guetteur,
+            listener,
             Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME)
                 .path(DataLayerTransfer.CONTEXT_PREFIX).build(),
             DataClient.FILTER_PREFIX,
         )
 
-        onPauseOrDispose { client.removeListener(guetteur) }
+        onPauseOrDispose { client.removeListener(listener) }
     }
 
     RecordScreen(
@@ -173,22 +172,22 @@ fun RecordRoute(
         onStop = onStop,
         onRecheck = { refreshKey++ },
         onOpenSettings = onOpenSettings,
-        onDemanderNotifications = {
-            demandeNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        onRequestNotifications = {
+            notificationsRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
         },
-        onOuvrirLeTelephone = {
-            portee.launch {
-                // Le resultat est affiche, pas suppose : « ouvert » quand le telephone a bien
-                // recu la demande, « telephone injoignable » sinon. Annoncer un succes alors que
-                // rien ne s'est ouvert envoie quelqu'un chercher un ecran qui n'est pas apparu.
-                ouvertureTelephone = if (RemoteCommands.ouvrirLeTelephone(context)) {
-                    OuvertureTelephone.Envoyee
+        onOpenPhone = {
+            scope.launch {
+                // The result is displayed, not assumed: "opened" when the phone did receive the
+                // request, "phone unreachable" otherwise. Announcing a success when nothing was
+                // opened sends someone looking for a screen that never lit up.
+                phoneOpening = if (RemoteCommands.openPhone(context)) {
+                    PhoneOpening.Sent
                 } else {
-                    OuvertureTelephone.Injoignable
+                    PhoneOpening.Unreachable
                 }
             }
         },
-        ouverture = ouvertureTelephone,
+        opening = phoneOpening,
     )
 }
 
@@ -200,55 +199,55 @@ fun RecordScreen(
     onStop: () -> Unit,
     onRecheck: () -> Unit,
     onOpenSettings: () -> Unit,
-    onDemanderNotifications: () -> Unit = {},
-    onOuvrirLeTelephone: () -> Unit = {},
-    ouverture: OuvertureTelephone = OuvertureTelephone.Aucune,
+    onRequestNotifications: () -> Unit = {},
+    onOpenPhone: () -> Unit = {},
+    opening: PhoneOpening = PhoneOpening.None,
 ) {
-    // Le contenu ne doit toucher le verre a aucune position de defilement, et Google le verifie :
-    // le motif de rejet « aucun texte ou controle n'est coupe par les bords de l'ecran » se teste
-    // sur le plus petit cadran rond, police au maximum.
+    // The content must not touch the glass at any scroll position, and Google checks it: the
+    // rejection reason "no text or control is cut off by the edges of the screen" is tested on the
+    // smallest round display, font size at maximum.
     //
-    // Deux valeurs, et une seule chose qui les rend suffisantes.
+    // Two values, and a single thing that makes them sufficient.
     //
-    // 14,6 % est le retrait du **carre inscrit** : pour un diametre D, le carre inscrit a pour
-    // cote D/racine(2), donc (1 - 1/racine(2))/2 = 14,6 % de retrait par bord. 18 % horizontal
-    // vient d'un calcul plus severe : le contenu defile, donc une ligne finit toujours par passer
-    // pres du haut ou du bas, la ou la corde 2R*racine(1-t²) se resserre.
+    // 14.6 % is the inset of the **inscribed square**: for a diameter D, the inscribed square has
+    // side D/sqrt(2), so (1 - 1/sqrt(2))/2 = 14.6 % of inset per edge. The horizontal 18 % comes
+    // from a stricter calculation: the content scrolls, so a line always ends up passing near the
+    // top or the bottom, where the chord 2R*sqrt(1-t²) narrows.
     //
-    // **Mais aucune marge ne suffit si elle est du mauvais cote du defilement.** C'est le defaut
-    // qui a survecu a deux corrections successives (16 dp, puis 10,4 %) : `padding` etait applique
-    // **apres** `verticalScroll` dans la chaine, donc il appartenait au contenu defilant. Il
-    // n'ecartait le texte du verre qu'a la position de repos ; des qu'on faisait defiler, la marge
-    // partait avec le contenu et la ligne du haut se faisait trancher par le cadran. Ce qu'on
-    // voyait sur capture reelle : « Free space 12.2 GB » coupe net a mi-hauteur des glyphes.
+    // **But no margin is enough if it is on the wrong side of the scroll.** That is the defect
+    // which survived two successive corrections (16 dp, then 10.4 %): `padding` was applied
+    // **after** `verticalScroll` in the chain, so it belonged to the scrolling content. It only
+    // kept the text away from the glass at the rest position; as soon as one scrolled, the margin
+    // went away with the content and the top line was sliced off by the round display. What a real
+    // screenshot showed: "Free space 12.2 GB" cut clean through the middle of the glyphs.
     //
-    // Inverser les deux modificateurs suffit, et c'est demontrable plutot que constatable :
-    // `padding` avant `verticalScroll` fait de la zone marginee le **viewport**, et
-    // `verticalScroll` clippe son contenu au viewport. Le texte disparait donc dans le noir a la
-    // limite du rectangle, jamais sous le verre. Reste a prouver que ce rectangle tient dans le
-    // cercle — c'est le seul calcul qui compte :
+    // Swapping the two modifiers is enough, and it is provable rather than merely observable:
+    // `padding` before `verticalScroll` makes the padded area the **viewport**, and
+    // `verticalScroll` clips its content to the viewport. The text therefore disappears into the
+    // black at the edge of the rectangle, never under the glass. What remains is to prove that this
+    // rectangle fits inside the circle — that is the only calculation that counts:
     //
-    //   demi-largeur = (1 - 2*0,18)/2 * D  = 0,64 R
-    //   demi-hauteur = (1 - 2*0,146)/2 * D = 0,708 R
-    //   coin         = R*racine(0,64² + 0,708²) = 0,954 R  <  R
+    //   half-width  = (1 - 2*0.18)/2 * D  = 0.64 R
+    //   half-height = (1 - 2*0.146)/2 * D = 0.708 R
+    //   corner      = R*sqrt(0.64² + 0.708²) = 0.954 R  <  R
     //
-    // Les quatre coins sont strictement interieurs. Aucun pixel du viewport n'atteint le verre,
-    // a n'importe quelle position de defilement et a n'importe quelle echelle de police.
+    // The four corners are strictly interior. No viewport pixel reaches the glass, at any scroll
+    // position and at any font scale.
     //
-    // Defaut invisible en previsualisation, qui est carree, et invisible au repos. Il a fallu
-    // faire defiler un vrai cadran pour le voir.
+    // A defect invisible in the preview, which is square, and invisible at rest. It took scrolling
+    // on a real round display to see it.
     val config = LocalConfiguration.current
-    val rond = config.isScreenRound
-    val cote = config.screenWidthDp.dp
-    val margeH = if (rond) cote * 0.18f else 16.dp
-    val margeV = if (rond) cote * 0.146f else 24.dp
+    val isRound = config.isScreenRound
+    val side = config.screenWidthDp.dp
+    val marginH = if (isRound) side * 0.18f else 16.dp
+    val marginV = if (isRound) side * 0.146f else 24.dp
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            // L'ordre est le correctif. Ne pas intervertir ces deux lignes.
-            .padding(horizontal = margeH, vertical = margeV)
+            // The order is the fix. Do not swap these two lines.
+            .padding(horizontal = marginH, vertical = marginV)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -266,9 +265,9 @@ fun RecordScreen(
                 onStart = onStart,
                 onRecheck = onRecheck,
                 onOpenSettings = onOpenSettings,
-                onDemanderNotifications = onDemanderNotifications,
-                onOuvrirLeTelephone = onOuvrirLeTelephone,
-                ouverture = ouverture,
+                onRequestNotifications = onRequestNotifications,
+                onOpenPhone = onOpenPhone,
+                opening = opening,
             )
         }
     }
@@ -281,14 +280,14 @@ private fun IdleContent(
     onStart: () -> Unit,
     onRecheck: () -> Unit,
     onOpenSettings: () -> Unit,
-    onDemanderNotifications: () -> Unit,
-    onOuvrirLeTelephone: () -> Unit,
-    ouverture: OuvertureTelephone,
+    onRequestNotifications: () -> Unit,
+    onOpenPhone: () -> Unit,
+    opening: PhoneOpening,
 ) {
-    // Le titre suit le verdict du preflight. Tant qu'il n'a pas rendu son avis (`null`), on ne
-    // sait pas encore si le depart est possible et on ne prejuge de rien : « Ready » reste, comme
-    // avant. Des qu'un bloqueur est connu, le titre le dit, sinon il contredit la ligne qui le
-    // suit et le bouton grise qui la suit encore.
+    // The title follows the preflight verdict. As long as it has not returned its opinion
+    // (`null`), we do not yet know whether starting is possible and we prejudge nothing: "Ready"
+    // stays, as before. As soon as a blocker is known, the title says so, otherwise it contradicts
+    // the line below it and the greyed-out button below that.
     Text(
         text = stringResource(
             if (preflight != null && !preflight.canStart) R.string.idle_title_blocked
@@ -316,20 +315,20 @@ private fun IdleContent(
         )
     }
 
-    // Les bloqueurs en premier : ils sont la seule chose a lire quand ils existent. Rouge s'ils
-    // decrivent une panne, ambre s'ils decrivent une etape que l'utilisateur n'a pas encore
-    // faite — voir `IssueId.estUnePanne`, qui porte la regle et la raison.
+    // Blockers first: they are the only thing to read when they exist. Red when they describe a
+    // failure, amber when they describe a step the user has not carried out yet — see
+    // `IssueId.isFailure`, which carries the rule and the reason for it.
     preflight.blockers.forEach { issue ->
         Text(
             text = issueText(issue),
-            color = if (issue.id.estUnePanne) MaterialTheme.colors.error else Amber,
+            color = if (issue.id.isFailure) MaterialTheme.colors.error else Amber,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.body2,
         )
     }
-    // Les avertissements en ambre : ce sont des situations, pas des pannes, et l'utilisateur
-    // decide. Le telephone injoignable en fait partie — toute l'architecture de transfert
-    // existe pour que ce cas soit sans consequence.
+    // Warnings in amber: these are situations, not failures, and the user decides. The unreachable
+    // phone is one of them — the whole transfer architecture exists so that this case is without
+    // consequence.
     preflight.warnings.forEach { issue ->
         Text(
             text = issueText(issue),
@@ -348,37 +347,36 @@ private fun IdleContent(
     )
 
     if (!preflight.canStart) {
-        // La permission de notification est le seul bloqueur que l'utilisateur peut lever depuis
-        // la montre elle-meme. On la lui redemande directement plutot que de le renvoyer d'abord
-        // dans les reglages : Android accorde deux invites avant de refuser d'en afficher une
-        // troisieme, et la seconde vaut mieux qu'un detour par une arborescence de reglages lu a
-        // la cheville. Les reglages restent en second recours, pour le cas ou l'invite ne
-        // s'affiche plus.
-        // Le contexte non scelle est le bloqueur le plus frequent, et le seul qui se leve sur
-        // l'autre appareil. Sans ce bouton, la montre disait quoi faire et laissait l'utilisateur
-        // reposer la montre, trouver son telephone, deverrouiller et retrouver l'application —
-        // au coucher, ecran a la cheville.
+        // The notification permission is the only blocker the user can lift from the watch itself.
+        // We ask for it again directly rather than sending them into the settings first: Android
+        // grants two prompts before refusing to show a third, and the second one is worth more than
+        // a detour through a settings tree read at ankle height. The settings remain the second
+        // resort, for the case where the prompt no longer appears.
+        // The unsealed context is the most frequent blocker, and the only one that is lifted on the
+        // other device. Without this button, the watch said what to do and left the user to put the
+        // watch back down, find their phone, unlock it and find the application again — at bedtime,
+        // screen at the ankle.
         if (preflight.blockers.any { it.id == IssueId.CONTEXT_NOT_SEALED }) {
             FlatButton(
                 label = stringResource(R.string.open_on_phone),
-                enabled = ouverture != OuvertureTelephone.Envoyee,
+                enabled = opening != PhoneOpening.Sent,
                 color = MaterialTheme.colors.surface,
                 contentColor = MaterialTheme.colors.onSurface,
-                onClick = onOuvrirLeTelephone,
+                onClick = onOpenPhone,
             )
-            when (ouverture) {
-                OuvertureTelephone.Envoyee -> Text(
+            when (opening) {
+                PhoneOpening.Sent -> Text(
                     text = stringResource(R.string.open_on_phone_sent),
                     style = captionStyle(),
                     textAlign = TextAlign.Center,
                 )
-                OuvertureTelephone.Injoignable -> Text(
+                PhoneOpening.Unreachable -> Text(
                     text = stringResource(R.string.open_on_phone_unreachable),
                     color = Amber,
                     style = captionStyle(),
                     textAlign = TextAlign.Center,
                 )
-                OuvertureTelephone.Aucune -> Unit
+                PhoneOpening.None -> Unit
             }
         }
 
@@ -388,7 +386,7 @@ private fun IdleContent(
                 enabled = true,
                 color = MaterialTheme.colors.surface,
                 contentColor = MaterialTheme.colors.onSurface,
-                onClick = onDemanderNotifications,
+                onClick = onRequestNotifications,
             )
             FlatButton(
                 label = stringResource(R.string.open_settings),
@@ -398,9 +396,9 @@ private fun IdleContent(
                 onClick = onOpenSettings,
             )
         } else {
-            // « Verifier a nouveau » ne subsiste que pour les bloqueurs qu'aucun des trois
-            // declencheurs de `RecordRoute` ne couvre : l'espace disque libere par une
-            // synchronisation en cours, ou le drapeau de refus du service de premier plan.
+            // "Check again" only survives for the blockers that none of `RecordRoute`'s three
+            // triggers covers: disk space freed by a sync in progress, or the foreground service
+            // refusal flag.
             FlatButton(
                 label = stringResource(R.string.preflight_recheck),
                 enabled = true,
@@ -424,19 +422,19 @@ private fun RecordingContent(state: RecordUiState, onStop: () -> Unit) {
     )
     Text(text = stringResource(R.string.samples_line, groupDigits(state.samples)), style = captionStyle())
     Text(
-        // `Locale.UK` explicite, comme `Preflight.formatBytes` : sans lui le format suit la locale
-        // de la montre, et l'ecran affichait « 0,0 MB written » a trois lignes de « Free space
-        // 12.0 GB ». Deux separateurs decimaux sur le meme ecran du meme appareil.
+        // Explicit `Locale.UK`, like `Preflight.formatBytes`: without it the format follows the
+        // watch's locale, and the screen displayed "0,0 MB written" three lines away from "Free
+        // space 12.0 GB". Two decimal separators on the same screen of the same device.
         text = stringResource(
             R.string.written_line,
             "%.1f".format(Locale.UK, state.bytesWritten / 1_048_576.0),
         ),
         style = captionStyle(),
     )
-    // La batterie n'est connue qu'a la premiere lecture du capteur. `RecordUiState` porte `-1`
-    // jusque-la, et cette ligne l'affichait tel quel : « Battery -1% » pendant les premieres
-    // secondes de chaque nuit. Un pourcentage negatif n'existe pas — tant qu'on ne sait pas, on
-    // le dit avec le meme tiret que partout ailleurs dans le produit.
+    // The battery is only known at the first sensor reading. `RecordUiState` carries `-1` until
+    // then, and this line displayed it as it was: "Battery -1%" during the first seconds of every
+    // night. A negative percentage does not exist — as long as we do not know, we say so with the
+    // same dash as everywhere else in the product.
     Text(
         text = if (state.batteryPct >= 0) {
             stringResource(R.string.battery_line, state.batteryPct)
@@ -468,8 +466,8 @@ private fun RecordingContent(state: RecordUiState, onStop: () -> Unit) {
         )
     }
 
-    // Un STOP accidentel a 3 h du matin coute la nuit entiere : appui long, puis confirmation
-    // explicite. Deux gestes, aucun des deux involontaire.
+    // An accidental STOP at 3 a.m. costs the whole night: long press, then explicit confirmation.
+    // Two gestures, neither of them involuntary.
     if (!confirming) {
         Text(
             text = stringResource(R.string.stop_hint),
@@ -510,9 +508,8 @@ private fun RecordingContent(state: RecordUiState, onStop: () -> Unit) {
 }
 
 /**
- * Bouton pleine largeur, sans elevation, sans ondulation animee et sans forme de pilule — la
- * pilule signale « application grand public », et l'ombre ne survit ni au theme sombre ni a une
- * capture d'ecran.
+ * Full-width button, with no elevation, no animated ripple and no pill shape — the pill signals
+ * "consumer application", and the shadow survives neither the dark theme nor a screenshot.
  */
 @Composable
 private fun FlatButton(
@@ -558,7 +555,7 @@ private fun issueText(issue: Issue): String = when (issue.id) {
     IssueId.STORAGE_FULL -> stringResource(R.string.blocker_storage_full, issue.args[0], issue.args[1])
     IssueId.FGS_REFUSED -> stringResource(R.string.blocker_fgs_refused)
     IssueId.BENCH_SCALE_MISMATCH -> stringResource(R.string.blocker_bench_scale, issue.args[0])
-    IssueId.BANC_CHARGEUR_IGNORE -> stringResource(R.string.warning_banc_chargeur)
+    IssueId.BENCH_CHARGER_IGNORED -> stringResource(R.string.warning_bench_charger)
     IssueId.LOW_BATTERY -> stringResource(R.string.warning_low_battery, issue.args[0])
     IssueId.PHONE_UNREACHABLE -> stringResource(R.string.warning_phone_unreachable)
     IssueId.NO_WAKEUP_SENSOR -> stringResource(R.string.warning_no_wakeup_sensor)
@@ -574,22 +571,22 @@ private fun stopReasonText(reason: StopReason): String = when (reason) {
     StopReason.WAKE_DETECTED -> stringResource(R.string.stopped_wake)
     StopReason.DISK_FULL -> stringResource(R.string.stopped_disk_full)
     StopReason.CRASH -> stringResource(R.string.stopped_crash)
-    // Un arret demande par l'utilisateur n'a pas besoin d'etre annonce a l'utilisateur.
+    // A stop requested by the user does not need to be announced to the user.
     StopReason.USER, StopReason.UNKNOWN -> ""
 }
 
-/** Virgule comme separateur de milliers : l'interface est en anglais. */
+/** Comma as the thousands separator: the interface is in English. */
 private fun groupDigits(v: Long): String = "%,d".format(Locale.UK, v)
 
 private fun formatSeconds(ms: Long): String = "%d s".format(ms / 1000)
 
-/** Ambre d'attention. `error` et `success` ne decrivent jamais un resultat de sante ; ici,
- *  l'ambre ne decrit qu'un etat technique degrade mais tolerable. */
+/** Attention amber. `error` and `success` never describe a health result; here, the amber only
+ *  describes a technical state that is degraded but tolerable. */
 private val Amber = Color(0xFFE0A030)
 
 /**
- * Fond noir pur : sur OLED, un pixel noir n'est pas allume. Aucune couleur dynamique — un
- * affichage montre par-dessus l'epaule ne doit pas dependre d'un fond d'ecran.
+ * Pure black background: on OLED, a black pixel is not lit. No dynamic colour — a display shown
+ * over the shoulder must not depend on a wallpaper.
  */
 @Composable
 fun PendulumTheme(content: @Composable () -> Unit) {
@@ -610,9 +607,9 @@ fun PendulumTheme(content: @Composable () -> Unit) {
 }
 
 /**
- * Ce que la derniere tentative d'ouverture du telephone a donne.
+ * What the last attempt to open the phone produced.
  *
- * Trois etats et non un booleen : « pas encore demande » et « demande, telephone injoignable » ne
- * disent pas la meme chose a quelqu'un qui attend qu'un ecran s'allume a l'autre bout de la piece.
+ * Three states and not a boolean: "not asked yet" and "asked, phone unreachable" do not say the
+ * same thing to someone waiting for a screen to light up at the other end of the room.
  */
-enum class OuvertureTelephone { Aucune, Envoyee, Injoignable }
+enum class PhoneOpening { None, Sent, Unreachable }

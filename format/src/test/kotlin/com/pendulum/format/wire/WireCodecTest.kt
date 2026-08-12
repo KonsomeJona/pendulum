@@ -11,50 +11,50 @@ class WireCodecTest {
 
     private val sessionHex = "000102030405060708090a0b0c0d0e0f"
 
-    // --- Chemins et identifiants ---
+    // --- Paths and identifiers ---
 
     @Test
-    fun `l'UUID de session fait un aller-retour hexadecimal`() {
+    fun `the session UUID survives a hexadecimal round trip`() {
         val uuid = ByteArray(16) { it.toByte() }
         assertThat(uuid.toSessionHex()).isEqualTo(sessionHex)
         assertThat(sessionHexToBytes(sessionHex)).isEqualTo(uuid)
     }
 
     @Test
-    fun `les chemins de chunk sont zero-pades pour rester tries`() {
-        // Un listing lexicographique doit rendre les chunks dans l'ordre, sinon le 10 passe
-        // avant le 2 et la reconstruction de la nuit est fausse.
+    fun `chunk paths are zero-padded so they stay sorted`() {
+        // A lexicographic listing must return the chunks in order, otherwise 10 comes before 2
+        // and the night is reconstructed wrong.
         val paths = listOf(2, 10, 100).map { WirePaths.chunk(sessionHex, it) }
         assertThat(paths).isSorted()
         assertThat(paths.first()).isEqualTo("/pendulum/chunk/$sessionHex/00002")
     }
 
     @Test
-    fun `la rotation de chunk est de 5 min ou 90 Kio`() {
+    fun `chunk rotation is 5 min or 90 KiB`() {
         assertThat(WireProtocol.CHUNK_ROTATION_MS).isEqualTo(300_000L)
         assertThat(WireProtocol.CHUNK_ROTATION_BYTES).isEqualTo(92_160L)
-        // Le plafond en octets doit laisser de la marge sous la charge utile d'un DataItem.
+        // The byte ceiling must leave margin under the payload of a DataItem.
         assertThat(WireProtocol.CHUNK_ROTATION_BYTES).isLessThan(WireProtocol.MAX_DATA_ITEM_BYTES.toLong())
     }
 
     @Test
-    fun `la cadence de telemetrie divise la rotation de chunk`() {
-        // **La propriete, pas la valeur.** Un chunk est l'unite de perte du protocole : si la
-        // telemetrie avait une horloge a elle, un chunk perdu emporterait un trou de telemetrie
-        // qu'aucun autre chunk ne comblerait, et que personne ne saurait meme compter. En divisant
-        // la rotation, chaque chunk complet porte un nombre connu de points, et « il en manque
-        // trois » devient une phrase verifiable.
+    fun `the telemetry period divides the chunk rotation`() {
+        // **The property, not the value.** A chunk is the protocol's unit of loss: if telemetry
+        // had a clock of its own, a lost chunk would carry away a telemetry hole that no other
+        // chunk would fill, and that nobody would even be able to count. By dividing the rotation,
+        // every complete chunk carries a known number of points, and "three are missing" becomes
+        // a verifiable sentence.
         assertThat(WireProtocol.CHUNK_ROTATION_MS % WireProtocol.TELEMETRY_PERIOD_MS).isZero()
         assertThat(WireProtocol.CHUNK_ROTATION_MS / WireProtocol.TELEMETRY_PERIOD_MS)
-            .`as`("points de telemetrie par chunk complet")
+            .`as`("telemetry points per complete chunk")
             .isGreaterThanOrEqualTo(1L)
             .isEqualTo(5L)
     }
 
-    // --- Aller-retour des quatre structures ---
+    // --- Round trip of the four structures ---
 
     @Test
-    fun `aller-retour d'une entete de session ouverte`() {
+    fun `an open session header survives a round trip`() {
         val h = SessionHeader(
             sessionHex = sessionHex,
             startWallMs = 1_753_600_000_000L,
@@ -69,7 +69,7 @@ class WireCodecTest {
     }
 
     @Test
-    fun `aller-retour d'une entete de session fermee avec sa cause d'arret`() {
+    fun `a closed session header survives a round trip with its stop reason`() {
         val h = SessionHeader(
             sessionHex = sessionHex,
             startWallMs = 1_753_600_000_000L,
@@ -90,12 +90,12 @@ class WireCodecTest {
     }
 
     @Test
-    fun `aller-retour d'une entree de chunk`() {
+    fun `a chunk entry survives a round trip`() {
         val m = ChunkMeta(
             sessionHex = sessionHex,
             idx = 41,
             size = 91_010,
-            crc32 = 0xDEADBEEFL, // u32 : le bit de poids fort ne doit pas devenir negatif
+            crc32 = 0xDEADBEEFL, // u32: the high bit must not turn negative
             sampleCount = 15_000,
             tFirstNs = 987_654_321_000L,
             tLastNs = 1_287_654_321_000L,
@@ -107,7 +107,7 @@ class WireCodecTest {
     }
 
     @Test
-    fun `aller-retour d'un apercu en direct`() {
+    fun `a live preview survives a round trip`() {
         val rnd = Random(7)
         val env = ByteArray(PreviewEnvelopeCodec.LENGTH) { rnd.nextInt(256).toByte() }
         val live = LivePreview(
@@ -127,12 +127,12 @@ class WireCodecTest {
         val decoded = LivePreview.decode(live.encode())
         assertThat(decoded).isEqualTo(live)
         assertThat(decoded.envU8).isEqualTo(env)
-        // ~1 Ko par salve : c'est le prix du "graphe de mouvement" en quasi-temps reel.
+        // ~1 KB per burst: that is the price of the "movement chart" in near real time.
         assertThat(live.encode().size).isLessThan(1200)
     }
 
     @Test
-    fun `aller-retour d'un accuse de reception`() {
+    fun `an acknowledgement survives a round trip`() {
         val ack = Ack(
             sessionHex = sessionHex,
             ackedUpTo = 12,
@@ -145,7 +145,7 @@ class WireCodecTest {
     }
 
     @Test
-    fun `l'accuse designe les chunks supprimables`() {
+    fun `the acknowledgement names the chunks that can be deleted`() {
         val ack = Ack(
             sessionHex = sessionHex,
             ackedUpTo = 12,
@@ -154,52 +154,52 @@ class WireCodecTest {
             needResend = intArrayOf(),
             phoneMs = 0L,
         )
-        assertThat(ack.isAcked(11)).isTrue()   // sous ackedUpTo
+        assertThat(ack.isAcked(11)).isTrue()   // below ackedUpTo
         assertThat(ack.isAcked(12)).isTrue()   // bit 0
         assertThat(ack.isAcked(13)).isFalse()  // bit 1
         assertThat(ack.isAcked(14)).isTrue()   // bit 2
         assertThat(ack.isAcked(15)).isTrue()   // bit 3
-        assertThat(ack.isAcked(20)).isFalse()  // hors du bitmap
+        assertThat(ack.isAcked(20)).isFalse()  // outside the bitmap
     }
 
-    // --- Robustesse du decodage ---
+    // --- Decoding robustness ---
 
     @Test
-    fun `une charge utile tronquee est rejetee explicitement`() {
+    fun `a truncated payload is rejected explicitly`() {
         val m = ChunkMeta(sessionHex, 1, 100, 0L, 10, 0L, 1L, 0)
         val bytes = m.encode()
         assertThatThrownBy { ChunkMeta.decode(bytes.copyOf(bytes.size - 4)) }
             .isInstanceOf(WireFormatException::class.java)
-            .hasMessageContaining("tronquee")
+            .hasMessageContaining("truncated")
     }
 
     @Test
-    fun `une version de fil inconnue est rejetee au premier octet`() {
+    fun `an unknown wire version is rejected on the first byte`() {
         val bytes = ChunkMeta(sessionHex, 1, 100, 0L, 10, 0L, 1L, 0).encode()
         bytes[0] = 99
         assertThatThrownBy { ChunkMeta.decode(bytes) }
             .isInstanceOf(WireFormatException::class.java)
-            .hasMessageContaining("version de fil")
+            .hasMessageContaining("wire version")
     }
 
     @Test
-    fun `un code d'etat de session inconnu est rejete`() {
+    fun `an unknown session state code is rejected`() {
         assertThatThrownBy { SessionState.fromCode(42) }
             .isInstanceOf(WireFormatException::class.java)
     }
 
-    // --- Enveloppe d'apercu ---
+    // --- Preview envelope ---
 
     @Test
-    fun `l'enveloppe quantifiee tient en 900 octets`() {
+    fun `the quantised envelope fits in 900 bytes`() {
         val rms = DoubleArray(PreviewEnvelopeCodec.LENGTH) { 0.05 }
         assertThat(PreviewEnvelopeCodec.encode(rms)).hasSize(900)
     }
 
     @Test
-    fun `la quantification logarithmique garde une erreur relative bornee sur quatre decades`() {
-        // L'interet du logarithme : la meme precision relative a 2e-3 qu'a 30 m/s^2, la ou une
-        // quantification lineaire ecraserait tout le sommeil sur deux niveaux.
+    fun `logarithmic quantisation keeps the relative error bounded over four decades`() {
+        // The point of the logarithm: the same relative precision at 2e-3 as at 30 m/s^2, where a
+        // linear quantisation would crush the whole of sleep onto two levels.
         var v = PreviewEnvelopeCodec.MIN_MS2 * 1.05
         while (v < PreviewEnvelopeCodec.MAX_MS2) {
             val back = PreviewEnvelopeCodec.dequantize(PreviewEnvelopeCodec.quantize(v))
@@ -209,7 +209,7 @@ class WireCodecTest {
     }
 
     @Test
-    fun `les bornes de l'enveloppe sont respectees`() {
+    fun `the envelope bounds are respected`() {
         assertThat(PreviewEnvelopeCodec.quantize(0.0)).isZero()
         assertThat(PreviewEnvelopeCodec.quantize(Double.NaN)).isZero()
         assertThat(PreviewEnvelopeCodec.quantize(1e-6)).isZero()
@@ -219,9 +219,9 @@ class WireCodecTest {
     }
 
     @Test
-    fun `une fenetre partielle est alignee a droite`() {
-        // Le dernier octet est toujours le plus recent : le telephone n'a pas a savoir depuis
-        // combien de temps la nuit a commence pour tracer la courbe.
+    fun `a partial window is right-aligned`() {
+        // The last byte is always the most recent one: the phone does not need to know how long
+        // ago the night started in order to draw the curve.
         val encoded = PreviewEnvelopeCodec.encode(doubleArrayOf(1.0, 2.0, 3.0))
         assertThat(encoded.copyOf(PreviewEnvelopeCodec.LENGTH - 3)).containsOnly(0)
         assertThat(encoded[PreviewEnvelopeCodec.LENGTH - 1].toInt() and 0xFF)
@@ -229,7 +229,7 @@ class WireCodecTest {
     }
 
     @Test
-    fun `aller-retour d'une fenetre complete`() {
+    fun `a full window survives a round trip`() {
         val rnd = Random(3)
         val rms = DoubleArray(PreviewEnvelopeCodec.LENGTH) { rnd.nextDouble(0.01, 20.0) }
         val back = PreviewEnvelopeCodec.decode(PreviewEnvelopeCodec.encode(rms))

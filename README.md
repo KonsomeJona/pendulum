@@ -86,7 +86,7 @@ meant for a physician, or a raw bundle of one night.
 |---|---|
 | <img src="docs/images/screenshots/trend-numbers.png" width="290" alt="Trend screen: a boxed sentence saying the interval spans the 15 per hour threshold, above a chart of nightly points with a dashed band"> | <img src="docs/images/screenshots/night-detail.png" width="290" alt="Night detail: the acceleration envelope and the hypnogram on the same axis, then counts of detected, excluded and in-series movements"> |
 | **The application says when it cannot tell.** Here the confidence interval spans the 15/h threshold, so it says so in a box rather than picking a side. Below it, nightly values are drawn as points and never joined — a line would assert a continuity the measurement does not have — with a dashed band for the smallest change this method can detect, and a Y axis anchored at zero. | **One night, including what undermines it.** Movements detected, of which in sleep and awake, and deliberately next to them the ones excluded for posture or duration. The estimated rhythm carries its own caveat: a sensor on one leg sees a doubled interval when movements alternate between legs. |
-| <img src="docs/images/screens/revue-accueil.png" width="290" alt="Home screen on an empty database: three cards, a warning that the context is not sealed, and two disabled buttons each stating its reason"> | <img src="docs/images/screenshots/watch.png" width="290" alt="The watch screen: Ready, battery, free space, then a message in red saying the watch will not start until the evening form is sealed"> |
+| <img src="docs/images/screens/home.png" width="290" alt="Home screen on an empty database: three cards, a warning that the context is not sealed, and two disabled buttons each stating its reason"> | <img src="docs/images/screenshots/watch.png" width="290" alt="The watch screen: Ready, battery, free space, then a message in red saying the watch will not start until the evening form is sealed"> |
 | **A disabled button always says why.** This is a fresh installation with no nights in it. A card with nothing to say is disabled rather than removed, because a screen whose layout changes between 23:00 and 05:00 is worse than one that admits it has nothing. | **The watch refuses to start.** One static screen, no animation — every recomposition wakes the processor. It will not begin recording until the evening record is sealed on the phone. |
 
 The full set, with the three defects that only a real render exposed, is in
@@ -237,12 +237,12 @@ Nineteen documents, and they are the substance of this project rather than an ap
 | [`docs/09-release.md`](docs/09-release.md) | Installing a release, verifying it, and cutting the next one |
 | [`docs/references.md`](docs/references.md) | Bibliography, each source marked by whether it was read in full, as an abstract, or not at all |
 
-The original working documents are in French under [`docs/fr/`](docs/fr/) and are considerably more
+The original working documents are under [`docs/workings/`](docs/workings/) and are considerably more
 detailed: the full parameter tables, the energy arithmetic, and the things that were checked and
-turned out to be wrong. [`docs/fr/BANC-ESSAI.md`](docs/fr/BANC-ESSAI.md) has no English derivative —
-it is the bench log, every measurement taken on real hardware, and the most frequently updated file
-in the repository. Authority is by subject rather than by language; `docs/README.md` says which
-document wins on which subject.
+turned out to be wrong. [`docs/workings/BENCH-LOG.md`](docs/workings/BENCH-LOG.md) has no condensed
+counterpart — it is the bench log, every measurement taken on real hardware, and the most frequently
+updated file in the repository. Authority is by subject; `docs/README.md` says which document wins on
+which subject.
 
 ## Licence
 

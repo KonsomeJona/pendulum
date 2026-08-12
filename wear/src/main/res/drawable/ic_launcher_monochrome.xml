@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Couche monochrome — **elle n'est pas optionnelle.**
+  Monochrome layer — **it is not optional.**
 
-  Depuis Android 16 QPR2 la thematisation des icones est forcee et l'application ne peut pas s'y
-  soustraire. Sans cette couche, le systeme fabrique lui-meme une version thematisee en filtrant
-  les couleurs de la couche avant, et le resultat est un aplat approximatif. La fournir est le
-  seul moyen de decider de sa propre silhouette.
+  Since Android 16 QPR2, icon theming is forced and the application cannot opt out. Without this
+  layer the system builds a themed version itself by filtering the colours of the foreground
+  layer, and the result is a rough flat shape. Supplying it is the only way to decide one's own
+  silhouette.
 
-  Meme geometrie que `ic_launcher_foreground`, en blanc plein : le systeme teinte, et l'alpha
-  differencie de la couche avant disparaitrait de toute facon a la teinture. L'arc garde donc son
-  retrait par la seule epaisseur du trait, pas par la transparence.
+  Same geometry as `ic_launcher_foreground`, in solid white: the system tints, and the alpha that
+  sets the arc apart in the foreground layer would disappear under the tint anyway. The arc
+  therefore keeps its recessive reading through stroke width alone, not through transparency.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"

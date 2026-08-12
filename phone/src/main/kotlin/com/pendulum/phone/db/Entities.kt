@@ -7,47 +7,47 @@ import androidx.room.PrimaryKey
 import com.pendulum.algo.model.PlmiResult
 
 /**
- * Schema Room de `:phone`.
+ * Room schema of `:phone`.
  *
- * ### Le principe qui gouverne toutes les tables ci-dessous
+ * ### The principle that governs every table below
  *
- * **Le brut est la seule chose irremplaçable.** Un resultat, un masque, un evenement CLM :
- * tout cela se recalcule a partir des chunks. Les chunks, eux, ne se recalculent pas. Le schema
- * separe donc strictement ce qui est *recu* (`night_session`, `chunk`, `telemetry_point`,
- * `night_context`, `hc_snapshot`, `questionnaire_response`) de ce qui est *derive*
- * (`sleep_window`, `clm_event`, `plm_result`). Tout le derive porte un `paramsHash` et peut etre
- * efface et reconstruit ; rien du recu ne le peut.
+ * **The raw data is the only irreplaceable thing.** A result, a mask, a CLM event: all of that is
+ * recomputed from the chunks. The chunks themselves are not recomputed. The schema therefore
+ * separates strictly what is *received* (`night_session`, `chunk`, `telemetry_point`,
+ * `night_context`, `hc_snapshot`, `questionnaire_response`) from what is *derived*
+ * (`sleep_window`, `clm_event`, `plm_result`). Everything derived carries a `paramsHash` and can
+ * be erased and rebuilt; nothing received can.
  *
- * Consequence directe sur les migrations : voir la KDoc de [PendulumDatabase], qui porte les deux
- * regles a tenir — une migration ne perd jamais une colonne du brut, et on ne recree une vue que
- * si on la change. `fallbackToDestructiveMigration` est interdit, parce qu'il detruirait justement
- * la moitie qui ne se reconstruit pas.
+ * Direct consequence for migrations: see the KDoc of [PendulumDatabase], which carries the two
+ * rules to hold — a migration never loses a column of raw data, and a view is only recreated when
+ * it is changed. `fallbackToDestructiveMigration` is forbidden, because it would destroy exactly
+ * the half that cannot be rebuilt.
  *
- * La base est en **v1** et ne porte aucune migration : les quatre qui existaient ont ete retirees
- * le 7 aout 2026, l'application n'ayant jamais ete installee nulle part. Le detail de ce qu'elles
- * faisaient est conserve dans la KDoc de [PendulumDatabase].
+ * The database is at **v1** and carries no migration: the four that existed were removed on
+ * 7 August 2026, the application having never been installed anywhere. The detail of what they did
+ * is kept in the KDoc of [PendulumDatabase].
  */
 
 /**
- * Une nuit. Cle primaire = `sessionHex`, l'identifiant que la montre a choisi et qui apparait
- * dans les chemins `DataItem` — aucune cle auto-generee ici : c'est ce qui rend l'ingestion
- * idempotente sans table de correspondance.
+ * One night. Primary key = `sessionHex`, the identifier the watch chose and which appears in the
+ * `DataItem` paths — no auto-generated key here: that is what makes ingestion idempotent without
+ * a mapping table.
  *
- * @param state etat vu du telephone. `OPEN` -> `STALE` -> `TRUNCATED` est pilote par
- *   `WatchdogWorker` ; `CLOSED` vient de la montre.
- * @param tzOffsetStartMin,tzOffsetEndMin offsets UTC locaux au debut et a la fin. Les stocker
- *   **tous les deux** est ce qui permet de detecter une nuit de changement d'heure : c'est
- *   exactement `tzOffsetStartMin <> tzOffsetEndMin`, et cette nuit-la ne doit pas entrer dans
- *   une tendance (garde-fou 4 de `SPEC-v2.md` §3). Aucune duree n'est jamais calculee a partir
- *   d'eux : les durees viennent de `SensorEvent.timestamp`.
- * @param analysableMin minutes reellement analysables (segments valides, hors zones aveugles,
- *   hors off-body). C'est le critere « au moins 4 h analysables » de la vue [ComparableNight],
- *   et il est ecrit par l'analyse, pas par l'ingestion.
- * @param gainCalG etalon de gain de la nuit. Sert au critere de comparabilite : un bracelet
- *   resserre differemment change l'amplitude d'un facteur 2 a 3 et rend la nuit incomparable
- *   sans que rien d'autre ne le signale.
- * @param truncated la nuit s'est arretee sans fermeture propre. Reste analysable, mais son
- *   index est biaise a la hausse de facon non corrigeable : hors tendance.
+ * @param state state as seen from the phone. `OPEN` -> `STALE` -> `TRUNCATED` is driven by
+ *   `WatchdogWorker`; `CLOSED` comes from the watch.
+ * @param tzOffsetStartMin,tzOffsetEndMin local UTC offsets at the start and at the end. Storing
+ *   **both** is what allows a daylight-saving night to be detected: it is exactly
+ *   `tzOffsetStartMin <> tzOffsetEndMin`, and such a night must not enter a trend (guard rail 4
+ *   of `SPEC-v2.md` section 3). No duration is ever computed from them: durations come from
+ *   `SensorEvent.timestamp`.
+ * @param analysableMin minutes actually analysable (valid segments, outside blind zones, outside
+ *   off-body). This is the "at least 4 h analysable" criterion of the [ComparableNight] view, and
+ *   it is written by the analysis, not by ingestion.
+ * @param gainCalG gain reference of the night. Used by the comparability criterion: a strap
+ *   tightened differently changes the amplitude by a factor of 2 to 3 and makes the night
+ *   incomparable without anything else signalling it.
+ * @param truncated the night stopped without a clean close. Still analysable, but its index is
+ *   biased upwards in a way that cannot be corrected: outside the trend.
  */
 @Entity(
     tableName = "night_session",
@@ -56,13 +56,13 @@ import com.pendulum.algo.model.PlmiResult
 data class NightSessionEntity(
     @PrimaryKey val sessionHex: String,
     /**
-     * La soiree a laquelle cette nuit se rattache, `AAAA-MM-JJ`, bascule a midi
-     * (`WirePaths.nightKey`). C'est par elle que la nuit retrouve le contexte scelle avant
-     * qu'elle n'existe — le rattachement ne peut pas se faire par `sessionHex`, qui n'est connu
-     * qu'au moment ou la montre annonce la session, c'est-a-dire apres le scellement.
+     * The evening this night attaches to, `YYYY-MM-DD`, rolling over at noon
+     * (`WirePaths.nightKey`). It is through this that the night finds again the context sealed
+     * before it existed — the attachment cannot be made through `sessionHex`, which is only known
+     * once the watch announces the session, that is to say after the sealing.
      *
-     * Indexee : c'est la jointure de la vue `comparable_night`, donc elle est parcourue une fois
-     * par nuit et par lecture de tendance.
+     * Indexed: it is the join of the `comparable_night` view, so it is walked once per night and
+     * per trend read.
      */
     val nightKey: String = "",
     val startWallMs: Long,
@@ -79,7 +79,7 @@ data class NightSessionEntity(
     val lastChunkArrivalMs: Long = 0L,
     val batteryPctLast: Int? = null,
 
-    // --- rempli par l'analyse ---
+    // --- filled in by the analysis ---
     val analyzedAtMs: Long? = null,
     val algoVersion: String? = null,
     val paramsHash: String? = null,
@@ -94,25 +94,25 @@ data class NightSessionEntity(
     val integrityRejectedFraction: Double = 0.0,
 
     /**
-     * Le resultat a-t-il ete devoile ? Garde-fou 2 : au reveil l'ecran dit « nuit enregistree,
-     * qualite OK » et rien d'autre ; le devoilement est **journalise**, ici, et exporte. Ce
-     * champ appartient a la base et non a une preference, parce qu'il doit survivre a un
-     * effacement de cache et partir dans l'export.
+     * Has the result been revealed? Guard rail 2: on waking the screen says "night recorded,
+     * quality OK" and nothing else; the reveal is **logged**, here, and exported. This field
+     * belongs to the database and not to a preference, because it must survive a cache erasure and
+     * go out in the export.
      */
     val revealedAtMs: Long? = null,
 )
 
 /**
- * Un chunk recu. `UNIQUE(sessionHex, idx)` est le pivot de tout le protocole : l'ingestion fait
- * un `INSERT OR IGNORE` dessus, donc recevoir deux fois le meme chunk est un no-op silencieux
- * et **toutes** les voies de reemission (ack perdu, sweep apres coupure Bluetooth, reprise
- * apres reboot du telephone) sont sures sans compteur ni etat.
+ * One received chunk. `UNIQUE(sessionHex, idx)` is the pivot of the whole protocol: ingestion does
+ * an `INSERT OR IGNORE` on it, so receiving the same chunk twice is a silent no-op and **every**
+ * re-emission path (lost ack, sweep after a Bluetooth cut, resumption after a phone reboot) is
+ * safe without a counter and without state.
  *
- * @param crc32 CRC-32 recalcule sur les octets **recus**, et compare a celui annonce par la
- *   montre avant toute insertion. Le CRC-16 par bloc couvre le contenu ; celui-ci couvre le
- *   transport, et rien d'autre ne le couvre.
- * @param complete le marqueur de fin de fichier a ete lu et verifie. **Un chunk non complet
- *   n'est jamais acquitte** : l'acquitter ferait supprimer par la montre un fichier partiel.
+ * @param crc32 CRC-32 recomputed over the **received** bytes, and compared to the one announced by
+ *   the watch before any insertion. The per-block CRC-16 covers the content; this one covers the
+ *   transport, and nothing else covers it.
+ * @param complete the end-of-file marker has been read and verified. **An incomplete chunk is
+ *   never acknowledged**: acknowledging it would make the watch delete a partial file.
  */
 @Entity(
     tableName = "chunk",
@@ -145,48 +145,48 @@ data class ChunkEntity(
 )
 
 /**
- * L'etat de l'appareil a un instant de la nuit — un point par minute, cinq par chunk complet.
+ * The state of the device at one instant of the night — one point per minute, five per complete
+ * chunk.
  *
- * ### Ce n'est pas une table derivee
+ * ### This is not a derived table
  *
- * Elle est rangee ici avec `chunk` et `night_context`, et pas avec `sleep_window` ou `clm_event`,
- * parce qu'elle en partage la propriete qui gouverne tout ce fichier : **elle ne se reconstitue
- * pas**. Les points vivent dans les blocs `TLM!` des chunks, et les chunks sont effaces de la
- * montre des qu'ils sont acquittes ; une nuit dont la telemetrie serait perdue en base garderait
- * son signal mais plus aucune trace de la batterie, de la gigue ou de l'ecretage qui ont decide
- * de sa lecture. Consequence directe : aucune migration ne la supprime, et le rescore ne la
- * touche pas — elle ne porte pas de `paramsHash`, parce qu'aucun parametre ne la produit.
+ * It sits here with `chunk` and `night_context`, and not with `sleep_window` or `clm_event`,
+ * because it shares with them the property that governs this whole file: **it cannot be
+ * reconstituted**. The points live in the `TLM!` blocks of the chunks, and the chunks are erased
+ * from the watch as soon as they are acknowledged; a night whose telemetry were lost in the
+ * database would keep its signal but no trace at all of the battery, the jitter or the clipping
+ * that decided how it reads. Direct consequence: no migration deletes it, and rescoring does not
+ * touch it — it carries no `paramsHash`, because no parameter produces it.
  *
- * Techniquement le brut serait relisable : les fichiers de chunks restent sur le telephone. Mais
- * relire sept fichiers de 90 Ko a chaque ouverture d'ecran pour retrouver quarante points est
- * exactement le calcul que `detailDeNuit` refuse deja de faire pour l'enveloppe. La table est
- * l'extraction, faite une fois, a l'ingestion.
+ * Technically the raw data could be read again: the chunk files stay on the phone. But re-reading
+ * seven 90 kB files on every screen opening to recover forty points is exactly the computation
+ * that `nightDetail` already refuses to do for the envelope. The table is the extraction, done
+ * once, at ingestion.
  *
- * ### La cle d'idempotence n'est pas `sensorTsNs`, et c'est mesure et non suppose
+ * ### The idempotence key is not `sensorTsNs`, and this is measured and not supposed
  *
- * Un chunk peut arriver deux fois — accuse perdu, balayage apres coupure, redemarrage du
- * telephone — et l'ingestion doit alors etre un no-op silencieux, exactement comme pour `chunk`.
- * Il faut donc une cle unique par point.
+ * A chunk can arrive twice — lost ack, sweep after a cut, phone restart — and ingestion must then
+ * be a silent no-op, exactly as for `chunk`. A unique key per point is therefore needed.
  *
- * `sensorTsNs` ne peut pas la porter : il vaut **0 tant qu'aucun echantillon n'a ete vu**
- * (`TelemetryPoint.sensorTsNs`), c'est-a-dire pour les premiers points d'une session, et deux
- * points a zero se confondraient. C'est `elapsedRealtimeNs` qui est unique : une horloge monotone
- * lue une fois par minute, jamais deux fois la meme valeur dans une session. L'unicite est donc
+ * `sensorTsNs` cannot carry it: it is **0 as long as no sample has been seen**
+ * (`TelemetryPoint.sensorTsNs`), that is to say for the first points of a session, and two points
+ * at zero would be conflated. It is `elapsedRealtimeNs` that is unique: a monotonic clock read
+ * once a minute, never twice the same value within a session. Uniqueness is therefore
  * `(sessionHex, elapsedRealtimeNs)`.
  *
- * `(sessionHex, sensorTsNs)` reste **indexe**, parce que c'est l'ordre de lecture : la bande de
- * metrologie place chaque point sur la base de temps des echantillons, la seule qui date les
- * mouvements, et elle lit la nuit dans cet ordre.
+ * `(sessionHex, sensorTsNs)` stays **indexed**, because that is the reading order: the metrology
+ * band places each point on the sample time base, the only one that timestamps the movements, and
+ * it reads the night in that order.
  *
- * @param sessionHex la nuit. `CASCADE` : effacer une nuit efface sa telemetrie, comme ses chunks.
- * @param charging un point sous charge doit **sortir** de toute regression de pente de batterie.
- *   Il est conserve — c'est un fait de la nuit — mais [com.pendulum.phone.ui.model.PenteBatterie]
- *   le retire avant de calculer quoi que ce soit.
+ * @param sessionHex the night. `CASCADE`: erasing a night erases its telemetry, like its chunks.
+ * @param charging a point taken while charging must be **taken out** of any battery slope
+ *   regression. It is kept — it is a fact of the night — but
+ *   [com.pendulum.phone.ui.model.BatterySlope] removes it before computing anything.
  *
- * Les autres champs sont ceux de [com.pendulum.format.TelemetryPoint], sans renommage et sans
- * conversion d'unite : la table est une projection du bloc `TLM!`, et toute unite convertie ici
- * serait une seconde convention a tenir. Ce que chacun explique est documente une seule fois,
- * dans la KDoc du format.
+ * The other fields are those of [com.pendulum.format.TelemetryPoint], without renaming and without
+ * unit conversion: the table is a projection of the `TLM!` block, and any unit converted here
+ * would be a second convention to hold. What each one explains is documented once only, in the
+ * KDoc of the format.
  */
 @Entity(
     tableName = "telemetry_point",
@@ -223,17 +223,16 @@ data class TelemetryPointEntity(
 )
 
 /**
- * Une fenetre de sommeil, quelle que soit sa provenance. Derive : efface et reconstruit a
- * chaque rescore.
+ * A sleep window, whatever its provenance. Derived: erased and rebuilt at every rescore.
  *
- * @param source `ACCEL_IMMOBILITY | HEALTH_CONNECT | DIARY | FUSED`, valeurs de
+ * @param source `ACCEL_IMMOBILITY | HEALTH_CONNECT | DIARY | FUSED`, values of
  *   `com.pendulum.algo.model.MaskSource`.
- * @param sourcePackage `dataOrigin.packageName` quand la source est Health Connect. **Sans lui,
- *   une nuit anormale est indebogable** : on ne sait meme pas quelle application a ecrit
- *   l'hypnogramme qu'on a utilise.
- * @param startMsRel,endMsRel millisecondes **relatives au debut de la session**, jamais des
- *   horloges murales : une resynchronisation NTP en pleine nuit, ou un changement d'heure,
- *   decalerait tout le reste.
+ * @param sourcePackage `dataOrigin.packageName` when the source is Health Connect. **Without it,
+ *   an abnormal night cannot be debugged**: one does not even know which application wrote the
+ *   hypnogram that was used.
+ * @param startMsRel,endMsRel milliseconds **relative to the start of the session**, never wall
+ *   clocks: an NTP resynchronisation in the middle of the night, or a daylight-saving change,
+ *   would shift everything else.
  */
 @Entity(
     tableName = "sleep_window",
@@ -259,11 +258,11 @@ data class SleepWindowEntity(
 )
 
 /**
- * Un mouvement candidat. Derive.
+ * A candidate movement. Derived.
  *
- * On stocke **aussi les rejetes** (avec leur motif) : le rapport de qualite en a besoin, et
- * surtout, comparer les rejets d'une nuit a l'autre est le seul moyen de voir qu'un reglage a
- * change le comportement du detecteur plutot que le sommeil du dormeur.
+ * The **rejected ones are stored too** (with their reason): the quality report needs them, and
+ * above all, comparing the rejections from one night to the next is the only way to see that a
+ * setting changed the behaviour of the detector rather than the sleep of the sleeper.
  */
 @Entity(
     tableName = "clm_event",
@@ -297,22 +296,23 @@ data class ClmEventEntity(
 )
 
 /**
- * Un resultat. **Quatre lignes par nuit et par `paramsHash`** : 2 jeux de regles x 2 masques.
- * Les quatre existent pour rendre l'ecart *visible* plutot que de choisir en silence — c'est
- * l'ecart entre masque accelerometrique et masque Health Connect qui dit a quel point on peut
- * faire confiance au premier.
+ * One result. **Four rows per night and per `paramsHash`**: 2 rule sets x 2 masks. The four exist
+ * to make the discrepancy *visible* rather than choosing in silence — it is the discrepancy
+ * between the accelerometric mask and the Health Connect mask that says how far the first one can
+ * be trusted.
  *
- * @param paramsHash le hash des parametres qui ont produit ce chiffre. `UNIQUE(sessionHex,
- *   paramsHash, rule, maskSource)` : deux hashs coexistent dans la table, jamais dans une
- *   tendance — voir [ComparableNight] et `TrendDao`.
- * @param gate ce que l'analyse **autorise** a publier (`FULL | TRUNCATED_NO_TREND | NO_PLMI`).
- *   Evalue par le code, jamais contournable depuis l'interface.
- * @param fundamentalSec la metrique de suivi (`SPEC-v2.md` §5) : rythme fondamental en
- *   secondes, sans denominateur, donc sans circularite, et douze fois plus stable d'une nuit a
- *   l'autre que le compte horaire.
- * @param missRate taux de manques estime. **A lire a cote de `fundamentalSec` et jamais sans
- *   lui** : un taux qui saute d'une nuit a l'autre signale deux nuits non comparables, et un
- *   taux proche de 0,5 avec un pic fondamental faible evoque une alternance gauche/droite.
+ * @param paramsHash the hash of the parameters that produced this figure. `UNIQUE(sessionHex,
+ *   paramsHash, rule, maskSource)`: two hashes coexist in the table, never in a trend — see
+ *   [ComparableNight] and `TrendDao`.
+ * @param gate what the analysis **authorises** to publish (`FULL | TRUNCATED_NO_TREND | NO_PLMI`).
+ *   Evaluated by the code, never bypassable from the interface.
+ * @param fundamentalSec the follow-up metric (`SPEC-v2.md` section 5): fundamental rhythm in
+ *   seconds, without a denominator, hence without circularity, and twelve times more stable from
+ *   one night to the next than the hourly count.
+ * @param missRate estimated miss rate. **To be read next to `fundamentalSec` and never without
+ *   it**: a rate that jumps from one night to the next signals two nights that are not comparable,
+ *   and a rate close to 0.5 together with a weak fundamental peak suggests a left/right
+ *   alternation.
  */
 @Entity(
     tableName = "plm_result",
@@ -349,22 +349,22 @@ data class PlmResultEntity(
     val wasoMin: Double,
 
     /**
-     * Les six taux, **nullables**, et `null` veut dire « cette nuit n'en porte pas ».
+     * The six rates, **nullable**, and `null` means "this night carries none".
      *
-     * `safeRate` rend `NaN` des que le denominateur n'existe pas, et c'est la bonne decision — un
-     * taux sans denominateur n'est pas zero. Mais SQLite ne connait pas `NaN` : la liaison le
-     * convertit en `NULL`, et une colonne `NOT NULL` refusait alors l'insertion
-     * (`SQLiteConstraintException: NOT NULL constraint failed: plm_result.plmi`). Comme
-     * `AnalyzeWorker` rend `retry()` sur exception, la nuit etait reessayee sans fin et
-     * n'apparaissait **nulle part** : c'est le chemin par defaut de tout utilisateur sans
-     * hypnogramme Health Connect, pas un cas limite.
+     * `safeRate` returns `NaN` as soon as the denominator does not exist, and that is the right
+     * decision — a rate without a denominator is not zero. But SQLite does not know `NaN`: binding
+     * converts it to `NULL`, and a `NOT NULL` column then refused the insertion
+     * (`SQLiteConstraintException: NOT NULL constraint failed: plm_result.plmi`). Since
+     * `AnalyzeWorker` returns `retry()` on an exception, the night was retried endlessly and
+     * appeared **nowhere**: this is the default path of every user without a Health Connect
+     * hypnogram, not an edge case.
      *
-     * Ecrire `0.0` a la place aurait ete pire que le defaut : « 0 mouvement par heure » est une
-     * mesure, et l'annoncer pour une nuit ou rien n'a pu etre mesure est un mensonge clinique.
-     * `null` se propage jusqu'au tiret de l'ecran ([com.pendulum.phone.ui.model.Mapping.TIRET]),
-     * qui dit exactement ce qui s'est passe.
+     * Writing `0.0` instead would have been worse than the defect: "0 movements per hour" is a
+     * measurement, and announcing it for a night where nothing could be measured is a clinical
+     * lie. `null` propagates all the way to the dash on the screen
+     * ([com.pendulum.phone.ui.model.Mapping.DASH]), which says exactly what happened.
      *
-     * La conversion se fait en un seul endroit : [PlmResultEntity.depuis].
+     * The conversion happens in a single place: [PlmResultEntity.from].
      */
     val plmi: Double?,
     val plmiSpt: Double?,
@@ -373,17 +373,17 @@ data class PlmResultEntity(
     val plmiSecondHalf: Double?,
     val plmiRespWorstCase: Double?,
 
-    /** Jamais `NaN` : `Periodicity.fromIntervals` rend `0.0` sans intervalle, et porte son `valid`. */
+    /** Never `NaN`: `Periodicity.fromIntervals` returns `0.0` with no interval, and carries its `valid`. */
     val periodicityIndex: Double,
     val periodicityValid: Boolean,
 
     /**
-     * Les quatre sorties de la deconvolution, nullables pour la meme raison que les taux
-     * ci-dessus — `Rhythm.emptyFit` les met toutes a `NaN` quand l'ajustement est refuse.
+     * The four outputs of the deconvolution, nullable for the same reason as the rates above —
+     * `Rhythm.emptyFit` sets them all to `NaN` when the fit is refused.
      *
-     * **Le refus est le cas frequent**, pas l'exception : `RhythmMeasurementTest` mesure 2
-     * ajustements acceptes sur 20 nuits nominales. La colonne `NOT NULL` faisait donc echouer
-     * l'insertion de la plupart des nuits, y compris celles dont le PLMI, lui, existait.
+     * **Refusal is the frequent case**, not the exception: `RhythmMeasurementTest` measures 2
+     * accepted fits out of 20 nominal nights. The `NOT NULL` column therefore made the insertion
+     * of most nights fail, including those whose PLMI did exist.
      */
     val fundamentalSec: Double?,
     val muLog: Double?,
@@ -401,17 +401,16 @@ data class PlmResultEntity(
     companion object {
 
         /**
-         * L'unique fabrique d'une ligne de resultat, et **l'unique endroit ou un `NaN` devient un
-         * `NULL`**.
+         * The one factory for a result row, and **the one place where a `NaN` becomes a `NULL`**.
          *
-         * Elle existe parce que la conversion doit vivre a la frontiere de persistance et nulle
-         * part ailleurs. Deux appelants construisent cette ligne — l'analyse reelle et
-         * l'ensemencement du banc — et une conversion recopiee chez chacun d'eux est une
-         * conversion dont l'un des deux exemplaires finira par oublier un champ. Le champ oublie
-         * ne se verrait pas : il ferait echouer l'insertion, `AnalyzeWorker` rendrait `retry()`,
-         * et la nuit disparaitrait en silence. C'est precisement le defaut qu'on repare.
+         * It exists because the conversion must live at the persistence boundary and nowhere else.
+         * Two callers build this row — the real analysis and the bench seeding — and a conversion
+         * copied into each of them is a conversion of which one of the two copies will end up
+         * forgetting a field. The forgotten field would not show: it would make the insertion
+         * fail, `AnalyzeWorker` would return `retry()`, and the night would disappear in silence.
+         * That is precisely the defect being repaired.
          */
-        fun depuis(
+        fun from(
             sessionHex: String,
             paramsHash: String,
             computedAtMs: Long,
@@ -432,18 +431,18 @@ data class PlmResultEntity(
             analysableTstMin = r.analysableTstMin,
             sptMin = r.sptMin,
             wasoMin = r.wasoMin,
-            plmi = r.plmi.siDefinie(),
-            plmiSpt = r.plmiSpt.siDefinie(),
-            plmw = r.plmw.siDefinie(),
-            plmiFirstHalf = r.plmiFirstHalf.siDefinie(),
-            plmiSecondHalf = r.plmiSecondHalf.siDefinie(),
-            plmiRespWorstCase = r.plmiRespWorstCase.siDefinie(),
+            plmi = r.plmi.ifDefined(),
+            plmiSpt = r.plmiSpt.ifDefined(),
+            plmw = r.plmw.ifDefined(),
+            plmiFirstHalf = r.plmiFirstHalf.ifDefined(),
+            plmiSecondHalf = r.plmiSecondHalf.ifDefined(),
+            plmiRespWorstCase = r.plmiRespWorstCase.ifDefined(),
             periodicityIndex = r.pi.periodicityIndex,
             periodicityValid = r.pi.valid,
-            fundamentalSec = r.rhythm.fundamentalSec.siDefinie(),
-            muLog = r.rhythm.muLog.siDefinie(),
-            sigmaLog = r.rhythm.sigmaLog.siDefinie(),
-            missRate = r.rhythm.missRate.siDefinie(),
+            fundamentalSec = r.rhythm.fundamentalSec.ifDefined(),
+            muLog = r.rhythm.muLog.ifDefined(),
+            sigmaLog = r.rhythm.sigmaLog.ifDefined(),
+            missRate = r.rhythm.missRate.ifDefined(),
             alternationSuspect = r.rhythm.alternationSuspect,
             rhythmConverged = r.rhythm.converged,
             rhythmValid = r.rhythm.valid,
@@ -456,49 +455,49 @@ data class PlmResultEntity(
 }
 
 /**
- * La traduction de la convention de `:algo` vers celle de SQLite : `NaN` (et l'infini, que
- * `safeRate` peut produire si le denominateur devient infinitesimal) veut dire « pas de valeur »,
- * et « pas de valeur » s'ecrit `NULL`.
+ * The translation from the convention of `:algo` to that of SQLite: `NaN` (and infinity, which
+ * `safeRate` can produce if the denominator becomes infinitesimal) means "no value", and "no
+ * value" is written `NULL`.
  *
- * `night_session.gainCalG` appliquait deja cette regle a la main ; elle porte desormais un nom.
+ * `night_session.gainCalG` already applied this rule by hand; it now has a name.
  */
-internal fun Double.siDefinie(): Double? = takeIf { it.isFinite() }
+internal fun Double.ifDefined(): Double? = takeIf { it.isFinite() }
 
 /**
- * Le contexte du soir : dose, jambe portante, bracelet, seul dans le lit, cafe, alcool.
+ * The evening context: dose, bearing leg, strap, alone in bed, coffee, alcohol.
  *
- * **Table append-only, et l'interdiction est structurelle** : deux declencheurs SQLite
- * (`night_context_no_update`, `night_context_no_delete`, poses par [PendulumDatabase]) font echouer
- * tout `UPDATE` et tout `DELETE`. Le DAO n'expose ni `@Update` ni `@Delete`, mais un DAO se
- * modifie ; un declencheur, non — c'est ce qui fait la difference entre une convention et une
- * garantie.
+ * **Append-only table, and the prohibition is structural**: two SQLite triggers
+ * (`night_context_no_update`, `night_context_no_delete`, laid down by [PendulumDatabase]) make
+ * every `UPDATE` and every `DELETE` fail. The DAO exposes neither `@Update` nor `@Delete`, but a
+ * DAO can be modified; a trigger cannot — that is what makes the difference between a convention
+ * and a guarantee.
  *
- * **Pourquoi ce n'est pas de la paranoia** : le mode de defaillance de ce projet n'est pas la
- * fraude, c'est la retouche de bonne foi. Se souvenir le lendemain matin, apres avoir vu un
- * chiffre elevé, qu'« en fait j'avais pris la dose plus tard » et corriger, suffit a fabriquer
- * la correlation qu'on cherchait. Le scellement doit precer la mesure : la montre refuse de
- * demarrer tant que cette ligne n'est pas ecrite.
+ * **Why this is not paranoia**: the failure mode of this project is not fraud, it is the good-faith
+ * touch-up. Remembering the next morning, after seeing a high figure, that "in fact I took the
+ * dose later" and correcting it, is enough to manufacture the very correlation being looked for.
+ * The sealing must precede the measurement: the watch refuses to start as long as this row is not
+ * written.
  *
- * ### Pourquoi la cle est la nuit et non la session
+ * ### Why the key is the night and not the session
  *
- * Le scellement **precede** la nuit : au moment ou l'utilisateur remplit le formulaire, aucune
- * session n'existe, et il n'y a donc pas de `sessionHex` a poser. La v1 exigeait pourtant cette
- * colonne en cle primaire, ce qui rendait le scellement litteralement impossible — et comme les
- * declencheurs interdisent tout `UPDATE`, on ne pouvait pas non plus la renseigner apres coup.
+ * The sealing **precedes** the night: at the moment the user fills in the form, no session exists,
+ * and there is therefore no `sessionHex` to put down. v1 nevertheless required that column as the
+ * primary key, which made sealing literally impossible — and since the triggers forbid every
+ * `UPDATE`, it could not be filled in afterwards either.
  *
- * La cle est donc la **cle de nuit** de `WirePaths.nightKey` — date locale de la soiree, bascule
- * a midi — c'est-a-dire exactement la chaine que porte le chemin du `DataItem` publie vers la
- * montre. Une seule convention, partagee par la base et par le protocole : un decalage entre les
- * deux serait indiscernable d'une absence de contexte, et la montre refuserait de demarrer sans
- * rien pouvoir expliquer.
+ * The key is therefore the **night key** of `WirePaths.nightKey` — local date of the evening,
+ * rolling over at noon — that is to say exactly the string carried by the path of the `DataItem`
+ * published to the watch. One single convention, shared by the database and by the protocol: a
+ * mismatch between the two would be indistinguishable from an absence of context, and the watch
+ * would refuse to start without being able to explain anything.
  *
- * @param nightKey `AAAA-MM-JJ` de la soiree. Un coucher a 1 h 30 se rattache a la veille.
- * @param sealedAtMs instant du scellement. Doit etre **anterieur** a `night_session.startWallMs`.
- * @param leg `LEFT | RIGHT`. Critere de comparabilite : un capteur unilateral voit un intervalle
- *   double en cas d'alternance, changer de jambe change la mesure.
- * @param strapId identifiant du bracelet utilise. Idem : le SPEC mesure des amplitudes x2 a x3
- *   selon le jeu du bracelet.
- * @param aloneInBed un partenaire de lit transmet ses propres mouvements par le matelas.
+ * @param nightKey `YYYY-MM-DD` of the evening. A bed time at 1:30 attaches to the previous day.
+ * @param sealedAtMs instant of the sealing. Must be **earlier** than `night_session.startWallMs`.
+ * @param leg `LEFT | RIGHT`. Comparability criterion: a one-sided sensor sees a doubled interval
+ *   when movements alternate, so changing leg changes the measurement.
+ * @param strapId identifier of the strap used. Same thing: the SPEC measures amplitudes x2 to x3
+ *   depending on the play of the strap.
+ * @param aloneInBed a bed partner transmits their own movements through the mattress.
  */
 @Entity(tableName = "night_context")
 data class NightContextEntity(
@@ -517,21 +516,21 @@ data class NightContextEntity(
 )
 
 /**
- * Instantane de ce que Health Connect a **effectivement renvoye**, avant toute interpretation.
+ * Snapshot of what Health Connect **actually returned**, before any interpretation.
  *
- * Il existe pour une raison precise et verifiee : certains fournisseurs ne se contentent pas
- * d'inserer, ils **reecrivent** une session deja publiee (« inserts or *updates* », FAQ
- * developpeur Samsung). Une nuit lue a T+1 h peut donc differer de la meme nuit a T+8 h. Sans
- * cet instantane, un chiffre qui change entre deux consultations est inexplicable ; avec lui,
- * la comparaison de deux lignes le montre en une requete.
+ * It exists for a precise and verified reason: some providers do not merely insert, they
+ * **rewrite** an already published session ("inserts or *updates*", Samsung developer FAQ). A
+ * night read at T+1 h can therefore differ from the same night at T+8 h. Without this snapshot, a
+ * figure that changes between two consultations is inexplicable; with it, comparing two rows shows
+ * it in one query.
  *
- * Append-only par usage : chaque lecture ajoute une ligne, aucune n'en modifie une.
+ * Append-only by use: every read adds a row, none modifies one.
  *
- * @param lastModifiedTimeMs `metadata.lastModifiedTime` tel que renvoye par Health Connect.
- *   C'est le champ qui trahit la reecriture.
- * @param recordsJson serialisation brute des sessions retenues **et** ecartees, avec leur
- *   origine. Volontairement redondant avec `sleep_window` : `sleep_window` est derive et efface
- *   au rescore, celui-ci ne l'est jamais.
+ * @param lastModifiedTimeMs `metadata.lastModifiedTime` as returned by Health Connect. This is the
+ *   field that betrays the rewrite.
+ * @param recordsJson raw serialisation of the sessions kept **and** excluded, with their origin.
+ *   Deliberately redundant with `sleep_window`: `sleep_window` is derived and erased at rescore,
+ *   this one never is.
  */
 @Entity(
     tableName = "hc_snapshot",
@@ -559,18 +558,18 @@ data class HcSnapshotEntity(
     val distinctStageTypes: Int = 0,
     val stageCoverageMin: Double = 0.0,
     val overlapFraction: Double = 0.0,
-    /** TST rendu par `aggregate(SLEEP_DURATION_TOTAL)`, dedoublonne par le systeme. */
+    /** TST returned by `aggregate(SLEEP_DURATION_TOTAL)`, deduplicated by the system. */
     val aggregateTstMin: Double? = null,
     val originCount: Int = 0,
 
     /**
-     * L'hypnogramme retenu, encode `debutMs:finMs:type;...` en horloge murale UTC.
+     * The hypnogram that was kept, encoded `startMs:endMs:type;...` in UTC wall clock.
      *
-     * Un CSV et non du JSON, pour une raison qui n'est pas l'economie : **c'est cette colonne
-     * qui est relue** a chaque rescore, et un format qui se relit en dix lignes sans
-     * bibliotheque ne peut pas se mettre a echouer differemment selon la version d'un parseur.
-     * `recordsJson`, lui, est une trace destinee a l'oeil humain et n'est jamais reparse — s'il
-     * l'etait, il faudrait le versionner.
+     * A CSV and not JSON, for a reason that is not economy: **this is the column that is read
+     * again** at every rescore, and a format that can be read back in ten lines without a library
+     * cannot start failing differently depending on the version of a parser. `recordsJson`, on the
+     * other hand, is a trace meant for the human eye and is never parsed again — if it were, it
+     * would have to be versioned.
      */
     val selectedStagesCsv: String = "",
 
@@ -578,7 +577,7 @@ data class HcSnapshotEntity(
     val outcome: String,
 )
 
-/** Une reponse de questionnaire. Append-only par usage : on ajoute une passation, on ne corrige pas. */
+/** One questionnaire response. Append-only by use: a sitting is added, it is not corrected. */
 @Entity(
     tableName = "questionnaire_response",
     indices = [Index(value = ["sessionHex"]), Index(value = ["kind", "answeredAtMs"])],
@@ -593,16 +592,15 @@ data class QuestionnaireResponseEntity(
 )
 
 /**
- * Un jeu de parametres d'algorithme, identifie par son hash.
+ * One set of algorithm parameters, identified by its hash.
  *
- * Garde-fou 3 : **aucun reglage par nuit**. Un changement de parametre est global, cree une
- * nouvelle ligne ici, et declenche `RescoreAllWorker` qui recalcule *toutes* les nuits depuis
- * le brut. La tendance refuse ensuite de melanger deux hashs — ce n'est pas une politique
- * d'affichage, c'est un `WHERE paramsHash = :hash` dont il n'existe aucune variante sans filtre
- * dans `TrendDao`.
+ * Guard rail 3: **no per-night setting**. A parameter change is global, creates a new row here, and
+ * triggers `RescoreAllWorker`, which recomputes *all* the nights from the raw data. The trend then
+ * refuses to mix two hashes — this is not a display policy, it is a `WHERE paramsHash = :hash` of
+ * which no unfiltered variant exists in `TrendDao`.
  *
- * @param active un seul profil actif a la fois. L'unicite est tenue par [ParamDao.activate],
- *   qui desactive tout dans la meme transaction.
+ * @param active a single active profile at a time. Uniqueness is held by [ParamDao.activate],
+ *   which deactivates everything in the same transaction.
  */
 @Entity(tableName = "param_profile")
 data class ParamProfileEntity(

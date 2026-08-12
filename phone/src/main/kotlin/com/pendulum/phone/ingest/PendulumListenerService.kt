@@ -18,62 +18,62 @@ import com.pendulum.phone.work.WorkScheduler
 import kotlinx.coroutines.runBlocking
 
 /**
- * Reception Data Layer.
+ * Data Layer reception.
  *
- * ### Pourquoi ce service et pas un worker qui interroge
+ * ### Why this service and not a worker that polls
  *
- * Google Play Services demarre ce service pour livrer un `DataItem`, **meme si l'application n'a
- * jamais ete ouverte**, et il le fait des que l'item est synchronise. C'est la seule facon
- * d'encaisser une nuit entiere sans que l'utilisateur touche le telephone. Un worker
- * periodique manquerait la fenetre : les items arrivent par salves de trois toutes les quinze
- * minutes, et les faire attendre le prochain reveil de WorkManager ne servirait qu'a garder plus
- * longtemps des items en vol — donc a se rapprocher du plafond de 24 au-dela duquel la montre
- * arrete de publier.
+ * Google Play Services starts this service in order to deliver a `DataItem`, **even if the
+ * application has never been opened**, and it does so as soon as the item is synchronised. This is
+ * the only way to take in a whole night without the user touching the phone. A periodic worker
+ * would miss the window: the items arrive in bursts of three every fifteen minutes, and making
+ * them wait for WorkManager's next wake-up would only keep items in flight for longer — hence
+ * bring us closer to the ceiling of 24 beyond which the watch stops publishing.
  *
- * ### L'ordre des operations, qui est le protocole lui-meme
+ * ### The order of the operations, which is the protocol itself
  *
- * 1. verifier la taille, puis le CRC-32 sur les octets recus ;
- * 2. ecrire le fichier de facon atomique ;
- * 3. relire le fichier : le marqueur de fin, et les points de telemetrie du bloc `TLM!` ;
- * 4. `INSERT OR IGNORE` la telemetrie, puis `INSERT OR IGNORE` sur `(sessionHex, idx)` ;
- * 5. relire l'etat **depuis la base** et publier l'accuse.
+ * 1. check the size, then the CRC-32 over the received bytes;
+ * 2. write the file atomically;
+ * 3. read the file back: the end marker, and the telemetry points of the `TLM!` block;
+ * 4. `INSERT OR IGNORE` the telemetry, then `INSERT OR IGNORE` on `(sessionHex, idx)`;
+ * 5. read the state back **from the database** and publish the acknowledgement.
  *
- * Aucune de ces etapes n'est commutative. Acquitter avant d'avoir ecrit ferait supprimer par la
- * montre le seul exemplaire correct ; inserer avant d'avoir verifie enregistrerait des octets
- * faux comme valides ; recalculer l'accuse depuis autre chose que la base le rendrait faux au
- * premier redemarrage du service.
+ * None of these steps commutes. Acknowledging before writing would make the watch delete the only
+ * correct copy; inserting before verifying would record wrong bytes as valid; recomputing the
+ * acknowledgement from anything other than the database would make it wrong at the first restart
+ * of the service.
  *
- * `runBlocking` est assume : les callbacks de `WearableListenerService` arrivent deja sur un
- * thread de fond, et GMS considere l'evenement traite quand la methode retourne. Lancer une
- * coroutine et rendre la main ferait perdre l'evenement si le processus est tue entre-temps.
+ * `runBlocking` is deliberate: the callbacks of `WearableListenerService` already arrive on a
+ * background thread, and GMS considers the event handled when the method returns. Launching a
+ * coroutine and returning straight away would lose the event if the process is killed in the
+ * meantime.
  */
 class PendulumListenerService : WearableListenerService() {
 
     private val db by lazy { PendulumDatabase.get(this) }
     private val store by lazy { ChunkStore(this) }
 
-    /** Nombre de demandes de reemission deja faites, par `sessionHex#idx`. Voir [peutEncoreDemander]. */
-    private val reemissions = HashMap<String, Int>()
+    /** Number of resend requests already made, by `sessionHex#idx`. See [canStillAsk]. */
+    private val resendRequests = HashMap<String, Int>()
 
     /**
-     * Repli de l'ouverture a distance : la montre demande que le telephone s'ouvre.
+     * Fallback for the remote opening: the watch asks for the phone to open.
      *
-     * **Ce service ne lance pas d'activite**, et ce n'est pas un oubli. Il est demarre par les
-     * services Google Play, donc depuis l'arriere-plan, et Android bloque les lancements
-     * d'activite depuis l'arriere-plan depuis la version 10 — sans exception lisible, sans erreur,
-     * avec pour seule trace une ligne dans les journaux du systeme. Le chemin nominal passe par
-     * `RemoteActivityHelper` cote montre ; quand il echoue, on poste une notification, dont le tap
-     * par l'utilisateur est la seule exemption fiable.
+     * **This service does not launch an activity**, and that is not an oversight. It is started by
+     * Google Play Services, hence from the background, and Android has blocked activity launches
+     * from the background since version 10 — with no readable exception, with no error, and with a
+     * single line in the system logs as its only trace. The nominal path goes through
+     * `RemoteActivityHelper` on the watch side; when it fails, a notification is posted, and the
+     * user tapping it is the only reliable exemption.
      */
     override fun onMessageReceived(event: com.google.android.gms.wearable.MessageEvent) {
         if (event.path != WirePaths.OPEN_PHONE) return
-        com.pendulum.phone.notify.Notifications.demandeDeContexteDuSoir(this)
+        com.pendulum.phone.notify.Notifications.eveningContextRequest(this)
     }
 
     override fun onDataChanged(events: DataEventBuffer) {
-        // Les sessions touchees pendant cette salve : l'accuse n'est publie qu'une fois par
-        // session et par salve, apres avoir tout ecrit. Un accuse par chunk multiplierait par
-        // trois les `putDataItem` pour la meme information finale.
+        // The sessions touched during this burst: the acknowledgement is published only once per
+        // session and per burst, after everything has been written. One acknowledgement per chunk
+        // would triple the `putDataItem` calls for the same final information.
         val touched = LinkedHashMap<String, MutableSet<Int>>()
 
         for (event in events) {
@@ -85,47 +85,48 @@ class PendulumListenerService : WearableListenerService() {
                     path.startsWith(WirePaths.SESSION_PREFIX) -> onSession(payload)
                     path.startsWith(WirePaths.CHUNK_PREFIX) -> {
                         val hex = sessionHexOfChunkPath(path) ?: continue
-                        val aReemettre = touched.getOrPut(hex) { linkedSetOf() }
+                        val toResend = touched.getOrPut(hex) { linkedSetOf() }
                         onChunk(hex, payload)?.let { idx ->
-                            if (peutEncoreDemander(hex, idx)) aReemettre += idx
+                            if (canStillAsk(hex, idx)) toResend += idx
                         }
                     }
                     path.startsWith(WirePaths.LIVE_PREFIX) -> onLive(payload)
                 }
             } catch (t: Throwable) {
-                // Un item mal forme ne doit pas empecher le traitement des suivants : la salve
-                // contient trois chunks, en perdre trois pour un est une perte de 15 min de nuit.
-                Log.w(TAG, "item ignore : $path", t)
+                // A malformed item must not prevent the following ones from being processed: the
+                // burst holds three chunks, losing three of them for one is losing 15 min of the
+                // night.
+                Log.w(TAG, "item ignored: $path", t)
             }
         }
 
-        for ((hex, aReemettre) in touched) {
-            runCatching { publishAck(hex, aReemettre.sorted()) }
-                .onFailure { Log.w(TAG, "accuse non publie pour $hex", it) }
+        for ((hex, toResend) in touched) {
+            runCatching { publishAck(hex, toResend.sorted()) }
+                .onFailure { Log.w(TAG, "acknowledgement not published for $hex", it) }
         }
     }
 
     /**
-     * **Combien de fois on redemande un chunk avant d'abandonner.**
+     * **How many times a chunk is asked for again before giving up.**
      *
-     * La reemission est indispensable — sans elle un chunk refuse est perdu pour toujours **et**
-     * garde une des 24 places en vol jusqu'au matin — mais elle ne peut pas etre inconditionnelle :
-     * un chunk corrompu **sur le disque de la montre** se reemettrait a l'identique a chaque
-     * accuse, et la nuit se passerait a le renvoyer. Une panne de transport merite d'etre retentee,
-     * une panne de stockage merite d'etre abandonnee ; rien ne les distingue vu d'ici, donc on
-     * borne.
+     * Resending is indispensable — without it a refused chunk is lost forever **and** keeps one of
+     * the 24 in-flight slots until morning — but it cannot be unconditional: a chunk corrupted
+     * **on the watch's own disk** would be resent identically at every acknowledgement, and the
+     * night would be spent sending it back. A transport failure deserves to be retried, a storage
+     * failure deserves to be given up on; nothing tells them apart seen from here, so we put a
+     * bound on it.
      *
-     * Le compteur vit en memoire, et c'est assume : s'il repart a zero parce que le service a ete
-     * recree, on aura au pire quelques tentatives de plus, ce qui est exactement le comportement
-     * qu'on voudrait apres un redemarrage du telephone. Le persister ajouterait un troisieme etat a
-     * reconcilier pour un benefice nul.
+     * The counter lives in memory, and that is deliberate: if it starts again from zero because
+     * the service was recreated, at worst we get a few more attempts, which is exactly the
+     * behaviour we would want after a restart of the phone. Persisting it would add a third state
+     * to reconcile for no benefit at all.
      */
-    private fun peutEncoreDemander(sessionHex: String, idx: Int): Boolean {
-        val cle = "$sessionHex#$idx"
-        val n = (reemissions[cle] ?: 0) + 1
-        reemissions[cle] = n
-        if (n > MAX_REEMISSIONS) {
-            Log.w(TAG, "chunk $idx de $sessionHex abandonne apres $MAX_REEMISSIONS demandes")
+    private fun canStillAsk(sessionHex: String, idx: Int): Boolean {
+        val key = "$sessionHex#$idx"
+        val n = (resendRequests[key] ?: 0) + 1
+        resendRequests[key] = n
+        if (n > MAX_RESEND_REQUESTS) {
+            Log.w(TAG, "chunk $idx of $sessionHex given up after $MAX_RESEND_REQUESTS requests")
             return false
         }
         return true
@@ -139,32 +140,33 @@ class PendulumListenerService : WearableListenerService() {
         val h = SessionHeader.decode(payload)
         val dao = db.nightDao()
 
-        // `insertIfAbsent` et non `REPLACE` : cet item est repose a chaque changement d'etat, et
-        // un REPLACE ecraserait au passage tout ce que l'analyse a ecrit dans la ligne.
+        // `insertIfAbsent` and not `REPLACE`: this item is re-put at every change of state, and a
+        // REPLACE would wipe out along the way everything the analysis has written into the row.
         dao.insertIfAbsent(
             NightSessionEntity(
                 sessionHex = h.sessionHex,
-                // La soiree a laquelle cette nuit se rattache, derivee de son heure de debut par
-                // la meme bascule a midi que le chemin du contexte scelle. C'est par elle que la
-                // nuit retrouve le formulaire rempli plusieurs heures avant qu'elle n'existe :
-                // le `sessionHex` n'etait pas connu au moment du scellement, et il ne peut donc
-                // pas servir de rattachement.
+                // The evening this night attaches to, derived from its start time by the same
+                // noon rollover as the path of the sealed context. It is through it that the
+                // night finds again the form filled in several hours before it existed: the
+                // `sessionHex` was not known at the moment of sealing, and it therefore cannot
+                // serve as the attachment.
                 //
-                // Le fuseau est celui **annonce par la montre**, pas celui du telephone. Les deux
-                // sont normalement identiques ; quand ils ne le sont pas — un vol pendant la
-                // journee — c'est le fuseau ou la nuit a ete vecue qui definit la soiree.
-                // Le fuseau vient de la montre et il est resolu **ici**, sur le telephone : les
-                // deux appareils n'ont pas forcement la meme base tzdb, et un identifiant que
-                // celle-ci ne connait pas leve. Sans ce repli, l'exception remontait au `catch`
-                // generique de `onDataChanged`, la ligne `night_session` n'etait jamais creee, et
-                // comme les chunks portent une cle etrangere `CASCADE` vers elle, chacun d'eux
-                // violait la contrainte a son tour : la nuit entiere disparaissait sans un mot.
-                // `offsetAt`, quinze lignes plus bas, se protegeait deja — pas celui-ci.
+                // The time zone is the one **announced by the watch**, not the phone's. The two
+                // are normally identical; when they are not — a flight during the day — it is the
+                // zone in which the night was lived that defines the evening.
+                // The time zone comes from the watch and it is resolved **here**, on the phone:
+                // the two devices do not necessarily have the same tzdb, and an identifier that
+                // the phone's does not know throws. Without this fallback, the exception went up
+                // to the generic `catch` of `onDataChanged`, the `night_session` row was never
+                // created, and since the chunks carry a `CASCADE` foreign key onto it, each of
+                // them violated the constraint in turn: the whole night disappeared without a
+                // word. `offsetAt`, fifteen lines further down, already protected itself — this
+                // one did not.
                 nightKey = WirePaths.nightKey(
                     h.startWallMs,
                     runCatching { java.time.ZoneId.of(h.zoneId) }
                         .getOrElse {
-                            Log.w(TAG, "fuseau inconnu du telephone : ${h.zoneId}", it)
+                            Log.w(TAG, "time zone unknown to the phone: ${h.zoneId}", it)
                             java.time.ZoneId.systemDefault()
                         },
                 ),
@@ -172,8 +174,8 @@ class PendulumListenerService : WearableListenerService() {
                 plannedStopWallMs = h.plannedStopWallMs,
                 zoneId = h.zoneId,
                 tzOffsetStartMin = h.tzOffsetMin,
-                // A l'ouverture, l'offset de fin est celui du debut. Il n'est corrige qu'a la
-                // fermeture : c'est leur difference qui detecte une nuit de changement d'heure.
+                // At opening, the end offset is the one of the start. It is corrected only at
+                // closing: it is their difference that detects a daylight-saving night.
                 tzOffsetEndMin = h.tzOffsetMin,
                 nominalRateHz = h.nominalRateHz,
                 modeFlags = h.modeFlags,
@@ -190,19 +192,19 @@ class PendulumListenerService : WearableListenerService() {
                 stopReason = h.stopReason?.name,
                 tzOffsetEndMin = offsetAt(h),
             )
-            // La montre a fini d'emettre : c'est le moment de lancer la chaine complete.
+            // The watch has finished sending: this is the moment to launch the full chain.
             WorkScheduler.enqueueNightChain(applicationContext, h.sessionHex)
         }
     }
 
     /**
-     * Offset UTC local **a la fin** de la nuit.
+     * Local UTC offset **at the end** of the night.
      *
-     * Il est recalcule ici a partir de `zoneId` et de `endWallMs` plutot que repris de l'item :
-     * la montre publie l'offset qu'elle avait a l'ouverture, et une nuit de changement d'heure
-     * est exactement celle ou les deux different. Reprendre le meme des deux cotes rendrait le
-     * critere `tzOffsetStartMin <> tzOffsetEndMin` structurellement toujours faux — un garde-fou
-     * qui ne se declenche jamais est pire que pas de garde-fou, parce qu'il rassure.
+     * It is recomputed here from `zoneId` and `endWallMs` rather than taken back from the item:
+     * the watch publishes the offset it had at opening, and a daylight-saving night is exactly the
+     * one where the two differ. Taking the same one on both sides would make the criterion
+     * `tzOffsetStartMin <> tzOffsetEndMin` structurally always false — a guard rail that never
+     * fires is worse than no guard rail, because it reassures.
      */
     private fun offsetAt(h: SessionHeader): Int {
         val end = h.endWallMs ?: return h.tzOffsetMin
@@ -218,46 +220,47 @@ class PendulumListenerService : WearableListenerService() {
     // /pendulum/chunk
     // ------------------------------------------------------------------
 
-    /** @return l'index du chunk a reemettre si la verification a echoue, `null` sinon. */
+    /** @return the index of the chunk to resend if the verification failed, `null` otherwise. */
     private fun onChunk(sessionHexFromPath: String, payload: ByteArray): Int? = runBlocking {
         val (meta, bytes) = ChunkEnvelope.decode(payload)
         when (val verdict = ChunkVerifier.verify(sessionHexFromPath, meta, bytes)) {
             ChunkVerifier.Verdict.OK -> Unit
             else -> {
-                Log.w(TAG, "chunk ${meta.idx} refuse : $verdict")
-                // On ne memorise pas la demande de reemission en base : elle se rededuit de
-                // l'absence de la ligne. Un etat « a reemettre » persistant serait un troisieme
-                // etat a reconcilier, alors que « present ou absent » suffit.
+                Log.w(TAG, "chunk ${meta.idx} refused: $verdict")
+                // The resend request is not recorded in the database: it is re-derived from the
+                // absence of the row. A persistent "to be resent" state would be a third state to
+                // reconcile, whereas "present or absent" is enough.
                 return@runBlocking meta.idx
             }
         }
 
         store.write(meta.sessionHex, meta.idx, bytes)
 
-        // Le fichier est relu pour savoir s'il est *complet* : le marqueur de fin est la seule
-        // chose qui distingue un chunk clos d'un chunk en cours d'ecriture, et un chunk non
-        // complet ne doit jamais etre acquitte.
+        // The file is read back to find out whether it is *complete*: the end marker is the only
+        // thing that tells a closed chunk from a chunk still being written, and a chunk that is
+        // not complete must never be acknowledged.
         //
-        // La telemetrie est recoltee **dans la meme passe**. Le lecteur traversait deja les blocs
-        // `TLM!` pour verifier leur CRC et jetait les points ; les collecter ici ne coute pas une
-        // seconde lecture de 90 Ko, et une seconde passe serait de toute facon une occasion de
-        // diverger — un chunk juge complet par la premiere et illisible par la seconde.
-        val telemetrie = ArrayList<com.pendulum.format.TelemetryPoint>()
+        // The telemetry is harvested **in the same pass**. The reader was already walking through
+        // the `TLM!` blocks to check their CRC and was discarding the points; collecting them here
+        // does not cost a second read of 90 KB, and a second pass would in any case be an occasion
+        // to diverge — a chunk judged complete by the first and unreadable by the second.
+        val telemetry = ArrayList<com.pendulum.format.TelemetryPoint>()
         val complete = store.fileFor(meta.sessionHex, meta.idx).inputStream().buffered().use {
             com.pendulum.format.ChunkReader
-                .forEachBlock(it, onTelemetry = { point -> telemetrie += point }) { }
+                .forEachBlock(it, onTelemetry = { point -> telemetry += point }) { }
                 .complete
         }
 
-        // Ecrite **avant** la ligne de chunk, et donc avant tout accuse : l'accuse fait supprimer
-        // le fichier sur la montre, et c'est ce fichier qui porte les points. L'ordre du protocole
-        // est le meme que pour le signal — rien ne s'acquitte avant d'etre en base.
+        // Written **before** the chunk row, and hence before any acknowledgement: the
+        // acknowledgement makes the file be deleted on the watch, and it is that file which
+        // carries the points. The order of the protocol is the same as for the signal — nothing is
+        // acknowledged before it is in the database.
         //
-        // Un chunk v1 du format ne porte aucun bloc `TLM!` : la liste est vide, l'insertion est un
-        // no-op, et la nuit n'aura pas de bande de metrologie. C'est la verite, pas une panne.
-        if (telemetrie.isNotEmpty()) {
+        // A v1 chunk of the format carries no `TLM!` block: the list is empty, the insertion is a
+        // no-op, and the night will have no metrology band. That is the truth, not a failure.
+        if (telemetry.isNotEmpty()) {
             db.telemetryDao().insertAllIfAbsent(
-                TelemetryAdapter.versEntites(meta.sessionHex, telemetrie)
+                TelemetryAdapter.toEntities(meta.sessionHex, telemetry)
             )
         }
 
@@ -285,10 +288,10 @@ class PendulumListenerService : WearableListenerService() {
     // ------------------------------------------------------------------
 
     /**
-     * L'apercu n'est **jamais** stocke ni utilise pour un calcul : c'est un etat d'affichage,
-     * remplace a chaque salve. La seule chose qu'on en retient est le pourcentage de batterie,
-     * parce qu'il permet de rapporter une cause probable d'interruption (« derniere lecture a
-     * 6 % » -> batterie) au lieu de la deviner.
+     * The preview is **never** stored nor used for a computation: it is a display state, replaced
+     * at every burst. The only thing kept from it is the battery percentage, because it makes it
+     * possible to report a probable cause of interruption ("last reading at 6 %" -> battery)
+     * instead of guessing it.
      */
     private fun onLive(payload: ByteArray) = runBlocking {
         val live = LivePreview.decode(payload)
@@ -300,19 +303,18 @@ class PendulumListenerService : WearableListenerService() {
     // ------------------------------------------------------------------
 
     /**
-     * L'accuse est recalcule **entierement depuis la base**, a chaque fois. C'est plus cher
-     * qu'un compteur incremental et c'est le but : le cout est une requete sur quelques
-     * dizaines de lignes, le benefice est qu'aucun etat en memoire ne peut diverger de la
-     * verite.
+     * The acknowledgement is recomputed **entirely from the database**, every single time. That is
+     * more expensive than an incremental counter and that is the point: the cost is one query over
+     * a few dozen rows, the benefit is that no in-memory state can diverge from the truth.
      */
     private fun publishAck(sessionHex: String, needResend: List<Int>) = runBlocking {
         val complete = db.chunkDao().completeIndices(sessionHex)
         val ack = AckBuilder.build(sessionHex, complete, needResend, System.currentTimeMillis())
         val request = PutDataRequest.create(WirePaths.ack(sessionHex))
             .setData(ack.encode())
-            // Sans `setUrgent()`, le systeme peut retarder la synchronisation de 30 minutes.
-            // La montre garde ses fichiers jusqu'a l'accuse : la retarder, c'est saturer son
-            // disque et son plafond d'items en vol pour rien.
+            // Without `setUrgent()`, the system may delay the synchronisation by 30 minutes.
+            // The watch keeps its files until the acknowledgement: delaying it means saturating
+            // its disk and its ceiling of items in flight for nothing.
             .setUrgent()
         Tasks.await(Wearable.getDataClient(this@PendulumListenerService).putDataItem(request))
     }
@@ -327,10 +329,10 @@ class PendulumListenerService : WearableListenerService() {
         const val TAG = "PendulumIngest"
 
         /**
-         * Trois, parce qu'une panne de transport se resout en une ou deux tentatives et qu'au-dela
-         * c'est le fichier lui-meme qui est en cause. Redemander sans fin couterait la batterie de
-         * la nuit pour un chunk qui ne sera jamais bon.
+         * Three, because a transport failure resolves itself in one or two attempts and beyond
+         * that it is the file itself that is at fault. Asking again endlessly would cost the
+         * night's battery for a chunk that will never be good.
          */
-        const val MAX_REEMISSIONS = 3
+        const val MAX_RESEND_REQUESTS = 3
     }
 }

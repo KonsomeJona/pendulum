@@ -13,14 +13,14 @@ import com.pendulum.wear.record.RecordingService
 import com.pendulum.wear.record.SessionStore
 
 /**
- * Reception des accuses du telephone. Demarre par GMS a la livraison, meme si l'application
- * n'a jamais ete ouverte — c'est la raison pour laquelle l'accuse est un `DataItem` et non un
- * message : un message envoye pendant que la montre est hors de portee serait perdu, et la
- * montre garderait ses fichiers pour toujours.
+ * Reception of the acknowledgements from the phone. Started by GMS on delivery, even if the
+ * application has never been opened — which is why the acknowledgement is a `DataItem` and not a
+ * message: a message sent while the watch is out of range would be lost, and the watch would keep
+ * its files forever.
  *
- * Relire deux fois le meme accuse donne le meme resultat que le relire une fois : les fichiers
- * deja effaces le restent, les items deja supprimes aussi. L'idempotence est acquise sans
- * compteur, parce que l'accuse est un **etat**, pas un evenement.
+ * Reading the same acknowledgement twice gives the same result as reading it once: files already
+ * erased stay erased, items already deleted too. Idempotence comes for free, without a counter,
+ * because the acknowledgement is a **state**, not an event.
  */
 class AckObserver : WearableListenerService() {
 
@@ -34,66 +34,66 @@ class AckObserver : WearableListenerService() {
                 val ack = Ack.decode(data)
                 val dir = SessionStore(this).sessionDir(ack.sessionHex)
                 val deleted = DataLayerTransfer.applyAck(this, ack, dir)
-                Log.i(TAG, "accuse ${ack.sessionHex} : $deleted fichiers liberes")
-                // De la place vient de se liberer dans le magasin : la suite du retard peut
-                // partir tout de suite plutot qu'a la prochaine rotation de chunk.
+                Log.i(TAG, "ack ${ack.sessionHex}: $deleted files freed")
+                // Room has just been freed in the store: the rest of the backlog can leave right
+                // away rather than at the next chunk rotation.
                 SyncWorker.enqueue(this)
             } catch (e: Exception) {
-                Log.e(TAG, "accuse illisible sur $path", e)
+                Log.e(TAG, "unreadable ack on $path", e)
             }
         }
     }
 
     /**
-     * Les deux demandes que le telephone peut adresser a la montre.
+     * The two requests the phone can address to the watch.
      *
-     * ### `/pendulum/sweep-request` — rattrapage complet
+     * ### `/pendulum/sweep-request` — full catch-up
      *
-     * Le balayage par `ChannelClient` n'est pas implemente : `SweepFraming` n'existe pas encore
-     * dans `:format`, et le rattrapage par `DataItem` couvre deja le cas reel (le plafond de
-     * 24 items se vide au rythme des accuses). La demande est donc honoree par une salve
-     * ordinaire — meme resultat, quelques minutes de plus, zero code specifique a maintenir.
+     * The sweep over `ChannelClient` is not implemented: `SweepFraming` does not exist yet in
+     * `:format`, and the catch-up by `DataItem` already covers the real case (the ceiling of
+     * 24 items empties at the pace of the acknowledgements). The request is therefore honoured by
+     * an ordinary burst — same result, a few minutes more, no specific code to maintain.
      *
-     * ### `/pendulum/start-request` — demarrer l'enregistrement
+     * ### `/pendulum/start-request` — start recording
      *
-     * Ecart assume vis-a-vis de `docs/06-interface.md` §2.2, qui reserve le demarrage a un geste
-     * physique sur la montre. Le garde-fou, lui, reste entier : [RecordingService] re-verifie
-     * `Preflight.check` avant `startSession(resume = false)`, donc une demande sans contexte
-     * scelle est refusee ici quelle qu'en soit l'origine.
+     * A deliberate departure from `docs/06-interface.md` §2.2, which reserves starting for a
+     * physical gesture on the watch. The guard rail itself stays whole: [RecordingService]
+     * re-checks `Preflight.check` before `startSession(resume = false)`, so a request without a
+     * sealed context is refused here whatever its origin.
      */
     override fun onMessageReceived(event: MessageEvent) {
         when {
             event.path.startsWith(WirePaths.SWEEP_REQUEST) -> SyncWorker.enqueue(this)
-            event.path.startsWith(WirePaths.START_REQUEST) -> demarrerOuNotifier()
+            event.path.startsWith(WirePaths.START_REQUEST) -> startOrNotify()
         }
     }
 
     /**
-     * Demarrer depuis l'arriere-plan, ou demander a l'utilisateur de le faire.
+     * Start from the background, or ask the user to do it.
      *
-     * Ce service est demarre par Google Play Services, donc **depuis l'arriere-plan**, et Android
-     * 12 interdit d'y demarrer un service de premier plan hors exemptions. La tentative est faite
-     * quand meme parce qu'elle passe dans les cas ou une exemption s'applique ; quand elle est
-     * refusee, le repli n'est pas un pis-aller a cacher : une notification sur la montre donne
-     * exactement le geste « une tape » recherche, et c'est le seul chemin que le systeme
-     * garantisse.
+     * This service is started by Google Play Services, therefore **from the background**, and
+     * Android 12 forbids starting a foreground service from there outside of exemptions. The
+     * attempt is made anyway because it goes through in the cases where an exemption applies; when
+     * it is refused, the fallback is not a makeshift to be hidden: a notification on the watch
+     * gives exactly the "one tap" gesture that was sought, and it is the only path the system
+     * guarantees.
      *
-     * `ForegroundServiceStartNotAllowedException` n'existe qu'a partir d'Android 12 ; le `catch`
-     * porte donc sur `Exception` plutot que sur son type exact, qui ne serait pas resoluble a la
-     * compilation contre un `minSdk` inferieur. Ici `minSdk` vaut 33, mais attraper large coute
-     * une ligne et couvre aussi le refus pour une autre raison — un service deja mort, un
-     * processus en cours d'arret — que rien ne distinguerait a l'execution.
+     * `ForegroundServiceStartNotAllowedException` only exists from Android 12 onwards; the `catch`
+     * therefore covers `Exception` rather than its exact type, which would not be resolvable at
+     * compile time against a lower `minSdk`. Here `minSdk` is 33, but catching broadly costs one
+     * line and also covers a refusal for another reason — a service already dead, a process being
+     * torn down — that nothing would tell apart at run time.
      */
-    private fun demarrerOuNotifier() {
+    private fun startOrNotify() {
         try {
             ContextCompat.startForegroundService(
                 this,
                 Intent(this, RecordingService::class.java).setAction(RecordingService.ACTION_START),
             )
-            Log.i(TAG, "demarrage demande par le telephone")
+            Log.i(TAG, "start requested by the phone")
         } catch (e: Exception) {
-            Log.w(TAG, "demarrage depuis l'arriere-plan refuse, repli par notification", e)
-            WatchNotifications.pretADemarrer(this)
+            Log.w(TAG, "start from the background refused, falling back to a notification", e)
+            WatchNotifications.readyToStart(this)
         }
     }
 

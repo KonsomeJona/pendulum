@@ -27,13 +27,13 @@ import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
-import com.pendulum.phone.ui.common.Paragraphe
+import com.pendulum.phone.ui.common.Paragraph
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.QualityChip
-import com.pendulum.phone.ui.model.EtatNuit
 import com.pendulum.phone.ui.model.Mapping
-import com.pendulum.phone.ui.model.NuitUi
-import com.pendulum.phone.ui.text.resoudre
+import com.pendulum.phone.ui.model.NightState
+import com.pendulum.phone.ui.model.NightUi
+import com.pendulum.phone.ui.text.resolve
 import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumShapes
 import com.pendulum.phone.ui.theme.PendulumTheme
@@ -41,53 +41,53 @@ import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 /**
- * La liste des nuits, antichronologique.
+ * The list of nights, in reverse chronological order.
  *
- * ### Une nuit ratee n'est jamais silencieusement effacee
+ * ### A failed night is never silently erased
  *
- * Elle apparait, barree, avec son motif. Le compteur explique toujours d'ou vient l'ecart entre
- * « enregistrees » et « eligibles ». Une nuit qui disparaitrait sans trace est une nuit qu'on
- * oublie d'expliquer, et un compteur qui ne tombe pas juste fait douter du reste.
+ * It appears, struck through, with its reason. The counter always explains where the difference
+ * between "recorded" and "eligible" comes from. A night that disappeared without trace is a night
+ * one forgets to explain, and a counter that does not add up makes the rest doubtful.
  *
- * ### Il n'y a pas de bouton « exclure cette nuit »
+ * ### There is no "exclude this night" button
  *
- * C'est le garde-fou 4 de `SPEC-v2.md` §3, et l'absence est aussi importante que ce qui est
- * present. Une exclusion decidee **apres** avoir vu le chiffre est un mecanisme d'auto-tromperie
- * complet a lui seul : on ecarte de bonne foi les nuits qui ne vont pas dans le sens attendu, et
- * la tendance qui en sort est fabriquee. La parade n'est pas de resister a la tentation, c'est de
- * rendre le geste impossible — les exclusions sont des predicats deterministes evalues en SQL
- * avant tout calcul. L'ecran l'explique une fois, en clair, plutot que de laisser l'utilisateur
- * chercher un bouton qui n'existe pas.
+ * This is guard rail 4 of `SPEC-v2.md` §3, and the absence matters as much as what is present. An
+ * exclusion decided **after** seeing the figure is a complete self-deception mechanism on its own:
+ * one sets aside, in good faith, the nights that do not go in the expected direction, and the
+ * trend that comes out of it is manufactured. The counter-measure is not to resist the temptation,
+ * it is to make the gesture impossible — the exclusions are deterministic predicates evaluated in
+ * SQL before any computation. The screen explains it once, plainly, rather than leaving the user
+ * hunting for a button that does not exist.
  */
 @Composable
 fun NightListScreen(
-    nuits: List<NuitUi>,
-    onNuit: (String) -> Unit,
+    nights: List<NightUi>,
+    onNight: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var filtre by remember { mutableStateOf(FiltreNuits.TOUTES) }
-    val visibles = remember(nuits, filtre) { filtre.filtrer(nuits) }
+    var filter by remember { mutableStateOf(NightFilter.ALL) }
+    val shown = remember(nights, filter) { filter.filter(nights) }
 
     Column(modifier.fillMaxSize().padding(horizontal = Spacing.screen.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(vertical = Spacing.s.dp),
             horizontalArrangement = Arrangement.spacedBy(Spacing.s.dp),
         ) {
-            FiltreNuits.entries.forEach { f ->
+            NightFilter.entries.forEach { f ->
                 FilterChip(
-                    selected = filtre == f,
-                    onClick = { filtre = f },
-                    label = { Text(stringResource(f.libelle), style = PendulumType.label) },
+                    selected = filter == f,
+                    onClick = { filter = f },
+                    label = { Text(stringResource(f.label), style = PendulumType.label) },
                     shape = PendulumShapes.chip,
                 )
             }
         }
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(Spacing.s.dp)) {
-            items(visibles, key = { it.sessionHex }) { NightRow(it, onNuit) }
+            items(shown, key = { it.sessionHex }) { NightRow(it, onNight) }
             item {
                 Spacer(Modifier.height(Spacing.m.dp))
-                PendulumCard { Paragraphe(stringResource(R.string.nights_no_exclude_button)) }
+                PendulumCard { Paragraph(stringResource(R.string.nights_no_exclude_button)) }
                 Spacer(Modifier.height(Spacing.l.dp))
             }
         }
@@ -95,71 +95,71 @@ fun NightListScreen(
 }
 
 /**
- * Les trois filtres. Le libelle est un **identifiant de ressource** et non une chaine : un
- * constructeur d'`enum` n'a pas de `Context`, et le resoudre ici figerait la langue au chargement
- * de la classe.
+ * The three filters. The label is a **resource identifier** and not a string: an `enum`
+ * constructor has no `Context`, and resolving it here would freeze the language at the moment the
+ * class is loaded.
  */
-enum class FiltreNuits(@StringRes val libelle: Int) {
-    TOUTES(R.string.nights_filter_all),
-    ELIGIBLES(R.string.nights_filter_eligible),
-    ECARTEES(R.string.nights_filter_excluded),
+enum class NightFilter(@StringRes val label: Int) {
+    ALL(R.string.nights_filter_all),
+    ELIGIBLE(R.string.nights_filter_eligible),
+    EXCLUDED(R.string.nights_filter_excluded),
     ;
 
-    fun filtrer(l: List<NuitUi>): List<NuitUi> = when (this) {
-        TOUTES -> l
-        ELIGIBLES -> l.filter { it.etat != EtatNuit.ECARTEE }
-        ECARTEES -> l.filter { it.etat == EtatNuit.ECARTEE }
+    fun filter(l: List<NightUi>): List<NightUi> = when (this) {
+        ALL -> l
+        ELIGIBLE -> l.filter { it.state != NightState.EXCLUDED }
+        EXCLUDED -> l.filter { it.state == NightState.EXCLUDED }
     }
 }
 
 /**
- * Une ligne de nuit.
+ * A night row.
  *
- * Le chiffre de la nuit y figure — l'utilisateur est technicien et le lui cacher serait a la fois
- * condescendant et contre-productif — mais **au corps de texte, en couleur secondaire**, avec la
- * mention « valeur d'une seule nuit ». La contrainte est sur la mise en avant, pas sur la
- * disponibilite (P7). Ce chiffre n'apparait jamais en titre, ni dans une notification, ni dans le
- * resume de l'export.
+ * The figure of the night appears there — the user is a technician and hiding it from them would
+ * be both condescending and counter-productive — but **at body size, in the secondary colour**,
+ * with the mention "single-night value". The constraint is on prominence, not on availability
+ * (P7). This figure never appears as a title, nor in a notification, nor in the summary of the
+ * export.
  *
- * ### Sauf tant qu'il n'a pas ete demande
+ * ### Except as long as it has not been asked for
  *
- * Une nuit dont le resultat n'a jamais ete devoile affiche « result not shown » a la place de sa
- * valeur (garde-fou 2). Sans cela le masque du detail ne masquerait rien : il suffirait d'ouvrir
- * la liste pour lire, sans trace, le chiffre qu'on est cense demander. Le devoilement se fait sur
- * l'ecran de detail, en un geste, et il est horodate.
+ * A night whose result has never been revealed shows "result not shown" in place of its value
+ * (guard rail 2). Without that, the mask on the detail would hide nothing: opening the list would
+ * be enough to read, without trace, the figure one is supposed to ask for. The reveal happens on
+ * the detail screen, in one gesture, and it is timestamped.
  */
 @Composable
-fun NightRow(n: NuitUi, onNuit: (String) -> Unit) {
+fun NightRow(n: NightUi, onNight: (String) -> Unit) {
     val c = LocalPendulumColors.current
-    val ecartee = n.etat == EtatNuit.ECARTEE
-    val devoile = n.devoileeAtMs != null
+    val excluded = n.state == NightState.EXCLUDED
+    val revealed = n.revealedAtMs != null
     PendulumCard(
         Modifier
             .heightIn(min = 72.dp)
-            .clickable { onNuit(n.sessionHex) },
+            .clickable { onNight(n.sessionHex) },
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${n.dateLisible}   ${n.jourAbrege}", style = PendulumType.titleM, color = c.textPrimary)
-            PastilleEtat(n.etat)
+            Text("${n.readableDate}   ${n.shortDay}", style = PendulumType.titleM, color = c.textPrimary)
+            StateDot(n.state)
         }
         Text(
-            "${n.debut} → ${n.fin} · ${n.sommeilLisible} (${n.sourceSommeil.resoudre()})",
+            "${n.start} → ${n.end} · ${n.readableSleep} (${n.sleepSource.resolve()})",
             style = PendulumType.caption,
             color = c.textTertiary,
         )
         Spacer(Modifier.height(Spacing.xs.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (devoile) {
-                    Mapping.rythmeLisible(n.rythmeSec).resoudre()
+                if (revealed) {
+                    Mapping.readableRhythm(n.rhythmSec).resolve()
                 } else {
                     stringResource(R.string.home_result_hidden_line)
                 },
                 style = PendulumType.bodyNum,
-                color = if (devoile) c.textSecondary else c.textTertiary,
-                textDecoration = if (ecartee && devoile) TextDecoration.LineThrough else null,
+                color = if (revealed) c.textSecondary else c.textTertiary,
+                textDecoration = if (excluded && revealed) TextDecoration.LineThrough else null,
             )
-            if (devoile) {
+            if (revealed) {
                 Text(
                     "   " + stringResource(R.string.nights_single_value),
                     style = PendulumType.caption,
@@ -167,34 +167,33 @@ fun NightRow(n: NuitUi, onNuit: (String) -> Unit) {
                 )
             }
         }
-        n.motif?.let {
+        n.reason?.let {
             Text(
-                "${stringResource(R.string.nights_state_excluded)}: ${it.resoudre()}",
+                "${stringResource(R.string.nights_state_excluded)}: ${it.resolve()}",
                 style = PendulumType.caption,
                 color = c.attention,
             )
         }
-        if (n.drapeaux.isNotEmpty()) {
+        if (n.flags.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.xs.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs.dp)) {
-                n.drapeaux.take(3).forEach { QualityChip(it.libelle) }
-                if (n.drapeaux.size > 3) {
-                    Text("+${n.drapeaux.size - 3}", style = PendulumType.caption, color = c.textTertiary)
+                n.flags.take(3).forEach { QualityChip(it.label) }
+                if (n.flags.size > 3) {
+                    Text("+${n.flags.size - 3}", style = PendulumType.caption, color = c.textTertiary)
                 }
             }
         }
     }
 }
 
-/** Trois etats, trois glyphes distincts : la couleur ne porte jamais seule l'information. */
+/** Three states, three distinct glyphs: colour never carries the information on its own. */
 @Composable
-private fun PastilleEtat(etat: EtatNuit) {
+private fun StateDot(state: NightState) {
     val c = LocalPendulumColors.current
-    val (glyphe, libelle, teinte) = when (etat) {
-        EtatNuit.ELIGIBLE -> Triple("●", stringResource(R.string.nights_state_eligible), c.accent)
-        EtatNuit.PROVISOIRE -> Triple("◐", stringResource(R.string.nights_state_provisional), c.attention)
-        EtatNuit.ECARTEE -> Triple("○", stringResource(R.string.nights_state_excluded), c.textTertiary)
+    val (glyph, label, tint) = when (state) {
+        NightState.ELIGIBLE -> Triple("●", stringResource(R.string.nights_state_eligible), c.accent)
+        NightState.PROVISIONAL -> Triple("◐", stringResource(R.string.nights_state_provisional), c.attention)
+        NightState.EXCLUDED -> Triple("○", stringResource(R.string.nights_state_excluded), c.textTertiary)
     }
-    Text("$glyphe $libelle", style = PendulumType.label, color = teinte)
+    Text("$glyph $label", style = PendulumType.label, color = tint)
 }
-

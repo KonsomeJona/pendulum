@@ -18,49 +18,49 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Étape 7 de `ALGO-v2.md` : le compte horaire et ses compagnons.
+ * Step 7 of `ALGO-v2.md`: the hourly count and its companions.
  *
- * Trois règles structurent tout ce fichier, et aucune n'est négociable :
+ * Three rules structure this whole file, and none of them is negotiable:
  *
- *  1. **Le dénominateur est le temps de sommeil *analysable*, jamais le TST brut.** Le TST brut
- *     inclut les zones aveugles, les segments rompus et le hors-corps : compter des mouvements
- *     sur une durée pendant laquelle on n'aurait pas pu en voir gonfle le dénominateur et déflate
- *     l'indice, exactement dans le sens qui fait rater un dépistage (§2.4).
- *  2. **`DenominatorIndependence` se propage sans être « amélioré ».** Un résultat dont le
- *     dénominateur est [DenominatorIndependence.CIRCULAR] sort du même signal que son numérateur
- *     (§3.6.3) : il est calculé, stocké, affiché comme second bras, mais il ne peut jamais porter
- *     le résultat principal ni alimenter la tendance. C'est le code qui l'interdit, pas l'UI.
- *  3. **Le biais respiratoire résiduel est *quantifié*, pas ignoré.** Sans canal respiratoire,
- *     aucune des deux règles d'exclusion RRLM publiées n'est calculable (§3.5). On ne prétend donc
- *     pas exclure : on publie un encadrement `[plmiRespWorstCase, plmi]` dont l'écart *est*
- *     l'indicateur d'incertitude. Le biais RRLM est à la hausse ; les biais de Terrill (39 % des
- *     LM EMG mécaniquement invisibles) et de mesure unilatérale sont à la baisse. **Ils ne se
- *     compensent pas** : sujets et mécanismes différents, variances qui s'additionnent.
+ *  1. **The denominator is *analysable* sleep time, never raw TST.** Raw TST includes the blind
+ *     zones, the broken segments and the off-body time: counting movements over a duration during
+ *     which none could have been seen inflates the denominator and deflates the index, exactly in
+ *     the direction that makes a screening miss its case (§2.4).
+ *  2. **`DenominatorIndependence` propagates without being "improved".** A result whose
+ *     denominator is [DenominatorIndependence.CIRCULAR] comes out of the same signal as its
+ *     numerator (§3.6.3): it is computed, stored, displayed as a second arm, but it can never
+ *     carry the primary result nor feed the trend. It is the code that forbids it, not the UI.
+ *  3. **The residual respiratory bias is *quantified*, not ignored.** Without a respiratory
+ *     channel, neither of the two published RRLM exclusion rules is computable (§3.5). So we do
+ *     not claim to exclude: we publish a bracketing `[plmiRespWorstCase, plmi]` whose spread *is*
+ *     the uncertainty indicator. The RRLM bias is upward; the Terrill bias (39 % of the EMG LMs
+ *     mechanically invisible) and the unilateral measurement bias are downward. **They do not
+ *     cancel out**: different subjects and mechanisms, variances that add up.
  *
- * Toutes les fonctions sont pures : aucune horloge, aucun aléa, aucune I/O.
+ * All the functions are pure: no clock, no randomness, no I/O.
  */
 
-/** Paramètres de l'étape 7. Valeurs par défaut = tableau §6.5 / §6.6 de `ALGO-v2.md`. */
+/** Step 7 parameters. Default values = table §6.5 / §6.6 of `ALGO-v2.md`. */
 data class PlmiConfig(
-    /** Bande apnéique basse : un IMI médian de série dans [low, high] est *suspect*, pas exclu. */
+    /** Low apnoeic band: a series median IMI within [low, high] is *suspect*, not excluded. */
     val respSuspectImiLowSec: Double = 25.0,
     val respSuspectImiHighSec: Double = 45.0,
     val imiHistogramBinSec: Double = 2.0,
     val imiHistogramMaxSec: Double = 100.0,
-    /** Porte de publication pleine (§3.7.2). */
+    /** Full publication gate (§3.7.2). */
     val minTstFullMin: Double = 240.0,
-    /** Sous cette valeur, aucun PLMI n'est publié — le PI et le rythme, eux, survivent. */
+    /** Below this value, no PLMI is published — the PI and the rhythm, for their part, survive. */
     val minTstAnyMin: Double = 180.0,
 )
 
-// --- Helpers numériques locaux -------------------------------------------------------------
+// --- Local numeric helpers -----------------------------------------------------------------
 //
-// Volontairement minimaux et privés au paquet : `dsp.Numeric` porte les primitives lourdes
-// (fenêtres glissantes, MAD sur signaux), mais l'étape 7 ne manipule que quelques dizaines de
-// valeurs. Dupliquer trois lignes de médiane coûte moins cher qu'un couplage sur une API qui
-// bouge encore, et garde `indices/` compilable isolément.
+// Deliberately minimal and package-private: `dsp.Numeric` carries the heavy primitives (sliding
+// windows, MAD on signals), but step 7 only handles a few dozen values. Duplicating three lines
+// of median costs less than a coupling on an API that is still moving, and keeps `indices/`
+// compilable on its own.
 
-/** Médiane d'une copie triée. Convention : moyenne des deux centraux si `n` est pair. */
+/** Median of a sorted copy. Convention: mean of the two central values if `n` is even. */
 internal fun medianOf(values: DoubleArray): Double {
     if (values.isEmpty()) return Double.NaN
     val s = values.copyOf()
@@ -70,8 +70,8 @@ internal fun medianOf(values: DoubleArray): Double {
 }
 
 /**
- * Quantile de type « plus proche rang interpolé » sur une copie triée. Déterministe.
- * `q` est écrêté à [0, 1].
+ * Quantile of the "interpolated nearest rank" kind on a sorted copy. Deterministic.
+ * `q` is clamped to [0, 1].
  */
 internal fun quantileOf(values: DoubleArray, q: Double): Double {
     if (values.isEmpty()) return Double.NaN
@@ -85,7 +85,7 @@ internal fun quantileOf(values: DoubleArray, q: Double): Double {
     return s[lo] * (1.0 - f) + s[hi] * f
 }
 
-/** Écart absolu médian, mis à l'échelle d'un écart-type gaussien (facteur 1,4826). */
+/** Median absolute deviation, scaled to a Gaussian standard deviation (factor 1.4826). */
 internal fun madOf(values: DoubleArray): Double {
     if (values.isEmpty()) return Double.NaN
     val med = medianOf(values)
@@ -93,7 +93,7 @@ internal fun madOf(values: DoubleArray): Double {
     return 1.4826 * medianOf(dev)
 }
 
-/** Un taux n'existe que si son dénominateur existe. `NaN` dit « pas de valeur », pas « zéro ». */
+/** A rate exists only if its denominator exists. `NaN` says "no value", not "zero". */
 internal fun safeRate(count: Int, hours: Double): Double =
     if (hours > 0.0 && hours.isFinite()) count / hours else Double.NaN
 
@@ -101,15 +101,15 @@ internal fun Stage?.isSleepStage(): Boolean =
     this == Stage.SLEEP || this == Stage.LIGHT || this == Stage.DEEP || this == Stage.REM
 
 /**
- * Éveil *intra-SPT*. [Stage.OUT_OF_BED] en est exclu : le PLMW de la WASM se rapporte au WASO,
- * pas au temps passé debout.
+ * *Intra-SPT* wake. [Stage.OUT_OF_BED] is excluded from it: the WASM's PLMW refers to the WASO,
+ * not to the time spent standing.
  */
 internal fun Stage?.isWakeInBedStage(): Boolean =
     this == Stage.WAKE || this == Stage.AWAKE_IN_BED
 
 /**
- * Index de fenêtres de sommeil, recherche dichotomique. Suppose des fenêtres disjointes ;
- * en cas de recouvrement, la dernière fenêtre commençant avant l'instant gagne.
+ * Sleep window index, binary search. Assumes disjoint windows; in case of overlap, the last
+ * window starting before the instant wins.
  */
 internal class SleepLookup(windows: List<SleepWindow>) {
     private val starts: LongArray
@@ -123,7 +123,7 @@ internal class SleepLookup(windows: List<SleepWindow>) {
         stages = Array(sorted.size) { sorted[it].stage }
     }
 
-    /** Bornes du SPT = enveloppe des fenêtres « au lit » (tout sauf [Stage.OUT_OF_BED]). */
+    /** SPT bounds = envelope of the "in bed" windows (everything except [Stage.OUT_OF_BED]). */
     val sptStartMsRel: Long
     val sptEndMsRel: Long
 
@@ -160,7 +160,7 @@ internal class SleepLookup(windows: List<SleepWindow>) {
 
     fun isWakeInBedAt(msRel: Long): Boolean = stageAt(msRel).isWakeInBedStage()
 
-    /** Millisecondes de *sommeil* (au sens de [isSleepStage]) recouvrant `[from, to)`. */
+    /** Milliseconds of *sleep* (in the sense of [isSleepStage]) overlapping `[from, to)`. */
     fun sleepMsBetween(from: Long, to: Long): Long {
         if (to <= from) return 0L
         var acc = 0L
@@ -175,49 +175,50 @@ internal class SleepLookup(windows: List<SleepWindow>) {
 }
 
 /**
- * Indices horaires, encadrement respiratoire et porte de publication.
+ * Hourly indices, respiratory bracketing and publication gate.
  *
- * L'objet s'appelle `Plmi` pour rester aligné sur `ALGO-v2.md` §4.3, mais **le nom publié de la
- * grandeur est `aPLM-i`** (garde-fou nº 6 de `SPEC-v2.md` §3) : appeler « PLMI » un chiffre produit
- * par un bracelet de montre sur une cheville garantit qu'il sera lu comme un PLMI de laboratoire.
+ * The object is named `Plmi` to stay aligned with `ALGO-v2.md` §4.3, but **the published name of
+ * the quantity is `aPLM-i`** (guard rail no. 6 of `SPEC-v2.md` §3): calling a figure produced by a
+ * watch strap on an ankle a "PLMI" guarantees that it will be read as a laboratory PLMI.
  */
 object Plmi {
 
-    /** Borne basse d'IMI de chaque jeu de règles (§6.5). Sert au comptage de `shortImiCount`. */
+    /** Lower IMI bound of each rule set (§6.5). Used for counting `shortImiCount`. */
     fun imiMinSecOf(rule: SeriesRule): Double = when (rule) {
         SeriesRule.AASM_V3 -> 5.0
         SeriesRule.WASM_2016 -> 10.0
     }
 
     /**
-     * Un dénominateur circulaire ne peut jamais porter le résultat principal (§2.3, §3.6.3).
-     * Prédicat exposé séparément parce qu'il sert aussi au DAO et à la tendance, pas seulement ici.
+     * A circular denominator can never carry the primary result (§2.3, §3.6.3).
+     * Predicate exposed separately because it also serves the DAO and the trend, not only here.
      */
     fun canCarryPrimaryResult(mask: SleepMask): Boolean =
         mask.independence != DenominatorIndependence.CIRCULAR
 
     /**
-     * Ce que l'analyse **a le droit** de publier. Évalué par le code, jamais par l'utilisateur, et
-     * jamais contournable depuis l'interface.
+     * What the analysis **is allowed** to publish. Evaluated by the code, never by the user, and
+     * never bypassable from the interface.
      *
-     * Ordre des refus, du plus dur au plus doux :
-     *  - masque accélérométrique non convergent → aucun PLMI (§3.6.3, couche 2 : une nuit où
-     *    mouvement et immobilité ne se séparent pas ne produit pas de chiffre publiable) ;
-     *  - moins de [PlmiConfig.minTstAnyMin] de sommeil analysable → aucun PLMI (§3.7.2) ;
-     *  - nuit tronquée, ou moins de [PlmiConfig.minTstFullMin] → publié mais **hors tendance**
-     *    (le PLMI d'une nuit tronquée est biaisé à la hausse de façon non corrigeable) ;
-     *  - dénominateur circulaire → publié mais **hors tendance**.
+     * Order of the refusals, from the hardest to the mildest:
+     *  - non-convergent accelerometric mask → no PLMI (§3.6.3, layer 2: a night where movement
+     *    and immobility do not separate does not produce a publishable figure);
+     *  - less than [PlmiConfig.minTstAnyMin] of analysable sleep → no PLMI (§3.7.2);
+     *  - truncated night, or less than [PlmiConfig.minTstFullMin] → published but **outside the
+     *    trend** (the PLMI of a truncated night is biased upward in a way that cannot be
+     *    corrected);
+     *  - circular denominator → published but **outside the trend**.
      *
-     * Le PI et le rythme fondamental, eux, survivent à `NO_PLMI` : ils n'ont pas de dénominateur
-     * temporel. C'est tout l'intérêt du §5 de `SPEC-v2.md`.
+     * The PI and the fundamental rhythm, for their part, survive `NO_PLMI`: they have no temporal
+     * denominator. That is the whole point of §5 of `SPEC-v2.md`.
      */
     fun publicationGate(
         mask: SleepMask,
         truncated: Boolean,
         cfg: PlmiConfig = PlmiConfig(),
     ): PublicationGate {
-        // Le point fixe n'existe que pour un masque dérivé de l'accéléromètre ; un masque HC ou
-        // journal n'a rien à faire converger et doit rapporter `fixedPointConverged = true`.
+        // The fixed point only exists for a mask derived from the accelerometer; an HC or diary
+        // mask has nothing to converge and must report `fixedPointConverged = true`.
         val hasFixedPoint = mask.source == MaskSource.ACCEL_IMMOBILITY || mask.source == MaskSource.FUSED
         if (hasFixedPoint && !mask.fixedPointConverged) return PublicationGate.NO_PLMI
         if (!(mask.analysableTstMin >= cfg.minTstAnyMin)) return PublicationGate.NO_PLMI
@@ -228,19 +229,19 @@ object Plmi {
     }
 
     /**
-     * Assemble un [PlmiResult].
+     * Assembles a [PlmiResult].
      *
-     * @param clms tous les CLM candidats, **dans l'ordre chronologique**. Les rejetés
-     *   (`reject != null`) et les LM longs sont écartés ici ; `PlmSeries.clmIndices` indexe la liste
-     *   des **retenus** (`Clm.isClm`), conformément à `Model.kt`.
-     * @param series séries déjà construites pour `rule` (étape 6).
-     * @param fsHz conservé pour la stabilité de l'API §4.3 ; les instants viennent de
-     *   `Clm.onsetMsRel`, qui est la référence — jamais une différence d'horloge murale (§2.7).
-     * @param pi résultat du Periodicity Index (voir `Periodicity.kt`).
-     * @param rhythm résultat de la déconvolution des harmoniques (voir `Rhythm.kt`).
-     * @param truncatedSeriesDropped séries abandonnées faute de 4 CLM après troncature aux bords,
-     *   rapporté par l'étape 6. C'est un biais **à la baisse** mesurable, qui augmente sur une nuit
-     *   interrompue et qu'il faut afficher à côté du chiffre (§3.7.2 point 5).
+     * @param clms all the candidate CLMs, **in chronological order**. The rejected ones
+     *   (`reject != null`) and the long LMs are excluded here; `PlmSeries.clmIndices` indexes the
+     *   list of the **retained** ones (`Clm.isClm`), in accordance with `Model.kt`.
+     * @param series series already built for `rule` (step 6).
+     * @param fsHz kept for the stability of the §4.3 API; the instants come from
+     *   `Clm.onsetMsRel`, which is the reference — never a wall-clock difference (§2.7).
+     * @param pi Periodicity Index result (see `Periodicity.kt`).
+     * @param rhythm harmonic deconvolution result (see `Rhythm.kt`).
+     * @param truncatedSeriesDropped series abandoned for lack of 4 CLMs after truncation at the
+     *   edges, reported by step 6. This is a measurable **downward** bias, which grows on an
+     *   interrupted night and must be displayed next to the figure (§3.7.2 point 5).
      */
     fun compute(
         clms: List<Clm>,
@@ -256,51 +257,51 @@ object Plmi {
         truncatedSeriesDropped: Int = 0,
         paramsHash: String = "",
     ): PlmiResult {
-        require(fsHz > 0.0) { "fsHz doit etre > 0" }
+        require(fsHz > 0.0) { "fsHz must be > 0" }
 
         val retained = clms.filter { it.isClm }
         val lookup = SleepLookup(mask.windows)
 
-        // Traduction des index de series, faite **ici** et nulle part ailleurs.
+        // Translation of the series indices, done **here** and nowhere else.
         //
-        // `SeriesBuilder` indexe ses series sur la liste qu'on lui donne, rejets compris — il en a
-        // besoin, un mouvement trop long doit casser la serie a l'endroit ou il tombe. Les comptes
-        // ci-dessous, eux, portent sur les seuls retenus. Les deux bases coincident tant qu'aucun
-        // evenement n'est rejete, et divergent des le premier.
+        // `SeriesBuilder` indexes its series on the list it is given, rejects included — it needs
+        // them, a movement that is too long has to break the series at the place where it falls.
+        // The counts below, for their part, bear on the retained ones only. The two bases coincide
+        // as long as no event is rejected, and diverge as soon as the first one is.
         //
-        // Ce decalage a produit un defaut couteux : les deux bases sont des `Int`, ni le
-        // compilateur ni la relecture ne voyaient la difference, et la conversion vivait chez
-        // l'appelant — ecrite dans le harnais de test, absente de la production. Les tests
-        // validaient donc un cablage que l'application n'avait pas.
+        // That offset produced a costly defect: both bases are `Int`, neither the compiler nor the
+        // review saw the difference, and the conversion lived at the caller — written in the test
+        // harness, absent from production. The tests were therefore validating a wiring that the
+        // application did not have.
         //
-        // La corriger chez l'appelant ne suffisait pas : sur trois appelants, deux y pensaient et
-        // le troisieme non. C'est ici qu'elle doit vivre, parce que cette fonction recoit **les
-        // deux** entrees necessaires — la liste complete et les series — et qu'un appelant n'a
-        // donc plus rien a savoir. Il n'y a plus qu'une seule base d'index a l'entree : celle de
-        // `clms`, telle que `SeriesBuilder` la produit.
-        val versRetenus = IntArray(clms.size) { -1 }
-        var rang = 0
-        for (i in clms.indices) if (clms[i].isClm) { versRetenus[i] = rang++ }
+        // Fixing it at the caller was not enough: out of three callers, two thought of it and the
+        // third did not. This is where it must live, because this function receives **both** of
+        // the required inputs — the complete list and the series — and a caller therefore has
+        // nothing left to know. There is now only one index base at the input: that of `clms`, as
+        // `SeriesBuilder` produces it.
+        val toRetainedIndex = IntArray(clms.size) { -1 }
+        var rank = 0
+        for (i in clms.indices) if (clms[i].isClm) { toRetainedIndex[i] = rank++ }
 
-        // --- Appartenance aux séries -----------------------------------------------------
+        // --- Series membership -----------------------------------------------------------
         val inSeries = BooleanArray(retained.size)
-        // Marquage des CLM appartenant a une serie dont l'IMI median tombe dans la bande apneique.
+        // Marking of the CLMs belonging to a series whose median IMI falls in the apnoeic band.
         val respSuspect = BooleanArray(retained.size)
         for (s in series) {
             val medianImi = medianOf(DoubleArray(s.imiSec.size) { s.imiSec[it].toDouble() })
             val suspect = medianImi.isFinite() &&
                 medianImi >= cfg.respSuspectImiLowSec && medianImi <= cfg.respSuspectImiHighSec
             for (idx in s.clmIndices) {
-                // `-1` = evenement rejete. `SeriesBuilder` n'en met jamais dans une serie, mais on
-                // ne le suppose pas : on l'ignore plutot que d'inventer une correspondance.
-                val k = versRetenus.getOrElse(idx) { -1 }
+                // `-1` = rejected event. `SeriesBuilder` never puts one in a series, but we do not
+                // assume it: we ignore it rather than invent a correspondence.
+                val k = toRetainedIndex.getOrElse(idx) { -1 }
                 if (k < 0) continue
                 inSeries[k] = true
                 if (suspect) respSuspect[k] = true
             }
         }
 
-        // --- Comptes ---------------------------------------------------------------------
+        // --- Counts ----------------------------------------------------------------------
         var plmsCount = 0
         var plmwCount = 0
         var isolatedCount = 0
@@ -321,19 +322,19 @@ object Plmi {
             }
             if (sleeping) {
                 plmsCount++
-                // Pire cas respiratoire : on retire TOUTE serie dont l'IMI median est apneique.
-                // Ce n'est pas une exclusion RRLM (impossible sans canal respiratoire) : c'est une
-                // borne inferieure garantie. La vraie valeur est entre les deux bornes.
+                // Respiratory worst case: we remove EVERY series whose median IMI is apnoeic.
+                // This is not an RRLM exclusion (impossible without a respiratory channel): it is
+                // a guaranteed lower bound. The true value lies between the two bounds.
                 if (!respSuspect[i]) plmsCountRespWorst++
                 if (onset < midMs) plmsFirstHalf++ else plmsSecondHalf++
             } else if (lookup.isWakeInBedAt(onset)) {
-                // PLMW : metrique WASM, non definie par l'AASM. Seule la WASM autorise d'ailleurs
-                // une serie a traverser une transition sommeil/eveil (2.4.4).
+                // PLMW: a WASM metric, not defined by the AASM. Only the WASM, incidentally,
+                // allows a series to cross a sleep/wake transition (2.4.4).
                 plmwCount++
             }
         }
 
-        // Intervalles courts : compte sur les CLM retenus consecutifs, borne basse du jeu de regles.
+        // Short intervals: counted on consecutive retained CLMs, lower bound of the rule set.
         val imiMinSec = imiMinSecOf(rule)
         var shortImiCount = 0
         for (i in 1 until retained.size) {
@@ -341,13 +342,13 @@ object Plmi {
             if (imiSec < imiMinSec) shortImiCount++
         }
 
-        // --- Denominateurs ---------------------------------------------------------------
-        // JAMAIS le TST brut : `analysableTstMin` = TST ∩ segments valides ∩ hors zones aveugles
-        // ∩ hors off-body ∩ hors warmup.
+        // --- Denominators ----------------------------------------------------------------
+        // NEVER raw TST: `analysableTstMin` = TST ∩ valid segments ∩ outside blind zones
+        // ∩ outside off-body ∩ outside warmup.
         val analysableTstH = mask.analysableTstMin / 60.0
         val analysableSptH = mask.analysableSptMin / 60.0
-        // Le masque ne porte pas de « WASO analysable » : on repartit au prorata de la couverture
-        // du SPT. Approximation assumee et documentee — elle ne touche que le PLMW, jamais le PLMI.
+        // The mask carries no "analysable WASO": we prorate it by the SPT coverage. An owned and
+        // documented approximation — it only touches the PLMW, never the PLMI.
         val analysableSptRatio = if (mask.sptMin > 0.0) mask.analysableSptMin / mask.sptMin else 0.0
         val analysableWasoH = mask.wasoMin * analysableSptRatio / 60.0
 
@@ -356,19 +357,19 @@ object Plmi {
         val plmw = safeRate(plmwCount, analysableWasoH)
         val plmiRespWorstCase = safeRate(plmsCountRespWorst, analysableTstH)
 
-        // Split-half : sur une nuit tronquee, ce ratio est le meilleur indicateur de l'ampleur du
-        // biais a la hausse (les PLMS se concentrent en premiere moitie de nuit, §3.7.2 point 2).
+        // Split-half: on a truncated night, this ratio is the best indicator of the magnitude of
+        // the upward bias (PLMS concentrate in the first half of the night, §3.7.2 point 2).
         val analysableTstRatio = if (mask.tstMin > 0.0) mask.analysableTstMin / mask.tstMin else 0.0
         val firstHalfH = lookup.sleepMsBetween(sptStart, midMs) / 3_600_000.0 * analysableTstRatio
         val secondHalfH = lookup.sleepMsBetween(midMs, sptEnd) / 3_600_000.0 * analysableTstRatio
 
-        // --- Histogramme des IMI ---------------------------------------------------------
+        // --- IMI histogram ---------------------------------------------------------------
         val binCount = max(1, (cfg.imiHistogramMaxSec / cfg.imiHistogramBinSec).roundToInt())
         val histogram = IntArray(binCount)
         val edges = FloatArray(binCount + 1) { (it * cfg.imiHistogramBinSec).toFloat() }
-        // Sur TOUS les CLM de sommeil consecutifs, pas seulement ceux en serie : la bimodalite
-        // 2-4 s / 22-26 s est l'information diagnostique brute, et le mode court disparait si l'on
-        // ne garde que les intervalles deja filtres par la construction de series.
+        // On ALL consecutive sleep CLMs, not only those in a series: the 2-4 s / 22-26 s
+        // bimodality is the raw diagnostic information, and the short mode disappears if one keeps
+        // only the intervals already filtered by the series construction.
         var prevSleepOnset = Long.MIN_VALUE
         for (c in retained) {
             if (!lookup.isSleepAt(c.onsetMsRel)) continue
@@ -410,11 +411,11 @@ object Plmi {
     }
 
     /**
-     * Largeur de l'encadrement respiratoire, en événements/h. **C'est cet écart qui est
-     * l'indicateur d'incertitude à afficher**, pas la borne basse seule : sans canal respiratoire,
-     * la vraie valeur est quelque part dans `[plmiRespWorstCase, plmi]` et rien ne permet de la
-     * situer dans l'intervalle. Deux définitions officielles de la fenêtre d'exclusion diffèrent
-     * déjà d'un facteur 1,8 entre elles à canal disponible (§3.5).
+     * Width of the respiratory bracketing, in events/h. **It is this spread that is the
+     * uncertainty indicator to display**, not the lower bound alone: without a respiratory
+     * channel, the true value is somewhere within `[plmiRespWorstCase, plmi]` and nothing allows
+     * it to be located inside the interval. Two official definitions of the exclusion window
+     * already differ from each other by a factor 1.8 when the channel is available (§3.5).
      */
     fun respiratoryBiasSpread(r: PlmiResult): Double = r.plmi - r.plmiRespWorstCase
 }

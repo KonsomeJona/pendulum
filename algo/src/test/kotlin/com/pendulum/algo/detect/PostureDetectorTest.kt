@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 class PostureDetectorTest {
 
     @Test
-    @DisplayName("une rotation persistante de 90 degres produit un changement de posture")
+    @DisplayName("a persistent 90 degree rotation produces a posture change")
     fun persistentRotationIsDetected() {
         val n = samples(60.0)
         val g = rotatingGravity(n, startSec = 30.0, durSec = 1.0, deg = 90.0)
@@ -23,19 +23,19 @@ class PostureDetectorTest {
     }
 
     @Test
-    @DisplayName("une montre immobile ne produit aucun changement de posture")
+    @DisplayName("an immobile watch produces no posture change")
     fun immobileWatchProducesNothing() {
         val n = samples(60.0)
         assertThat(PostureDetector.detect(flatGravity(n), wholeNight(n))).isEmpty()
     }
 
     @Test
-    @DisplayName("un mouvement ample qui revient a sa position n'est pas un changement de posture")
+    @DisplayName("a large movement that comes back to its position is not a posture change")
     fun transientSwingIsNotAPostureChange() {
-        // C'est la raison d'etre de la condition de stabilite des DEUX cotes de la transition :
-        // avec la seule condition d'arrivee, il existe toujours un instant ou g_u(t - tau) est pris
-        // au sommet du mouvement et g_u(t + tau) apres son retour, ce qui fabriquerait un faux
-        // changement de posture a partir d'un simple grand mouvement de jambe.
+        // This is the whole reason for requiring stability on BOTH sides of the transition:
+        // with the arrival condition alone, there is always an instant where g_u(t - tau) is
+        // taken at the peak of the movement and g_u(t + tau) after its return, which would
+        // manufacture a false posture change out of a plain large leg movement.
         val n = samples(60.0)
         val g = rotatingGravity(n, startSec = 30.0, durSec = 1.0, deg = 30.0, andBack = true)
 
@@ -43,7 +43,7 @@ class PostureDetectorTest {
     }
 
     @Test
-    @DisplayName("une rotation sous le seuil ne produit aucun changement de posture")
+    @DisplayName("a rotation below the threshold produces no posture change")
     fun smallRotationIsIgnored() {
         val n = samples(60.0)
         val g = rotatingGravity(n, startSec = 30.0, durSec = 1.0, deg = 12.0)

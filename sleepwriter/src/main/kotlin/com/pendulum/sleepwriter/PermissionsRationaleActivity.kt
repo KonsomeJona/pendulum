@@ -6,16 +6,15 @@ import android.text.method.ScrollingMovementMethod
 import android.widget.TextView
 
 /**
- * L'ecran de justification des permissions Health Connect.
+ * The Health Connect permissions rationale screen.
  *
- * Il existe pour une raison mecanique et non redactionnelle : sans les deux declarations du
- * manifeste qui pointent vers lui, Health Connect **n'affiche pas l'application dans sa liste**,
- * et le symptome est une absence, pas une erreur. Or c'est par cette liste qu'on accorde
- * `WRITE_SLEEP` a la main le jour ou la sequence UiAutomator du banc rate.
+ * It exists for a mechanical reason and not an editorial one: without the two manifest declarations
+ * pointing at it, Health Connect **does not show the application in its list**, and the symptom is
+ * an absence, not an error. Yet that list is how `WRITE_SLEEP` gets granted by hand the day the
+ * bench's UiAutomator sequence fails.
  *
- * Le texte dit ce que cet outil est, pour que quiconque le trouve installe sur un appareil
- * comprenne en trois lignes qu'il s'agit d'un simulateur de banc et non d'une source de sommeil
- * reelle.
+ * The text says what this tool is, so that whoever finds it installed on a device understands in
+ * three lines that it is a bench simulator and not a real sleep source.
  */
 class PermissionsRationaleActivity : Activity() {
 
@@ -26,25 +25,25 @@ class PermissionsRationaleActivity : Activity() {
                 setPadding(48, 48, 48, 48)
                 movementMethod = ScrollingMovementMethod()
                 textSize = 16f
-                text = JUSTIFICATION
+                text = RATIONALE
             }
         )
     }
 
     private companion object {
-        val JUSTIFICATION = """
-            SleepWriter ${BuildConfig.SOURCE_LABEL} — outil de banc d'essai
+        val RATIONALE = """
+            SleepWriter ${BuildConfig.SOURCE_LABEL} — test bench tool
 
-            Cette application n'est pas un produit et ne mesure rien. Elle ecrit des sessions de
-            sommeil fabriquees dans Health Connect, pour verifier que Pendulum sait les lire.
+            This application is not a product and measures nothing. It writes fabricated sleep
+            sessions into Health Connect, to check that Pendulum can read them.
 
-            Elle existe parce que Pendulum ne peut pas ecrire lui-meme ce qu'il lit : la duree de
-            sommeil doit venir d'un appareil independant de la montre de cheville, sinon la mesure
-            devient circulaire. Pendulum ne declare donc que des permissions de lecture, et cet
-            outil est la contrepartie qui joue le role de l'application tierce.
+            It exists because Pendulum cannot write what it reads: the sleep duration must come
+            from a device independent of the ankle watch, otherwise the measurement becomes
+            circular. Pendulum therefore only declares read permissions, and this tool is the
+            counterpart that plays the role of the third-party application.
 
-            Si vous trouvez cette application installee sur un appareil qui n'est pas un banc
-            d'essai, desinstallez-la : elle ecrit de fausses nuits.
+            If you find this application installed on a device that is not a test bench,
+            uninstall it: it writes false nights.
         """.trimIndent()
     }
 }

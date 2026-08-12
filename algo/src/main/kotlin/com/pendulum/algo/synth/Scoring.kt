@@ -7,11 +7,11 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Resultat d'un appariement detection / verite terrain (`docs/fr/ALGO-v2.md` §5.4).
+ * Result of a detection / ground-truth matching (`docs/workings/ALGO-v2.md` §5.4).
  *
- * @param onsetBiasMs biais moyen de datation, **signe** : positif si le detecteur date trop tard.
- *   L'enveloppe grossiere de 0,5 s introduit par construction un biais borne a ~0,25 s.
- * @param onsetSdMs ecart-type de l'erreur de datation.
+ * @param onsetBiasMs mean timing bias, **signed**: positive if the detector dates too late. The
+ *   coarse 0.5 s envelope introduces by construction a bias bounded by ~0.25 s.
+ * @param onsetSdMs standard deviation of the timing error.
  */
 data class MatchResult(
     val tp: Int,
@@ -27,34 +27,34 @@ data class MatchResult(
     val detectedCount: Int get() = tp + fp
 }
 
-/** Une nuit analysee : ce qu'on a injecte, ce qu'on a detecte, et le plancher effectif du soir. */
+/** An analysed night: what was injected, what was detected, and the evening's effective floor. */
 class DetectionRun(
     val truth: List<TruthEvent>,
     val detected: List<Clm>,
-    /** `Theta_on / k_on` median de la nuit. C'est la reference d'amplitude du detecteur. */
+    /** Median `Theta_on / k_on` of the night. It is the detector's amplitude reference. */
     val effectiveFloorG: Double,
 )
 
 /**
- * Appariement et metriques. `docs/fr/ALGO-v2.md` §5.4.
+ * Matching and metrics. `docs/workings/ALGO-v2.md` §5.4.
  *
- * L'appariement est **glouton et chronologique**, tolerance d'onset 1,0 s. Justification de la
- * tolerance, reprise telle quelle : la granularite clinique la plus fine est la borne basse de
- * l'IMI (5 s) et l'enveloppe grossiere de 0,5 s introduit un biais d'onset borne a ~0,25 s ; 1,0 s
- * est donc large devant le biais et etroit devant la regle.
+ * The matching is **greedy and chronological**, onset tolerance 1.0 s. Justification of the
+ * tolerance, taken over as it stands: the finest clinical granularity is the lower bound of the IMI
+ * (5 s) and the coarse 0.5 s envelope introduces an onset bias bounded by ~0.25 s; 1.0 s is
+ * therefore wide compared to the bias and narrow compared to the rule.
  */
 object Scoring {
 
-    /** Bornes de bin par defaut de la courbe de sensibilite, en multiples du plancher effectif. */
+    /** Default bin edges of the sensitivity curve, in multiples of the effective floor. */
     val DEFAULT_RATIO_BINS: DoubleArray =
         doubleArrayOf(0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 16.0, 24.0, 48.0, Double.MAX_VALUE)
 
     /**
-     * @param detected evenements produits par le detecteur. Les rejetes et les LM longs sont
-     *   ecartes ici : un evenement que la chaine ne compte pas ne peut etre ni un vrai positif ni un
-     *   faux positif du **compte**.
-     * @param truth **toujours** `accelTruth` (§5.3). Scorer contre `emgTruth` plafonnerait le F1
-     *   vers 0,76 pour une raison qui n'est pas la faute de l'algorithme.
+     * @param detected events produced by the detector. The rejected ones and the long LMs are
+     *   excluded here: an event the chain does not count can be neither a true positive nor a false
+     *   positive of the **count**.
+     * @param truth **always** `accelTruth` (§5.3). Scoring against `emgTruth` would cap F1 towards
+     *   0.76 for a reason that is not the algorithm's fault.
      */
     fun match(
         detected: List<Clm>,
@@ -71,7 +71,7 @@ object Scoring {
         var sumSq = 0.0
         var lo = 0
         for (t in tru) {
-            // Fenetre glissante : les detections sont triees, donc `lo` n'avance que vers l'avant.
+            // Sliding window: the detections are sorted, so `lo` only ever advances forward.
             while (lo < det.size && det[lo].onsetMsRel < t.onsetMsRel - tolMs) lo++
             var best = -1
             var bestDelta = Long.MAX_VALUE
@@ -106,11 +106,11 @@ object Scoring {
     }
 
     /**
-     * Erreur **relative** de compte horaire, contre l'attendu du meme jeu de regles.
+     * **Relative** error of the hourly count, against the expectation of the same rule set.
      *
-     * Rappel de §5.3 : l'attendu est calcule sur `accelTruth`. Le rapport `emgToAccelRatio` de la
-     * verite terrain reste a rapporter a cote — c'est lui qui dit de combien le compte publie est
-     * structurellement sous l'echelle EMG a laquelle appartient le seuil de 15/h de l'ICSD-3.
+     * Reminder from §5.3: the expectation is computed on `accelTruth`. The `emgToAccelRatio` of the
+     * ground truth still has to be reported alongside — it is what says by how much the published
+     * count sits structurally below the EMG scale to which the ICSD-3 threshold of 15/h belongs.
      */
     fun plmiError(actual: PlmiResult, truth: GroundTruth): Double {
         val expected = when (actual.rule) {
@@ -121,26 +121,26 @@ object Scoring {
         return abs(actual.plmi - expected) / expected
     }
 
-    /** Erreur **absolue** de Periodicity Index. Le PI est deja une fraction : pas de relatif. */
+    /** **Absolute** Periodicity Index error. The PI is already a fraction: nothing relative. */
     fun piError(actual: PlmiResult, truth: GroundTruth): Double =
         abs(actual.pi.periodicityIndex - truth.expectedPi)
 
     /**
-     * Courbe de sensibilite : `(rapport amplitude / plancher, Se)`.
+     * Sensitivity curve: `(amplitude / floor ratio, Se)`.
      *
-     * L'abscisse est le rapport entre la **crete d'enveloppe grossiere** de l'evenement injecte et
-     * le **plancher effectif** du detecteur, `Theta_on / k_on`. C'est la seule definition sous
-     * laquelle l'enonce de T5 (« 8x le plancher = le seuil, par construction ») est vrai : le seuil
-     * de declenchement vaut `max(k_on.plancher, Theta_abs, f_cal.gainCal)`, et sur une nuit calme
-     * c'est le plancher absolu qui l'emporte, pas le terme relatif. Rapporter l'amplitude au
-     * plancher **brut** ferait dependre l'abscisse du terme dominant, donc de la nuit.
+     * The abscissa is the ratio between the **coarse envelope peak** of the injected event and the
+     * **effective floor** of the detector, `Theta_on / k_on`. It is the only definition under which
+     * the statement of T5 ("8x the floor = the threshold, by construction") is true: the trigger
+     * threshold is `max(k_on.floor, Theta_abs, f_cal.gainCal)`, and on a quiet night it is the
+     * absolute floor that wins, not the relative term. Relating the amplitude to the **raw** floor
+     * would make the abscissa depend on the dominant term, hence on the night.
      *
-     * [minCount] est le nombre minimal d'evenements pour qu'un bin soit **rapporte**. Il n'est pas
-     * cosmetique : le balayage de T5 place tous ses evenements a exactement 4x, 8x et 16x, si bien
-     * que les bins intermediaires ne sont peuples que par le **residu de calage** de l'amplitude —
-     * mesure a 3 evenements sur 3 240 dans le bin [6 ; 8). Un taux estime sur 3 tirages n'est pas une
-     * sensibilite, et le laisser sortir faisait echouer l'assertion de monotonie de T5 sur du bruit
-     * d'echantillonnage. Le defaut de 1 conserve le comportement historique pour tout autre appelant.
+     * [minCount] is the minimum number of events for a bin to be **reported**. It is not cosmetic:
+     * the T5 sweep places all its events at exactly 4x, 8x and 16x, so the intermediate bins are
+     * populated only by the amplitude **tuning residue** — measured at 3 events out of 3 240 in the
+     * [6 ; 8) bin. A rate estimated on 3 draws is not a sensitivity, and letting it out made the
+     * monotonicity assertion of T5 fail on sampling noise. The default of 1 preserves the historical
+     * behaviour for every other caller.
      */
     fun sensitivityCurve(
         runs: List<DetectionRun>,
@@ -148,7 +148,7 @@ object Scoring {
         toleranceSec: Double = 1.0,
         minCount: Int = 1,
     ): List<Pair<Double, Double>> {
-        require(binEdges.size >= 2) { "il faut au moins un bin" }
+        require(binEdges.size >= 2) { "at least one bin is required" }
         val matched = IntArray(binEdges.size - 1)
         val total = IntArray(binEdges.size - 1)
         val tolMs = Math.round(toleranceSec * 1000.0)

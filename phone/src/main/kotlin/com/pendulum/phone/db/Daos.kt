@@ -12,10 +12,10 @@ import kotlinx.coroutines.flow.Flow
 interface NightDao {
 
     /**
-     * `IGNORE` et non `REPLACE` : l'item `/pendulum/session` est **repose** par la montre a chaque
-     * changement d'etat, et un `REPLACE` ecraserait au passage tout ce que l'analyse a ecrit
-     * dans la ligne (gain, minutes analysables, hash). Les mises a jour passent par les methodes
-     * ciblees ci-dessous, qui ne touchent que leurs colonnes.
+     * `IGNORE` and not `REPLACE`: the `/pendulum/session` item is **put down again** by the watch
+     * at every state change, and a `REPLACE` would overwrite along the way everything the analysis
+     * has written in the row (gain, analysable minutes, hash). Updates go through the targeted
+     * methods below, which touch only their own columns.
      */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfAbsent(session: NightSessionEntity): Long
@@ -27,11 +27,11 @@ interface NightDao {
     suspend fun find(hex: String): NightSessionEntity?
 
     /**
-     * La nuit enregistree sous une soiree donnee, s'il y en a une.
+     * The night recorded under a given evening, if there is one.
      *
-     * Une soiree peut avoir un contexte scelle et aucune nuit — c'est le cas de tout formulaire
-     * rempli avant que la montre ne demarre, donc de **toutes** les soirees entre 20 h et le
-     * coucher. `null` est ici un etat normal et non une anomalie.
+     * An evening can have a sealed context and no night — that is the case of every form filled in
+     * before the watch starts, hence of **all** the evenings between 8 pm and bed time. `null` is
+     * a normal state here and not an anomaly.
      */
     @Query("SELECT * FROM night_session WHERE nightKey = :nightKey LIMIT 1")
     suspend fun findByNightKey(nightKey: String): NightSessionEntity?
@@ -40,11 +40,11 @@ interface NightDao {
     fun observeAll(): Flow<List<NightSessionEntity>>
 
     /**
-     * Les nuits en une lecture ponctuelle, la plus recente d'abord.
+     * The nights in one one-off read, the most recent first.
      *
-     * Le rapport de la porte P1 et son export CSV en ont besoin sans flux : ce sont des
-     * instantanes, produits une fois a l'ouverture de l'ecran ou a l'ecriture du fichier, et un
-     * flux ferait recomposer un rapport pendant qu'on le lit.
+     * The P1 gate report and its CSV export need them without a flow: they are snapshots, produced
+     * once when the screen opens or when the file is written, and a flow would recompose a report
+     * while it is being read.
      */
     @Query("SELECT * FROM night_session ORDER BY startWallMs DESC")
     suspend fun all(): List<NightSessionEntity>
@@ -56,22 +56,22 @@ interface NightDao {
     suspend fun allHexOldestFirst(): List<String>
 
     /**
-     * Les nuits fermees depuis moins de 36 h : exactement celles dont l'hypnogramme peut encore
-     * arriver. C'est l'ensemble que le declencheur opportuniste balaie quand le telephone est
-     * branche ou que l'application revient au premier plan.
+     * The nights closed less than 36 h ago: exactly those whose hypnogram can still arrive. This
+     * is the set that the opportunistic trigger sweeps when the phone is plugged in or when the
+     * application comes back to the foreground.
      */
     @Query(
         """
         SELECT * FROM night_session
-        WHERE endWallMs IS NOT NULL AND endWallMs >= :depuisMs
+        WHERE endWallMs IS NOT NULL AND endWallMs >= :sinceMs
         ORDER BY startWallMs DESC
         """
     )
-    suspend fun endedSince(depuisMs: Long): List<NightSessionEntity>
+    suspend fun endedSince(sinceMs: Long): List<NightSessionEntity>
 
     /**
-     * Fermeture annoncee par la montre. `endWallMs` et `stopReason` ne s'ecrivent qu'ici : une
-     * fin devinee est un bug, `UNKNOWN` est une reponse acceptable.
+     * Closure announced by the watch. `endWallMs` and `stopReason` are written only here: a guessed
+     * end is a bug, `UNKNOWN` is an acceptable answer.
      */
     @Query(
         """
@@ -100,14 +100,14 @@ interface NightDao {
     suspend fun setBattery(hex: String, pct: Int)
 
     /**
-     * Le devoilement du resultat est **journalise** (garde-fou 2). `revealedAtMs` ne s'ecrit
-     * qu'une fois : `WHERE revealedAtMs IS NULL` fait que rejouer le geste ne reecrit pas la
-     * date, sans quoi la trace dirait « devoile ce matin » pour une nuit ouverte trois fois.
+     * The reveal of the result is **logged** (guard rail 2). `revealedAtMs` is written only once:
+     * `WHERE revealedAtMs IS NULL` means that replaying the gesture does not rewrite the date,
+     * without which the trace would say "revealed this morning" for a night opened three times.
      */
     @Query("UPDATE night_session SET revealedAtMs = :atMs WHERE sessionHex = :hex AND revealedAtMs IS NULL")
     suspend fun markRevealed(hex: String, atMs: Long)
 
-    /** Ecrit par l'analyse, et par elle seule. */
+    /** Written by the analysis, and by it alone. */
     @Query(
         """
         UPDATE night_session
@@ -140,12 +140,11 @@ interface NightDao {
 interface ChunkDao {
 
     /**
-     * **Le point d'appui de tout le protocole de transfert.** `IGNORE` sur
-     * `UNIQUE(sessionHex, idx)` : recevoir deux fois le meme chunk est un no-op silencieux, donc
-     * chaque voie de reemission (ack perdu, sweep apres coupure, redemarrage du telephone) est
-     * sure sans compteur ni machine a etats.
+     * **The keystone of the whole transfer protocol.** `IGNORE` on `UNIQUE(sessionHex, idx)`:
+     * receiving the same chunk twice is a silent no-op, so every re-emission path (lost ack, sweep
+     * after a cut, phone restart) is safe without a counter and without a state machine.
      *
-     * @return l'identifiant insere, ou -1 si la ligne existait deja.
+     * @return the inserted identifier, or -1 if the row already existed.
      */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfAbsent(chunk: ChunkEntity): Long
@@ -154,10 +153,10 @@ interface ChunkDao {
     suspend fun ofSession(hex: String): List<ChunkEntity>
 
     /**
-     * Les index **complets** d'une session, tries. L'accuse de reception se recalcule a partir
-     * de cette requete a chaque fois, jamais a partir d'un compteur en memoire : un compteur
-     * survit mal a un redemarrage du service, et un accuse trop optimiste fait supprimer par la
-     * montre un fichier que le telephone n'a pas.
+     * The **complete** indices of a session, sorted. The acknowledgement is recomputed from this
+     * query every time, never from an in-memory counter: a counter survives a service restart
+     * badly, and an over-optimistic acknowledgement makes the watch delete a file the phone does
+     * not have.
      */
     @Query("SELECT idx FROM chunk WHERE sessionHex = :hex AND complete = 1 ORDER BY idx ASC")
     suspend fun completeIndices(hex: String): List<Int>
@@ -176,30 +175,30 @@ interface ChunkDao {
 }
 
 /**
- * La telemetrie de nuit. **Ecrite par l'ingestion, jamais par l'analyse**, et jamais effacee par
- * un rescore : c'est du recu, pas du derive.
+ * The night telemetry. **Written by ingestion, never by the analysis**, and never erased by a
+ * rescore: it is received, not derived.
  *
- * Il n'existe volontairement ni `@Update` ni `@Delete`. Un point de telemetrie decrit l'etat d'un
- * appareil a un instant : il n'y a rien a y corriger, et le seul effacement legitime est celui qui
- * emporte la nuit entiere, porte par la cle etrangere en `CASCADE`.
+ * There is deliberately neither `@Update` nor `@Delete`. A telemetry point describes the state of
+ * a device at one instant: there is nothing in it to correct, and the only legitimate erasure is
+ * the one that takes the whole night with it, carried by the foreign key in `CASCADE`.
  */
 @Dao
 interface TelemetryDao {
 
     /**
-     * `IGNORE` sur `UNIQUE(sessionHex, elapsedRealtimeNs)`, exactement pour la meme raison que
-     * `ChunkDao.insertIfAbsent` : un chunk reemis repasse ses points par ici, et re-inserer doit
-     * etre un no-op silencieux plutot qu'un doublon. Un doublon ne leverait rien et fausserait
-     * toutes les moyennes de la bande de metrologie.
+     * `IGNORE` on `UNIQUE(sessionHex, elapsedRealtimeNs)`, for exactly the same reason as
+     * `ChunkDao.insertIfAbsent`: a re-emitted chunk passes its points through here again, and
+     * re-inserting must be a silent no-op rather than a duplicate. A duplicate would raise nothing
+     * and would falsify every average of the metrology band.
      */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIfAbsent(points: List<TelemetryPointEntity>)
 
     /**
-     * Les points d'une nuit, dans l'ordre de la base de temps des **echantillons**. C'est celle
-     * qui date les mouvements ; trier sur l'horloge monotone donnerait le meme ordre dans le cas
-     * nominal et un ordre different exactement quand les deux horloges divergent, c'est-a-dire
-     * dans le seul cas ou la question se pose.
+     * The points of a night, in the order of the **sample** time base. That is the one that
+     * timestamps the movements; sorting on the monotonic clock would give the same order in the
+     * nominal case and a different order exactly when the two clocks diverge, that is to say in
+     * the only case where the question arises.
      */
     @Query("SELECT * FROM telemetry_point WHERE sessionHex = :hex ORDER BY sensorTsNs ASC, elapsedRealtimeNs ASC")
     suspend fun ofSession(hex: String): List<TelemetryPointEntity>
@@ -209,9 +208,9 @@ interface TelemetryDao {
 }
 
 /**
- * Tout le derive. Une seule regle : **on efface avant de reecrire, par `(nuit, paramsHash)`**.
- * Un rescore qui empilerait au lieu d'ecraser doublerait les evenements a chaque passage, et le
- * symptome (un index qui double) ressemblerait a une aggravation clinique.
+ * Everything derived. One single rule: **erase before rewriting, by `(night, paramsHash)`**. A
+ * rescore that piled up instead of overwriting would double the events at every pass, and the
+ * symptom (an index that doubles) would look like a clinical worsening.
  */
 @Dao
 abstract class DerivedDao {
@@ -235,9 +234,9 @@ abstract class DerivedDao {
     abstract suspend fun insertResults(rows: List<PlmResultEntity>)
 
     /**
-     * Remplacement atomique. En cas d'interruption au milieu, la transaction est annulee et
-     * l'ancienne analyse reste : mieux vaut un resultat perime qu'une nuit a moitie rescoree,
-     * qui serait indiscernable d'une nuit sans mouvements.
+     * Atomic replacement. If it is interrupted in the middle, the transaction is rolled back and
+     * the old analysis stays: better an out-of-date result than a half-rescored night, which would
+     * be indistinguishable from a night without movements.
      */
     @Transaction
     open suspend fun replaceAnalysis(
@@ -269,14 +268,14 @@ abstract class DerivedDao {
 }
 
 /**
- * Le contexte du soir. **Ce DAO n'a volontairement ni `@Update` ni `@Delete`** — et si quelqu'un
- * en ajoutait un, les declencheurs SQLite poses par [PendulumDatabase] le feraient echouer a
- * l'execution. La convention et la garantie sont toutes les deux la, dans cet ordre.
+ * The evening context. **This DAO deliberately has neither `@Update` nor `@Delete`** — and if
+ * someone added one, the SQLite triggers laid down by [PendulumDatabase] would make it fail at
+ * run time. The convention and the guarantee are both there, in that order.
  */
 @Dao
 interface ContextDao {
 
-    /** `ABORT` : reecrire un contexte deja scelle doit lever, pas ecraser en silence. */
+    /** `ABORT`: rewriting an already sealed context must raise, not overwrite in silence. */
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun seal(context: NightContextEntity)
 
@@ -284,12 +283,11 @@ interface ContextDao {
     suspend fun find(nightKey: String): NightContextEntity?
 
     /**
-     * Le contexte d'une nuit deja enregistree, retrouve par sa session.
+     * The context of an already recorded night, found again through its session.
      *
-     * Le rattachement passe par `night_session.nightKey` et non par une egalite de cle : la
-     * session connait la soiree a laquelle elle appartient, le contexte a ete scelle sous cette
-     * meme soiree, et c'est la seule jointure possible puisque le scellement precede la session
-     * de plusieurs heures.
+     * The attachment goes through `night_session.nightKey` and not through a key equality: the
+     * session knows which evening it belongs to, the context was sealed under that same evening,
+     * and it is the only possible join since the sealing precedes the session by several hours.
      */
     @Query(
         """
@@ -301,9 +299,9 @@ interface ContextDao {
     suspend fun findForSession(sessionHex: String): NightContextEntity?
 
     /**
-     * Le contexte scelle est-il celui de la soiree en cours ? C'est la question que pose la carte
-     * « Ce soir », et elle est distincte de [find] : ici on veut un flux, parce que le scellement
-     * doit faire disparaitre le bouton sans qu'on ait a revenir sur l'ecran.
+     * Is the sealed context the one of the current evening? That is the question the "Tonight"
+     * card asks, and it is distinct from [find]: here a flow is wanted, because the sealing must
+     * make the button disappear without having to come back to the screen.
      */
     @Query("SELECT * FROM night_context WHERE nightKey = :nightKey")
     fun observe(nightKey: String): Flow<NightContextEntity?>
@@ -325,13 +323,13 @@ interface HcSnapshotDao {
     suspend fun ofSession(hex: String): List<HcSnapshotEntity>
 
     /**
-     * Le nombre de tentatives **planifiees** deja faites : c'est lui qui pilote le repli, pas une
+     * The number of **scheduled** attempts already made: it is this that drives the backoff, not a
      * preference.
      *
-     * `attemptIndex >= 0` exclut les lectures opportunistes (chargeur branche, retour au premier
-     * plan), qui sont journalisees avec `FetchSchedule.INDEX_OPPORTUNISTE`. Les compter ferait
-     * avancer l'echelle a chaque branchement : trois aller-retours de cable epuiseraient les sept
-     * rangs en une minute, et l'application abandonnerait la nuit avant midi.
+     * `attemptIndex >= 0` excludes the opportunistic reads (charger plugged in, return to the
+     * foreground), which are logged with `FetchSchedule.INDEX_OPPORTUNISTIC`. Counting them would
+     * advance the ladder at every plug-in: three cable round trips would exhaust the seven rungs
+     * in a minute, and the application would give the night up before noon.
      */
     @Query("SELECT COUNT(*) FROM hc_snapshot WHERE sessionHex = :hex AND attemptIndex >= 0")
     suspend fun attemptCount(hex: String): Int
@@ -375,9 +373,9 @@ abstract class ParamDao {
     abstract suspend fun setActive(hash: String)
 
     /**
-     * Un seul profil actif, garanti par la transaction. C'est ce qui rend le
-     * `WHERE paramsHash = :hash` de [TrendDao] suffisant : il n'existe jamais deux hashs
-     * « courants » entre lesquels une requete pourrait choisir au hasard.
+     * A single active profile, guaranteed by the transaction. This is what makes the
+     * `WHERE paramsHash = :hash` of [TrendDao] sufficient: there are never two "current" hashes
+     * between which a query could pick at random.
      */
     @Transaction
     open suspend fun activate(profile: ParamProfileEntity) {
@@ -388,17 +386,18 @@ abstract class ParamDao {
 }
 
 /**
- * Les tendances. **Toutes** passent par `comparable_night`, et toutes exigent un `paramsHash`.
+ * The trends. **All** of them go through `comparable_night`, and all of them require a
+ * `paramsHash`.
  *
- * Il n'existe deliberement aucune surcharge sans le parametre `paramsHash` : c'est l'application
- * du garde-fou 3 (« la tendance refuse de melanger deux hashs ») au niveau du type, la ou une
- * regle ecrite dans un document se contourne par distraction. Melanger deux hashs signifierait
- * tracer sur un meme graphe des chiffres produits par deux algorithmes differents, et lire le
- * saut entre les deux comme un changement clinique.
+ * There is deliberately no overload without the `paramsHash` parameter: this is guard rail 3 ("the
+ * trend refuses to mix two hashes") applied at the level of the type, where a rule written down in
+ * a document gets bypassed out of distraction. Mixing two hashes would mean plotting on one chart
+ * figures produced by two different algorithms, and reading the jump between the two as a clinical
+ * change.
  *
- * `gate` est filtre a part : une nuit peut etre parfaitement comparable et n'avoir aucun droit
- * de porter un chiffre (masque non convergent, sommeil analysable insuffisant, confiance
- * respiratoire basse). Comparabilite et publiabilite sont deux questions distinctes.
+ * `gate` is filtered separately: a night can be perfectly comparable and have no right at all to
+ * carry a figure (non-convergent mask, insufficient analysable sleep, low respiratory confidence).
+ * Comparability and publishability are two distinct questions.
  */
 @Dao
 interface TrendDao {
@@ -413,15 +412,14 @@ interface TrendDao {
     suspend fun allNights(paramsHash: String, rule: String, maskSource: String): List<ComparableNight>
 
     /**
-     * Les points qui ont le droit d'entrer dans une courbe. `comparable = 1`, `gate = 'FULL'`
-     * **et** `plmi IS NOT NULL`.
+     * The points that have the right to enter a curve. `comparable = 1`, `gate = 'FULL'` **and**
+     * `plmi IS NOT NULL`.
      *
-     * La troisieme condition n'est pas redondante avec la deuxieme, meme si les deux coincident
-     * aujourd'hui. `gate` porte sur la *publication* — assez de sommeil analysable, nuit non
-     * tronquee ; `plmi IS NOT NULL` porte sur l'*existence* du chiffre. Les faire dependre l'une
-     * de l'autre reviendrait a ce qu'un assouplissement de la porte laisse entrer une nuit sans
-     * index dans une mediane, ou elle compterait comme une nuit de plus tout en n'apportant
-     * aucune mesure.
+     * The third condition is not redundant with the second, even if the two coincide today. `gate`
+     * bears on the *publication* — enough analysable sleep, night not truncated; `plmi IS NOT
+     * NULL` bears on the *existence* of the figure. Making one depend on the other would amount to
+     * letting a loosening of the gate admit a night without an index into a median, where it would
+     * count as one night more while bringing no measurement at all.
      */
     @Query(
         """
@@ -451,23 +449,22 @@ interface TrendDao {
     suspend fun forNight(hex: String, paramsHash: String): List<ComparableNight>
 
     /**
-     * Les hashs presents en base. Si cette liste a plus d'un element apres un changement de
-     * parametre, c'est que `RescoreAllWorker` n'est pas alle au bout : l'interface doit le dire
-     * plutot que d'afficher une tendance amputee.
+     * The hashes present in the database. If this list has more than one element after a parameter
+     * change, it means `RescoreAllWorker` did not go all the way: the interface must say so rather
+     * than display a truncated trend.
      */
     @Query("SELECT DISTINCT paramsHash FROM plm_result")
     suspend fun distinctHashes(): List<String>
 }
 
 /**
- * L'effacement total. Il efface **aussi les chunks bruts** — c'est tout l'objet du bouton.
+ * Total erasure. It erases **the raw chunks too** — that is the whole point of the button.
  *
- * Room ne supprime que ce qu'il connait ; les fichiers de chunks vivent sur le disque et sont
- * effaces par `ChunkStore.deleteAll()`. L'ordre importe : fichiers d'abord, base ensuite. Si
- * l'operation est interrompue entre les deux, il reste une base qui pointe vers des fichiers
- * disparus — etat detectable et reparable. L'ordre inverse laisserait des fichiers orphelins
- * dont plus rien ne connait l'existence, c'est-a-dire des donnees de sante que l'utilisateur
- * croit avoir effacees.
+ * Room only deletes what it knows about; the chunk files live on the disk and are erased by
+ * `ChunkStore.deleteAll()`. The order matters: files first, database second. If the operation is
+ * interrupted between the two, what is left is a database pointing at files that have disappeared
+ * — a detectable and repairable state. The reverse order would leave orphan files whose existence
+ * nothing knows about any more, that is to say health data the user believes erased.
  */
 @Dao
 interface MaintenanceDao {

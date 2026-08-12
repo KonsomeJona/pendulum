@@ -1,172 +1,166 @@
 package com.pendulum.phone.work
 
-import com.pendulum.phone.temps.Durees
+import com.pendulum.phone.time.Durations
 
 /**
- * La replanification de la lecture Health Connect. Fonction pure, testable sans appareil.
+ * The rescheduling of the Health Connect read. A pure function, testable without a device.
  *
- * ### Le piege que ce fichier existe pour desamorcer
+ * ### The trap this file exists to defuse
  *
- * **La session de sommeil n'apparait pas au reveil.** Le transfert montre -> telephone est regi
- * par « la politique batterie de la montre » (mots du constructeur), sans delai garanti. Une
- * fois la donnee sur le telephone, l'ecriture vers Health Connect est immediate — le goulot est
- * donc entierement en amont, et aucun code du telephone ne peut l'accelerer.
+ * **The sleep session does not appear on waking.** The watch -> phone transfer is governed by "the
+ * battery policy of the watch" (the manufacturer's words), with no guaranteed delay. Once the data
+ * is on the phone, the write into Health Connect is immediate — the bottleneck is therefore
+ * entirely upstream, and no code on the phone can speed it up.
  *
- * La consequence est qu'une lecture unique au reveil echoue la plupart du temps, et echoue
- * **silencieusement** : Health Connect ne renvoie pas d'erreur, il renvoie une liste vide. Sans
- * echelle de reprise, l'application conclurait « pas de donnees de sommeil cette nuit » alors
- * que la nuit arrive deux heures plus tard.
+ * The consequence is that a single read on waking fails most of the time, and fails **silently**:
+ * Health Connect does not return an error, it returns an empty list. Without a retry ladder, the
+ * application would conclude "no sleep data tonight" when the night arrives two hours later.
  *
- * ### Pourquoi la nuit n'attend pas cette lecture
+ * ### Why the night does not wait for this read
  *
- * `AnalyzeWorker` tourne **immediatement** avec le masque accelerometrique : la nuit est
- * analysable des le transfert termine, et l'utilisateur voit un resultat au reveil.
- * `SleepFetchWorker` et `RescoreWorker` ajoutent ensuite le second bras, non circulaire, quand
- * l'hypnogramme arrive. L'echelle ci-dessous n'est donc jamais bloquante : au pire, la nuit
- * garde son seul masque accelerometrique, qui a le droit d'exister mais pas de porter le
- * resultat principal.
+ * `AnalyzeWorker` runs **immediately** with the accelerometer mask: the night is analysable as
+ * soon as the transfer is over, and the user sees a result on waking. `SleepFetchWorker` and
+ * `RescoreWorker` then add the second, non-circular arm, when the hypnogram arrives. The ladder
+ * below is therefore never blocking: at worst, the night keeps its accelerometer mask alone, which
+ * is allowed to exist but not to carry the main result.
  *
- * ### Les valeurs
+ * ### The values
  *
- * T+30 min, 1 h, 2 h, 4 h, 8 h — puis 16 h et 32 h pour ne pas laisser 28 heures sans tentative
- * avant le mur — et abandon a T+36 h.
+ * T+30 min, 1 h, 2 h, 4 h, 8 h — then 16 h and 32 h so as not to leave 28 hours without an attempt
+ * before the wall — and giving up at T+36 h.
  *
- * **Ces chiffres sont une estimation, pas une mesure.** La procedure de verification
- * (`SOURCES-SOMMEIL.md` §5, etape 1) demande de noter l'heure exacte a laquelle la nuit apparait,
- * trois matins de suite, et de recaler cette echelle sur la valeur observee. Tant que ce n'est
- * pas fait, ces sept valeurs sont un pari raisonnable et rien de plus.
+ * **These figures are an estimate, not a measurement.** The verification procedure
+ * (`docs/workings/SLEEP-SOURCES.md` §5, step 1) asks for the exact time at which the night appears
+ * to be noted, three mornings in a row, and for this ladder to be re-tuned on the observed value.
+ * Until that is done, these seven values are a reasonable bet and nothing more.
  */
 object FetchSchedule {
 
-    /** Delais depuis la **fin** de la nuit, en millisecondes. Valeurs dans `Durees`. */
-    val OFFSETS_MS: LongArray = Durees.ACTIVES.offsetsLectureMs
+    /** Delays from the **end** of the night, in milliseconds. Values in `Durations`. */
+    val OFFSETS_MS: LongArray = Durations.ACTIVE.readOffsetsMs
 
     /**
-     * Au-dela, on arrete. Trente-six heures ne sont pas un compromis : c'est le point ou
-     * continuer d'essayer coute plus (des reveils, une notification qui reste en suspens, une
-     * nuit dont l'etat n'est jamais final) que ce que la reponse rapporterait.
+     * Beyond this, we stop. Thirty-six hours is not a compromise: it is the point where carrying
+     * on trying costs more (wake-ups, a notification left hanging, a night whose state is never
+     * final) than the answer would bring in.
      */
-    val GIVE_UP_MS: Long = Durees.ACTIVES.abandonLectureMs
+    val GIVE_UP_MS: Long = Durations.ACTIVE.readGiveUpMs
 
     sealed interface Plan {
-        /** @param delayMs attente avant la prochaine tentative. Zero = rattrapage immediat. */
+        /** @param delayMs wait before the next attempt. Zero = immediate catch-up. */
         data class Retry(val delayMs: Long, val attemptIndex: Int) : Plan
 
         data class GiveUp(val reason: String) : Plan
     }
 
     /**
-     * @param attemptsDone nombre de lectures deja tentees pour cette nuit. Il est lu dans
-     *   `hc_snapshot` (une ligne par tentative), **jamais** dans une preference ou un compteur
-     *   de worker : WorkManager peut rejouer un worker, et un compteur qui avance a chaque
-     *   execution consommerait l'echelle en quelques secondes apres un simple redemarrage.
-     * @param sessionEndMs fin de la nuit. C'est l'origine des temps de l'echelle : compter
-     *   depuis le debut de la nuit ferait tirer la premiere tentative pendant que la personne
-     *   dort encore.
+     * @param attemptsDone number of reads already attempted for this night. It is read from
+     *   `hc_snapshot` (one row per attempt), **never** from a preference or a worker counter:
+     *   WorkManager can replay a worker, and a counter that advances at every run would consume
+     *   the ladder in a few seconds after a simple restart.
+     * @param sessionEndMs end of the night. It is the time origin of the ladder: counting from the
+     *   start of the night would fire the first attempt while the person is still asleep.
      *
-     * `delayMs = 0` quand l'offset est deja passe — cas du telephone eteint toute la matinee.
-     * On rattrape alors les tentatives une par une plutot que de sauter directement a la
-     * derniere : chacune produit une ligne `hc_snapshot`, et cette trace est ce qui permettra
-     * de recaler l'echelle sur la latence reelle.
+     * `delayMs = 0` when the offset has already passed — the case of a phone switched off all
+     * morning. We then catch the attempts up one by one rather than jumping straight to the last
+     * one: each produces an `hc_snapshot` row, and that trace is what will make it possible to
+     * re-tune the ladder on the real latency.
      */
     fun plan(
         attemptsDone: Int,
         sessionEndMs: Long,
         nowMs: Long,
         /**
-         * L'echelle et son mur, en parametres plutot que lus au fond de la fonction.
+         * The ladder and its wall, as parameters rather than read from deep inside the function.
          *
-         * Cette fonction est pure et ses tests affirment des valeurs — « la premiere tentative est
-         * a T+30 minutes », « on abandonne a T+36 h ». Les laisser suivre le diviseur de la
-         * variante compilee ferait echouer ces affirmations parce qu'un banc a ete construit
-         * autrement, ce qui n'apprend rien a personne sur la replanification.
+         * This function is pure and its tests assert values — "the first attempt is at T+30
+         * minutes", "we give up at T+36 h". Letting them follow the divisor of the compiled
+         * variant would make those assertions fail because a bench was built differently, which
+         * teaches nobody anything about the rescheduling.
          */
         offsetsMs: LongArray = OFFSETS_MS,
-        abandonMs: Long = GIVE_UP_MS,
+        giveUpMs: Long = GIVE_UP_MS,
     ): Plan {
         val elapsed = nowMs - sessionEndMs
-        if (elapsed >= abandonMs) {
-            // Le message se derive de la borne au lieu de la citer : sur le banc la borne est
-            // comprimee, et un journal qui annoncerait « T+36 h » apres trois minutes serait la
-            // premiere chose a envoyer un lecteur sur une fausse piste.
-            return Plan.GiveUp("abandon : $elapsed ms ecoulees, borne $abandonMs ms")
+        if (elapsed >= giveUpMs) {
+            // The message is derived from the bound instead of quoting it: on the bench the bound
+            // is compressed, and a log announcing "T+36 h" after three minutes would be the first
+            // thing to send a reader down a false trail.
+            return Plan.GiveUp("giving up: $elapsed ms elapsed, bound $giveUpMs ms")
         }
         if (attemptsDone >= offsetsMs.size) {
-            return Plan.GiveUp("echelle epuisee apres ${offsetsMs.size} tentatives")
+            return Plan.GiveUp("ladder exhausted after ${offsetsMs.size} attempts")
         }
         val target = sessionEndMs + offsetsMs[attemptsDone]
         return Plan.Retry(delayMs = (target - nowMs).coerceAtLeast(0L), attemptIndex = attemptsDone)
     }
 
     // -------------------------------------------------------------------------------------
-    // Le declencheur opportuniste
+    // The opportunistic trigger
     // -------------------------------------------------------------------------------------
 
     /**
-     * Deux instants ou la lecture a beaucoup plus de chances d'aboutir que le rang suivant de
-     * l'echelle.
+     * Two moments where the read has a far better chance of succeeding than the next rung of the
+     * ladder.
      *
-     * ### Pourquoi un repli exponentiel seul est le mauvais modele
+     * ### Why exponential backoff alone is the wrong model
      *
-     * Le repli exponentiel suppose un evenement **aleatoire** dont on ignore la date. La
-     * synchronisation Health Connect n'en est pas un : elle est correlee a l'usage. La montre de
-     * poignet pousse quand elle est sur le chargeur, et l'application source ecrit quand on
-     * l'ouvre — c'est-a-dire souvent quelques secondes avant qu'on ouvre Pendulum pour voir sa
-     * nuit. Attendre le rang T+4 h alors que la donnee est arrivee a T+2 h 05 coute deux heures
-     * de latence percue pour rien.
+     * Exponential backoff assumes a **random** event whose date is unknown. The Health Connect
+     * synchronisation is not one: it is correlated with usage. The wrist watch pushes when it is
+     * on the charger, and the source application writes when it is opened — that is, often a few
+     * seconds before Pendulum is opened to look at the night. Waiting for the T+4 h rung when the
+     * data arrived at T+2 h 05 costs two hours of perceived latency for nothing.
      *
-     * Deux signaux gratuits, donc : le branchement sur le chargeur
-     * (`ACTION_POWER_CONNECTED`, exempte des restrictions de diffusion depuis Android 8) et le
-     * retour de l'application au premier plan.
+     * Two free signals, then: plugging in the charger (`ACTION_POWER_CONNECTED`, exempt from the
+     * broadcast restrictions since Android 8) and the application returning to the foreground.
      *
-     * ### Ce que cette fonction protege
+     * ### What this function protects
      *
-     * Une lecture opportuniste **ne consomme pas l'echelle** : elle est journalisee avec
-     * [INDEX_OPPORTUNISTE] et `HcSnapshotDao.attemptCount` ne compte que les rangs planifies.
-     * Sans cela, brancher et debrancher le telephone trois fois epuiserait les sept rangs en une
-     * minute et l'application abandonnerait avant midi.
+     * An opportunistic read **does not consume the ladder**: it is logged with
+     * [OPPORTUNISTIC_INDEX] and `HcSnapshotDao.attemptCount` only counts the scheduled rungs.
+     * Without that, plugging and unplugging the phone three times would exhaust the seven rungs in
+     * a minute and the application would give up before noon.
      *
-     * Il reste a eviter la rafale : un cable qui fait faux contact peut emettre la diffusion
-     * plusieurs fois par minute, et chaque tentative interroge un fournisseur. D'ou le delai
-     * minimal entre deux lectures opportunistes.
+     * What remains to be avoided is the burst: a cable making a bad contact can emit the broadcast
+     * several times a minute, and every attempt queries a provider. Hence the minimum delay
+     * between two opportunistic reads.
      */
-    fun opportunisteAdmissible(
+    fun opportunisticAllowed(
         sessionEndMs: Long,
         nowMs: Long,
-        derniereTentativeMs: Long?,
-        /** Voir [plan] : les bornes sont des parametres pour que les tests puissent les nommer. */
-        abandonMs: Long = GIVE_UP_MS,
-        minEntreMs: Long = MIN_ENTRE_OPPORTUNISTES_MS,
+        lastAttemptMs: Long?,
+        /** See [plan]: the bounds are parameters so that the tests can name them. */
+        giveUpMs: Long = GIVE_UP_MS,
+        minBetweenMs: Long = MIN_BETWEEN_OPPORTUNISTIC_MS,
     ): Boolean {
         val elapsed = nowMs - sessionEndMs
-        if (elapsed < 0 || elapsed >= abandonMs) return false
-        val derniere = derniereTentativeMs ?: return true
-        return nowMs - derniere >= minEntreMs
+        if (elapsed < 0 || elapsed >= giveUpMs) return false
+        val last = lastAttemptMs ?: return true
+        return nowMs - last >= minBetweenMs
     }
 
-    /** Delai minimal entre deux lectures opportunistes. Anti-rafale, rien de plus. */
-    val MIN_ENTRE_OPPORTUNISTES_MS: Long = Durees.ACTIVES.minEntreOpportunistesMs
+    /** Minimum delay between two opportunistic reads. Burst guard, nothing more. */
+    val MIN_BETWEEN_OPPORTUNISTIC_MS: Long = Durations.ACTIVE.minBetweenOpportunisticMs
 
     /**
-     * `attemptIndex` des lignes `hc_snapshot` produites hors echelle.
+     * `attemptIndex` of the `hc_snapshot` rows produced outside the ladder.
      *
-     * Negatif pour que le compte des tentatives planifiees reste un simple
-     * `WHERE attemptIndex >= 0` : une colonne booleenne de plus aurait demande une migration, la
-     * convention de signe n'en demande aucune et se lit dans la requete.
+     * Negative so that counting the scheduled attempts stays a simple `WHERE attemptIndex >= 0`:
+     * one more boolean column would have required a migration, the sign convention requires none
+     * and can be read in the query.
      */
-    const val INDEX_OPPORTUNISTE = -1
+    const val OPPORTUNISTIC_INDEX = -1
 
     /**
-     * Faut-il rescorer apres cette lecture ?
+     * Should we rescore after this read?
      *
-     * On continue de lire **meme apres un succes**, parce qu'un fournisseur peut *reecrire* une
-     * session deja publiee : la nuit lue a T+1 h peut differer de la meme nuit a T+8 h. Mais on
-     * ne rescore que si quelque chose a change — sinon chaque tentative relancerait une analyse
-     * complete pour aboutir au meme chiffre.
+     * We keep reading **even after a success**, because a provider can *rewrite* an already
+     * published session: the night read at T+1 h can differ from the same night at T+8 h. But we
+     * only rescore if something has changed — otherwise every attempt would restart a full
+     * analysis to end up with the same figure.
      *
-     * La comparaison porte sur l'identifiant de l'enregistrement, sa date de derniere
-     * modification et le nombre de stades : les trois champs qui bougent quand une source
-     * republie sa nuit.
+     * The comparison is on the record identifier, its last modification date and the number of
+     * stages: the three fields that move when a source republishes its night.
      */
     fun shouldRescore(
         previousRecordId: String?,

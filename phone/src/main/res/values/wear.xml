@@ -1,20 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Capacite annoncee par le telephone sur le Wearable Data Layer.
+  The capability the phone announces on the Wearable Data Layer.
 
-  C'est le seul mecanisme qui permet a chacun des deux appareils de savoir que l'application est
-  reellement installee **en face** : `NodeClient.connectedNodes` dit qu'une montre est appairee,
-  pas qu'elle porte Pendulum. Les deux faits sont distincts, ils se reparent a deux endroits
-  differents, et les confondre envoie l'utilisateur installer une application sur un appareil qui
-  n'existe pas.
+  It is the only mechanism that lets each of the two devices know that the application is really
+  installed **on the other side**: `NodeClient.connectedNodes` says that a watch is paired, not
+  that it carries Pendulum. The two facts are distinct, they are repaired in two different places,
+  and confusing them sends the user to install an application onto a device that does not exist.
 
-  ### `tools:keep` n'est pas une precaution, c'est la ligne critique du fichier
+  ### `tools:keep` is not a precaution, it is the critical line of the file
 
-  Ce tableau n'est reference par aucun code : c'est le service Google Play qui le lit dans les
-  ressources de l'APK. Le reducteur de ressources, qui ne voit donc aucune reference, le supprime
-  en release. Le symptome n'est pas une erreur : la capacite disparait, la detection ne trouve
-  plus rien, et l'assistant reste bloque a « application absente » sur un appareil ou elle est
-  installee. Un debogage en debug ne reproduit jamais rien.
+  This array is referenced by no code: it is the Google Play service that reads it from the APK
+  resources. The resource shrinker, which therefore sees no reference, removes it in release. The
+  symptom is not an error: the capability disappears, detection finds nothing any more, and
+  onboarding stays stuck on "application missing" on a device where it is installed. Debugging on
+  a debug build never reproduces anything.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@array/android_wear_capabilities">
     <string-array name="android_wear_capabilities">

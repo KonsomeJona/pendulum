@@ -26,31 +26,31 @@ import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
 
 /**
- * Le meme contenu qu'un graphe, sous forme de tableau.
+ * The same content as a chart, in the shape of a table.
  *
- * Deux usages qui n'en font qu'un :
+ * Two uses that turn out to be one:
  *
- * - **l'alternative accessible.** Un `contentDescription` sur un canvas resume ; il ne restitue
- *   pas des donnees. Un lecteur d'ecran a besoin d'un tableau, et c'est le seul chemin
- *   reellement utilisable sans vision.
- * - **le mode « je veux le chiffre exact ».** L'utilisateur vise est technicien ; lui refuser la
- *   valeur precise au motif qu'elle est incertaine serait a la fois condescendant et
- *   contre-productif — il en a besoin pour verifier que la mesure a fonctionne.
+ * - **the accessible alternative.** A `contentDescription` on a canvas summarises; it does not
+ *   render data. A screen reader needs a table, and it is the only path that is really usable
+ *   without sight.
+ * - **the "I want the exact figure" mode.** The intended user is a technician; refusing them the
+ *   precise value on the grounds that it is uncertain would be both condescending and
+ *   counter-productive — they need it to check that the measurement worked.
  *
- * Les deux besoins ont exactement la meme reponse, ce qui est le signe qu'elle est la bonne.
+ * Both needs have exactly the same answer, which is the sign that it is the right one.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataTableSheet(
-    colonnes: List<String>,
-    lignes: List<List<String>>,
-    onFermer: () -> Unit,
+    columns: List<String>,
+    rows: List<List<String>>,
+    onClose: () -> Unit,
 ) {
     val c = LocalPendulumColors.current
-    val etat = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
-        onDismissRequest = onFermer,
-        sheetState = etat,
+        onDismissRequest = onClose,
+        sheetState = sheetState,
         shape = PendulumShapes.sheet,
         containerColor = c.surfaceElevated,
     ) {
@@ -62,16 +62,16 @@ fun DataTableSheet(
             val scroll = rememberScrollState()
             Column(Modifier.horizontalScroll(scroll)) {
                 Row(Modifier.fillMaxWidth()) {
-                    colonnes.forEach {
+                    columns.forEach {
                         Text(it, style = PendulumType.label, color = c.textTertiary, modifier = Modifier.width(96.dp))
                     }
                 }
                 Spacer(Modifier.height(Spacing.xs.dp))
                 LazyColumn {
-                    items(lignes) { ligne ->
+                    items(rows) { row ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            ligne.forEach {
-                                // Chiffres tabulaires : sans eux les colonnes ne s'alignent pas.
+                            row.forEach {
+                                // Tabular figures: without them the columns do not line up.
                                 Text(it, style = PendulumType.bodyNum, color = c.textPrimary, modifier = Modifier.width(96.dp))
                             }
                         }

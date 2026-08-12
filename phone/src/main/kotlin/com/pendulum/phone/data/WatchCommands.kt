@@ -10,90 +10,89 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
- * Les ordres que le telephone envoie a la montre.
+ * The orders the phone sends to the watch.
  *
- * ### Ce qui manquait
+ * ### What was missing
  *
- * `WirePaths.SWEEP_REQUEST` est **ecoute par la montre depuis le debut** — `AckObserver` y
- * enfile `SyncWorker`, qui republie tout ce qui n'a pas ete acquitte — et **aucun code du
- * telephone ne l'emettait**. Le chemin de rattrapage du protocole existait donc entierement,
- * cable des deux cotes sauf du cote qui declenche. La consequence n'etait pas une erreur mais
- * une attente : apres une coupure Bluetooth, les chunks restaient sur la montre jusqu'a ce
- * qu'elle decide d'elle-meme de reessayer.
+ * `WirePaths.SWEEP_REQUEST` has been **listened to by the watch from the start** — `AckObserver`
+ * enqueues `SyncWorker` on it, which republishes everything that has not been acknowledged — and
+ * **no phone code ever emitted it**. The catch-up path of the protocol therefore existed in full,
+ * wired on both sides except on the side that triggers it. The consequence was not an error but a
+ * wait: after a Bluetooth cut, the chunks stayed on the watch until it decided by itself to try
+ * again.
  *
- * ### Un message, pas un `DataItem`
+ * ### A message, not a `DataItem`
  *
- * Un `DataItem` est un etat replique : il persiste, et republier la meme charge utile ne
- * declenche rien du tout, puisque rien n'a change. Un ordre n'est pas un etat — « balaie
- * maintenant » demande a etre entendu deux fois de suite si on le dit deux fois. `MessageClient`
- * a exactement cette semantique, et sa contrepartie est qu'il echoue quand la montre est hors de
- * portee. C'est acceptable ici : le geste est explicite, l'utilisateur est devant l'ecran, et
- * l'echec se dit.
+ * A `DataItem` is a replicated state: it persists, and republishing the same payload triggers
+ * nothing at all, since nothing has changed. An order is not a state — "sweep now" needs to be
+ * heard twice in a row if it is said twice. `MessageClient` has exactly that semantics, and its
+ * counterpart is that it fails when the watch is out of range. That is acceptable here: the
+ * gesture is explicit, the user is in front of the screen, and the failure is reported.
  */
 object WatchCommands {
 
     /**
-     * Demande a la montre de pousser tout ce qu'elle detient encore.
+     * Asks the watch to push everything it still holds.
      *
-     * @return `false` si aucun noeud n'a pu etre atteint. L'appelant doit le dire : annoncer un
-     *   balayage qui n'a jamais ete demande fait attendre des donnees qui ne viendront pas.
+     * @return `false` if no node could be reached. The caller must say so: announcing a sweep that
+     *   was never requested makes people wait for data that will not come.
      */
-    suspend fun demanderLeBalayage(context: Context): Boolean =
-        envoyerATousLesNoeuds(context, WirePaths.SWEEP_REQUEST)
+    suspend fun requestSweep(context: Context): Boolean =
+        sendToAllNodes(context, WirePaths.SWEEP_REQUEST)
 
     /**
-     * Demande a la montre de demarrer l'enregistrement.
+     * Asks the watch to start recording.
      *
-     * Meme forme de defaut que le balayage, et trouve de la meme facon — en relisant la
-     * documentation plutot que le code : `WirePaths.START_REQUEST` etait declare, `AckObserver`
-     * le traitait, y compris son repli par notification quand Android refuse un demarrage depuis
-     * l'arriere-plan, et **rien ne l'emettait**. Un protocole cable du cote qui recoit et inerte
-     * du cote qui declenche ne produit aucune erreur : il produit un bouton qui n'existe pas.
+     * Same shape of defect as the sweep, and found in the same way — by re-reading the
+     * documentation rather than the code: `WirePaths.START_REQUEST` was declared, `AckObserver`
+     * handled it, including its notification fallback for when Android refuses a start from the
+     * background, and **nothing emitted it**. A protocol wired on the receiving side and inert on
+     * the triggering side produces no error: it produces a button that does not exist.
      *
-     * ### Ce que cet ordre ne contourne pas
+     * ### What this order does not bypass
      *
-     * `RecordingService` re-verifie `Preflight.check` avant `startSession(resume = false)`. Une
-     * demande arrivant sans contexte du soir scelle est donc refusee **cote montre**, quelle
-     * qu'en soit l'origine — le garde-fou n'est pas dans le bouton, il est dans le service, et
-     * c'est ce qui permet d'ouvrir un second chemin de demarrage sans l'affaiblir.
+     * `RecordingService` checks `Preflight.check` again before `startSession(resume = false)`. A
+     * request arriving without a sealed evening context is therefore refused **on the watch side**,
+     * whatever its origin — the guard rail is not in the button, it is in the service, and that is
+     * what makes it possible to open a second start path without weakening it.
      *
-     * @return `false` si aucun noeud n'a pu etre atteint. Il faut le dire : c'est la difference
-     *   entre « la montre enregistre » et « la montre n'a rien recu », et l'utilisateur qui se
-     *   couche en croyant la premiere perd sa nuit.
+     * @return `false` if no node could be reached. It has to be said: that is the difference
+     *   between "the watch is recording" and "the watch received nothing", and the user who goes to
+     *   bed believing the first one loses their night.
      */
-    suspend fun demanderLeDemarrage(context: Context): Boolean =
-        envoyerATousLesNoeuds(context, WirePaths.START_REQUEST)
+    suspend fun requestStart(context: Context): Boolean =
+        sendToAllNodes(context, WirePaths.START_REQUEST)
 
     /**
-     * Envoie un message a **tous** les noeuds connectes, et non au premier.
+     * Sends a message to **all** the connected nodes, and not to the first one.
      *
-     * Plusieurs montres peuvent etre appairees, et deviner laquelle porte l'enregistrement a
-     * partir d'un identifiant de noeud n'est pas quelque chose qu'on peut faire correctement.
-     * Celles qui ne savent pas traiter le chemin l'ignorent — c'est le comportement du Data
-     * Layer, pas une tolerance de notre part. Symetrique de `wear/transfer/RemoteCommands.kt`.
+     * Several watches can be paired, and guessing which one is carrying the recording from a node
+     * identifier is not something that can be done correctly. The ones that do not know how to
+     * handle the path ignore it — that is the behaviour of the Data Layer, not a tolerance on our
+     * part. Symmetrical with `wear/transfer/RemoteCommands.kt`.
      */
-    private suspend fun envoyerATousLesNoeuds(context: Context, chemin: String): Boolean =
+    private suspend fun sendToAllNodes(context: Context, path: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
-                val noeuds = Tasks.await(
+                val nodes = Tasks.await(
                     Wearable.getNodeClient(context).connectedNodes,
-                    DELAI_S,
+                    TIMEOUT_S,
                     TimeUnit.SECONDS,
                 )
-                noeuds.forEach { noeud ->
+                nodes.forEach { node ->
                     Tasks.await(
-                        Wearable.getMessageClient(context).sendMessage(noeud.id, chemin, ByteArray(0)),
-                        DELAI_S,
+                        Wearable.getMessageClient(context).sendMessage(node.id, path, ByteArray(0)),
+                        TIMEOUT_S,
                         TimeUnit.SECONDS,
                     )
                 }
-                noeuds.isNotEmpty()
+                nodes.isNotEmpty()
             } catch (e: Exception) {
-                Log.w(TAG, "aucun noeud joignable pour $chemin", e)
+                Log.w(TAG, "no reachable node for $path", e)
                 false
             }
         }
 
     private const val TAG = "PendulumCommands"
-    private const val DELAI_S = 15L
+    private const val TIMEOUT_S = 15L
 }

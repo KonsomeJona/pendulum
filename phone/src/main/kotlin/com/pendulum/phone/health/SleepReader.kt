@@ -16,35 +16,34 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 /**
- * Lecture du sommeil dans Health Connect.
+ * Reading sleep from Health Connect.
  *
- * ### Pourquoi une source externe, et pas la montre de cheville
+ * ### Why an external source, and not the ankle watch
  *
- * Le PLMI est une fraction : mouvements / heures de sommeil. La montre de cheville produit tres
- * bien le numerateur et **ne peut pas** produire honnetement le denominateur — l'actigraphie
- * deduit « endormi/eveille » d'une statistique de mouvement, or l'evenement qu'on compte *est*
- * un mouvement. Chaque salve de PLMS pousserait l'algorithme a declarer « eveil » : le
- * numerateur monte pendant que le denominateur descend, et l'erreur sur le rapport est doublee
- * dans la meme direction. C'est un biais systematique, pas du bruit : il ne se moyenne pas sur
- * plusieurs nuits.
+ * The PLMI is a fraction: movements / hours of sleep. The ankle watch produces the numerator very
+ * well and **cannot** honestly produce the denominator — actigraphy infers "asleep/awake" from a
+ * movement statistic, yet the event we are counting *is* a movement. Every PLMS burst would push
+ * the algorithm into declaring "wake": the numerator goes up while the denominator goes down, and
+ * the error on the ratio is doubled in the same direction. That is a systematic bias, not noise:
+ * it does not average out over several nights.
  *
- * La bonne nouvelle est solide : ce dont on a besoin (la frontiere sommeil/eveil, donc le TST)
- * est ce que les montres grand public font le **mieux** (sensibilite ~0,95) ; ce qu'elles font
- * mal (les stades, kappa 0,34-0,47) est ce dont on a le **moins** besoin — le PLMI ne pondere
- * pas par stade. Les stades servent au controle de plausibilite biologique, pas au chiffre.
+ * The good news is solid: what we need (the sleep/wake boundary, hence the TST) is what consumer
+ * watches do **best** (sensitivity ~0.95); what they do badly (the stages, kappa 0.34-0.47) is
+ * what we need **least** — the PLMI does not weight by stage. The stages serve the biological
+ * plausibility check, not the figure.
  *
- * ### Le biais a connaitre et a nommer
+ * ### The bias to know about and to name
  *
- * Specificite ~0,52 : la montre declare « endormi » pres d'une epoque d'eveil sur deux, donc
- * **surestime** le TST. Le TST etant au denominateur, l'index en sort structurellement
- * **sous-estime**. Ce biais s'oppose a celui, a la hausse, des mouvements lies a la respiration.
- * Il ne faut surtout pas pretendre qu'ils se compensent : ils se nomment separement.
+ * Specificity ~0.52: the watch declares "asleep" for close to one wake epoch in two, and therefore
+ * **overestimates** the TST. Since the TST is the denominator, the index comes out structurally
+ * **underestimated**. This bias runs against the upward one from breathing-related movements. It
+ * must above all not be claimed that they cancel out: they are named separately.
  *
- * ### Les deux permissions
+ * ### The two permissions
  *
- * `READ_SLEEP` **et** `READ_HEALTH_DATA_IN_BACKGROUND`. La seconde n'est pas un supplement de
- * confort : `SleepFetchWorker` tourne par construction application fermee, et sans elle la
- * lecture echoue hors premier plan. C'est un manque de la SPEC v1, corrige ici.
+ * `READ_SLEEP` **and** `READ_HEALTH_DATA_IN_BACKGROUND`. The second is not a comfort extra:
+ * `SleepFetchWorker` runs by construction with the application closed, and without it the read
+ * fails outside the foreground. This is a gap in SPEC v1, fixed here.
  */
 class SleepReader(private val context: Context) {
 
@@ -57,26 +56,26 @@ class SleepReader(private val context: Context) {
     }
 
     /**
-     * Etat de la lecture. Cinq issues, et elles ne se reparent pas de la meme facon : c'est
-     * pourquoi ce n'est pas un booleen.
+     * State of the read. Five outcomes, and they are not repaired the same way: that is why this
+     * is not a boolean.
      */
     enum class Availability {
-        /** Health Connect present, permissions accordees, lecture de fond disponible. */
+        /** Health Connect present, permissions granted, background read available. */
         READY,
 
-        /** Health Connect absent ou trop ancien sur cet appareil. */
+        /** Health Connect absent or too old on this device. */
         SDK_UNAVAILABLE,
 
-        /** Present mais une mise a jour est requise avant utilisation. */
+        /** Present but an update is required before use. */
         UPDATE_REQUIRED,
 
-        /** Permissions non accordees : c'est un geste utilisateur, pas une erreur. */
+        /** Permissions not granted: this is a user gesture, not an error. */
         PERMISSIONS_MISSING,
 
         /**
-         * Permissions accordees mais la lecture en arriere-plan n'est **pas** disponible sur
-         * cette version. Cas a traiter a part : planifier `SleepFetchWorker` malgre tout
-         * produirait des echecs silencieux toute la nuit. Voir `hasBackgroundReadFeature`.
+         * Permissions granted but the background read is **not** available on this version. A case
+         * to handle separately: scheduling `SleepFetchWorker` anyway would produce silent failures
+         * all night long. See `hasBackgroundReadFeature`.
          */
         BACKGROUND_READ_UNAVAILABLE,
     }
@@ -88,13 +87,12 @@ class SleepReader(private val context: Context) {
                 return Availability.UPDATE_REQUIRED
         }
         val c = client ?: return Availability.SDK_UNAVAILABLE
-        // **L'ordre compte.** La disponibilite de la *fonctionnalite* se verifie AVANT les
-        // permissions. Sur un fournisseur qui ne sait pas lire en arriere-plan,
-        // `READ_HEALTH_DATA_IN_BACKGROUND` n'existe pas : elle ne peut donc jamais apparaitre
-        // dans `getGrantedPermissions()`. La tester en second renvoyait `PERMISSIONS_MISSING` a
-        // vie et envoyait l'utilisateur dans une demande de permission qui ne peut pas aboutir,
-        // au lieu de dire que l'appareil ne sait pas faire — la branche
-        // `BACKGROUND_READ_UNAVAILABLE` etait morte.
+        // **The order matters.** The availability of the *feature* is checked BEFORE the
+        // permissions. On a provider that cannot read in the background,
+        // `READ_HEALTH_DATA_IN_BACKGROUND` does not exist: it can therefore never appear in
+        // `getGrantedPermissions()`. Testing it second returned `PERMISSIONS_MISSING` for ever and
+        // sent the user into a permission request that cannot succeed, instead of saying that the
+        // device cannot do it — the `BACKGROUND_READ_UNAVAILABLE` branch was dead.
         if (!hasBackgroundReadFeature(c)) return Availability.BACKGROUND_READ_UNAVAILABLE
         val granted = c.permissionController.getGrantedPermissions()
         if (!granted.containsAll(REQUIRED_PERMISSIONS)) return Availability.PERMISSIONS_MISSING
@@ -102,10 +100,9 @@ class SleepReader(private val context: Context) {
     }
 
     /**
-     * Verification de la fonctionnalite « lecture en arriere-plan », **avant** de planifier le
-     * worker. Une permission accordee ne dit pas que la plateforme sait l'honorer : les deux
-     * choses sont distinctes dans l'API, et ne verifier que la premiere donne un worker qui
-     * s'execute et ne lit rien.
+     * Check of the "background read" feature, **before** scheduling the worker. A granted
+     * permission does not say that the platform can honour it: the two things are distinct in the
+     * API, and checking only the first gives a worker that runs and reads nothing.
      */
     private fun hasBackgroundReadFeature(c: HealthConnectClient): Boolean = runCatching {
         c.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) ==
@@ -113,12 +110,12 @@ class SleepReader(private val context: Context) {
     }.getOrDefault(false)
 
     /**
-     * Le resultat d'une lecture, tel qu'il part dans `hc_snapshot`.
+     * The result of a read, as it goes into `hc_snapshot`.
      *
-     * @param aggregateTstMin TST rendu par `aggregate(SLEEP_DURATION_TOTAL)`, **dedoublonne par
-     *   le systeme**. Il ne sert pas de resultat : il sert de controle croise. Si notre propre
-     *   TST s'en ecarte de plus de ~10 %, c'est notre deduplication qui est fausse — et sans ce
-     *   controle, rien ne le dirait.
+     * @param aggregateTstMin TST returned by `aggregate(SLEEP_DURATION_TOTAL)`, **deduplicated by
+     *   the system**. It does not serve as the result: it serves as a cross-check. If our own TST
+     *   departs from it by more than ~10 %, it is our deduplication that is wrong — and without
+     *   this check, nothing would say so.
      */
     data class Reading(
         val selection: SleepSourceSelector.Selection,
@@ -129,12 +126,11 @@ class SleepReader(private val context: Context) {
     )
 
     /**
-     * Lit les sessions qui recoupent `[windowStartMs, windowEndMs]`, avec une marge.
+     * Reads the sessions that overlap `[windowStartMs, windowEndMs]`, with a margin.
      *
-     * La marge existe parce qu'une session de sommeil commence souvent avant que la montre de
-     * cheville ne demarre et finit apres son arret. Filtrer strictement sur la fenetre
-     * d'enregistrement decouperait l'hypnogramme aux bords et retirerait du sommeil reel du
-     * denominateur.
+     * The margin exists because a sleep session often starts before the ankle watch starts and
+     * ends after it stops. Filtering strictly on the recording window would cut the hypnogram at
+     * the edges and remove real sleep from the denominator.
      */
     suspend fun read(
         windowStartMs: Long,
@@ -148,9 +144,9 @@ class SleepReader(private val context: Context) {
 
         val candidates = readCandidates(from, to)
 
-        // Controle croise. `aggregate` dedoublonne (Activity et Sleep uniquement) selon la
-        // priorite reglee par l'utilisateur, mais ne rend jamais les stades : il ne peut donc
-        // pas remplacer `readRecords`, seulement le verifier.
+        // Cross-check. `aggregate` deduplicates (Activity and Sleep only) according to the priority
+        // set by the user, but never returns the stages: it therefore cannot replace `readRecords`,
+        // only verify it.
         val aggregateTstMin = runCatching {
             c.aggregate(
                 AggregateRequest(
@@ -165,7 +161,7 @@ class SleepReader(private val context: Context) {
         )
         val verdict = selection.chosen
             ?.let { SleepSourceSelector.verdictOf(it, windowStartMs, windowEndMs) }
-            ?: "AUCUNE_SESSION"
+            ?: "NO_SESSION"
 
         return Reading(
             selection = selection,
@@ -177,34 +173,34 @@ class SleepReader(private val context: Context) {
     }
 
     /**
-     * Les sources qui ont ecrit une session de sommeil sur les [jours] derniers jours, avec le
-     * nombre de nuits que chacune couvre.
+     * The sources that have written a sleep session over the last [days] days, with the number of
+     * nights each of them covers.
      *
-     * C'est ce que l'etape 4 de l'assistant affiche, a la place des deux noms qui y etaient
-     * ecrits en dur. `null` — et non une liste vide — quand Health Connect n'est pas exploitable :
-     * les deux cas s'affichent differemment, puisque « aucune application n'ecrit de sommeil » et
-     * « Health Connect n'est pas installe » se reparent a deux endroits.
+     * This is what step 4 of onboarding displays, in place of the two names that were hard-coded
+     * there. `null` — and not an empty list — when Health Connect is not usable: the two cases are
+     * displayed differently, since "no application writes sleep" and "Health Connect is not
+     * installed" are repaired in two different places.
      */
-    suspend fun sourcesRecentes(
-        maintenantMs: Long,
-        jours: Int = SourcesSommeil.JOURS_OBSERVES,
+    suspend fun recentSources(
+        nowMs: Long,
+        days: Int = SleepSources.OBSERVED_DAYS,
         zone: ZoneId = ZoneId.systemDefault(),
-    ): List<SourcesSommeil.Observee>? {
+    ): List<SleepSources.Observed>? {
         client ?: return null
-        val to = Instant.ofEpochMilli(maintenantMs)
-        val from = to.minus(jours.toLong(), ChronoUnit.DAYS)
-        return runCatching { SourcesSommeil.resumer(readCandidates(from, to), zone) }.getOrNull()
+        val to = Instant.ofEpochMilli(nowMs)
+        val from = to.minus(days.toLong(), ChronoUnit.DAYS)
+        return runCatching { SleepSources.summarise(readCandidates(from, to), zone) }.getOrNull()
     }
 
     /**
-     * Lecture paginee des sessions d'une fenetre, traduites en candidats.
+     * Paginated read of the sessions of a window, translated into candidates.
      *
-     * Pagination obligatoire : `ReadRecordsRequest` a une taille de page **par defaut de 1000** et
-     * la reponse ne dit qu'une chose quand elle est pleine — elle rend un `pageToken` non nul.
-     * Lire la premiere page seulement tronque en silence, et le mode de defaillance est exactement
-     * celui qu'on cherche a eviter : une source de sommeil manquante fait perdre le denominateur
-     * sans qu'aucune erreur ne remonte. Le cas est rare sur une nuit, moins sur sept jours, et
-     * « rare et silencieux » est pire que « frequent et bruyant ».
+     * Pagination is mandatory: `ReadRecordsRequest` has a **default page size of 1000** and the
+     * response says only one thing when it is full — it returns a non-null `pageToken`. Reading
+     * only the first page truncates silently, and the failure mode is exactly the one we are
+     * trying to avoid: a missing sleep source loses the denominator without any error surfacing.
+     * The case is rare over one night, less so over seven days, and "rare and silent" is worse than
+     * "frequent and noisy".
      */
     private suspend fun readCandidates(
         from: Instant,
@@ -247,14 +243,14 @@ class SleepReader(private val context: Context) {
     companion object {
 
         /**
-         * `READ_HEALTH_DATA_HISTORY` est demandee parce que `RescoreAllWorker` relit
-         * l'hypnogramme de **toutes** les nuits depuis le brut : au-dela de 30 jours, la lecture
-         * des donnees ecrites par une autre application est refusee sans elle.
+         * `READ_HEALTH_DATA_HISTORY` is requested because `RescoreAllWorker` re-reads the
+         * hypnogram of **every** night from the raw data: beyond 30 days, reading data written by
+         * another application is refused without it.
          *
-         * Piege a connaitre : la fenetre de 30 jours est remise a zero par une
-         * desinstallation/reinstallation. Un debogage agressif peut donc faire perdre l'acces a
-         * ses propres nuits anterieures — c'est aussi pourquoi `hc_snapshot` conserve ce que
-         * Health Connect avait renvoye, au lieu de compter le relire plus tard.
+         * A trap to know about: the 30-day window is reset by an uninstall/reinstall. Aggressive
+         * debugging can therefore lose access to one's own earlier nights — that is also why
+         * `hc_snapshot` keeps what Health Connect returned, instead of counting on re-reading it
+         * later.
          */
         val REQUIRED_PERMISSIONS: Set<String> = setOf(
             HealthPermission.getReadPermission(SleepSessionRecord::class),
@@ -265,41 +261,41 @@ class SleepReader(private val context: Context) {
             HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY,
         )
 
-        /** Contrat a lancer depuis l'interface pour demander les permissions. */
+        /** Contract to launch from the interface in order to request the permissions. */
         fun permissionRequestContract() =
             PermissionController.createRequestPermissionResultContract()
 
         /**
-         * En deca de ce delai, la boite de dialogue n'a pas ete montree.
+         * Below this delay, the dialog was not shown.
          *
-         * Health Connect suit la regle des permissions d'execution : apres deux refus, le systeme
-         * cesse d'afficher la boite et le contrat rend la main **immediatement**, sans rien
-         * montrer et sans rien dire. Il n'existe aucune API pour distinguer ce cas d'un refus
-         * ordinaire — `shouldShowRequestPermissionRationale` ne vaut rien ici, Health Connect
-         * n'etant qu'un courtier pour ces permissions.
+         * Health Connect follows the runtime permission rule: after two refusals, the system stops
+         * displaying the dialog and the contract returns **immediately**, showing nothing and
+         * saying nothing. There is no API to tell this case apart from an ordinary refusal —
+         * `shouldShowRequestPermissionRationale` is worthless here, Health Connect being only a
+         * broker for these permissions.
          *
-         * Le temps ecoule est donc le seul signal disponible. Le seuil est volontairement bas :
-         * un aller-retour vers une vraie boite de dialogue, meme refusee d'un geste immediat,
-         * demande au systeme d'ouvrir et de fermer une activite. Se tromper dans ce sens renvoie
-         * l'utilisateur vers une nouvelle demande, ce qui est benin ; se tromper dans l'autre lui
-         * cacherait la seule issue qui lui reste.
+         * Elapsed time is therefore the only signal available. The threshold is deliberately low:
+         * a round trip to a real dialog, even refused with an immediate gesture, asks the system to
+         * open and close an activity. Erring in this direction sends the user towards a fresh
+         * request, which is benign; erring in the other would hide from them the only way out they
+         * have left.
          */
-        const val DELAI_DIALOGUE_ETOUFFE_MS = 400L
+        const val SUPPRESSED_DIALOG_MS = 400L
 
         /**
-         * L'ecran de Health Connect ou la permission se donne a la main, quand la boite ne
-         * s'affiche plus.
+         * The Health Connect screen where the permission is granted by hand, when the dialog no
+         * longer appears.
          *
-         * Deux chemins selon la version : depuis Android 14 Health Connect fait partie de la
-         * plateforme et sait ouvrir la page **de cette application**, ce qui evite de faire
-         * chercher Pendulum dans une liste. Avant, il n'existe que l'ecran general.
+         * Two paths depending on the version: since Android 14 Health Connect is part of the
+         * platform and can open the page **of this application**, which avoids making the user
+         * hunt for Pendulum in a list. Before that, only the general screen exists.
          *
-         * Rend `null` quand rien ne resout l'intention — l'appelant doit alors se taire plutot
-         * que de proposer un bouton qui ne fait rien.
+         * Returns `null` when nothing resolves the intent — the caller must then stay silent
+         * rather than offer a button that does nothing.
          */
-        fun intentPermissionsManuelles(context: Context): Intent? {
+        fun manualPermissionsIntent(context: Context): Intent? {
             val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                Intent(ACTION_GERER_PERMISSIONS_SANTE)
+                Intent(ACTION_MANAGE_HEALTH_PERMISSIONS)
                     .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
             } else {
                 Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
@@ -310,11 +306,11 @@ class SleepReader(private val context: Context) {
         }
 
         /**
-         * `android.health.connect.HealthConnectManager.ACTION_MANAGE_HEALTH_PERMISSIONS`, en
-         * clair : la constante vit dans une classe de la plateforme qui n'existe qu'a partir
-         * d'Android 14, et l'y referencer obligerait a hausser `compileSdk` pour une chaine.
+         * `android.health.connect.HealthConnectManager.ACTION_MANAGE_HEALTH_PERMISSIONS`, spelled
+         * out: the constant lives in a platform class that only exists from Android 14 onwards, and
+         * referencing it there would force raising `compileSdk` for one string.
          */
-        private const val ACTION_GERER_PERMISSIONS_SANTE =
+        private const val ACTION_MANAGE_HEALTH_PERMISSIONS =
             "android.health.connect.action.MANAGE_HEALTH_PERMISSIONS"
     }
 }

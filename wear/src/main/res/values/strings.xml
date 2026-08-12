@@ -2,39 +2,39 @@
 <resources>
     <string name="app_name">Pendulum</string>
 
-    <!-- Notification permanente. Canal IMPORTANCE_LOW : ni son, ni vibration. -->
+    <!-- Ongoing notification. IMPORTANCE_LOW channel: no sound, no vibration. -->
     <string name="notif_channel_name">Night recording</string>
     <string name="notif_channel_description">Shows that accelerometer capture is running. No sound, no vibration.</string>
     <string name="notif_title">Recording the night</string>
     <string name="notif_text">%1$s · %2$s MB · battery %3$d %%</string>
     <string name="notif_text_finalizing">Closing the night…</string>
 
-    <!-- Écran unique : état arrêté. -->
+    <!-- Single screen: stopped state. -->
     <string name="idle_title">Ready</string>
 
     <!--
-         Le titre quand un bloqueur interdit le depart.
+         The title when a blocker forbids the start.
 
-         « Ready » etait rendu sans condition, donc au-dessus de « the watch will not start until
-         it is sealed » et d'un START grise : l'ecran affirmait etre pret et refuser de partir, en
-         meme temps. Le commentaire de `IdleContent` porte pourtant la regle — les bloqueurs sont
-         la seule chose a lire quand ils existent — et un titre qui les contredit la vide de son
-         sens.
+         "Ready" was rendered unconditionally, so above "the watch will not start until it is
+         sealed" and above a greyed-out START: the screen claimed to be ready and to refuse to
+         start, at the same time. The comment on `IdleContent` carries the rule, though — blockers
+         are the only thing to read when they exist — and a title that contradicts them empties it
+         of its meaning.
 
-         Negation directe du meme mot plutot qu'une formule nouvelle : l'utilisateur qui a appris
-         a chercher « Ready » en haut de l'ecran doit voir au meme endroit que ce n'est pas le cas.
+         Direct negation of the same word rather than a new wording: the user who has learned to
+         look for "Ready" at the top of the screen must see in the same place that it is not so.
     -->
     <string name="idle_title_blocked">Not ready</string>
     <string name="start">START</string>
     <string name="battery_line">Battery %1$d%%</string>
 
     <!--
-         La batterie avant la premiere lecture du capteur.
+         The battery before the first sensor reading.
 
-         `RecordUiState.batteryPct` vaut `-1` tant qu'aucune mesure n'est arrivee, et la ligne
-         affichait ce repli tel quel : « Battery -1% » pendant les premieres secondes de chaque
-         nuit. Le tiret est celui qu'emploie tout le reste du produit pour « on ne sait pas
-         encore », et il ne se confond avec aucune valeur possible.
+         `RecordUiState.batteryPct` is `-1` as long as no measurement has arrived, and the line
+         displayed that fallback as it was: "Battery -1%" during the first seconds of every night.
+         The dash is the one the whole rest of the product uses for "not known yet", and it cannot
+         be mistaken for any possible value.
     -->
     <string name="battery_line_unknown">Battery —</string>
     <string name="free_space_line">Free space %1$s</string>
@@ -47,15 +47,15 @@
     <string name="open_settings">Open settings</string>
 
     <!--
-      Notification postee quand le telephone demande le demarrage et qu'Android refuse de laisser
-      un service demarre en arriere-plan lancer un service de premier plan. Le tap est la seule
-      exemption fiable au blocage.
+      Notification posted when the phone requests the start and Android refuses to let a service
+      started in the background launch a foreground service. The tap is the only reliable exemption
+      from that block.
     -->
     <string name="notif_channel_action">Actions requested from your phone</string>
     <string name="notif_ready_title">Context sealed</string>
     <string name="notif_ready_body">Tap to start recording.</string>
 
-    <!-- Écran unique : état enregistrement. -->
+    <!-- Single screen: recording state. -->
     <string name="elapsed_hm">%1$d h %2$02d</string>
     <string name="samples_line">%1$s samples</string>
     <string name="written_line">%1$s MB written</string>
@@ -70,7 +70,7 @@
     <string name="stop_cancel">Carry on recording</string>
     <string name="finalizing">Closing… do not take the watch off</string>
 
-    <!-- Bloqueurs de préflight : le START est refusé, et chaque message dit quoi faire. -->
+    <!-- Preflight blockers: START is refused, and each message says what to do. -->
     <string name="blocker_context_not_sealed">Fill in the evening form on the phone: the watch will not start until it is sealed.</string>
     <string name="blocker_notifications">Allow notifications, otherwise the system will stop the recording in the middle of the night.</string>
     <string name="blocker_no_accelerometer">Accelerometer unavailable. Restart the watch.</string>
@@ -79,19 +79,19 @@
     <!-- Bench build only: never reachable in a release, where the divider is 1. -->
     <string name="blocker_bench_scale">Bench build: wall time is divided by %1$s, but the real sensor is not. Rebuild without -Ppendulum.temps.diviseur, or start with the synthetic source.</string>
 
-    <!-- Avertissements : le START reste possible, l\'utilisateur décide. -->
+    <!-- Warnings: START stays possible, the user decides. -->
     <string name="warning_low_battery">Battery %1$s%% — 50%% recommended for eight hours.</string>
     <string name="warning_phone_unreachable">Phone unreachable — recording carries on, sync will happen later.</string>
     <!--
-      Compilation de banc uniquement : jamais atteignable en release, ou `Banc.IGNORER_CHARGEUR`
-      est une constante `false` et la branche disparait a la compilation. Il dit ce qui a change
-      **et** ce que la nuit vaut : une nuit enregistree sur le chargeur n'est pas une nuit.
+      Bench build only: never reachable in a release, where `Bench.IGNORE_CHARGER` is a `false`
+      constant and the branch disappears at compile time. It says what has changed **and** what the
+      night is worth: a night recorded on the charger is not a night.
     -->
-    <string name="warning_banc_chargeur">Bench build: the stop on charger is disabled. This recording is a test, not a night.</string>
+    <string name="warning_bench_charger">Bench build: the stop on charger is disabled. This recording is a test, not a night.</string>
     <string name="warning_no_wakeup_sensor">No wake-up sensor: wake lock mode, shorter battery life.</string>
     <string name="warning_pending_sync">%1$s chunks from an earlier night are still waiting for the phone.</string>
 
-    <!-- Fin de session. -->
+    <!-- End of session. -->
     <string name="stopped_charging">Recording stopped: watch on the charger.</string>
     <string name="stopped_low_battery">Recording stopped: battery under 5 %%. Everything recorded has been sent.</string>
     <string name="stopped_time_limit">Recording stopped: cut-off time reached.</string>

@@ -16,40 +16,42 @@ import com.pendulum.algo.model.TriAxial
 import kotlin.math.max
 
 /**
- * Seuils de detection vus par le detecteur (`docs/fr/ALGO-v2.md` §2 etape 4, parametres §6.3).
+ * Detection thresholds as seen by the detector (`docs/workings/ALGO-v2.md` §2 step 4, parameters §6.3).
  *
- * Jumelle de `com.pendulum.algo.dsp.ThresholdParams`, qui porte les memes quatre valeurs : `dsp` calcule
- * les courbes, `detect` decide. Le detecteur convertit sa configuration en [ThresholdParams] plutot
- * que l'inverse, pour que `dsp` ne depende jamais de `detect`.
+ * Twin of `com.pendulum.algo.dsp.ThresholdParams`, which carries the same four values: `dsp`
+ * computes the curves, `detect` decides. The detector converts its configuration into
+ * [ThresholdParams] rather than the reverse, so that `dsp` never depends on `detect`.
  *
- * **Sur `kOn = 8,0`.** Ce KDoc a longtemps decrit 8,0 comme un budget anti-artefact herite de la
- * premiere specification « faute de mieux ». Le balayage de `ThresholdPolicySweepTest` — `k_on` de 4
- * a 12, pas de 1,0, 20 graines — contredit les deux moities de cette phrase, et il faut les deux :
+ * **On `kOn = 8.0`.** This KDoc long described 8.0 as an anti-artefact budget inherited from the
+ * first specification "for want of anything better". The sweep in `ThresholdPolicySweepTest` —
+ * `k_on` from 4 to 12, step 1.0, 20 seeds — contradicts both halves of that sentence, and both
+ * halves are needed:
  *
- *  - **`k_on` n'est pas libre.** Les trois criteres de T5 ne tiennent qu'a 8,0 : la sensibilite au
- *    point « 8x » vaut 1,000 pour `k_on <= 7` et 0,000 pour `k_on >= 9`. La raison doit etre lue en
- *    entier, parce qu'elle n'est pas a l'honneur de T5 : l'abscisse de T5 est le plancher **effectif**
- *    `Theta_on / k_on`, et sur sa nuit calme et non calibree c'est `Theta_abs` qui commande le seuil.
- *    « 8x le plancher effectif » vaut donc `8 x Theta_abs / k_on`, qui n'egale le seuil que si
- *    `k_on = 8`. **T5 ne valide pas 8,0, il l'inscrit dans son propre enonce.** C'est une raison de ne
- *    pas deplacer `k_on` sans reecrire T5 ; ce n'est pas une preuve que 8,0 soit la bonne valeur.
- *  - **`k_on` n'est pas le parametre dominant sur une nuit calibree.** `Theta_on` y reste fige a
- *    53,7 mg de `k_on = 4` a `k_on = 12`, parce que le troisieme terme — `f_cal x gainCal` — l'emporte
- *    sur toute la plage. Le rappel de T6 (0,265 a 0,276) et le sous-comptage de T22 (0,697) ne bougent
- *    pas du balayage. Ce qui gouverne le sous-comptage est `calFraction`, pas `k_on`.
+ *  - **`k_on` is not free.** The three criteria of T5 only hold at 8.0: the sensitivity at the
+ *    "8x" point is 1.000 for `k_on <= 7` and 0.000 for `k_on >= 9`. The reason must be read in
+ *    full, because it does no credit to T5: the abscissa of T5 is the **effective** floor
+ *    `Theta_on / k_on`, and on its quiet, uncalibrated night it is `Theta_abs` that governs the
+ *    threshold. "8x the effective floor" is therefore `8 x Theta_abs / k_on`, which equals the
+ *    threshold only if `k_on = 8`. **T5 does not validate 8.0, it writes it into its own
+ *    statement.** That is a reason not to move `k_on` without rewriting T5; it is not proof that
+ *    8.0 is the right value.
+ *  - **`k_on` is not the dominant parameter on a calibrated night.** `Theta_on` stays pinned there
+ *    at 53.7 mg from `k_on = 4` to `k_on = 12`, because the third term — `f_cal x gainCal` — wins
+ *    over the whole range. The recall of T6 (0.265 to 0.276) and the undercount of T22 (0.697) do
+ *    not move across the sweep. What governs the undercount is `calFraction`, not `k_on`.
  *
- * Ce que `k_on` change reellement sur une nuit calibree passe par [ClmConfig.grossBodyFactor], dont
- * l'amplitude de reference est `Theta_on / k_on` : la precision au-dessus du seuil monte de 0,768 a
- * 0,956 sur le balayage tandis que la sensibilite reste plate a ~0,90. `k_on` y agit donc comme un
- * reglage de rejet des mouvements corporels grossiers, ce qui est l'inverse de la lecture habituelle.
+ * What `k_on` really changes on a calibrated night goes through [ClmConfig.grossBodyFactor], whose
+ * reference amplitude is `Theta_on / k_on`: precision above the threshold rises from 0.768 to
+ * 0.956 across the sweep while sensitivity stays flat at ~0.90. `k_on` therefore acts there as a
+ * gross body movement rejection setting, which is the opposite of the usual reading.
  *
- * Reste vrai de la phrase d'origine : 8,0 n'est pas dicte par le bruit thermique, 4,8 y suffirait.
- * Le tableau complet est dans `docs/07-validation.md` §4.1.
+ * What remains true of the original sentence: 8.0 is not dictated by thermal noise, 4.8 would be
+ * enough for that. The full table is in `docs/07-validation.md` §4.1.
  *
- * @param kOn multiplicateur du plancher a l'attaque (plage 5-12). Fixe a 8,0 : voir ci-dessus.
- * @param kOff multiplicateur du plancher au relachement (plage 2,0-4,0). Hysteresis = kOn/kOff.
- * @param absFloorG plancher absolu, en g (plage 0,010-0,050).
- * @param calFraction fraction du gain de calibration (plage 0,08-0,20).
+ * @param kOn floor multiplier on attack (range 5-12). Fixed at 8.0: see above.
+ * @param kOff floor multiplier on release (range 2.0-4.0). Hysteresis = kOn/kOff.
+ * @param absFloorG absolute floor, in g (range 0.010-0.050).
+ * @param calFraction fraction of the calibration gain (range 0.08-0.20).
  */
 data class ThresholdConfig(
     val kOn: Double = 8.0,
@@ -61,17 +63,17 @@ data class ThresholdConfig(
 }
 
 /**
- * Parametres de la detection des LM et de leur classification en CLM (§2 etape 5, §6.3).
+ * Parameters of LM detection and of their classification into CLM (§2 step 5, §6.3).
  *
- * `offHoldSec`, `minDurSec` et `maxDurSec` sont marques **fixe** dans le tableau §6.3 (regle
- * AASM/WASM litterale) : ils sont lisibles mais **non constructibles**, pour qu'aucun appelant ne
- * puisse les faire varier. La variation des regles cliniques est le test T14 — qui change de jeu de
- * regles dans [SeriesConfig] — pas T12 qui balaie les parametres de traitement.
+ * `offHoldSec`, `minDurSec` and `maxDurSec` are marked **fixed** in table §6.3 (literal AASM/WASM
+ * rule): they are readable but **not constructible**, so that no caller can make them vary. The
+ * variation of the clinical rules is test T14 — which changes rule set in [SeriesConfig] — not
+ * T12, which sweeps the processing parameters.
  *
- * @param morphologyWinSec fenetre du critere de morphologie WASM 3.2.1-d (plage 0,3-0,8).
- * @param grossBodyFactor seuil de mouvement corporel grossier, en x plancher effectif (plage 25-60).
- * @param refractorySec periode refractaire de part et d'autre d'un GBM (plage 1-4).
- * @param minExcursionDeg sous cette excursion de `tilt`, marquage `TRANSMITTED_SUSPECT` (plage 0,5-4).
+ * @param morphologyWinSec window of the WASM 3.2.1-d morphology criterion (range 0.3-0.8).
+ * @param grossBodyFactor gross body movement threshold, in x effective floor (range 25-60).
+ * @param refractorySec refractory period on either side of a GBM (range 1-4).
+ * @param minExcursionDeg below this `tilt` excursion, `TRANSMITTED_SUSPECT` marking (range 0.5-4).
  */
 data class ClmConfig(
     val thresholds: ThresholdConfig = ThresholdConfig(),
@@ -80,13 +82,13 @@ data class ClmConfig(
     val refractorySec: Double = 2.0,
     val minExcursionDeg: Double = 1.5,
 ) {
-    /** Duree de maintien sous le seuil de sortie qui date l'offset. Fixe, clinique. */
+    /** Hold duration below the off threshold that dates the offset. Fixed, clinical. */
     val offHoldSec: Double get() = OFF_HOLD_SEC
 
-    /** Duree minimale d'un LM. Fixe (AASM VII / WASM 3.3.1). */
+    /** Minimum duration of an LM. Fixed (AASM VII / WASM 3.3.1). */
     val minDurSec: Double get() = MIN_DUR_SEC
 
-    /** Duree maximale d'un CLM. Fixe. Au-dela : LM long, qui **casse** la serie. */
+    /** Maximum duration of a CLM. Fixed. Beyond it: long LM, which **breaks** the series. */
     val maxDurSec: Double get() = MAX_DUR_SEC
 
     companion object {
@@ -94,40 +96,41 @@ data class ClmConfig(
         const val MIN_DUR_SEC: Double = 0.50
         const val MAX_DUR_SEC: Double = 10.0
 
-        /** §3.2 : borne de duree du marqueur `TRANSMITTED_SUSPECT`. Constante d'ingenierie. */
+        /** §3.2: duration bound of the `TRANSMITTED_SUSPECT` marker. Engineering constant. */
         const val TRANSMITTED_MAX_DUR_SEC: Double = 1.50
     }
 }
 
 /**
- * Machine d'etats de detection des LM, puis classification en CLM. `docs/fr/ALGO-v2.md` §2 etape 5.
+ * LM detection state machine, then classification into CLM. `docs/workings/ALGO-v2.md` §2 step 5.
  *
- * Deroulement, litteral :
- *  1. onset provisoire au franchissement de `Theta_on` sur l'enveloppe **grossiere** ;
- *  2. offset provisoire au **debut** d'une periode d'au moins `offHoldSec` sous `Theta_off` — c'est
- *     la lettre de la regle AASM/WASM (« the START of a period lasting at least 0.5 s during which
- *     the EMG does not exceed... »), et c'est aussi ce qui **fusionne** deux bouffees separees de
- *     moins de 0,5 s sans etape de fusion dediee. §1.5-iv : la regle de « fusion des CLM espaces
- *     < 0,5 s » de la v1 est une confusion avec la regle de combinaison **bilaterale**, qui ne
- *     s'applique pas a une jambe unique ; correctement implemente, l'offset le fait tout seul ;
- *  3. recalage des deux fronts sur l'enveloppe **fine** ;
- *  4. critere de morphologie WASM 3.2.1-d : une fenetre de `morphologyWinSec` dont la **mediane**
- *     de l'enveloppe fine depasse `Theta_off`. C'est le meilleur filtre anti-matelas disponible dans
- *     le corpus des regles (§3.2) : une vibration transmise est une sonnerie de 0,05-0,4 s, crete
- *     elevee et mediane faible, et c'est le seul filtre de ce catalogue qui soit une regle clinique
- *     publiee plutot qu'une invention ;
- *  5. classification par la duree, puis GBM avec periode refractaire, posture, zone aveugle.
+ * Sequence, literal:
+ *  1. provisional onset when `Theta_on` is crossed on the **coarse** envelope;
+ *  2. provisional offset at the **start** of a period of at least `offHoldSec` below `Theta_off` —
+ *     this is the letter of the AASM/WASM rule ("the START of a period lasting at least 0.5 s
+ *     during which the EMG does not exceed..."), and it is also what **merges** two bursts
+ *     separated by less than 0.5 s without a dedicated merging step. §1.5-iv: the v1 rule
+ *     "merging of CLM spaced < 0.5 s apart" is a confusion with the **bilateral** combination
+ *     rule, which does not apply to a single leg; correctly implemented, the offset does it on
+ *     its own;
+ *  3. realignment of both edges on the **fine** envelope;
+ *  4. WASM 3.2.1-d morphology criterion: a `morphologyWinSec` window whose **median** of the fine
+ *     envelope exceeds `Theta_off`. It is the best anti-mattress filter available in the corpus of
+ *     rules (§3.2): a transmitted vibration is a 0.05-0.4 s ringing, high peak and low median, and
+ *     it is the only filter in this catalogue that is a published clinical rule rather than an
+ *     invention;
+ *  5. classification by duration, then GBM with refractory period, posture, blind zone.
  *
- * Ordre de priorite du motif de rejet unique porte par [Clm.reject] :
+ * Priority order of the single reject reason carried by [Clm.reject]:
  * `MORPHOLOGY` > `TRUNCATED` > `TOO_SHORT` > `BLIND_ZONE` > `POSTURAL` > `GROSS_BODY`.
- * La morphologie passe avant la duree parce que la specification l'evalue a l'etape 5.4, avant la
- * classification 5.5 ; consequence a connaitre : avec `morphologyWinSec == minDurSec` (defaut),
- * `TOO_SHORT` n'est atteignable qu'en abaissant `morphologyWinSec`. Les **drapeaux**, eux, sont
- * cumulatifs : un evenement peut porter a la fois `POSTURAL` et `GROSS_BODY`.
+ * Morphology comes before duration because the specification evaluates it at step 5.4, before
+ * classification 5.5; consequence worth knowing: with `morphologyWinSec == minDurSec` (default),
+ * `TOO_SHORT` is only reachable by lowering `morphologyWinSec`. The **flags**, by contrast, are
+ * cumulative: one event can carry both `POSTURAL` and `GROSS_BODY`.
  *
- * Tous les evenements de la machine d'etats sont renvoyes, y compris les rejetes : le rapport de
- * qualite en a besoin, et [SeriesBuilder] a besoin des `LM_LONG` et des `TRUNCATED` pour casser les
- * series au bon endroit. Les consommateurs filtrent avec [Clm.isClm].
+ * All the events of the state machine are returned, including the rejected ones: the quality
+ * report needs them, and [SeriesBuilder] needs the `LM_LONG` and the `TRUNCATED` ones to break the
+ * series at the right place. Consumers filter with [Clm.isClm].
  */
 object ClmDetector {
 
@@ -144,18 +147,18 @@ object ClmDetector {
         postureCfg: PostureConfig = PostureConfig(),
     ): List<Clm> {
         val n = env.coarse.n
-        require(env.coarse.fsHz > 0.0) { "fsHz doit etre > 0" }
+        require(env.coarse.fsHz > 0.0) { "fsHz must be > 0" }
         require(env.fine.n == n && floor.n == n && floorExtrapolated.size == n) {
-            "enveloppes, plancher et drapeaux doivent partager la grille"
+            "envelopes, floor and flags must share the grid"
         }
-        require(gravity.n == n) { "la gravite doit partager la grille des enveloppes" }
+        require(gravity.n == n) { "gravity must share the envelope grid" }
         return Detection(
             env, floor, floorExtrapolated, gravity, blindZones, postures, calibration, cfg, postureCfg,
         ).detectAll(segments)
     }
 }
 
-/** Etat de travail d'un appel a [ClmDetector.detect]. Rien n'en sort, rien n'y entre : pur. */
+/** Working state of one call to [ClmDetector.detect]. Nothing gets out, nothing gets in: pure. */
 private class Detection(
     env: DualEnvelope,
     floor: Signal1D,
@@ -183,16 +186,16 @@ private class Detection(
     private val refractory = samplesOf(cfg.refractorySec, fs)
     private val transmittedMaxDur = samplesOf(ClmConfig.TRANSMITTED_MAX_DUR_SEC, fs)
 
-    /** Tampon de travail des medianes glissantes : evite une allocation par fenetre. */
+    /** Working buffer for the sliding medians: avoids one allocation per window. */
     private var scratch = FloatArray(morphoWin.coerceAtLeast(64))
 
     private fun on(i: Int): Float = Thresholds.onAt(fl[i], gain, params)
     private fun off(i: Int): Float = Thresholds.offAt(fl[i], gain, params)
 
     /**
-     * Plancher **effectif** : `Theta_on / kOn`. C'est lui, et non `floor` brut, qui sert de reference
-     * d'amplitude au critere GBM — sinon un plancher nul rendrait le critere degenere (tout
-     * evenement satisferait `crete >= 40 x 0`).
+     * **Effective** floor: `Theta_on / kOn`. It is this one, and not the raw `floor`, that serves
+     * as the amplitude reference for the GBM criterion — otherwise a null floor would make the
+     * criterion degenerate (every event would satisfy `peak >= 40 x 0`).
      */
     private fun effectiveFloor(i: Int): Float = (on(i) / params.kOn).toFloat()
 
@@ -212,7 +215,7 @@ private class Detection(
                 }
                 val onsetProv = i
 
-                // --- 2. offset provisoire : DEBUT de la premiere periode de `offHoldSec` sous Theta_off.
+                // --- 2. provisional offset: START of first `offHoldSec` period below Theta_off.
                 var quietStart = -1
                 var offsetProv = -1
                 var resume = seg.toIdx
@@ -233,7 +236,7 @@ private class Detection(
                 val truncatedEnd = offsetProv < 0
                 if (truncatedEnd) offsetProv = seg.toIdx
 
-                // --- 3. recalage des fronts sur l'enveloppe fine.
+                // --- 3. realignment of the edges on the fine envelope.
                 var k = onsetProv
                 while (k >= seg.fromIdx && !(fine[k] < off(k))) k--
                 val truncatedStart = k < seg.fromIdx
@@ -256,9 +259,9 @@ private class Detection(
     }
 
     /**
-     * §2 etape 5.6 : periode refractaire de part et d'autre d'un mouvement corporel grossier. Elle
-     * ne s'applique qu'aux evenements par ailleurs acceptes — un evenement deja rejete garde son
-     * motif d'origine, plus informatif pour le rapport de qualite.
+     * §2 step 5.6: refractory period on either side of a gross body movement. It only applies to
+     * events that are otherwise accepted — an already rejected event keeps its original reason,
+     * which is more informative for the quality report.
      */
     private fun applyRefractory(raw: List<Clm>): List<Clm> {
         val zones = raw.asSequence()
@@ -281,8 +284,8 @@ private class Detection(
         val durSamples = offsetIdx - onsetIdx
         var flags = 0
 
-        // Amplitudes. La crete est prise sur l'enveloppe de decision (grossiere) ; la mediane sur
-        // l'enveloppe fine, qui est la grandeur du critere de morphologie.
+        // Amplitudes. The peak is taken on the decision envelope (coarse); the median on the fine
+        // envelope, which is the quantity used by the morphology criterion.
         var peak = 0f
         var peakIdx = onsetIdx
         for (t in onsetIdx until offsetIdx) {
@@ -294,8 +297,8 @@ private class Detection(
         }
         val medianAmp = Numeric.median(fine, onsetIdx, offsetIdx, scratchOf(durSamples))
 
-        // Caracteristiques extraites de g : elles portent l'information que le passe-haut jette
-        // (§1.2). tiltChange = changement net et persistant ; tiltExcursion = excursion transitoire.
+        // Features extracted from g: they carry the information the high-pass throws away (§1.2).
+        // tiltChange = net, persistent change; tiltExcursion = transient excursion.
         val refIdx = (onsetIdx - tau).coerceAtLeast(seg.fromIdx)
         val postIdx = (offsetIdx - 1 + tau).coerceIn(seg.fromIdx, seg.toIdx - 1)
         val tiltChange = Gravity.angleDeg(gravity, refIdx, postIdx).let { if (it.isNaN()) 0f else it }
@@ -322,9 +325,9 @@ private class Detection(
         val postural = postures.any { onsetIdx >= it.atIdx - guard && onsetIdx <= it.atIdx + guard }
         if (postural) flags = flags or ClmFlags.POSTURAL
 
-        // §3.2, defense nº 2 : rapporte, jamais exclu. Une dorsiflexion isolee produit aussi une
-        // excursion quasi nulle au capteur (mecanisme de Terrill) ; exclure ces evenements
-        // aggraverait le biais a la baisse deja present — deux erreurs dans le meme sens.
+        // §3.2, defence no. 2: reported, never excluded. An isolated dorsiflexion also produces a
+        // near-zero excursion at the sensor (Terrill's mechanism); excluding these events would
+        // worsen the downward bias already present — two errors in the same direction.
         if (excursion < cfg.minExcursionDeg && durSamples < transmittedMaxDur) {
             flags = flags or ClmFlags.TRANSMITTED_SUSPECT
         }
@@ -361,7 +364,7 @@ private class Detection(
         )
     }
 
-    /** Critere WASM 3.2.1-d : au moins une fenetre de `morphoWin` dont la mediane depasse Theta_off. */
+    /** WASM 3.2.1-d criterion: at least one `morphoWin` window whose median exceeds Theta_off. */
     private fun morphologyOk(from: Int, to: Int): Boolean {
         if (to - from < morphoWin) return false
         val buf = scratchOf(morphoWin)

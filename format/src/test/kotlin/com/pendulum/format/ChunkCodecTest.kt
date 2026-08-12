@@ -18,7 +18,7 @@ import kotlin.random.Random
 
 class ChunkCodecTest {
 
-    /** Periode nominale a 50 Hz. Tout bloc de test doit respecter cette cadence (F-03). */
+    /** Nominal period at 50 Hz. Every test block must respect this rate (F-03). */
     private val stepNs = 20_000_000L
 
     private fun header(
@@ -40,12 +40,12 @@ class ChunkCodecTest {
     )
 
     /**
-     * Valeur d'identification d'un bloc : exactement [k] LSB, donc invariante par la
-     * quantification. Ecrire `k.toFloat()` ne marcherait pas — 2 m/s^2 se relit a 2,0016.
+     * Identifying value of a block: exactly [k] LSB, hence invariant under quantisation. Writing
+     * `k.toFloat()` would not work — 2 m/s^2 reads back as 2.0016.
      */
     private fun marker(k: Int): Float = ChunkFormat.toMs2(k.toShort())
 
-    /** Ecrit un bloc plat de [n] echantillons, cadence 50 Hz exacte, marque par [mark]. */
+    /** Writes a flat block of [n] samples, at an exact 50 Hz rate, marked with [mark]. */
     private fun ChunkWriter.writeFlat(n: Int, t0: Long, mark: Int = 0, flags: Int = 0) {
         writeBlock(
             FloatArray(n) { marker(mark) }, FloatArray(n), FloatArray(n),
@@ -64,7 +64,7 @@ class ChunkCodecTest {
         for (i in 0 until 8) buf[offset + i] = ((v shr (8 * i)) and 0xFF).toByte()
     }
 
-    /** Recalcule le CRC d'un bloc apres l'avoir modifie : simule une corruption *coherente*. */
+    /** Recomputes a block's CRC after modifying it: simulates a *coherent* corruption. */
     private fun refreshBlockCrc(buf: ByteArray, blockOffset: Int) {
         val count = (buf[blockOffset + 4].toInt() and 0xFF) or ((buf[blockOffset + 5].toInt() and 0xFF) shl 8)
         val payloadLen = count * ChunkFormat.BYTES_PER_SAMPLE
@@ -75,17 +75,17 @@ class ChunkCodecTest {
         putShortLe(buf, blockOffset + ChunkFormat.BLOCK_CRC_OFFSET, crc)
     }
 
-    // --- Entete de fichier ---
+    // --- File header ---
 
     @Test
-    fun `l'entete fait exactement la taille annoncee`() {
+    fun `the header is exactly the size it declares`() {
         val out = ByteArrayOutputStream()
         ChunkWriter(out, header())
         assertThat(out.size()).isEqualTo(ChunkFormat.HEADER_SIZE)
     }
 
     @Test
-    fun `l'entete est ecrite champ par champ au layout documente`() {
+    fun `the header is written field by field to the documented layout`() {
         val h = header(chunkIndex = 7, modeFlags = 3, tzOffsetMin = -60)
         val out = ByteArrayOutputStream()
         ChunkWriter(out, h)
@@ -107,26 +107,26 @@ class ChunkCodecTest {
         assertThat(bb.getShort(68).toInt()).isEqualTo(3)
         assertThat(bb.getShort(70).toInt()).isEqualTo(-60)
         assertThat(raw.copyOfRange(72, 78)).containsOnly(0)
-        // Le CRC est le dernier champ et couvre tout ce qui precede (F-08).
+        // The CRC is the last field and covers everything that precedes it (F-08).
         assertThat(bb.getShort(78).toInt() and 0xFFFF)
             .isEqualTo(ChunkFormat.crc16(raw, 0, ChunkFormat.HEADER_SIZE - 2))
     }
 
     @Test
-    fun `une entete corrompue est rejetee par son CRC`() {
-        // Un octet retourne dans startWallMs daterait toute la nuit faux, en silence (F-08).
+    fun `a corrupt header is rejected by its CRC`() {
+        // One flipped byte in startWallMs would date the whole night wrong, silently (F-08).
         val out = ByteArrayOutputStream()
         ChunkWriter(out, header())
         val bytes = out.toByteArray()
         bytes[35] = (bytes[35].toInt() xor 0x01).toByte()
         assertThatThrownBy { ChunkReader.read(ByteArrayInputStream(bytes)) }
             .isInstanceOf(IOException::class.java)
-            .hasMessageContaining("CRC d'entete")
+            .hasMessageContaining("header CRC")
     }
 
     @Test
-    fun `une entete plus grande produite par une version ulterieure reste relisible`() {
-        // F-32 : headerSize permet d'ajouter des champs en queue sans casser les archives.
+    fun `a larger header produced by a later version stays readable`() {
+        // F-32: headerSize allows fields to be appended at the tail without breaking the archives.
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeFlat(32, 0L, mark = 1)
@@ -137,7 +137,7 @@ class ChunkCodecTest {
         val grown = ByteArray(grownSize)
         System.arraycopy(raw, 0, grown, 0, ChunkFormat.HEADER_SIZE - 2)
         putShortLe(grown, 10, grownSize)
-        grown[80] = 0x42 // champ inconnu de cette version, ignore a la relecture
+        grown[80] = 0x42 // field unknown to this version, ignored when read back
         putShortLe(grown, grownSize - 2, ChunkFormat.crc16(grown, 0, grownSize - 2))
         val file = grown + raw.copyOfRange(ChunkFormat.HEADER_SIZE, raw.size)
 
@@ -149,14 +149,15 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `un chunk du format v1 se decode toujours`() {
-        // **La compatibilite descendante, verifiee sur des octets et non sur du code.**
+    fun `a v1 format chunk still decodes`() {
+        // **Backward compatibility, verified on bytes and not on code.**
         //
-        // Ces octets ne sont pas produits par `ChunkWriter` : ils ont ete generes une fois, hors
-        // de Kotlin, a partir de la seule specification ecrite dans la KDoc de `ChunkFormat`. Un
-        // temoin regenere par le code qu'il surveille ne surveille rien — il suivrait la
-        // regression. Celui-ci est fige, et le depot ne supprime jamais du brut : c'est la seule
-        // chose qui permettra de rescorer une nuit de 2026 le jour ou l'algorithme changera.
+        // These bytes are not produced by `ChunkWriter`: they were generated once, outside Kotlin,
+        // from the specification written in the KDoc of `ChunkFormat` and from nothing else. A
+        // witness regenerated by the code it watches watches nothing — it would follow the
+        // regression along. This one is frozen, and the repository never deletes raw data: it is
+        // the only thing that will allow a night from 2026 to be rescored the day the algorithm
+        // changes.
         val bytes = hex(CHUNK_V1)
         assertThat(bytes).hasSize(248)
 
@@ -179,7 +180,7 @@ class ChunkCodecTest {
         assertThat(read.blocks[0].flags).isEqualTo(ChunkFormat.FLAG_FIFO_BOUNDARY)
         assertThat(read.blocks[1].sampleCount).isEqualTo(4)
         assertThat(read.blocks[1].flags).isEqualTo(ChunkFormat.FLAG_GAP_BEFORE)
-        // Les echantillons sont relus a l'identique : la quantification n'a pas bouge.
+        // The samples read back identical: the quantisation has not moved.
         for (i in 0 until 8) {
             assertThat(read.blocks[0].x[i]).isEqualTo(ChunkFormat.toMs2((i * 100).toShort()))
             assertThat(read.blocks[0].z[i]).isEqualTo(ChunkFormat.toMs2(2048))
@@ -190,16 +191,16 @@ class ChunkCodecTest {
         assertThat(read.scan.declaredSampleCount).isEqualTo(12L)
         assertThat(read.corruptBlocks).isZero()
         assertThat(read.scan.desynchronised).isFalse()
-        // Les deux octets ou vit desormais `telemetryCount` etaient a zero en v1 : le chunk
-        // annonce donc zero point, ce qui est la verite et non une valeur par defaut.
+        // The two bytes where `telemetryCount` now lives were zero in v1: the chunk therefore
+        // declares zero points, which is the truth and not a default value.
         assertThat(read.telemetry).isEmpty()
         assertThat(read.scan.declaredTelemetryPointCount).isZero()
         assertThat(read.scan.lostTelemetryPoints).isZero()
     }
 
     @Test
-    fun `l'entete refuse un FIFO ou une cadence hors u16`() {
-        // F-26 : le .toShort() silencieux enregistrait 70000 comme 4464.
+    fun `the header refuses a FIFO or a rate outside u16`() {
+        // F-26: the silent .toShort() recorded 70000 as 4464.
         assertThatThrownBy {
             header().copy(fifoMaxEventCount = 70_000)
         }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("fifoMaxEventCount")
@@ -212,7 +213,7 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `aller-retour, l'entete est preservee a l'identique, fuseau compris`() {
+    fun `round trip, the header is preserved identically, time zone included`() {
         val h = header(
             chunkIndex = 7,
             modeFlags = ChunkFormat.MODE_WAKEUP_SENSOR or ChunkFormat.MODE_BATCHED,
@@ -228,10 +229,10 @@ class ChunkCodecTest {
         assertThat(read.truncatedTail).isFalse()
     }
 
-    // --- Blocs ---
+    // --- Blocks ---
 
     @Test
-    fun `un bloc fait exactement l'entete de bloc plus 6 octets par echantillon`() {
+    fun `a block is exactly the block header plus 6 bytes per sample`() {
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         val n = 100
@@ -240,7 +241,7 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `l'entete de bloc est ecrite au layout documente et son CRC couvre l'entete`() {
+    fun `the block header is written to the documented layout and its CRC covers the header`() {
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         val n = 8
@@ -254,7 +255,7 @@ class ChunkCodecTest {
         assertThat(bb.getLong(off + 6)).isEqualTo(1_000L)
         assertThat(bb.getLong(off + 14)).isEqualTo(1_000L + (n - 1) * stepNs)
         assertThat(bb.getShort(off + 22).toInt()).isEqualTo(ChunkFormat.FLAG_GAP_BEFORE)
-        // F-02 : le CRC couvre blockHeader[0,24) puis le payload, pas le payload seul.
+        // F-02: the CRC covers blockHeader[0, 24) then the payload, not the payload alone.
         val expected = ChunkFormat.crc16(
             raw, off + ChunkFormat.BLOCK_HEADER_SIZE, n * ChunkFormat.BYTES_PER_SAMPLE,
             seed = ChunkFormat.crc16(raw, off, ChunkFormat.BLOCK_CRC_OFFSET),
@@ -264,10 +265,10 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `aller-retour, les echantillons sont preserves a la resolution de quantification`() {
+    fun `round trip, samples are preserved to the quantisation resolution`() {
         val rnd = Random(42)
         val n = 512
-        // Plage realiste pour une cheville : la gravite (~9,81) plus des a-coups de quelques g.
+        // Realistic range for an ankle: gravity (~9.81) plus jolts of a few g.
         val x = FloatArray(n) { (rnd.nextFloat() - 0.5f) * 40f }
         val y = FloatArray(n) { (rnd.nextFloat() - 0.5f) * 40f }
         val z = FloatArray(n) { 9.81f + (rnd.nextFloat() - 0.5f) * 10f }
@@ -283,7 +284,7 @@ class ChunkCodecTest {
         assertThat(b.flags).isEqualTo(ChunkFormat.FLAG_FIFO_BOUNDARY)
         assertThat(b.suspectTimebase).isFalse()
 
-        // 1 LSB = 9,80665/2048 = 0,004789 m/s^2 ; l'erreur d'arrondi est bornee par un demi-LSB.
+        // 1 LSB = 9.80665/2048 = 0.004789 m/s^2; the rounding error is bounded by half an LSB.
         val maxError = ChunkFormat.G_IN_MS2 / ChunkFormat.LSB_PER_G / 2 + 1e-6
         for (i in 0 until n) {
             assertThat(abs(b.x[i] - x[i])).isLessThan(maxError.toFloat())
@@ -293,13 +294,13 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `la quantification sature en haut de l'echelle, qui n'est pas 16 g pile`() {
-        // Un choc violent doit ecreter proprement, pas repasser en negatif par overflow.
+    fun `quantisation saturates at the top of the scale, which is not exactly 16 g`() {
+        // A violent shock must clip cleanly, not wrap round to negative through overflow.
         assertThat(ChunkFormat.toRaw(1000f)).isEqualTo(Short.MAX_VALUE)
         assertThat(ChunkFormat.toRaw(-1000f)).isEqualTo(Short.MIN_VALUE)
         assertThat(ChunkFormat.toRaw((16.0 * ChunkFormat.G_IN_MS2).toFloat())).isEqualTo(Short.MAX_VALUE)
         assertThat(ChunkFormat.toRaw((15.9 * ChunkFormat.G_IN_MS2).toFloat())).isLessThan(Short.MAX_VALUE)
-        // F-33 : l'echelle n'est symetrique qu'a un LSB pres, 32767/2048 = 15,9995 g et non 16 g.
+        // F-33: the scale is only symmetric to within one LSB, 32767/2048 = 15.9995 g and not 16 g.
         assertThat(ChunkFormat.toMs2(Short.MAX_VALUE) / ChunkFormat.G_IN_MS2)
             .isCloseTo(15.99951, within(1e-4))
         assertThat(ChunkFormat.toMs2(Short.MIN_VALUE) / ChunkFormat.G_IN_MS2)
@@ -307,12 +308,12 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `les saturations et les valeurs non finies sont comptees et flaguees`() {
-        // F-11 : sans compteur ni drapeau, l'ecretage et les NaN sont indetectables a la relecture.
+    fun `saturations and non-finite values are counted and flagged`() {
+        // F-11: without a counter or a flag, clipping and NaN are undetectable when read back.
         val n = 10
         val x = FloatArray(n)
-        x[0] = 500f            // bien au-dela du plafond du format
-        x[1] = Float.NaN       // capteur en defaut : devient 0, indiscernable d'une chute libre
+        x[0] = 500f            // well beyond the ceiling of the format
+        x[1] = Float.NaN       // faulty sensor: becomes 0, indistinguishable from free fall
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeBlock(x, FloatArray(n), FloatArray(n), n, 0L, (n - 1) * stepNs, 0)
@@ -326,7 +327,7 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `plusieurs blocs sont relus dans l'ordre`() {
+    fun `several blocks are read back in order`() {
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         repeat(10) { k -> w.writeFlat(50, k * 1_000_000_000L, mark = k) }
@@ -339,29 +340,29 @@ class ChunkCodecTest {
         }
     }
 
-    // --- Validation temporelle a l'ecriture (F-03, F-14) ---
+    // --- Temporal validation at write time (F-03, F-14) ---
 
     @Test
-    fun `writeBlock refuse une base de temps inversee`() {
+    fun `writeBlock refuses a reversed timebase`() {
         val w = ChunkWriter(ByteArrayOutputStream(), header())
         assertThatThrownBy {
             w.writeBlock(FloatArray(10), FloatArray(10), FloatArray(10), 10, 1_000L, 500L, 0)
-        }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("inversee")
+        }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("reversed")
     }
 
     @Test
-    fun `writeBlock refuse une cadence implicite absurde`() {
-        // L'ancien jeu de tests ecrivait n=100 sur 1 ns et verrouillait ce comportement (F-14).
+    fun `writeBlock refuses an absurd implicit rate`() {
+        // The old test suite wrote n=100 over 1 ns and locked that behaviour in (F-14).
         val w = ChunkWriter(ByteArrayOutputStream(), header())
         assertThatThrownBy {
             w.writeBlock(FloatArray(100), FloatArray(100), FloatArray(100), 100, 0L, 1L, 0)
-        }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("cadence implicite")
+        }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("implicit rate")
     }
 
     @Test
-    fun `writeBlock refuse un bloc a cheval sur deux vidages du FIFO`() {
-        // F-03 : 256 echantillons a 50 Hz couvrent 5,1 s ; un trou de 3 s au milieu porte
-        // l'intervalle moyen a 31,8 ms, soit +59 % — l'interpolation daterait tout le bloc faux.
+    fun `writeBlock refuses a block straddling two FIFO flushes`() {
+        // F-03: 256 samples at 50 Hz cover 5.1 s; a 3 s hole in the middle brings the mean
+        // interval to 31.8 ms, that is +59 % — interpolation would date the whole block wrong.
         val n = 256
         val w = ChunkWriter(ByteArrayOutputStream(), header())
         assertThatThrownBy {
@@ -369,11 +370,11 @@ class ChunkCodecTest {
                 FloatArray(n), FloatArray(n), FloatArray(n), n,
                 0L, (n - 1) * stepNs + 3_000_000_000L, 0,
             )
-        }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("vidages du FIFO")
+        }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("FIFO flushes")
     }
 
     @Test
-    fun `writeBlock refuse un count hors bornes`() {
+    fun `writeBlock refuses an out-of-bounds count`() {
         val w = ChunkWriter(ByteArrayOutputStream(), header())
         assertThatThrownBy { w.writeBlock(FloatArray(10), FloatArray(10), FloatArray(10), 0, 0, 0, 0) }
             .isInstanceOf(IllegalArgumentException::class.java)
@@ -383,9 +384,9 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `le lecteur signale une base de temps suspecte sans jeter le bloc`() {
-        // Bloc ecrit valide, puis tLastNs deplace de 3 s *avec* recalcul du CRC : la corruption
-        // est coherente, seule la coherence physique la trahit.
+    fun `the reader flags a suspect timebase without discarding the block`() {
+        // Block written valid, then tLastNs moved by 3 s *with* the CRC recomputed: the corruption
+        // is coherent, only physical coherence gives it away.
         val n = 256
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -403,7 +404,7 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `le lecteur rejette un bloc dont la chronologie est impossible`() {
+    fun `the reader rejects a block whose chronology is impossible`() {
         val n = 64
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -422,28 +423,28 @@ class ChunkCodecTest {
     // --- Corruption, resynchronisation, localisation (F-02, F-12, F-35) ---
 
     @Test
-    fun `un bloc au CRC corrompu est saute et les blocs suivants sont conserves`() {
+    fun `a block with a corrupt CRC is skipped and the following blocks are kept`() {
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         val n = 64
         repeat(3) { k -> w.writeFlat(n, k * 2_000_000_000L, mark = k) }
         val bytes = out.toByteArray()
 
-        // On corrompt un octet du payload du bloc du milieu (index 1).
+        // One byte of the middle block's payload (index 1) is corrupted.
         val victim = ChunkFormat.HEADER_SIZE + blockSize(n) + ChunkFormat.BLOCK_HEADER_SIZE + 3
         bytes[victim] = (bytes[victim].toInt() xor 0xFF).toByte()
 
         val read = ChunkReader.read(ByteArrayInputStream(bytes))
         assertThat(read.corruptBlocks).isEqualTo(1)
         assertThat(read.blocks).hasSize(2)
-        // Les blocs 0 et 2 survivent : la perte est bornee a un bloc, pas a la nuit.
+        // Blocks 0 and 2 survive: the loss is bounded to one block, not to the night.
         assertThat(read.blocks.map { it.x[0] }).containsExactly(marker(0), marker(2))
     }
 
     @Test
-    fun `un count corrompu est detecte par le CRC et ne desynchronise pas la suite`() {
-        // F-02 : c'est le cas ou l'ancien `continue` perdait la synchro, puisque la longueur
-        // de payload lue derivait de `count`, precisement le champ corrompu.
+    fun `a corrupt count is caught by the CRC and does not desynchronise what follows`() {
+        // F-02: this is the case where the old `continue` lost synchronisation, since the payload
+        // length being read derived from `count`, precisely the corrupted field.
         val n = 64
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -452,7 +453,7 @@ class ChunkCodecTest {
         val bytes = out.toByteArray()
 
         val victimBlock = ChunkFormat.HEADER_SIZE + blockSize(n)
-        putShortLe(bytes, victimBlock + 4, 32) // count 64 -> 32, sans recalcul du CRC
+        putShortLe(bytes, victimBlock + 4, 32) // count 64 -> 32, without recomputing the CRC
 
         val read = ChunkReader.read(ByteArrayInputStream(bytes))
         assertThat(read.corruptBlocks).isEqualTo(1)
@@ -463,9 +464,9 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `un tLastNs corrompu est detecte par le CRC`() {
-        // Avant F-02, corrompre tLastNs decalait toute la base de temps de la nuit sans
-        // qu'aucun controle ne s'en apercoive : le CRC ne couvrait que le payload.
+    fun `a corrupt tLastNs is caught by the CRC`() {
+        // Before F-02, corrupting tLastNs shifted the whole timebase of the night without any
+        // check noticing it: the CRC only covered the payload.
         val n = 64
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -473,7 +474,7 @@ class ChunkCodecTest {
         val bytes = out.toByteArray()
 
         val victimBlock = ChunkFormat.HEADER_SIZE + blockSize(n)
-        putLongLe(bytes, victimBlock + 14, 999_999_999_999L) // pas de recalcul du CRC
+        putLongLe(bytes, victimBlock + 14, 999_999_999_999L) // no CRC recomputation
 
         val read = ChunkReader.read(ByteArrayInputStream(bytes))
         assertThat(read.corruptBlocks).isEqualTo(1)
@@ -481,7 +482,7 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `un magic detruit au milieu du fichier declenche une resynchronisation`() {
+    fun `a magic destroyed in the middle of the file triggers a resynchronisation`() {
         val n = 32
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -499,8 +500,9 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `une zone perdue est localisee dans le fichier et dans le temps`() {
-        // F-35 : c'est ce qui permet de dire "30 s manquantes a 3h12" plutot que "1 bloc perdu".
+    fun `a lost area is located both in the file and in time`() {
+        // F-35: this is what makes it possible to say "30 s missing at 3:12" rather than
+        // "1 block lost".
         val n = 64
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -522,8 +524,8 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `une queue tronquee et une desynchronisation sont deux etats distincts`() {
-        // F-12 : l'un est benin (kill brutal, un bloc au plus), l'autre non.
+    fun `a truncated tail and a desynchronisation are two distinct states`() {
+        // F-12: one is benign (abrupt kill, one block at most), the other is not.
         val n = 128
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -539,10 +541,10 @@ class ChunkCodecTest {
         assertThat(read.scan.damagedRanges.single().reason).isEqualTo(DamageReason.TRUNCATED_TAIL)
     }
 
-    // --- Marqueur de fin de fichier (F-37) ---
+    // --- End-of-file marker (F-37) ---
 
     @Test
-    fun `un chunk clos porte un marqueur de fin coherent`() {
+    fun `a closed chunk carries a coherent end marker`() {
         val n = 64
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -560,8 +562,8 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `un chunk en cours d'ecriture n'est pas declare complet`() {
-        // F-13/F-37 : c'est ce qui interdit au telephone d'acquitter un fichier partiel.
+    fun `a chunk still being written is not declared complete`() {
+        // F-13/F-37: this is what forbids the phone from acknowledging a partial file.
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeFlat(64, 0L)
@@ -572,7 +574,7 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `finish est idempotent et ferme le chunk aux ecritures`() {
+    fun `finish is idempotent and closes the chunk to further writes`() {
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeFlat(16, 0L)
@@ -584,10 +586,10 @@ class ChunkCodecTest {
             .isInstanceOf(IllegalStateException::class.java)
     }
 
-    // --- Lecture streaming (F-27) et robustesse du flux (F-31) ---
+    // --- Streaming read (F-27) and stream robustness (F-31) ---
 
     @Test
-    fun `l'API streaming rend le meme bilan sans materialiser les blocs`() {
+    fun `the streaming API returns the same summary without materialising the blocks`() {
         val n = 128
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
@@ -608,8 +610,8 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `un flux qui rend zero sans fin de fichier ne boucle pas indefiniment`() {
-        // F-31 : cas reel d'un Channel du Data Layer.
+    fun `a stream returning zero without end of file does not loop forever`() {
+        // F-31: real case of a Data Layer Channel.
         val out = ByteArrayOutputStream()
         val w = ChunkWriter(out, header())
         w.writeFlat(32, 0L)
@@ -618,7 +620,7 @@ class ChunkCodecTest {
             private var pos = 0
             override fun read(): Int = if (pos < bytes.size) bytes[pos++].toInt() and 0xFF else 0
             override fun read(b: ByteArray, off: Int, len: Int): Int {
-                if (pos >= bytes.size) return 0 // ni donnee, ni EOF
+                if (pos >= bytes.size) return 0 // neither data nor EOF
                 val k = minOf(len, bytes.size - pos)
                 System.arraycopy(bytes, pos, b, off, k)
                 pos += k
@@ -632,10 +634,10 @@ class ChunkCodecTest {
         assertThat(read.blocks).hasSize(1)
     }
 
-    // --- Divers ---
+    // --- Miscellaneous ---
 
     @Test
-    fun `un fichier vide ou une entete tronquee leve`() {
+    fun `an empty file or a truncated header throws`() {
         assertThatThrownBy { ChunkReader.read(ByteArrayInputStream(ByteArray(0))) }
             .isInstanceOf(IOException::class.java)
         assertThatThrownBy { ChunkReader.read(ByteArrayInputStream(ByteArray(40))) }
@@ -643,7 +645,7 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `un magic de fichier invalide leve`() {
+    fun `an invalid file magic throws`() {
         val out = ByteArrayOutputStream()
         ChunkWriter(out, header())
         val bytes = out.toByteArray()
@@ -654,7 +656,7 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `les timestamps interpoles sont uniformement repartis`() {
+    fun `interpolated timestamps are evenly spaced`() {
         val n = 51
         val tFirst = 1_000_000_000L
         val b = DecodedBlock(tFirst, tFirst + (n - 1) * stepNs, 0, FloatArray(n), FloatArray(n), FloatArray(n))
@@ -664,32 +666,32 @@ class ChunkCodecTest {
     }
 
     @Test
-    fun `un bloc a un seul echantillon ne divise pas par zero`() {
+    fun `a single-sample block does not divide by zero`() {
         val b = DecodedBlock(500L, 500L, 0, FloatArray(1), FloatArray(1), FloatArray(1))
         assertThat(b.timestampNs(0)).isEqualTo(500L)
     }
 
     @Test
-    fun `le CRC16 est celui de CCITT-FALSE sur le vecteur de reference`() {
-        // Vecteur canonique : "123456789" -> 0x29B1 en CRC-16/CCITT-FALSE.
+    fun `the CRC16 is the CCITT-FALSE one on the reference vector`() {
+        // Canonical vector: "123456789" -> 0x29B1 in CRC-16/CCITT-FALSE.
         assertThat(ChunkFormat.crc16("123456789".toByteArray(Charsets.US_ASCII))).isEqualTo(0x29B1)
     }
 
     @Test
-    fun `le CRC chaine sur deux tableaux vaut celui de leur concatenation`() {
+    fun `the CRC chained over two arrays equals the one of their concatenation`() {
         val a = "1234".toByteArray(Charsets.US_ASCII)
         val b = "56789".toByteArray(Charsets.US_ASCII)
         assertThat(ChunkFormat.crc16(b, seed = ChunkFormat.crc16(a))).isEqualTo(0x29B1)
     }
 
     @Test
-    fun `le debit annonce est respecte, une nuit de 8 h a 50 Hz tient sous 9 Mo`() {
-        // Verification du budget de stockage sur lequel repose la strategie de transfert.
+    fun `the declared throughput holds, an 8 h night at 50 Hz fits under 9 MB`() {
+        // Check of the storage budget the transfer strategy rests on.
         val samples = 50 * 3600 * 8
         val blocks = (samples + ChunkFormat.MAX_SAMPLES_PER_BLOCK - 1) / ChunkFormat.MAX_SAMPLES_PER_BLOCK
-        val chunks = 8 * 3600 / 300 // rotation 5 min
-        // La telemetrie compte dans le meme budget : un point par minute, chacun dans son propre
-        // bloc. C'est la mesure de ce que « le debit est derisoire » veut dire.
+        val chunks = 8 * 3600 / 300 // 5 min rotation
+        // Telemetry counts in the same budget: one point per minute, each in its own block. This
+        // is the measurement of what "the throughput is negligible" means.
         val telemetryPoints = 8 * 60
         val telemetryBytes = telemetryPoints.toLong() *
             (ChunkFormat.TELEMETRY_HEADER_SIZE + ChunkFormat.TELEMETRY_POINT_SIZE)
@@ -698,7 +700,7 @@ class ChunkCodecTest {
             samples.toLong() * ChunkFormat.BYTES_PER_SAMPLE +
             telemetryBytes
         assertThat(bytes).isLessThan(9L * 1024 * 1024)
-        // ~30 Ko de telemetrie contre ~8,3 Mo de signal : moins de 0,4 % du volume de la nuit.
+        // ~30 KB of telemetry against ~8.3 MB of signal: less than 0.4 % of the night's volume.
         assertThat(telemetryBytes.toDouble() / bytes).isLessThan(0.005)
     }
 
@@ -708,11 +710,11 @@ class ChunkCodecTest {
     private companion object {
 
         /**
-         * Un chunk complet au format **v1**, fige. Deux blocs de signal (8 puis 4 echantillons a
-         * 50 Hz), marqueur de fin, aucune telemetrie — puisque la v1 n'en avait pas.
+         * A complete chunk in the **v1** format, frozen. Two signal blocks (8 then 4 samples at
+         * 50 Hz), end marker, no telemetry — since v1 had none.
          *
-         * Ne jamais le regenerer : le jour ou il faut le changer pour faire passer un test, c'est
-         * que la compatibilite descendante vient d'etre cassee et que c'est ca, la nouvelle.
+         * Never regenerate it: the day it has to be changed to make a test pass, backward
+         * compatibility has just been broken and that is the news.
          */
         const val CHUNK_V1 =
             "50454e4443484e4b010050003200b80b000102030405060708090a0b0c0d0e0f" +

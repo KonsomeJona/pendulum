@@ -8,55 +8,54 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Constantes du format de bloc **recopiees** ici a dessein.
+ * Block format constants **copied** here on purpose.
  *
- * `:algo` ne depend pas de `:format` (§4) : c'est ce qui lui permet de revalider les timestamps
- * sans heriter des garanties — absentes — du CRC de bloc, et de rester testable sans le codec.
- * Le prix a payer est cette duplication de trois entiers. Elle doit rester synchronisee avec
- * `com.pendulum.format.ChunkFormat` ; un test de coherence vit du cote de `:phone`, la ou les deux
- * modules se rencontrent.
+ * `:algo` does not depend on `:format` (§4): that is what lets it revalidate the timestamps
+ * without inheriting the — absent — guarantees of the block CRC, and stay testable without the
+ * codec. The price to pay is this duplication of three integers. It must stay in sync with
+ * `com.pendulum.format.ChunkFormat`; a consistency test lives on the `:phone` side, where the two
+ * modules meet.
  */
 object BlockFlags {
     const val FIFO_BOUNDARY = 1 shl 0
     const val GAP_BEFORE = 1 shl 1
     const val OFF_BODY = 1 shl 2
 
-    /** Nombre maximal d'echantillons par bloc du format (`ChunkFormat.MAX_SAMPLES_PER_BLOCK`). */
+    /** Maximum number of samples per block in the format (`ChunkFormat.MAX_SAMPLES_PER_BLOCK`). */
     const val MAX_SAMPLES_PER_BLOCK = 512
 
-    /** 1 LSB = 1/2048 g : un i16 sature a 32767 LSB, soit 15,9995 g. */
+    /** 1 LSB = 1/2048 g: an i16 saturates at 32767 LSB, i.e. 15.9995 g. */
     const val LSB_PER_G = 2048.0
 
-    /** Amplitude de saturation du codec, en g. Un echantillon a cette valeur est suspect. */
+    /** Codec saturation amplitude, in g. A sample at this value is suspect. */
     const val SATURATION_G = 32767.0f / LSB_PER_G.toFloat()
 }
 
 /**
- * Etape −1 — controles d'integrite. **L'algo ne fait confiance a rien.**
+ * Step −1 — integrity checks. **The algo trusts nothing.**
  *
- * Raison d'etre, litteralement (§2, etape −1) : le CRC16 du format ne couvre **que le payload**.
- * `count`, `tFirstNs`, `tLastNs` et `flags` de l'en-tete de bloc ne sont pas proteges. Une base de
- * temps corrompue traverse donc le decodeur en silence — et toute la chaine v2 repose sur les
- * timestamps (estimation de `fs`, reechantillonnage, durees de CLM, IMI). Un seul bloc a
- * timestamp corrompu deplace toute la ligne de temps en aval de plusieurs secondes, ce qui fait
- * basculer de classe tous les evenements aux bornes.
+ * Rationale, literally (§2, step −1): the format's CRC16 covers **only the payload**. `count`,
+ * `tFirstNs`, `tLastNs` and `flags` in the block header are not protected. A corrupted time base
+ * therefore crosses the decoder in silence — and the whole v2 chain rests on the timestamps (`fs`
+ * estimation, resampling, CLM durations, IMI). A single block with a corrupted timestamp shifts
+ * the whole downstream timeline by several seconds, which makes every event at a class boundary
+ * switch class.
  *
- * Tous les controles sont en O(n) et sans allocation par echantillon.
+ * All the checks are O(n) and allocation-free per sample.
  *
- * Deux controles de la table de §2 ne sont **pas** implementables ici et ne le seront jamais dans
- * ce module :
- *  - n° 7 (`chunkIndex` strictement croissant, `sessionUuid` constant) : ces champs vivent dans
- *    l'en-tete de **chunk**, pas dans [SampleBlock]. Le controle appartient a l'adaptateur de
- *    `:phone`, qui doit produire [IntegrityViolation.BAD_CHUNK_INDEX] de son cote.
- *  - la partie « coupure de session » du n° 6 : ici on se contente de compter la violation ;
- *    c'est l'etape 0 qui transforme l'ecart en frontiere de segment dure.
+ * Two checks from the table of §2 are **not** implementable here and never will be in this module:
+ *  - no. 7 (`chunkIndex` strictly increasing, `sessionUuid` constant): those fields live in the
+ *    **chunk** header, not in [SampleBlock]. The check belongs to the `:phone` adapter, which must
+ *    produce [IntegrityViolation.BAD_CHUNK_INDEX] on its side.
+ *  - the "session break" part of no. 6: here we merely count the violation; it is step 0 that
+ *    turns the gap into a hard segment boundary.
  */
 object Integrity {
 
     /**
-     * @return les blocs **acceptes** (dans l'ordre d'entree) et le rapport. Tout bloc rejete est
-     *   simplement absent de la liste : l'etape 0 le verra comme un trou de sa duree nominale et
-     *   lui appliquera la politique de trous, ce qui est exactement ce que demande §2.
+     * @return the **accepted** blocks (in input order) and the report. Any rejected block is
+     *   simply absent from the list: step 0 will see it as a hole of its nominal duration and will
+     *   apply the hole policy to it, which is exactly what §2 asks for.
      */
     fun check(
         blocks: List<SampleBlock>,
@@ -74,10 +73,10 @@ object Integrity {
         var longestRejectRun = 0
         var currentRejectRun = 0
 
-        // Collecte pour le controle n° 9 : mediane des normes sur les fenetres statiques.
+        // Collection for check no. 9: median of the norms over the static windows.
         val staticNorms = ArrayList<Double>()
 
-        // Intervalle nominal entre deux echantillons, utilise par le controle de chevauchement.
+        // Nominal interval between two samples, used by the overlap check.
         val nominalStepNs = if (nominalHz > 0.0) 1e9 / nominalHz else 2e7
         val minInterBlockNs = (0.5 * nominalStepNs).toLong()
 
@@ -86,23 +85,23 @@ object Integrity {
         for (b in blocks) {
             var ok = true
 
-            // --- 1. Coherence de taille -------------------------------------------------
+            // --- 1. Size consistency ----------------------------------------------------
             val n = b.x.size
             if (n < 1 || n > BlockFlags.MAX_SAMPLES_PER_BLOCK || b.y.size != n || b.z.size != n) {
                 bump(IntegrityViolation.BAD_COUNT)
                 ok = false
             }
 
-            // --- 2. Ordre et positivite des timestamps ----------------------------------
+            // --- 2. Timestamp order and positivity --------------------------------------
             if (ok && (b.tFirstNs <= 0L || b.tLastNs <= 0L || b.tFirstNs > b.tLastNs)) {
                 bump(IntegrityViolation.BAD_TIMESTAMP_ORDER)
                 ok = false
             }
 
-            // --- 3. Cadence implicite du bloc -------------------------------------------
-            // Le bloc porte sa propre frequence : (N-1) intervalles entre tFirst et tLast. Un
-            // bloc dont la cadence implicite s'ecarte de plus de 20 % du nominal a une base de
-            // temps corrompue — ce n'est pas de la derive, la derive d'un quartz est en ppm.
+            // --- 3. Implicit block rate -------------------------------------------------
+            // The block carries its own frequency: (N-1) intervals between tFirst and tLast. A
+            // block whose implicit rate departs by more than 20 % from the nominal has a corrupted
+            // time base — this is not drift, the drift of a quartz is in ppm.
             if (ok && n >= 2) {
                 val spanNs = (b.tLastNs - b.tFirstNs).toDouble()
                 val fsBlock = if (spanNs > 0.0) (n - 1) * 1e9 / spanNs else Double.POSITIVE_INFINITY
@@ -112,9 +111,10 @@ object Integrity {
                 }
             }
 
-            // --- 4 / 5 / 6. Controles inter-blocs ---------------------------------------
-            // Compares au dernier bloc ACCEPTE, pas au dernier bloc vu : sinon un bloc corrompu
-            // contaminerait le jugement porte sur son successeur, qui est sain.
+            // --- 4 / 5 / 6. Inter-block checks ------------------------------------------
+            // Compared to the last ACCEPTED block, not to the last block seen: otherwise a
+            // corrupted block would contaminate the judgement passed on its successor, which is
+            // healthy.
             val p = prev
             if (ok && p != null) {
                 val delta = b.tFirstNs - p.tLastNs
@@ -122,25 +122,25 @@ object Integrity {
                     bump(IntegrityViolation.NON_MONOTONIC)
                     ok = false
                 } else if (delta < minInterBlockNs) {
-                    // Deux blocs qui se touchent a moins d'un demi-echantillon se recouvrent :
-                    // les memes instants seraient decrits deux fois, et le reechantillonnage
-                    // produirait une discontinuite invisible dans les statistiques.
+                    // Two blocks touching within less than half a sample overlap: the same
+                    // instants would be described twice, and the resampling would produce a
+                    // discontinuity invisible in the statistics.
                     bump(IntegrityViolation.OVERLAP)
                     ok = false
                 } else if (delta > cfg.maxGapNs) {
-                    // Au-dela de 14 h, ce n'est plus un trou mais une remise a zero d'horloge.
-                    // Le bloc reste valide : c'est la SESSION qui est coupee, et l'etape 0
-                    // transformera l'ecart en frontiere de segment dure.
+                    // Beyond 14 h, this is no longer a hole but a clock reset. The block stays
+                    // valid: it is the SESSION that is cut, and step 0 will turn the gap into a
+                    // hard segment boundary.
                     bump(IntegrityViolation.IMPLAUSIBLE_GAP)
                 }
             }
 
-            // --- 8. Jerk impossible ------------------------------------------------------
-            // Plus de 8 g d'ecart entre deux echantillons consecutifs a 50 Hz est physiquement
-            // impossible a la cheville (cela vaut 400 g/s). C'est la signature du repliement de
-            // signe d'une saturation mal implementee : +16 g qui bascule a -16 g. Ce controle
-            // reste utile meme apres correction du bug `toRaw` de `:format` — il detecte toute
-            // corruption d'octets qui produirait un saut, pas seulement celle-la.
+            // --- 8. Impossible jerk ------------------------------------------------------
+            // More than 8 g of difference between two consecutive samples at 50 Hz is physically
+            // impossible at the ankle (that amounts to 400 g/s). It is the signature of the sign
+            // wraparound of a badly implemented saturation: +16 g flipping to -16 g. This check
+            // stays useful even after the `toRaw` bug of `:format` is fixed — it detects any byte
+            // corruption that would produce a jump, not only that one.
             if (ok && n >= 2) {
                 val maxJerk2 = cfg.maxJerkG.toDouble() * cfg.maxJerkG.toDouble()
                 var bad = false
@@ -158,8 +158,8 @@ object Integrity {
             }
 
             // --- 10. Saturation ----------------------------------------------------------
-            // La cheville n'atteint pas +/-16 g. Un bloc dont plus de `saturationFraction` des
-            // echantillons est colle a la butee n'est pas sature, il est corrompu.
+            // The ankle does not reach +/-16 g. A block in which more than `saturationFraction` of
+            // the samples is stuck against the stop is not saturated, it is corrupted.
             if (ok && n >= 1) {
                 var sat = 0
                 val lim = BlockFlags.SATURATION_G * (1f - 1e-6f)
@@ -172,9 +172,9 @@ object Integrity {
                 }
             }
 
-            // --- 11. Coherence de FLAG_GAP_BEFORE ---------------------------------------
-            // Incoherence => drapeau, jamais rejet : le drapeau est une information de confort
-            // produite par la montre, il n'a pas autorite sur les timestamps.
+            // --- 11. FLAG_GAP_BEFORE consistency ----------------------------------------
+            // Inconsistency => flag, never rejection: the flag is a convenience piece of
+            // information produced by the watch, it has no authority over the timestamps.
             if (ok && p != null) {
                 val delta = b.tFirstNs - p.tLastNs
                 val measuredGap = delta > 1.5 * nominalStepNs
@@ -194,11 +194,11 @@ object Integrity {
             }
         }
 
-        // --- 9. Plausibilite gravitaire, au niveau session -------------------------------
-        // Sur les fenetres statiques, la norme mesuree DOIT valoir la gravite. Si la mediane des
-        // fenetres statiques sort de [0,80 ; 1,20] g, ce n'est ni du bruit ni un capteur mal
-        // calibre (l'autocalibration corrige au plus quelques pourcents) : c'est une echelle
-        // fausse ou un decodage desynchronise. La session entiere devient suspecte.
+        // --- 9. Gravity plausibility, at session level -----------------------------------
+        // On the static windows, the measured norm MUST equal gravity. If the median of the static
+        // windows leaves [0.80 ; 1.20] g, it is neither noise nor a badly calibrated sensor
+        // (autocalibration corrects a few percent at most): it is a wrong scale or a
+        // desynchronised decoding. The whole session becomes suspect.
         var gravityBad = false
         if (staticNorms.isNotEmpty()) {
             val med = Numeric.median(staticNorms.toDoubleArray())
@@ -211,10 +211,10 @@ object Integrity {
         val total = blocks.size
         val fraction = if (total > 0) rejected.toDouble() / total else 0.0
 
-        // « Le motif de rejets evoque une desynchronisation du decodeur, pas du bruit. »
-        // Interpretation retenue, faute de definition dans la specification : le bruit frappe des
-        // blocs isoles et au hasard ; une desynchronisation emporte une rafale contigue, ou fait
-        // sortir la gravite de sa plage. D'ou les trois criteres ci-dessous.
+        // "The pattern of rejections suggests a decoder desynchronisation, not noise."
+        // Interpretation adopted, for want of a definition in the specification: noise strikes
+        // isolated blocks at random; a desynchronisation carries away a contiguous burst, or makes
+        // gravity leave its range. Hence the three criteria below.
         val structural = (counts[IntegrityViolation.IMPOSSIBLE_JERK] ?: 0) +
             (counts[IntegrityViolation.SATURATED] ?: 0) +
             (counts[IntegrityViolation.BAD_COUNT] ?: 0)
@@ -233,10 +233,10 @@ object Integrity {
     }
 
     /**
-     * Si le bloc est statique (ecart-type < 13 mg sur les trois axes, le meme seuil que
-     * l'autocalibration de §3.3), ajoute la mediane de sa norme a [out].
-     * Un bloc de 512 echantillons a 50 Hz dure 10,2 s : c'est deja la fenetre de 10 s de §3.3,
-     * inutile de re-decouper.
+     * If the block is static (standard deviation < 13 mg on the three axes, the same threshold as
+     * the autocalibration of §3.3), adds the median of its norm to [out].
+     * A 512-sample block at 50 Hz lasts 10.2 s: that is already the 10 s window of §3.3, no need
+     * to re-cut it.
      */
     private fun collectStaticNorm(b: SampleBlock, out: MutableList<Double>) {
         val n = b.x.size
@@ -253,7 +253,7 @@ object Integrity {
         val vz = sz2 / n - (sz / n) * (sz / n)
         val sd = 0.013
         if (sqrt(maxOf(0.0, vx)) >= sd || sqrt(maxOf(0.0, vy)) >= sd || sqrt(maxOf(0.0, vz)) >= sd) return
-        // Fenetre statique : la norme du vecteur moyen suffit, la dispersion etant negligeable.
+        // Static window: the norm of the mean vector suffices, the dispersion being negligible.
         val mx = sx / n; val my = sy / n; val mz = sz / n
         out.add(sqrt(mx * mx + my * my + mz * mz))
     }

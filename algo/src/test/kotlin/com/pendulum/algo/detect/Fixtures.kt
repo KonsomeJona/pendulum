@@ -20,21 +20,21 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Fixtures synthetiques minimales du paquet `detect`. Volontairement independantes de
- * `com.pendulum.algo.dsp` et de `com.pendulum.algo.synth` : ces tests doivent isoler la machine d'etats,
- * pas la chaine de filtrage.
+ * Minimal synthetic fixtures for the `detect` package. Deliberately independent of
+ * `com.pendulum.algo.dsp` and `com.pendulum.algo.synth`: these tests must isolate the state
+ * machine, not the filtering chain.
  */
 internal const val FS = 50.0
 
 internal fun samples(sec: Double): Int = Math.round(sec * FS).toInt()
 
-/** Signal de magnitude de mouvement, en g, tout a zero. */
+/** Movement magnitude signal, in g, all zeros. */
 internal fun quietMagnitude(durSec: Double): FloatArray = FloatArray(samples(durSec))
 
 /**
- * Ajoute une bouffee d'amplitude `ampG` sur `[startSec, startSec + durSec)`, avec des flancs en
- * cosinus sureleve de `rampSec` inclus dans la duree. Un plateau constant `A` donne une enveloppe
- * RMS exactement egale a `A`, ce qui rend les seuils lisibles a la main dans les tests.
+ * Adds a burst of amplitude `ampG` over `[startSec, startSec + durSec)`, with raised-cosine edges
+ * of `rampSec` included in the duration. A constant plateau `A` gives an RMS envelope exactly equal
+ * to `A`, which keeps the thresholds readable by hand in the tests.
  */
 internal fun burst(
     m: FloatArray,
@@ -58,7 +58,7 @@ internal fun burst(
     }
 }
 
-/** Enveloppe RMS **centree** a deux echelles, comme l'etape 2. */
+/** **Centred** two-scale RMS envelope, as in step 2. */
 internal fun dualEnvelope(m: FloatArray, coarseSec: Double = 0.50, fineSec: Double = 0.15): DualEnvelope =
     DualEnvelope(
         coarse = Signal1D(FS, 0L, rms(m, coarseSec)),
@@ -69,10 +69,9 @@ internal fun dualEnvelope(m: FloatArray, coarseSec: Double = 0.50, fineSec: Doub
 
 private fun rms(m: FloatArray, winSec: Double): FloatArray {
     val w = samples(winSec).coerceAtLeast(1)
-    // MEME convention que `Numeric.halfLeft` : fenetre paire, la case supplementaire va a DROITE.
-    // Avec `w / 2` les fixtures etaient decalees d'un echantillon vers la gauche par rapport a
-    // l'enveloppe que la chaine de production fabrique, et toute assertion de datation portait ce
-    // decalage sans le dire.
+    // SAME convention as `Numeric.halfLeft`: even window, the extra cell goes to the RIGHT.
+    // With `w / 2` the fixtures were shifted one sample to the left relative to the envelope the
+    // production chain builds, and every timing assertion carried that shift without saying so.
     val half = Numeric.halfLeft(w)
     val out = FloatArray(m.size)
     for (i in m.indices) {
@@ -90,14 +89,14 @@ internal fun constantFloor(n: Int, valueG: Float = 0.005f): Signal1D =
 
 internal fun noExtrapolation(n: Int): BooleanArray = BooleanArray(n)
 
-/** Gravite constante : montre immobile, aucun changement d'orientation. */
+/** Constant gravity: watch immobile, no change of orientation. */
 internal fun flatGravity(n: Int): TriAxial =
     TriAxial(FS, 0L, FloatArray(n), FloatArray(n), FloatArray(n) { 1f })
 
 /**
- * Gravite qui tourne de `deg` autour de l'axe X entre `startSec` et `startSec + durSec`, puis reste
- * a sa nouvelle orientation. Si `andBack` est vrai, elle revient a l'orientation d'origine sur la
- * meme duree : c'est un mouvement ample, pas un changement de posture.
+ * Gravity that rotates by `deg` about the X axis between `startSec` and `startSec + durSec`, then
+ * stays at its new orientation. If `andBack` is true, it comes back to the original orientation
+ * over the same duration: that is a large movement, not a posture change.
  */
 internal fun rotatingGravity(
     n: Int,
@@ -137,7 +136,7 @@ internal fun noCalibration(): NightCalibration = NightCalibration(
 
 internal fun wholeNight(n: Int): List<Segment> = listOf(Segment(0, n))
 
-/** Masque trivial : toute la fenetre est du sommeil. */
+/** Trivial mask: the whole window is sleep. */
 internal fun sleepAllNight(durSec: Double): SleepMask {
     val endMs = Math.round(durSec * 1000.0)
     return SleepMask(
@@ -155,7 +154,7 @@ internal fun sleepAllNight(durSec: Double): SleepMask {
     )
 }
 
-/** CLM synthetique pour les tests de [SeriesBuilder]. */
+/** Synthetic CLM for the [SeriesBuilder] tests. */
 internal fun clmAt(
     onsetSec: Double,
     durationMs: Int = 2000,

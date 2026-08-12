@@ -3,27 +3,27 @@ package com.pendulum.phone.ingest
 import com.pendulum.format.wire.Ack
 
 /**
- * Construction de l'accuse de reception **a partir de la base**, jamais d'un compteur en memoire.
+ * Building the acknowledgement **from the database**, never from an in-memory counter.
  *
- * Un compteur en memoire ne survit pas au fait que le service de reception est demarre et tue
- * par Google Play Services a sa guise, potentiellement des dizaines de fois dans la nuit. Un
- * accuse trop optimiste fait supprimer par la montre un fichier que le telephone n'a pas : c'est
- * la seule facon de perdre definitivement des donnees dans ce protocole, et elle passe par une
- * ligne de code aussi anodine qu'un `count++`.
+ * An in-memory counter does not survive the fact that the receiving service is started and killed
+ * by Google Play Services at will, potentially dozens of times over a night. An over-optimistic
+ * acknowledgement makes the watch delete a file the phone does not have: that is the only way to
+ * lose data for good in this protocol, and it goes through a line of code as innocuous as a
+ * `count++`.
  *
- * L'accuse est un `DataItem`, donc un **etat convergent** : le relire dix fois donne le meme
- * resultat que le relire une fois. C'est ce qui rend l'idempotence gratuite, sans compteur de
- * sequence ni fenetre glissante.
+ * The acknowledgement is a `DataItem`, hence **convergent state**: reading it ten times gives the
+ * same result as reading it once. That is what makes idempotence free, with no sequence counter
+ * and no sliding window.
  */
 object AckBuilder {
 
     /**
-     * @param completeIndices index des chunks presents en base **et complets** (marqueur de fin
-     *   lu et verifie). Un chunk incomplet n'est jamais acquitte : la montre effacerait un
-     *   fichier dont le telephone n'a qu'un morceau.
-     * @param needResend index recus dont le CRC-32 etait faux. La montre doit **supprimer puis
-     *   re-poser** l'item : un `putDataItem` identique est dedoublonne par le Data Layer et ne
-     *   declencherait rien du tout.
+     * @param completeIndices indices of the chunks present in the database **and complete** (end
+     *   marker read and verified). An incomplete chunk is never acknowledged: the watch would
+     *   erase a file the phone holds only a piece of.
+     * @param needResend received indices whose CRC-32 was wrong. The watch must **delete then
+     *   re-put** the item: an identical `putDataItem` is deduplicated by the Data Layer and would
+     *   trigger nothing at all.
      */
     fun build(
         sessionHex: String,
@@ -33,9 +33,9 @@ object AckBuilder {
     ): Ack {
         val sorted = completeIndices.distinct().sorted()
 
-        // `ackedUpTo` = longueur du prefixe continu depuis 0. Tout ce qui est en-deca est
-        // acquitte sans consulter le bitmap, ce qui garde ce dernier petit dans le cas nominal
-        // (une nuit qui arrive dans l'ordre a un bitmap vide).
+        // `ackedUpTo` = length of the contiguous prefix from 0. Everything below it is
+        // acknowledged without consulting the bitmap, which keeps the bitmap small in the nominal
+        // case (a night that arrives in order has an empty bitmap).
         var upTo = 0
         for (i in sorted) {
             if (i == upTo) upTo++ else if (i > upTo) break

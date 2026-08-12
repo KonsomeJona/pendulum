@@ -10,48 +10,48 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.pendulum.phone.db.PendulumDatabase
-import com.pendulum.phone.temps.Durees
+import com.pendulum.phone.time.Durations
 import java.util.concurrent.TimeUnit
 
 /**
- * La chaine de traitement d'une nuit.
+ * The processing chain of a night.
  *
  * ```
  * IngestWorker  ->  AnalyzeWorker  ->  SleepFetchWorker  ->  RescoreWorker
- * (reconcilier)     (masque accel)     (echelle T+30min…)     (masque HC)
+ * (reconcile)       (accel mask)       (ladder T+30min...)    (HC mask)
  * ```
  *
- * ### Ce que la chaine garantit, et ce qu'elle ne garantit pas
+ * ### What the chain guarantees, and what it does not
  *
- * Elle garantit l'**ordre** : on ne rescore pas avant d'avoir lu, on ne lit pas avant d'avoir
- * analyse, on n'analyse pas avant d'avoir reconcilie disque et base. Elle ne garantit **pas**
- * les delais : `SleepFetchWorker` se replanifie lui-meme le long de [FetchSchedule], et
- * `RescoreWorker` est re-enfile par lui a chaque fois que l'hypnogramme a change. Le maillon
- * `RescoreWorker` de la chaine initiale n'est donc qu'un premier essai, generalement sans effet.
+ * It guarantees the **order**: we do not rescore before having read, we do not read before having
+ * analysed, we do not analyse before having reconciled disk and database. It does **not** guarantee
+ * the delays: `SleepFetchWorker` reschedules itself along [FetchSchedule], and `RescoreWorker` is
+ * re-enqueued by it every time the hypnogram has changed. The `RescoreWorker` link of the initial
+ * chain is therefore only a first try, generally with no effect.
  *
- * ### Les contraintes, et surtout celle qu'on ne met pas
+ * ### The constraints, and above all the one we do not set
  *
- * Aucun worker n'exige le chargeur. La combinaison « lecture Health Connect + `requiresCharging` »
- * est un piege identifie : sur un telephone qu'on ne recharge pas systematiquement le matin,
- * elle produit un worker qui ne s'execute jamais et une nuit sans denominateur, silencieusement.
+ * No worker requires the charger. The combination "Health Connect read + `requiresCharging`" is an
+ * identified trap: on a phone that is not systematically recharged in the morning, it produces a
+ * worker that never runs and a night with no denominator, silently.
  *
- * Aucun worker n'exige le reseau non plus, et pour cause : l'application ne declare pas la
- * permission `INTERNET`.
+ * No worker requires the network either, and for good reason: the application does not declare the
+ * `INTERNET` permission.
  */
 object WorkScheduler {
 
     private const val CHAIN = "pendulum-night-chain"
-    private const val FIN_DE_NUIT = "pendulum-end-of-night"
+    private const val END_OF_NIGHT = "pendulum-end-of-night"
     private const val FETCH = "pendulum-sleep-fetch"
     private const val RESCORE = "pendulum-rescore"
     private const val RESCORE_ALL = "pendulum-rescore-all"
     private const val WATCHDOG = "pendulum-watchdog"
-    private const val PUBLICATION_CONTEXTE = "pendulum-context-publish"
+    private const val CONTEXT_PUBLICATION = "pendulum-context-publish"
 
     /**
-     * Contraintes communes. `setRequiresBatteryNotLow(false)` est explicite : une nuit deja
-     * enregistree doit etre analysee meme sur un telephone a 12 %, sinon l'utilisateur voit
-     * « pas de resultat » et croit que la nuit est perdue alors qu'elle est intacte sur le disque.
+     * Common constraints. `setRequiresBatteryNotLow(false)` is explicit: a night that has already
+     * been recorded must be analysed even on a phone at 12 %, otherwise the user sees "no result"
+     * and believes the night is lost when it is intact on the disk.
      */
     private val constraints = Constraints.Builder()
         .setRequiresBatteryNotLow(false)
@@ -70,9 +70,9 @@ object WorkScheduler {
             .setInputData(data).setConstraints(constraints).build()
 
         WorkManager.getInstance(context)
-            // `KEEP` : si la chaine tourne deja pour cette nuit, la relancer en doublerait le
-            // travail pour aboutir au meme resultat. Le nom inclut la session, donc deux nuits
-            // differentes ne s'excluent pas.
+            // `KEEP`: if the chain is already running for this night, restarting it would double
+            // the work to reach the same result. The name includes the session, so two different
+            // nights do not exclude each other.
             .beginUniqueWork("$CHAIN-$sessionHex", ExistingWorkPolicy.KEEP, ingest)
             .then(analyze)
             .then(fetch)
@@ -81,29 +81,29 @@ object WorkScheduler {
     }
 
     /**
-     * La chaine du bouton « fin de nuit », et son ordre differe de [enqueueNightChain].
+     * The chain of the "end of night" button, and its order differs from [enqueueNightChain].
      *
      * ```
-     * IngestWorker  ->  SleepFetchWorker  ->  AnalyzeWorker
-     * (reconcilier)     (lire l'hypnogramme)  (scorer avec)
+     * IngestWorker  ->  SleepFetchWorker    ->  AnalyzeWorker
+     * (reconcile)       (read the hypnogram)    (score with it)
      * ```
      *
-     * La chaine automatique analyse **avant** de lire Health Connect, et c'est juste : au reveil,
-     * l'hypnogramme n'est pas encore arrive — la synchronisation de la montre de poignet obeit a
-     * la politique batterie du fabricant — donc attendre produirait une application qui n'a rien
-     * a dire pendant des heures. Elle score avec le masque accelerometrique, puis rescore.
+     * The automatic chain analyses **before** reading Health Connect, and rightly so: on waking,
+     * the hypnogram has not arrived yet — the wrist watch synchronisation obeys the manufacturer's
+     * battery policy — so waiting would produce an application with nothing to say for hours. It
+     * scores with the accelerometer mask, then rescores.
      *
-     * Ici, l'utilisateur vient d'appuyer et attend. Tenter la lecture d'abord donne a l'analyse
-     * une chance d'utiliser le vrai denominateur du premier coup : `AnalysisRunner` lit le
-     * dernier `hc_snapshot`, donc l'ordre suffit a changer le resultat. Si la lecture ne rend
-     * rien, `SleepFetchWorker` rend `success` quand meme et l'analyse repart sur le masque
-     * accelerometrique — le pire cas est donc exactement le comportement nominal, jamais un
-     * blocage.
+     * Here, the user has just pressed and is waiting. Attempting the read first gives the analysis
+     * a chance to use the real denominator on the first go: `AnalysisRunner` reads the latest
+     * `hc_snapshot`, so the order alone is enough to change the result. If the read returns
+     * nothing, `SleepFetchWorker` returns `success` anyway and the analysis falls back on the
+     * accelerometer mask — the worst case is therefore exactly the nominal behaviour, never a
+     * deadlock.
      *
-     * `REPLACE` et non `KEEP` : le geste est explicite et repete quand le premier n'a rien
-     * ramene. `KEEP` ferait un bouton qui, appuye deux fois, ne fait rien la seconde fois.
+     * `REPLACE` and not `KEEP`: the gesture is explicit and repeated when the first one brought
+     * nothing back. `KEEP` would make a button that, pressed twice, does nothing the second time.
      */
-    fun enqueueFinDeNuit(context: Context, sessionHex: String) {
+    fun enqueueEndOfNight(context: Context, sessionHex: String) {
         val data = workDataOf(KEY_SESSION to sessionHex)
         val ingest = OneTimeWorkRequestBuilder<IngestWorker>()
             .setInputData(data).setConstraints(constraints).build()
@@ -113,13 +113,13 @@ object WorkScheduler {
             .setInputData(data).setConstraints(constraints).build()
 
         WorkManager.getInstance(context)
-            .beginUniqueWork("$FIN_DE_NUIT-$sessionHex", ExistingWorkPolicy.REPLACE, ingest)
+            .beginUniqueWork("$END_OF_NIGHT-$sessionHex", ExistingWorkPolicy.REPLACE, ingest)
             .then(fetch)
             .then(analyze)
             .enqueue()
     }
 
-    /** Replanification explicite d'une tentative de lecture, au rang deja calcule. */
+    /** Explicit rescheduling of a read attempt, at the already computed rung. */
     fun scheduleSleepFetch(context: Context, sessionHex: String, delayMs: Long) {
         val request = OneTimeWorkRequestBuilder<SleepFetchWorker>()
             .setInputData(workDataOf(KEY_SESSION to sessionHex))
@@ -128,18 +128,18 @@ object WorkScheduler {
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             "$FETCH-$sessionHex",
-            // `REPLACE` : il n'y a qu'une tentative en vol a la fois par nuit, et c'est toujours
-            // la derniere calculee qui fait foi. `KEEP` figerait l'echelle sur son premier rang.
+            // `REPLACE`: there is only one attempt in flight at a time per night, and it is always
+            // the last one computed that stands. `KEEP` would freeze the ladder on its first rung.
             ExistingWorkPolicy.REPLACE,
             request,
         )
     }
 
     /**
-     * Calcule le rang suivant de l'echelle et le planifie, ou ne planifie rien si on abandonne.
+     * Computes the next rung of the ladder and schedules it, or schedules nothing if we give up.
      *
-     * @param nowMs l'horloge en parametre : c'est elle qui decide entre replanifier et abandonner,
-     *   et la lire au fond de la fonction rendait cette bifurcation-la impossible a exercer.
+     * @param nowMs the clock as a parameter: it is what decides between rescheduling and giving
+     *   up, and reading it from deep inside the function made that branch impossible to exercise.
      */
     fun scheduleNextSleepFetch(
         context: Context,
@@ -164,10 +164,9 @@ object WorkScheduler {
     }
 
     /**
-     * A appeler apres **tout** changement de parametre. C'est le declencheur du garde-fou 3, et
-     * il n'y a volontairement pas de variante « ne rescorer que les nuits recentes » : une
-     * tendance a trois points dont deux ont ete calcules autrement n'est pas une tendance
-     * partielle, c'est un graphe faux.
+     * To be called after **every** parameter change. This is the trigger of guard rail 3, and
+     * there is deliberately no "rescore only the recent nights" variant: a trend with three points
+     * of which two were computed differently is not a partial trend, it is a false chart.
      */
     fun enqueueRescoreAll(context: Context) {
         val request = OneTimeWorkRequestBuilder<RescoreAllWorker>()
@@ -178,48 +177,50 @@ object WorkScheduler {
     }
 
     /**
-     * L'outbox du contexte du soir : a n'enfiler que lorsque la pose en ligne a echoue.
+     * The outbox of the evening context: to be enqueued only when the online put has failed.
      *
-     * `enqueueUniqueWork` avec la cle de nuit dans le nom, et `KEEP` : une soiree n'a qu'un
-     * contexte, donc qu'un rejeu en vol. `REPLACE` remettrait le repli exponentiel a son premier
-     * palier a chaque nouvelle tentative de scellement — sauf qu'il ne peut pas y en avoir, la
-     * base refusant le doublon. `KEEP` dit la meme chose et ne se trompe pas si cela change.
+     * `enqueueUniqueWork` with the night key in the name, and `KEEP`: an evening has only one
+     * context, hence only one replay in flight. `REPLACE` would reset the exponential backoff to
+     * its first step at every new sealing attempt — except that there cannot be any, the database
+     * refusing the duplicate. `KEEP` says the same thing and does not get it wrong if that changes.
      *
-     * Aucune contrainte de reseau, comme partout ailleurs ici : l'application ne declare pas la
-     * permission `INTERNET` et le Data Layer passe par Bluetooth. Une contrainte de reseau
-     * produirait un travail qui n'est jamais eligible, donc un rattrapage qui n'a jamais lieu.
+     * No network constraint, as everywhere else here: the application does not declare the
+     * `INTERNET` permission and the Data Layer goes over Bluetooth. A network constraint would
+     * produce work that is never eligible, hence a catch-up that never happens.
      *
-     * @param scelleAMs l'instant du scellement, qui est la charge utile de l'item. Le rejeu doit
-     *   reposer **exactement** la meme, faute de quoi le dedoublonnage du Data Layer ne joue plus.
+     * @param sealedAtMs the instant of the sealing, which is the payload of the item. The replay
+     *   must put **exactly** the same one back, failing which the Data Layer deduplication no
+     *   longer applies.
      */
-    fun enqueuePublicationContexte(context: Context, cleDeNuit: String, scelleAMs: Long) {
-        val request = OneTimeWorkRequestBuilder<PublicationContexteWorker>()
-            .setInputData(workDataOf(KEY_CLE_NUIT to cleDeNuit, KEY_SCELLE_A to scelleAMs))
+    fun enqueueContextPublication(context: Context, nightKey: String, sealedAtMs: Long) {
+        val request = OneTimeWorkRequestBuilder<ContextPublicationWorker>()
+            .setInputData(workDataOf(KEY_NIGHT_KEY to nightKey, KEY_SEALED_AT to sealedAtMs))
             .setConstraints(constraints)
             .setBackoffCriteria(
                 BackoffPolicy.EXPONENTIAL,
-                Durees.ACTIVES.delaiRepublicationContexteMs,
+                Durations.ACTIVE.contextRepublicationDelayMs,
                 TimeUnit.MILLISECONDS,
             )
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "$PUBLICATION_CONTEXTE-$cleDeNuit",
+            "$CONTEXT_PUBLICATION-$nightKey",
             ExistingWorkPolicy.KEEP,
             request,
         )
     }
 
     /**
-     * Le chien de garde tourne toutes les 30 minutes. C'est le minimum autorise par WorkManager
-     * pour un travail periodique (15 min) double d'une marge : il ne fait rien tant qu'aucune
-     * session n'est ouverte, et son cout est une requete SQL.
+     * The watchdog runs every 30 minutes. That is the minimum allowed by WorkManager for periodic
+     * work (15 min) doubled with a margin: it does nothing as long as no session is open, and its
+     * cost is one SQL query.
      *
-     * La periode passe par `Durees`, mais WorkManager ramene toute valeur sous quinze minutes a
-     * quinze minutes : sur le banc, ce chemin ne s'accelere pas. Voir `Durees.periodeWatchdogMs`.
+     * The period goes through `Durations`, but WorkManager brings any value under fifteen minutes
+     * back up to fifteen minutes: on the bench, this path does not speed up. See
+     * `Durations.watchdogPeriodMs`.
      */
     fun ensureWatchdog(context: Context) {
         val request = PeriodicWorkRequestBuilder<WatchdogWorker>(
-            Durees.ACTIVES.periodeWatchdogMs,
+            Durations.ACTIVE.watchdogPeriodMs,
             TimeUnit.MILLISECONDS,
         )
             .setConstraints(constraints)
@@ -232,24 +233,24 @@ object WorkScheduler {
     }
 
     /**
-     * Le profil de parametres actif, ou celui par defaut.
+     * The active parameter profile, or the default one.
      *
-     * Note importante : seul le **hash** est stocke en base, pas les valeurs. Un profil actif
-     * dont le hash ne correspond pas aux valeurs par defaut du code signifie que la version
-     * installee ne sait plus reproduire ce profil — cas d'une mise a jour de l'application qui a
-     * change une valeur par defaut. On repart alors du profil courant du code, ce qui produit un
-     * nouveau hash, donc un rescore complet. C'est le comportement voulu : il vaut mieux
-     * recalculer que d'etiqueter d'anciens chiffres avec un hash qui ne les decrit plus.
+     * An important note: only the **hash** is stored in the database, not the values. An active
+     * profile whose hash does not match the default values of the code means that the installed
+     * version can no longer reproduce that profile — the case of an application update that
+     * changed a default value. We then start again from the current profile of the code, which
+     * produces a new hash, hence a full rescore. That is the intended behaviour: it is better to
+     * recompute than to label old figures with a hash that no longer describes them.
      */
     suspend fun activeParams(context: Context): AnalysisParams {
         val active = PendulumDatabase.get(context).paramDao().active()
         if (active != null && active.paramsHash != AnalysisParams.DEFAULT.paramsHash) {
-            // On ne relance pas le rescore global d'ici : cette fonction est appelee *par*
-            // `RescoreAllWorker`, et s'auto-enfiler donnerait une boucle infinie. C'est
-            // `PendulumApp.onCreate` qui detecte l'ecart de hash au demarrage et declenche.
+            // We do not restart the global rescore from here: this function is called *by*
+            // `RescoreAllWorker`, and self-enqueuing would give an infinite loop. It is
+            // `PendulumApp.onCreate` that detects the hash mismatch at start-up and triggers it.
             android.util.Log.i(
                 "PendulumWork",
-                "profil actif ${active.paramsHash} != ${AnalysisParams.DEFAULT.paramsHash} : rescore attendu",
+                "active profile ${active.paramsHash} != ${AnalysisParams.DEFAULT.paramsHash}: rescore expected",
             )
         }
         return AnalysisParams.DEFAULT

@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
-"""Echantillonnage simultane des deux moities du transfert, pour dater l'invariant.
+"""Simultaneous sampling of both halves of the transfer, to date the invariant.
 
-L'invariant a mesurer est un **ordre** : aucun fichier de chunk n'est efface de la montre avant
-que le telephone n'ait accuse sa reception. Un ordre ne se lit pas dans un etat final — a la fin,
-les fichiers ont disparu des deux cotes de la question. Il faut donc echantillonner les deux
-disques **pendant** la fenetre, et assez vite pour qu'un aller-retour du Data Layer y tienne.
+The invariant to be measured is an **order**: no chunk file is erased from the watch before the
+phone has acknowledged receiving it. An order cannot be read from a final state — by the end, the
+files have disappeared from both sides of the question. Both disks must therefore be sampled
+**during** the window, and fast enough for one Data Layer round trip to fit inside it.
 
-Deux fils, un par appareil, parce que les deux liens n'ont pas la meme latence : la montre est en
-USB (~200 ms par appel), le telephone en WiFi (~400 ms). Les faire alterner dans une seule boucle
-donnerait au telephone le retard de la montre et rendrait tout ecart de 200 ms indistinguable
-d'un artefact de mesure.
+Two threads, one per device, because the two links do not have the same latency: the watch is on
+USB (~200 ms per call), the phone on WiFi (~400 ms). Alternating them in a single loop would give
+the phone the watch's delay and would make any 200 ms difference indistinguishable from a
+measurement artefact.
 
-Chaque ligne porte **deux** horodatages, celui d'avant l'appel et celui d'apres : l'observation
-est quelque part entre les deux, et c'est cet encadrement qu'il faut lire, pas un instant unique
-qu'on n'a pas. Les deux sont en millisecondes depuis l'epoque, prises sur l'hote — donc dans une
-seule horloge, ce qui evite d'avoir a corriger la derive entre les deux appareils.
+Every line carries **two** timestamps, the one from before the call and the one from after: the
+observation is somewhere between the two, and it is that bracket that must be read, not a single
+instant nobody has. Both are in milliseconds since the epoch, taken on the host — hence in a single
+clock, which avoids having to correct the drift between the two devices.
 
-Usage :
-    sonde_transfert.py <serie_montre> <serie_telephone> <duree_s> [periode_ms]
+Usage:
+    sonde_transfert.py <watch_serial> <phone_serial> <duration_s> [period_ms]
 
-Sortie, une ligne par echantillon :
-    <ms_avant> <ms_apres> MONTRE n=<k> <idx:taille> ...
-    <ms_avant> <ms_apres> TEL    n=<k> <idx:taille> ...
+Output, one line per sample:
+    <ms_before> <ms_after> MONTRE n=<k> <idx:size> ...
+    <ms_before> <ms_after> TEL    n=<k> <idx:size> ...
+
+The `MONTRE` and `TEL` labels stay as they are: sample lines are quoted verbatim in
+`docs/workings/BENCH-LOG.md` §11, which is a dated log whose whole value is being an exact trace.
 """
 
 import os
@@ -36,68 +39,68 @@ ADB = os.environ.get("ADB") or os.path.join(
 if not os.path.exists(ADB):
     ADB = "adb"
 
-VERROU = threading.Lock()
+LOCK = threading.Lock()
 
 
-def maintenant_ms():
+def now_ms():
     return int(time.time() * 1000)
 
 
-def lister(serial):
-    """Les fichiers de chunk de l'application, vus par `run-as`.
+def list_chunks(serial):
+    """The application's chunk files, as seen through `run-as`.
 
-    `ls -lR` et non un glob : le glob serait developpe par le shell de l'appareil, qui tourne
-    sous l'utilisateur `shell` et n'a pas le droit de lire le repertoire de l'application. La
-    recursion, elle, se fait apres `run-as`, donc avec la bonne identite.
+    `ls -lR` and not a glob: the glob would be expanded by the device shell, which runs as the
+    `shell` user and has no right to read the application's directory. The recursion, on the other
+    hand, happens after `run-as`, hence with the right identity.
     """
     out = subprocess.run(
         [ADB, "-s", serial, "shell", "run-as", "com.pendulum", "ls", "-lR", "files/chunks"],
         capture_output=True,
         timeout=30,
     ).stdout.decode("utf-8", "replace")
-    fichiers = []
-    for ligne in out.splitlines():
-        champs = ligne.split()
-        if not champs or not champs[-1].endswith(".pendulum"):
+    files = []
+    for line in out.splitlines():
+        fields = line.split()
+        if not fields or not fields[-1].endswith(".pendulum"):
             continue
-        nom = champs[-1].rsplit(".", 1)[0]
-        taille = champs[4] if len(champs) >= 6 else "?"
-        fichiers.append(f"{nom}:{taille}")
-    return sorted(fichiers)
+        name = fields[-1].rsplit(".", 1)[0]
+        size = fields[4] if len(fields) >= 6 else "?"
+        files.append(f"{name}:{size}")
+    return sorted(files)
 
 
-def boucle(serial, etiquette, fin, periode):
-    while time.time() < fin:
-        avant = maintenant_ms()
+def loop(serial, label, end, period):
+    while time.time() < end:
+        before = now_ms()
         try:
-            f = lister(serial)
-            corps = f"n={len(f)} " + " ".join(f)
-        except Exception as e:  # un appel adb qui expire ne doit pas arreter la sonde
-            corps = f"ERREUR {e}"
-        apres = maintenant_ms()
-        with VERROU:
-            print(f"{avant} {apres} {etiquette} {corps}", flush=True)
-        reste = periode - (apres - avant) / 1000.0
-        if reste > 0:
-            time.sleep(reste)
+            f = list_chunks(serial)
+            body = f"n={len(f)} " + " ".join(f)
+        except Exception as e:  # an adb call that times out must not stop the probe
+            body = f"ERROR {e}"
+        after = now_ms()
+        with LOCK:
+            print(f"{before} {after} {label} {body}", flush=True)
+        left = period - (after - before) / 1000.0
+        if left > 0:
+            time.sleep(left)
 
 
 def main():
     if len(sys.argv) < 4:
         print(__doc__)
         return 2
-    montre, telephone = sys.argv[1], sys.argv[2]
-    duree = float(sys.argv[3])
-    periode = (float(sys.argv[4]) if len(sys.argv) > 4 else 400) / 1000.0
-    fin = time.time() + duree
-    fils = [
-        threading.Thread(target=boucle, args=(montre, "MONTRE", fin, periode)),
-        threading.Thread(target=boucle, args=(telephone, "TEL", fin, periode)),
+    watch, phone = sys.argv[1], sys.argv[2]
+    duration = float(sys.argv[3])
+    period = (float(sys.argv[4]) if len(sys.argv) > 4 else 400) / 1000.0
+    end = time.time() + duration
+    threads = [
+        threading.Thread(target=loop, args=(watch, "MONTRE", end, period)),
+        threading.Thread(target=loop, args=(phone, "TEL", end, period)),
     ]
-    for f in fils:
-        f.start()
-    for f in fils:
-        f.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
     print("SONDE_FIN", flush=True)
     return 0
 

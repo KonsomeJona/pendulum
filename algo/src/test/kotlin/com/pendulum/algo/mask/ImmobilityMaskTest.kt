@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test
 private const val NIGHT_SEC = 8.0 * 3600.0
 private const val NIGHT_MIN = 480.0
 
-/** Bouffee franchement au-dessus de `moveFactor x plancher` (6 x 0,004 = 0,024 g). */
+/** Burst plainly above `moveFactor x floor` (6 x 0.004 = 0.024 g). */
 private const val MOVE_G = 0.10f
 
 class ImmobilityMaskTest {
@@ -39,7 +39,7 @@ class ImmobilityMaskTest {
     )
 
     @Test
-    fun `nuit sans aucun mouvement - SPT plausible et TST egal au SPT`() {
+    fun `night without any movement - plausible SPT and TST equal to the SPT`() {
         val mask = build(Night(NIGHT_SEC))
 
         assertThat(mask.sptMin).isCloseTo(NIGHT_MIN, within(0.1))
@@ -51,15 +51,15 @@ class ImmobilityMaskTest {
     }
 
     /**
-     * Le mode de defaillance disqualifiant de §3.6.3, rendu explicite. Ce test **documente** le
-     * comportement naif ; il n'est pas la pour approuver ce comportement mais pour que sa
-     * disparition (test suivant) soit lisible comme un resultat et non comme une coincidence.
+     * The disqualifying failure mode of §3.6.3, made explicit. This test **documents** the naive
+     * behaviour; it is not here to endorse that behaviour but so that its disappearance (next
+     * test) reads as a result and not as a coincidence.
      *
-     * Une serie a IMI 22 s place ~13 mouvements dans n'importe quelle fenetre de 5 min : aucune
-     * bouffee d'inactivite soutenue ne peut exister, donc **toute la nuit est scoree en eveil**.
+     * A series at IMI 22 s places ~13 movements in any 5 min window: no stretch of sustained
+     * inactivity can exist, so **the whole night is scored as wake**.
      */
     @Test
-    fun `serie periodique dense - sans neutralisation le masque s'effondre`() {
+    fun `dense periodic series - without neutralisation the mask collapses`() {
         val night = Night(NIGHT_SEC)
         night.periodic(startSec = 10.0, imiSec = 22.0, durSec = 1.5, ampG = MOVE_G, count = 1300)
 
@@ -70,13 +70,13 @@ class ImmobilityMaskTest {
     }
 
     /**
-     * **Le test qui protege du mode de defaillance disqualifiant.** Memes donnees, memes
-     * parametres ; seule change la couche 1 : les intervalles de mouvement periodique cessent
-     * d'etre des preuves d'eveil. Le sujet le plus atteint doit redevenir celui dont on mesure le
-     * sommeil, pas celui a qui l'on en refuse.
+     * **The test that guards against the disqualifying failure mode.** Same data, same
+     * parameters; only layer 1 changes: periodic movement intervals stop being evidence of wake.
+     * The most severely affected subject must become again the one whose sleep is measured, not
+     * the one who is refused any.
      */
     @Test
-    fun `serie periodique dense - neutralisee elle n'est PAS scoree comme de l'eveil`() {
+    fun `dense periodic series - neutralised it is NOT scored as wake`() {
         val night = Night(NIGHT_SEC)
         val clms = night.periodic(startSec = 10.0, imiSec = 22.0, durSec = 1.5, ampG = MOVE_G, count = 1300)
 
@@ -88,7 +88,7 @@ class ImmobilityMaskTest {
     }
 
     @Test
-    fun `mouvement corporel ample - reste une preuve d'eveil`() {
+    fun `large body movement - remains evidence of wake`() {
         val night = Night(NIGHT_SEC)
         night.tilt(atSec = 4.0 * 3600.0, deg = 40.0)
 
@@ -96,18 +96,18 @@ class ImmobilityMaskTest {
 
         assertThat(mask.wasoMin).isGreaterThan(0.0)
         assertThat(mask.windows.map { it.stage }).contains(Stage.AWAKE_IN_BED)
-        // Une reorientation isolee ne doit pas pour autant amputer le SPT : ses bornes ne dependent
-        // que des deux transitions extremes de la nuit.
+        // An isolated reorientation must not for all that amputate the SPT: its bounds depend only
+        // on the two extreme transitions of the night.
         assertThat(mask.sptMin).isCloseTo(NIGHT_MIN, within(0.1))
     }
 
     /**
-     * Garde-fou de la couche 1. Meme si un mouvement periodique est detecte au moment exact d'un
-     * retournement, la reorientation persistante reste une preuve d'eveil : c'est la seule dont on
-     * dispose vraiment, et l'effacer par coincidence de calendrier serait le pire echange possible.
+     * Guard rail of layer 1. Even if a periodic movement is detected at the exact moment of a turn
+     * in bed, the persistent reorientation remains evidence of wake: it is the only one really
+     * available, and erasing it on a coincidence of timing would be the worst possible trade.
      */
     @Test
-    fun `garde-fou posture - une reorientation ample n'est jamais neutralisee`() {
+    fun `posture guard rail - a large reorientation is never neutralised`() {
         val night = Night(NIGHT_SEC)
         val at = 4.0 * 3600.0
         night.tilt(atSec = at, deg = 40.0)
@@ -120,13 +120,13 @@ class ImmobilityMaskTest {
     }
 
     /**
-     * Invariance par rotation du boitier : le Delta angulaire porte sur le vecteur gravite
-     * unitaire, donc sur une grandeur qui ne nomme aucun axe. Une nuit rejouee avec le bracelet
-     * tourne doit produire le **meme** masque — c'est la propriete pour laquelle van Hees a ete
-     * prefere, et la seule qui rende deux nuits comparables quand la pose change.
+     * Invariance under rotation of the case: the angular Delta bears on the unit gravity vector,
+     * therefore on a quantity that names no axis. A night replayed with the strap turned must
+     * produce the **same** mask — this is the property for which van Hees was preferred, and the
+     * only one that makes two nights comparable when the way the watch is worn changes.
      */
     @Test
-    fun `invariance par rotation du boitier`() {
+    fun `invariance under rotation of the case`() {
         val night = Night(NIGHT_SEC)
         val clms = night.periodic(startSec = 10.0, imiSec = 22.0, durSec = 1.5, ampG = MOVE_G, count = 600)
         night.tilt(atSec = 5.0 * 3600.0, deg = 40.0)
@@ -146,7 +146,7 @@ class ImmobilityMaskTest {
     }
 
     @Test
-    fun `un masque accelerometrique est toujours CIRCULAR, journal compris`() {
+    fun `an accelerometer mask is always CIRCULAR, diary included`() {
         val night = Night(NIGHT_SEC)
 
         val plain = build(night)
@@ -157,7 +157,7 @@ class ImmobilityMaskTest {
     }
 
     @Test
-    fun `le journal borne la recherche du SPT sans fournir le denominateur`() {
+    fun `the diary bounds the search for the SPT without providing the denominator`() {
         val night = Night(NIGHT_SEC)
 
         val mask = build(night, diary = DiaryWindow(3_600_000L, 25_200_000L))
@@ -167,7 +167,7 @@ class ImmobilityMaskTest {
     }
 
     @Test
-    fun `le denominateur analysable retire les zones aveugles du TST`() {
+    fun `the analysable denominator removes the blind zones from the TST`() {
         val night = Night(NIGHT_SEC)
         val blind = listOf(Segment(samples(3600.0), samples(7200.0)))
 
@@ -179,7 +179,7 @@ class ImmobilityMaskTest {
     }
 
     @Test
-    fun `le hors-corps ne prouve rien et ferme le SPT`() {
+    fun `off-body proves nothing and closes the SPT`() {
         val night = Night(NIGHT_SEC)
         val off = listOf(Segment(samples(7.0 * 3600.0), night.n))
 
@@ -190,7 +190,7 @@ class ImmobilityMaskTest {
     }
 
     @Test
-    fun `point fixe - une serie localisee converge`() {
+    fun `fixed point - a localised series converges`() {
         val night = Night(NIGHT_SEC)
         val clms = night.periodic(startSec = 7200.0, imiSec = 22.0, durSec = 1.5, ampG = MOVE_G, count = 122)
 
@@ -206,14 +206,14 @@ class ImmobilityMaskTest {
     }
 
     /**
-     * Le cas ou le TST provisoire s'effondre. Deux choses doivent se produire ensemble, et c'est le
-     * coeur de la reponse a la circularite : le masque **final** conserve la nuit (couche 1), et la
-     * non-convergence est rapportee honnetement (couche 2) pour que la porte de publication refuse
-     * un aPLM-i sur une nuit ou le TST accelerometrique n'est pas determinable. Le Periodicity
-     * Index, lui, n'a pas de denominateur temporel et survit a ce refus.
+     * The case where the provisional TST collapses. Two things must happen together, and this is
+     * the heart of the answer to circularity: the **final** mask keeps the night (layer 1), and
+     * the non-convergence is reported honestly (layer 2) so that the publication gate refuses an
+     * aPLM-i on a night where the accelerometer TST is not determinable. The Periodicity Index,
+     * for its part, has no temporal denominator and survives that refusal.
      */
     @Test
-    fun `point fixe - non convergence quand le TST provisoire s'effondre`() {
+    fun `fixed point - non-convergence when the provisional TST collapses`() {
         val night = Night(NIGHT_SEC)
         val clms = night.periodic(startSec = 10.0, imiSec = 22.0, durSec = 1.5, ampG = MOVE_G, count = 1300)
 
@@ -228,7 +228,7 @@ class ImmobilityMaskTest {
     }
 
     @Test
-    fun `plus de deux iterations est refuse par construction`() {
+    fun `more than two iterations is refused by construction`() {
         val night = Night(60.0)
 
         assertThatThrownBy {
@@ -240,7 +240,7 @@ class ImmobilityMaskTest {
     }
 
     @Test
-    fun `le masque est deterministe - deux constructions identiques donnent le meme resultat`() {
+    fun `the mask is deterministic - two identical builds give the same result`() {
         val night = Night(NIGHT_SEC)
         val clms = night.periodic(startSec = 30.0, imiSec = 25.0, durSec = 1.0, ampG = MOVE_G, count = 500)
 

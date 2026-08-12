@@ -5,15 +5,16 @@ import java.io.File
 import java.util.zip.CRC32
 
 /**
- * Les fichiers de chunks sur le disque du telephone.
+ * The chunk files on the phone's disk.
  *
- * Ils vivent dans `filesDir/chunks/<sessionHex>/<idx:05d>.pendulum`. `filesDir` et non le cache :
- * le cache est effacable par le systeme sous pression disque, et perdre un chunk brut est la
- * seule perte irreversible possible ici.
+ * They live in `filesDir/chunks/<sessionHex>/<idx:05d>.pendulum`. `filesDir` and not the cache:
+ * the cache can be wiped by the system under disk pressure, and losing a raw chunk is the only
+ * irreversible loss possible here.
  *
- * L'index est zero-pade sur cinq chiffres pour que l'ordre lexicographique des noms coincide
- * avec l'ordre des chunks — sans quoi un simple `listFiles().sorted()` rend le chunk 10 avant
- * le chunk 2, et le reassemblage produit une nuit dans le desordre sans lever la moindre erreur.
+ * The index is zero-padded to five digits so that the lexicographic order of the names coincides
+ * with the order of the chunks — failing which a plain `listFiles().sorted()` gives back chunk 10
+ * before chunk 2, and the reassembly produces an out-of-order night without raising the slightest
+ * error.
  */
 class ChunkStore(private val root: File) {
 
@@ -25,15 +26,15 @@ class ChunkStore(private val root: File) {
         File(sessionDir(sessionHex), "%05d.pendulum".format(idx))
 
     /**
-     * Ecrit un chunk de facon atomique : fichier temporaire, `fsync`, puis `rename`.
+     * Writes a chunk atomically: temporary file, `fsync`, then `rename`.
      *
-     * Sans le temporaire, une coupure au milieu de l'ecriture laisse un fichier de taille
-     * plausible et de contenu tronque, que la base declare pourtant recu. Le `rename` d'un
-     * fichier deja synchronise est atomique sur ext4 : soit l'ancien etat, soit le nouveau,
-     * jamais un entre-deux.
+     * Without the temporary file, an interruption in the middle of the write leaves a file of
+     * plausible size and truncated content, which the database nonetheless declares received. The
+     * `rename` of an already synced file is atomic on ext4: either the old state or the new one,
+     * never anything in between.
      *
-     * @return `true` si le fichier a ete ecrit, `false` s'il existait deja a la bonne taille —
-     *   cas normal d'une reemission, qui ne doit rien faire.
+     * @return `true` if the file was written, `false` if it already existed at the right size —
+     *   the normal case of a resend, which must do nothing.
      */
     fun write(sessionHex: String, idx: Int, bytes: ByteArray): Boolean {
         val target = fileFor(sessionHex, idx)
@@ -45,7 +46,7 @@ class ChunkStore(private val root: File) {
             out.flush()
             out.fd.sync()
         }
-        check(tmp.renameTo(target)) { "renommage impossible : ${tmp.absolutePath}" }
+        check(tmp.renameTo(target)) { "rename impossible: ${tmp.absolutePath}" }
         return true
     }
 
@@ -54,7 +55,7 @@ class ChunkStore(private val root: File) {
     fun listSessions(): List<String> =
         root.listFiles()?.filter { it.isDirectory }?.map { it.name }?.sorted().orEmpty()
 
-    /** Les fichiers d'une session, **tries par index** grace au zero-padding. */
+    /** The files of one session, **sorted by index** thanks to the zero-padding. */
     fun listChunkFiles(sessionHex: String): List<File> =
         sessionDir(sessionHex).listFiles()
             ?.filter { it.isFile && it.name.endsWith(".pendulum") }
@@ -64,9 +65,9 @@ class ChunkStore(private val root: File) {
     fun deleteSession(sessionHex: String): Boolean = sessionDir(sessionHex).deleteRecursively()
 
     /**
-     * Efface **tous** les chunks bruts. C'est la moitie disque du bouton « tout supprimer » :
-     * vider la base sans passer ici laisserait sur le telephone huit heures de signal
-     * accelerometrique par nuit, que l'utilisateur croit avoir effacees.
+     * Erases **every** raw chunk. This is the disk half of the "delete everything" button:
+     * emptying the database without coming through here would leave eight hours of accelerometer
+     * signal per night on the phone, which the user believes they have erased.
      */
     fun deleteAll(): Boolean = root.deleteRecursively()
 
@@ -76,14 +77,14 @@ class ChunkStore(private val root: File) {
     companion object {
 
         /**
-         * CRC-32 sur les octets **recus**.
+         * CRC-32 over the **received** bytes.
          *
-         * Le CRC-16 par bloc couvre le contenu d'un bloc ; celui-ci couvre le transport, et
-         * rien d'autre ne le couvre. Il est verifie **avant** toute insertion en base : un
-         * index dont le CRC-32 ne retombe pas juste part dans `needResend` de l'accuse, ce qui
-         * fait re-poser l'item par la montre. Inserer d'abord et verifier ensuite reviendrait a
-         * acquitter des octets faux, donc a faire supprimer par la montre le seul exemplaire
-         * correct.
+         * The per-block CRC-16 covers the contents of a block; this one covers the transport, and
+         * nothing else covers it. It is verified **before** any insertion into the database: an
+         * index whose CRC-32 does not come out right goes into the `needResend` of the
+         * acknowledgement, which makes the watch re-put the item. Inserting first and verifying
+         * afterwards would amount to acknowledging wrong bytes, hence to making the watch delete
+         * the only correct copy.
          */
         fun crc32(bytes: ByteArray): Long = CRC32().apply { update(bytes) }.value
     }

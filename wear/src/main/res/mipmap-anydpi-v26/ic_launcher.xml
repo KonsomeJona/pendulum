@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Icone de lanceur, entierement vectorielle et sans le moindre PNG.
+  Launcher icon, entirely vector and without a single PNG.
 
-  Les PNG de densite (`mipmap-mdpi` a `mipmap-xxxhdpi`) ne servent que de repli sous Android 8,
-  ou l'icone adaptative n'existe pas. `minSdk` vaut 33 ici : ce repli est mort, et le declarer
-  ferait entrer dans l'APK cinq bitmaps que rien ne lit jamais.
+  The density PNGs (`mipmap-mdpi` to `mipmap-xxxhdpi`) only serve as a fallback under Android 8,
+  where the adaptive icon does not exist. `minSdk` is 33 here: that fallback is dead, and
+  declaring it would pull five bitmaps into the APK that nothing ever reads.
 
-  Fichier identique a celui du module `:phone`, volontairement duplique : il n'existe pas de
-  module de ressources partage entre les deux applications, et en creer un pour cinq fichiers
-  couterait plus que la duplication. Si le trace change d'un cote, le changer de l'autre.
+  This file is identical to the one in the `:phone` module, duplicated on purpose: there is no
+  shared resource module between the two applications, and creating one for five files would
+  cost more than the duplication. If the drawing changes on one side, change it on the other.
 
-  Sur Wear OS le masque est **toujours circulaire** — il n'y a pas de squircle ni de goutte a
-  prevoir, mais rien ne depasse non plus du cercle. La zone de securite de 66 dp respectee par
-  `ic_launcher_foreground` est donc ici une contrainte stricte et pas une precaution.
+  On Wear OS the mask is **always circular** — there is no squircle or teardrop to plan for, but
+  nothing sticks out of the circle either. The 66 dp safe zone respected by
+  `ic_launcher_foreground` is therefore a strict constraint here, not a precaution.
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />

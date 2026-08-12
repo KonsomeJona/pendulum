@@ -13,27 +13,32 @@ import com.google.android.gms.wearable.Wearable
 import com.pendulum.format.wire.Ack
 import com.pendulum.format.wire.WirePaths
 import com.pendulum.wear.record.Preflight
-import com.pendulum.wear.temps.Durees
-import com.pendulum.wear.temps.EchelleTemps
+import com.pendulum.wear.time.Durations
+import com.pendulum.wear.time.TimeScaling
 import com.pendulum.wear.transfer.DataLayerTransfer
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
 
 /**
- * Jumelle de `BancDataLayer` cote montre. Elle repond a une question que l'ecran ne sait pas
- * poser : `Preflight` melange dans un seul avertissement le resultat de `connectedNodes` et
- * l'etat reel de la liaison. Ici les deux lectures sont separees, dans le meme processus, a la
- * meme seconde — c'est la seule facon de montrer que l'une ment et que l'autre non.
+ * The watch-side twin of `BancDataLayer`. It answers a question the screen cannot ask: `Preflight`
+ * blends the result of `connectedNodes` and the real state of the link into a single warning. Here
+ * the two readings are separated, in the same process, in the same second — that is the only way
+ * to show that one of them lies and the other does not.
  *
- * Marqueurs `BANC_*` dans logcat, etiquette `BANC`. Se deploie par `tools/banc/datalayer.sh`.
+ * `BANC_*` markers in logcat, tag `BANC`. Deployed by `tools/banc/datalayer.sh`.
+ *
+ * The test method names, the log markers and the keys of the log lines stay in French: the first
+ * are typed as sub-commands and the others are quoted word for word in
+ * `docs/workings/BENCH-LOG.md`, a dated log whose whole value is being an exact trace. The prose,
+ * the Kotlin identifiers and the free text of the messages were translated.
  */
 @RunWith(AndroidJUnit4::class)
 class BancDataLayer {
 
     private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private val CLE_BUTOIR = "stop_at_minutes"
+    private val CUTOFF_KEY = "stop_at_minutes"
 
     private fun log(m: String) {
         Log.i("BANC", m)
@@ -42,7 +47,7 @@ class BancDataLayer {
     private fun uri(path: String): Uri =
         Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(path).build()
 
-    /** Ce que l'ecran du coucher affiche, mais lisible sans piloter l'interface. */
+    /** What the bedtime screen displays, but readable without steering the interface. */
     @Test
     fun preflight() {
         val now = System.currentTimeMillis()
@@ -55,8 +60,8 @@ class BancDataLayer {
     }
 
     /**
-     * Les deux lectures cote a cote. `connectedNodes` est celle dont depend `PHONE_UNREACHABLE` ;
-     * `getCapability(FILTER_REACHABLE)` est celle que le §7.1 propose a la place.
+     * The two readings side by side. `connectedNodes` is the one `PHONE_UNREACHABLE` depends on;
+     * `getCapability(FILTER_REACHABLE)` is the one §7.1 proposes in its place.
      */
     @Test
     fun noeuds() {
@@ -82,15 +87,15 @@ class BancDataLayer {
     }
 
     /**
-     * Les candidats a `Preflight.phoneReachable`, cote a cote, a la meme seconde.
+     * The candidates for `Preflight.phoneReachable`, side by side, in the same second.
      *
-     * Trois lectures et un aller simple. Les trois premieres se deduisent d'une configuration ou
-     * d'une annonce ; la quatrieme exige que quelque chose parte reellement — `sendMessage` est
-     * la seule API du Data Layer qui **echoue** quand le noeud n'est pas joignable, la ou
-     * `putDataItem` bufferise et rend la main.
+     * Three readings and a one-way trip. The first three are deduced from a configuration or from
+     * an announcement; the fourth requires that something really leaves — `sendMessage` is the
+     * only Data Layer API that **fails** when the node is unreachable, where `putDataItem` buffers
+     * and returns.
      *
-     * Le chemin `/pendulum/banc-ping` n'est declare dans aucun filtre du telephone : le message
-     * ne reveille aucun composant et ne produit aucun effet de bord. On ne mesure que le trajet.
+     * The `/pendulum/banc-ping` path is declared in no phone-side filter: the message wakes no
+     * component and produces no side effect. Only the trip is measured.
      */
     @Test
     fun joignabilite() {
@@ -122,7 +127,7 @@ class BancDataLayer {
         log("BANC_J_PREFLIGHT_ACTUEL " + Preflight.phoneReachable(nodes))
     }
 
-    /** Tout ce que le magasin porte sous `/pendulum`, vu de la montre. */
+    /** Everything the store carries under `/pendulum`, seen from the watch. */
     @Test
     fun listerItems() {
         val buf = Tasks.await(
@@ -135,9 +140,10 @@ class BancDataLayer {
     }
 
     /**
-     * L'accuse tel que le telephone l'a publie, decode. C'est la seule facon de chiffrer ce que
-     * la montre a **le droit** d'effacer : `applyAck` n'efface un fichier que si `isAcked(idx)`,
-     * et ce booleen se lit ici, index par index, au lieu d'etre deduit de ce qui a disparu.
+     * The acknowledgement as the phone published it, decoded. This is the only way to put a figure
+     * on what the watch is **entitled** to erase: `applyAck` only erases a file if `isAcked(idx)`,
+     * and that boolean is read here, index by index, instead of being inferred from what has
+     * disappeared.
      */
     @Test
     fun accuse() {
@@ -148,116 +154,120 @@ class BancDataLayer {
         )
         log("BANC_ACK n=${buf.count}")
         buf.forEach { item ->
-            val octets = item.data
-            if (octets == null) {
-                log("BANC_ACK_ITEM ${item.uri} SANS_DONNEES")
+            val bytes = item.data
+            if (bytes == null) {
+                log("BANC_ACK_ITEM ${item.uri} NO_DATA")
                 return@forEach
             }
-            val a = Ack.decode(octets)
-            val acquittes = (0..maxOf(a.ackedUpTo, a.bitmapBase + a.ackedBitmap.size * 8))
+            val a = Ack.decode(bytes)
+            val acked = (0..maxOf(a.ackedUpTo, a.bitmapBase + a.ackedBitmap.size * 8))
                 .filter { a.isAcked(it) }
             log(
                 "BANC_ACK_ITEM ${item.uri} ackedUpTo=${a.ackedUpTo} base=${a.bitmapBase} " +
                     "bitmap=${a.ackedBitmap.size}o resend=${a.needResend.toList()} " +
-                    "phoneMs=${a.phoneMs} acquittes=$acquittes",
+                    "phoneMs=${a.phoneMs} acquittes=$acked",
             )
         }
         buf.release()
     }
 
     /**
-     * Le diviseur de temps reellement compile dans cet APK. Il se lit ici et non dans le journal
-     * de compilation : c'est l'APK installe qui compte, et rien d'autre ne prouve que les deux
-     * moities du banc ont recu la meme valeur.
+     * The time divisor actually compiled into this APK. It is read here and not in the build log:
+     * what counts is the installed APK, and nothing else proves that the two halves of the bench
+     * received the same value.
      */
     @Test
     fun echelle() {
-        val d = Durees.ACTIVES
+        val d = Durations.ACTIVE
         log(
-            "BANC_ECHELLE diviseur=${EchelleTemps.DIVISEUR} rotationChunkMs=${d.rotationChunkMs} " +
-                "tickServiceMs=${d.tickServiceMs} antiRebondChargeMs=${d.antiRebondChargeMs} " +
-                "dureeMaxSessionMs=${d.dureeMaxSessionMs} " +
-                "delaiMinAvantHeureButoirMs=${d.delaiMinAvantHeureButoirMs}",
+            // The **keys** of this line stay as they are: they are quoted word for word in
+            // `docs/workings/BENCH-LOG.md`, which is a dated log. Changing the output would make
+            // pages of a notebook wrong whose whole value is being a trace. Only the Kotlin field
+            // names, invisible in the output, followed the renaming.
+            "BANC_ECHELLE diviseur=${TimeScaling.DIVISOR} rotationChunkMs=${d.chunkRotationMs} " +
+                "tickServiceMs=${d.serviceTickMs} antiRebondChargeMs=${d.chargingDebounceMs} " +
+                "dureeMaxSessionMs=${d.sessionMaxDurationMs} " +
+                "delaiMinAvantHeureButoirMs=${d.minDelayBeforeCutoffMs}",
         )
     }
 
     /**
-     * L'heure butoir locale, lue et posee. C'est un reglage utilisateur ordinaire — `Preflight`
-     * et `StopConditions` le lisent dans `stop_at_minutes` — et le banc doit pouvoir l'ecarter.
+     * The local cut-off time, read and laid down. It is an ordinary user setting — `Preflight` and
+     * `StopConditions` read it from `stop_at_minutes` — and the bench must be able to push it
+     * aside.
      *
-     * Pourquoi : `delaiMinAvantHeureButoirMs` **se comprime** avec le reste (14,4 s a l'echelle
-     * 250) alors que l'heure butoir elle-meme est une **heure locale**, qui ne se comprime pas.
-     * Passe 10 h du matin, tout enregistrement de banc s'arrete donc au bout de 14,4 s — avant
-     * que le FIFO du capteur, lui aussi non comprime, n'ait livre sa premiere salve a 30 s. Voir
-     * §11.5.5 : sans ce reglage, le banc comprime ne peut produire aucun echantillon reel.
+     * Why: `minDelayBeforeCutoffMs` **compresses** with the rest (14.4 s at scale 250) while the
+     * cut-off time itself is a **local time of day**, which does not compress. Past 10 in the
+     * morning, every bench recording therefore stops after 14.4 s — before the sensor FIFO, itself
+     * uncompressed, has delivered its first burst at 30 s. See §11.5.5: without this setting, the
+     * compressed bench cannot produce a single real sample.
      *
-     * `-e minutes 1439` pour repousser, `-e minutes defaut` pour rendre la cle a son absence.
-     * L'appel sans argument ne fait que lire.
+     * `-e minutes 1439` to push it back, `-e minutes defaut` to return the key to its absence. The
+     * call without an argument only reads.
      */
     @Test
     fun heureButoir() {
         val prefs = ctx.getSharedPreferences(Preflight.PREFS, Context.MODE_PRIVATE)
-        val existait = prefs.contains(CLE_BUTOIR)
-        val avant = prefs.getInt(CLE_BUTOIR, -1)
-        when (val demande = InstrumentationRegistry.getArguments().getString("minutes")) {
+        val existed = prefs.contains(CUTOFF_KEY)
+        val before = prefs.getInt(CUTOFF_KEY, -1)
+        when (val requested = InstrumentationRegistry.getArguments().getString("minutes")) {
             null -> Unit
-            // `commit()` et non `apply()` : `am instrument` tue le processus des la fin du
-            // test, et une ecriture asynchrone se perd alors sans le moindre message —
-            // le reglage semble pose, il ne l'est pas, et l'enregistrement suivant
-            // s'arrete pour la raison qu'on croyait avoir ecartee.
-            "defaut" -> prefs.edit().remove(CLE_BUTOIR).commit()
-            else -> prefs.edit().putInt(CLE_BUTOIR, demande.toInt()).commit()
+            // `commit()` and not `apply()`: `am instrument` kills the process as soon as the test
+            // ends, and an asynchronous write is then lost without the slightest message — the
+            // setting looks laid down, it is not, and the next recording stops for the reason one
+            // believed had been ruled out.
+            "defaut" -> prefs.edit().remove(CUTOFF_KEY).commit()
+            else -> prefs.edit().putInt(CUTOFF_KEY, requested.toInt()).commit()
         }
         log(
-            "BANC_BUTOIR existait=$existait avant=$avant " +
-                "existe=${prefs.contains(CLE_BUTOIR)} apres=${prefs.getInt(CLE_BUTOIR, -1)}",
+            "BANC_BUTOIR existait=$existed avant=$before " +
+                "existe=${prefs.contains(CUTOFF_KEY)} apres=${prefs.getInt(CUTOFF_KEY, -1)}",
         )
     }
 
     /**
-     * Reemet les chunks presents sur le disque, en supprimant d'abord leurs items.
+     * Re-sends the chunks present on disk, deleting their items first.
      *
-     * C'est **le chemin de reemission du produit**, celui de `applyAck` pour `needResend`, et il
-     * existe pour une raison que ce banc a rencontree : un `putDataItem` identique est dedoublonne
-     * par le Data Layer et ne declenche **rien**. Un item deja dans le magasin du telephone mais
-     * jamais ingere y resterait donc pour toujours, sans qu'aucune salve ne le reveille.
+     * This is **the product's own re-send path**, the one `applyAck` takes for `needResend`, and it
+     * exists for a reason this bench ran into: an identical `putDataItem` is de-duplicated by the
+     * Data Layer and triggers **nothing**. An item already in the phone's store but never ingested
+     * would therefore stay there for ever, with no burst to wake it.
      *
-     * Il sert ici a rejouer une livraison sans refaire une nuit : les fichiers sont encore sur le
-     * disque, puisque rien n'a ete acquitte.
+     * It serves here to replay a delivery without recording another night: the files are still on
+     * disk, since nothing has been acknowledged.
      */
     @Test
     fun reemettre() {
         val store = com.pendulum.wear.record.SessionStore(ctx)
-        val dossiers = store.chunksRoot.listFiles()?.filter { it.isDirectory } ?: emptyList()
-        log("BANC_REEMISSION_SESSIONS n=${dossiers.size}")
-        for (d in dossiers) {
-            val supprimes = Tasks.await(
+        val folders = store.chunksRoot.listFiles()?.filter { it.isDirectory } ?: emptyList()
+        log("BANC_REEMISSION_SESSIONS n=${folders.size}")
+        for (d in folders) {
+            val deleted = Tasks.await(
                 Wearable.getDataClient(ctx)
                     .deleteDataItems(uri(WirePaths.CHUNK_PREFIX + d.name + "/"), DataClient.FILTER_PREFIX),
                 30, TimeUnit.SECONDS,
             )
-            val retard = DataLayerTransfer.pushChunks(ctx, d.name, d, urgentLast = true)
-            log("BANC_REEMISSION ${d.name} items_supprimes=$supprimes replafonne=$retard")
+            val throttled = DataLayerTransfer.pushChunks(ctx, d.name, d, urgentLast = true)
+            log("BANC_REEMISSION ${d.name} items_supprimes=$deleted replafonne=$throttled")
         }
     }
 
     /**
-     * Le menage de fin de banc, cote montre : les fichiers de la nuit fabriquee et ses items.
+     * The end-of-bench clean-up, watch side: the files of the manufactured night and its items.
      *
-     * Il faut le faire explicitement parce que **rien ne le fera** : les fichiers ne partent que
-     * sur un accuse, et l'accuse ne peut pas arriver tant que le §11.5.6 n'est pas corrige. Sans
-     * ce menage, la montre de l'utilisateur porte pour toujours deux chunks d'une nuit qui n'en
-     * est pas une, et son ecran du coucher affiche « 2 chunks from an earlier night are still
-     * waiting » a chaque fois.
+     * It has to be done explicitly because **nothing else will do it**: files only leave on an
+     * acknowledgement, and the acknowledgement cannot arrive until §11.5.6 is fixed. Without this
+     * clean-up, the user's watch carries for ever two chunks of a night that is not one, and its
+     * bedtime screen displays "2 chunks from an earlier night are still waiting" every time.
      *
-     * La session est passee par `-e session <hex>` : effacer « la derniere » d'un appareil du
-     * quotidien serait une regle qui se trompe un jour.
+     * The session is passed through `-e session <hex>`: erasing "the last one" from an everyday
+     * device would be a rule that gets it wrong one day.
      */
     @Test
     fun purgerBanc() {
         val hex = InstrumentationRegistry.getArguments().getString("session")
         if (hex.isNullOrBlank()) {
-            log("BANC_PURGE_FAIL aucune session passee par -e session <hex>")
+            log("BANC_PURGE_FAIL no session passed through -e session <hex>")
             return
         }
         val items = Tasks.await(
@@ -271,50 +281,50 @@ class BancDataLayer {
                 .deleteDataItems(uri(WirePaths.session(hex)), DataClient.FILTER_LITERAL),
             30, TimeUnit.SECONDS,
         )
-        // L'apercu en direct est publie par la montre a chaque salve et ne part jamais tout seul :
-        // il ne fait pas partie du protocole d'accuse. Une nuit de banc laissee sans lui purger
-        // son `live` laisse un kilo-octet dans le magasin des deux appareils, pour toujours.
+        // The live preview is published by the watch on every burst and never leaves on its own:
+        // it is not part of the acknowledgement protocol. A bench night left without purging its
+        // `live` leaves a kilobyte in the store of both devices, for ever.
         val live = Tasks.await(
             Wearable.getDataClient(ctx)
                 .deleteDataItems(uri(WirePaths.live(hex)), DataClient.FILTER_LITERAL),
             30, TimeUnit.SECONDS,
         )
-        val dossier = java.io.File(java.io.File(ctx.filesDir, "chunks"), hex)
-        val fichiers = dossier.listFiles()?.size ?: 0
-        val efface = dossier.deleteRecursively()
+        val folder = java.io.File(java.io.File(ctx.filesDir, "chunks"), hex)
+        val fileCount = folder.listFiles()?.size ?: 0
+        val erased = folder.deleteRecursively()
         log(
             "BANC_PURGE hex=$hex items_chunk=$items item_session=$session item_live=$live " +
-                "fichiers=$fichiers dossier_efface=$efface",
+                "fichiers=$fileCount dossier_efface=$erased",
         )
     }
 
     /**
-     * Une livraison montre -> telephone, aussi legere que possible, dont le seul objet est de
-     * savoir si GMS parvient a se **lier** au service d'ecoute d'en face.
+     * A watch -> phone delivery, as light as it can be, whose only purpose is to find out whether
+     * GMS manages to **bind** to the listener service on the other side.
      *
-     * L'item est pose sous `/pendulum/chunk/`, le prefixe que le filtre du telephone declare, avec
-     * une charge utile volontairement illisible : `ChunkEnvelope.decode` leve, le `catch` de
-     * `onDataChanged` journalise « item ignore », et **rien n'est ecrit** — ni fichier, ni ligne
-     * de base, ni accuse. C'est exactement ce qu'on veut d'une sonde qui tourne sur l'appareil de
-     * quelqu'un : elle mesure la liaison, elle ne fabrique pas d'etat.
+     * The item is laid down under `/pendulum/chunk/`, the prefix the phone's filter declares, with
+     * a deliberately unreadable payload: `ChunkEnvelope.decode` throws, the `catch` in
+     * `onDataChanged` logs "item ignored", and **nothing is written** — no file, no database row,
+     * no acknowledgement. That is exactly what is wanted of a probe running on somebody's device:
+     * it measures the link, it does not manufacture state.
      *
-     * L'horodatage dans la charge utile n'est pas decoratif : un `DataItem` repose avec des octets
-     * identiques n'est **pas** un changement, et GMS ne livre alors rien du tout.
+     * The timestamp in the payload is not decorative: a `DataItem` laid down again with identical
+     * bytes is **not** a change, and GMS then delivers nothing at all.
      */
     @Test
     fun livrerSonde() {
         val hex = "ba0c0000000000000000000000000000"
         val path = WirePaths.chunk(hex, 0)
-        val charge = "BANC-SONDE-${System.currentTimeMillis()}".toByteArray()
+        val payload = "BANC-SONDE-${System.currentTimeMillis()}".toByteArray()
         val item = Tasks.await(
             Wearable.getDataClient(ctx)
-                .putDataItem(PutDataRequest.create(path).setData(charge).setUrgent()),
+                .putDataItem(PutDataRequest.create(path).setData(payload).setUrgent()),
             30, TimeUnit.SECONDS,
         )
-        log("BANC_SONDE_PUBLIEE uri=${item.uri} ${charge.size}o")
+        log("BANC_SONDE_PUBLIEE uri=${item.uri} ${payload.size}o")
     }
 
-    /** Retire l'item de [livrerSonde]. A appeler apres chaque mesure : rien ne part tout seul. */
+    /** Removes the item from [livrerSonde]. To be called after every measurement: nothing leaves on its own. */
     @Test
     fun retirerSonde() {
         val hex = "ba0c0000000000000000000000000000"
@@ -325,12 +335,12 @@ class BancDataLayer {
         log("BANC_SONDE_RETIREE supprimes=$n")
     }
 
-    /** Les fichiers de chunks encore sur le disque : l'invariant « rien d'efface avant l'accuse ». */
+    /** The chunk files still on disk: the "nothing erased before the acknowledgement" invariant. */
     @Test
     fun chunksSurDisque() {
-        val racine = java.io.File(ctx.filesDir, "chunks")
-        log("BANC_CHUNKS_RACINE ${racine.absolutePath} existe=${racine.exists()}")
-        racine.listFiles()?.forEach { d ->
+        val root = java.io.File(ctx.filesDir, "chunks")
+        log("BANC_CHUNKS_RACINE ${root.absolutePath} existe=${root.exists()}")
+        root.listFiles()?.forEach { d ->
             val f = d.listFiles { x: java.io.File -> x.name.endsWith(".pendulum") } ?: emptyArray()
             log("BANC_CHUNKS_DIR ${d.name} n=${f.size} " +
                 f.sortedBy { it.name }.joinToString { "${it.name}:${it.length()}o" })

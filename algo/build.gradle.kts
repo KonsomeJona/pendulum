@@ -7,8 +7,8 @@ kotlin {
 }
 
 dependencies {
-    // `:algo` ne doit dependre de rien (docs/fr/ALGO-v2.md §4) : l entree est l interface SampleBlock,
-    // l adaptateur au-dessus de com.pendulum.format.DecodedBlock vit dans `:phone`.
+    // `:algo` must depend on nothing (docs/workings/ALGO-v2.md §4): the input is the SampleBlock
+    // interface, and the adapter over com.pendulum.format.DecodedBlock lives in `:phone`.
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
@@ -18,17 +18,17 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 
-    // `ThresholdPolicySweepTest` porte des mesures de decision, pas des assertions : elles sont
-    // `@Disabled` parce qu'elles durent des dizaines de minutes, pas parce qu'elles seraient
-    // fragiles. `-Palgo.runDisabled` les rejoue a la demande et laisse passer leur sortie standard,
-    // qui est tout leur produit. Sans le drapeau, rien ne change pour la CI.
+    // `ThresholdPolicySweepTest` carries decision measurements, not assertions: they are
+    // `@Disabled` because they take tens of minutes, not because they would be flaky.
+    // `-Palgo.runDisabled` replays them on demand and lets their standard output through, which is
+    // their entire product. Without the flag, nothing changes for CI.
     if (project.hasProperty("algo.runDisabled")) {
         systemProperty("junit.jupiter.conditions.deactivate", "org.junit.*DisabledCondition")
         testLogging { showStandardStreams = true }
     }
 
-    // Rejoue la suite de non-regression sous une autre valeur de `calFraction`, sans toucher au
-    // defaut du produit. Voir `RegressionSupport.REGRESSION_CAL_FRACTION` pour le pourquoi : une
-    // recommandation de reglage ne se presente pas sans la liste de ce qu'elle casse.
+    // Replays the regression suite under a different `calFraction`, without touching the product
+    // default. See `RegressionSupport.REGRESSION_CAL_FRACTION` for why: a settings recommendation
+    // is not presented without the list of what it breaks.
     project.findProperty("algo.calFraction")?.let { systemProperty("algo.calFraction", it.toString()) }
 }

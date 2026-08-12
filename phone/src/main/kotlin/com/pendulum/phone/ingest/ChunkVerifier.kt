@@ -5,45 +5,44 @@ import com.pendulum.format.wire.ChunkMeta
 import com.pendulum.format.wire.WireProtocol
 
 /**
- * Verification d'un chunk recu, **avant** toute ecriture disque ou base.
+ * Verification of a received chunk, **before** any write to disk or to the database.
  *
- * Objet pur, sans Android : c'est la partie du service de reception qui peut etre exercee sur
- * JVM, et c'est aussi celle ou une erreur coute le plus cher — accepter des octets faux revient
- * a acquitter, donc a faire supprimer par la montre le seul exemplaire correct.
+ * A pure object, with no Android in it: this is the part of the receiving service that can be
+ * exercised on the JVM, and it is also the part where a mistake costs the most — accepting wrong
+ * bytes amounts to acknowledging them, hence to making the watch delete the only correct copy.
  */
 object ChunkVerifier {
 
     /**
-     * Ordre des refus : du moins cher au plus cher.
+     * Order of the refusals: from the cheapest to the most expensive.
      *
-     * On compare la taille avant de calculer un CRC-32, parce qu'une taille fausse est le
-     * symptome d'une troncature de transport et qu'il n'y a aucune raison de payer un balayage
-     * de 91 Ko pour l'apprendre. On refuse aussi ce qui est trop gros pour un `DataItem` : un
-     * item au-dela du plafond documente ne devrait pas exister, et le voir arriver signale un
-     * emetteur qui n'est pas la montre attendue.
+     * The size is compared before computing a CRC-32, because a wrong size is the symptom of a
+     * transport truncation and there is no reason to pay for a 91 KB sweep to learn it. Anything
+     * too large for a `DataItem` is refused as well: an item beyond the documented ceiling should
+     * not exist, and seeing one arrive signals a sender that is not the expected watch.
      */
     enum class Verdict {
-        /** Octets conformes : a ecrire, puis a acquitter une fois le fichier relu et complet. */
+        /** Bytes conform: to be written, then acknowledged once the file is read back and complete. */
         OK,
 
-        /** Session annoncee differente de celle du chemin : item mal forme, on ignore. */
+        /** Announced session differs from the one in the path: malformed item, ignored. */
         SESSION_MISMATCH,
 
-        /** Taille annoncee et taille recue different : troncature de transport. Reemission. */
+        /** Announced size and received size differ: transport truncation. Resend. */
         SIZE_MISMATCH,
 
-        /** Au-dela du plafond `DataItem`, ou en-deca d'un en-tete de fichier. Item aberrant. */
+        /** Beyond the `DataItem` ceiling, or below a single file header. Aberrant item. */
         IMPLAUSIBLE_SIZE,
 
-        /** CRC-32 faux : les octets sont corrompus. Reemission. */
+        /** CRC-32 wrong: the bytes are corrupt. Resend. */
         CRC_MISMATCH,
     }
 
     /**
-     * @param sessionHexFromPath la session lue dans le **chemin** du `DataItem`, pas dans la
-     *   charge utile. Les comparer verifie que le chemin et le contenu parlent de la meme nuit :
-     *   sans ce controle, un item mal route ecrirait des chunks d'une session dans le dossier
-     *   d'une autre, et le reassemblage melangerait deux nuits sans rien signaler.
+     * @param sessionHexFromPath the session read from the **path** of the `DataItem`, not from the
+     *   payload. Comparing them checks that the path and the contents speak of the same night:
+     *   without this check, a misrouted item would write the chunks of one session into the
+     *   directory of another, and the reassembly would mix two nights without flagging anything.
      */
     fun verify(sessionHexFromPath: String, meta: ChunkMeta, bytes: ByteArray): Verdict = when {
         meta.sessionHex != sessionHexFromPath -> Verdict.SESSION_MISMATCH

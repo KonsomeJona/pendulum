@@ -4,102 +4,101 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * La pyramide min/max de l'enveloppe RMS.
+ * The min/max pyramid of the RMS envelope.
  *
- * ### Le probleme
+ * ### The problem
  *
- * Huit heures a 50 Hz font 1,44 million d'echantillons pour environ 1 100 colonnes de pixels.
- * Il faut donc reduire d'un facteur ~1 300. La reduction evidente — la moyenne — est **interdite**
- * ici (P5) : un mouvement de 40 ms noye dans une moyenne de 1 300 echantillons disparait purement
- * et simplement de l'ecran. Or c'est exactement ce que l'utilisateur regarde. Une courbe lissee
- * qui a perdu ses pics n'est pas une simplification, c'est une fausse observation.
+ * Eight hours at 50 Hz make 1.44 million samples for about 1 100 pixel columns. A reduction by a
+ * factor of ~1 300 is therefore needed. The obvious reduction — the mean — is **forbidden** here
+ * (P5): a 40 ms movement drowned in a mean over 1 300 samples disappears from the screen purely and
+ * simply. Yet that is exactly what the user is looking at. A smoothed curve that has lost its peaks
+ * is not a simplification, it is a false observation.
  *
- * ### La reponse
+ * ### The answer
  *
- * Une pyramide min/max construite **une seule fois**, hors thread principal, au chargement de la
- * nuit. Le niveau `k` agrege les paires du niveau `k-1` par `min` et `max` : un extremum ne peut
- * jamais etre efface, il ne fait que remonter. Au dessin, on choisit le niveau donnant environ
- * une paire par colonne et on trace un segment vertical `min → max` par colonne.
+ * A min/max pyramid built **once only**, off the main thread, when the night is loaded. Level `k`
+ * aggregates the pairs of level `k-1` by `min` and `max`: an extremum can never be erased, it only
+ * moves up. When drawing, we pick the level giving about one pair per column and trace a vertical
+ * `min -> max` segment per column.
  *
- * `EnvelopePyramidTest` assure la propriete qui compte : un pic isole d'un seul echantillon
- * survit a un facteur de decimation de 4096.
+ * `EnvelopePyramidTest` guarantees the property that matters: an isolated peak of a single sample
+ * survives a decimation factor of 4096.
  *
- * ### Cout
+ * ### Cost
  *
- * `2n` operations a la construction, et environ deux fois la base en memoire — ~11 Mo pour une
- * nuit de 8 h en `Float`. C'est accepte tel quel : si le profilage montre une pression memoire,
- * la parade est de quantifier en `ShortArray` (log₂ × 512), pas d'optimiser avant d'avoir mesure.
+ * `2n` operations to build, and about twice the base in memory — ~11 MB for an 8 h night in
+ * `Float`. This is accepted as it stands: if profiling shows memory pressure, the remedy is to
+ * quantise into a `ShortArray` (log2 x 512), not to optimise before having measured.
  */
 class EnvelopePyramid(private val base: FloatArray) {
 
     /**
-     * `levels[k]` contient les paires `[min, max]` pour un facteur de decimation `2^(k+1)`.
-     * Le niveau `-1` conceptuel est [base] lui-meme.
+     * `levels[k]` holds the `[min, max]` pairs for a decimation factor of `2^(k+1)`.
+     * The conceptual level `-1` is [base] itself.
      */
     val levels: List<FloatArray> = buildList {
-        var precedent: FloatArray? = null
-        var tailleSource = base.size
-        while (tailleSource > 2) {
-            val paires = (tailleSource + 1) / 2
-            val niveau = FloatArray(paires * 2)
-            if (precedent == null) {
-                // Premier niveau : agrege les echantillons bruts deux par deux.
-                for (i in 0 until paires) {
+        var previous: FloatArray? = null
+        var sourceSize = base.size
+        while (sourceSize > 2) {
+            val pairs = (sourceSize + 1) / 2
+            val level = FloatArray(pairs * 2)
+            if (previous == null) {
+                // First level: aggregates the raw samples two by two.
+                for (i in 0 until pairs) {
                     val a = base[i * 2]
                     val b = if (i * 2 + 1 < base.size) base[i * 2 + 1] else a
-                    niveau[i * 2] = min(a, b)
-                    niveau[i * 2 + 1] = max(a, b)
+                    level[i * 2] = min(a, b)
+                    level[i * 2 + 1] = max(a, b)
                 }
             } else {
-                val src = precedent
-                for (i in 0 until paires) {
+                val src = previous
+                for (i in 0 until pairs) {
                     val i0 = i * 2
-                    val i1 = if (i * 2 + 1 < tailleSource) i * 2 + 1 else i0
-                    niveau[i * 2] = min(src[i0 * 2], src[i1 * 2])
-                    niveau[i * 2 + 1] = max(src[i0 * 2 + 1], src[i1 * 2 + 1])
+                    val i1 = if (i * 2 + 1 < sourceSize) i * 2 + 1 else i0
+                    level[i * 2] = min(src[i0 * 2], src[i1 * 2])
+                    level[i * 2 + 1] = max(src[i0 * 2 + 1], src[i1 * 2 + 1])
                 }
             }
-            add(niveau)
-            precedent = niveau
-            tailleSource = paires
+            add(level)
+            previous = level
+            sourceSize = pairs
         }
     }
 
-    val taille: Int get() = base.size
+    val size: Int get() = base.size
 
-    /** Facteur de decimation du niveau `k`. */
-    private fun facteur(k: Int): Int = 1 shl (k + 1)
+    /** Decimation factor of level `k`. */
+    private fun factor(k: Int): Int = 1 shl (k + 1)
 
     /**
-     * Le niveau dont une paire couvre au plus `echantillonsParColonne` echantillons.
-     * Renvoie `-1` pour dessiner directement depuis la base (zoom fort).
+     * The level one of whose pairs covers at most `samplesPerColumn` samples.
+     * Returns `-1` to draw directly from the base (strong zoom).
      */
-    fun niveauPour(echantillonsParColonne: Float): Int {
-        if (echantillonsParColonne <= 2f) return -1
+    fun levelFor(samplesPerColumn: Float): Int {
+        if (samplesPerColumn <= 2f) return -1
         var k = 0
-        while (k + 1 < levels.size && facteur(k + 1) <= echantillonsParColonne) k++
+        while (k + 1 < levels.size && factor(k + 1) <= samplesPerColumn) k++
         return k
     }
 
     /**
-     * Remplit `sortie` avec `2 × colonnes` valeurs `[min, max]` sur l'intervalle
-     * d'echantillons `[de, a[`.
+     * Fills `out` with `2 x columns` `[min, max]` values over the sample interval `[from, to[`.
      *
-     * `sortie` est **pre-alloue par l'appelant** et reutilise d'une frame a l'autre : cette
-     * fonction n'alloue rien. C'est la condition pour qu'un pincement reste fluide — une
-     * allocation de 4 × 1 100 flottants par frame declenche des GC visibles a l'oeil.
+     * `out` is **pre-allocated by the caller** and reused from one frame to the next: this function
+     * allocates nothing. That is the condition for a pinch to stay fluid — allocating 4 x 1 100
+     * floats per frame triggers GCs that are visible to the eye.
      */
-    fun remplirMinMax(de: Int, a: Int, colonnes: Int, sortie: FloatArray) {
-        require(sortie.size >= colonnes * 2) { "sortie trop courte" }
-        val debut = de.coerceIn(0, base.size)
-        val fin = a.coerceIn(debut + 1, base.size)
-        val parColonne = (fin - debut).toFloat() / colonnes
-        val k = niveauPour(parColonne)
+    fun fillMinMax(from: Int, to: Int, columns: Int, out: FloatArray) {
+        require(out.size >= columns * 2) { "out too short" }
+        val start = from.coerceIn(0, base.size)
+        val end = to.coerceIn(start + 1, base.size)
+        val perColumn = (end - start).toFloat() / columns
+        val k = levelFor(perColumn)
 
         if (k < 0) {
-            for (c in 0 until colonnes) {
-                val i0 = debut + (c * parColonne).toInt()
-                val i1 = (debut + ((c + 1) * parColonne).toInt()).coerceAtMost(fin)
+            for (c in 0 until columns) {
+                val i0 = start + (c * perColumn).toInt()
+                val i1 = (start + ((c + 1) * perColumn).toInt()).coerceAtMost(end)
                 var mn = Float.MAX_VALUE
                 var mx = -Float.MAX_VALUE
                 var i = i0
@@ -109,30 +108,30 @@ class EnvelopePyramid(private val base: FloatArray) {
                     if (v > mx) mx = v
                     i++
                 }
-                sortie[c * 2] = mn
-                sortie[c * 2 + 1] = mx
+                out[c * 2] = mn
+                out[c * 2 + 1] = mx
             }
             return
         }
 
-        val niveau = levels[k]
-        val f = facteur(k)
-        val paires = niveau.size / 2
-        for (c in 0 until colonnes) {
-            val s0 = debut + (c * parColonne).toInt()
-            val s1 = (debut + ((c + 1) * parColonne).toInt()).coerceAtMost(fin)
-            val p0 = (s0 / f).coerceIn(0, paires - 1)
-            val p1 = (s1 / f).coerceIn(p0, paires - 1)
+        val level = levels[k]
+        val f = factor(k)
+        val pairs = level.size / 2
+        for (c in 0 until columns) {
+            val s0 = start + (c * perColumn).toInt()
+            val s1 = (start + ((c + 1) * perColumn).toInt()).coerceAtMost(end)
+            val p0 = (s0 / f).coerceIn(0, pairs - 1)
+            val p1 = (s1 / f).coerceIn(p0, pairs - 1)
             var mn = Float.MAX_VALUE
             var mx = -Float.MAX_VALUE
             for (p in p0..p1) {
-                val vmin = niveau[p * 2]
-                val vmax = niveau[p * 2 + 1]
+                val vmin = level[p * 2]
+                val vmax = level[p * 2 + 1]
                 if (vmin < mn) mn = vmin
                 if (vmax > mx) mx = vmax
             }
-            sortie[c * 2] = mn
-            sortie[c * 2 + 1] = mx
+            out[c * 2] = mn
+            out[c * 2 + 1] = mx
         }
     }
 }

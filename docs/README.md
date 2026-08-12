@@ -88,10 +88,10 @@ a wrong decision.
 
 ### You are trying to reproduce a measurement on real devices
 
-[`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md), in French, is the bench log: every command run on real
+[`workings/BENCH-LOG.md`](workings/BENCH-LOG.md) is the bench log: every command run on real
 hardware with the output it produced, dated, including the several occasions on which a proposed fix
-turned out to be wrong. It is the most frequently changed document in the repository and it has no
-English derivative. Its §9 and §12.7 hold the commands, reusable as they stand.
+turned out to be wrong. It is the most frequently changed document in the repository and nothing
+condenses it. Its §9 and §12.7 hold the commands, reusable as they stand.
 
 ---
 
@@ -112,49 +112,57 @@ English derivative. Its §9 and §12.7 hold the commands, reusable as they stand
 
 ---
 
-## The French documents
+## The working documents
 
-[`fr/`](fr/) holds the original working documents. They are considerably more detailed than the
-English ones: the full parameter tables, the energy calculations, the arithmetic behind each
-decision, and the things that were checked and turned out to be wrong. The English files are
-derivatives — shorter, current, and readable in order; the French files are the workings.
+[`workings/`](workings/) holds the documents the decisions were actually made in. They are
+considerably more detailed than the numbered files above: the full parameter tables, the energy
+calculations, the arithmetic behind each decision, and the things that were checked and turned out to
+be wrong. The numbered files are condensations — shorter, current, and readable in order; the files
+in `workings/` are the workings.
 
-| French document | What it is | English derivative |
+They were written in French and translated in August 2026. The translation moved the language and
+nothing else: where a working document is out of date, contradicts a numbered file, or reaches a
+conclusion later measurement overturned, it still does, and the table below says which text to act on.
+A document that was wrong in French is wrong in English.
+
+| Working document | What it is | Condensed into |
 |---|---|---|
-| [`fr/SPEC-v2.md`](fr/SPEC-v2.md) | The decision log: what changed from v1, why, and where the detail lives | `01-overview.md` |
-| [`fr/ALGO-v2.md`](fr/ALGO-v2.md) | The algorithm specification, parameter tables, synthetic generator | `02-science.md`, `03-algorithm.md` |
-| [`fr/ARCHI-CAPTURE.md`](fr/ARCHI-CAPTURE.md) | Watch capture, transfer protocol, energy budget, Wear OS traps | `04-architecture.md` |
-| [`fr/SOURCES-SOMMEIL.md`](fr/SOURCES-SOMMEIL.md) | Choosing and verifying the sleep source; Health Connect integration | `05-devices.md` |
-| [`fr/UX.md`](fr/UX.md) | Interface design: principles, screen-by-screen reasoning, the exact copy | `06-interface.md` |
-| [`fr/REVUE-CRITIQUE.md`](fr/REVUE-CRITIQUE.md) | The adversarial review of v1: 38 defects, 9 paths to self-deception | `07-validation.md` |
-| [`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) | The bench log on emulators and on real devices, with §14 the screen-by-screen review | **None.** No derivative, and the most frequently updated file here |
-| [`fr/SPEC-v1.md`](fr/SPEC-v1.md) | **Historical.** The initial plan, kept as a trace of the starting point | None. Superseded throughout; it carries a warning at its head |
+| [`workings/SPEC-v2.md`](workings/SPEC-v2.md) | The decision log: what changed from v1, why, and where the detail lives | `01-overview.md` |
+| [`workings/ALGO-v2.md`](workings/ALGO-v2.md) | The algorithm specification, parameter tables, synthetic generator | `02-science.md`, `03-algorithm.md` |
+| [`workings/CAPTURE-ARCHITECTURE.md`](workings/CAPTURE-ARCHITECTURE.md) | Watch capture, transfer protocol, energy budget, Wear OS traps | `04-architecture.md` |
+| [`workings/SLEEP-SOURCES.md`](workings/SLEEP-SOURCES.md) | Choosing and verifying the sleep source; Health Connect integration | `05-devices.md` |
+| [`workings/UX.md`](workings/UX.md) | Interface design: principles, screen-by-screen reasoning, the exact copy | `06-interface.md` |
+| [`workings/CRITICAL-REVIEW.md`](workings/CRITICAL-REVIEW.md) | The adversarial review of v1: 38 defects, 9 paths to self-deception | `07-validation.md` |
+| [`workings/BENCH-LOG.md`](workings/BENCH-LOG.md) | The bench log on emulators and on real devices, with §14 the screen-by-screen review | **Nothing.** No condensed counterpart, and the most frequently updated file here |
+| [`workings/SPEC-v1.md`](workings/SPEC-v1.md) | **Historical.** The initial plan, kept as a trace of the starting point | None. Superseded throughout; it carries a warning at its head |
 
 ### Which document makes the decision, and on what
 
 This table used to read "where they disagree, the French text is correct and the English one has a
-bug". That has not been true for some time, and the repository says so in three places on its own:
-[`06-interface.md`](06-interface.md) records a substantive change made *after* `fr/UX.md`;
-[`08-screens.md`](08-screens.md) states that three strings "are not in the specification — `fr/UX.md`
-predates the decision and never wrote the screen"; and the colour values of `fr/UX.md` §5.1 would
-fail the contrast test that the English values pass.
+bug" — back when the two differed by language and the French was assumed to be the original.
+That has not been true for some time, and the repository says so in three places on its own:
+[`06-interface.md`](06-interface.md) records a substantive change made *after* `workings/UX.md`;
+[`08-screens.md`](08-screens.md) states that three strings "are not in the specification — `workings/UX.md`
+predates the decision and never wrote the screen"; and the colour values of `workings/UX.md` §5.1 would
+fail the contrast test that the values in [`06-interface.md`](06-interface.md) pass.
 
-Authority is by subject, not by language. **This is the only such table in the repository**, and it
-should stay that way — `fr/SPEC-v2.md` carried a second one that had drifted into contradicting this
-one, which is precisely the failure this project has paid for more than once.
+Authority is by subject, and by nothing else — not by which file is longer, not by which came first.
+**This is the only such table in the repository**, and it should stay that way —
+`workings/SPEC-v2.md` carried a second one that had drifted into contradicting this one, which is
+precisely the failure this project has paid for more than once.
 
 | Subject | Authoritative document | Why |
 |---|---|---|
-| Algorithm parameter values, clinical rules | [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §6 | The code cites these tables by name |
-| Algorithm derivations, the rhythm estimator, the worked example | [`03-algorithm.md`](03-algorithm.md) | The estimator the product tracks has no French section at all; §8.7 is its only parameter table |
-| Capture, transfer protocol, energy budgets | [`fr/ARCHI-CAPTURE.md`](fr/ARCHI-CAPTURE.md) | The wire schemas and the mAh arithmetic are there |
-| The binary chunk format as it stands today | [`04-architecture.md`](04-architecture.md) §3 | The only document that states the current byte layout; the French ones state only the deltas |
-| Measured test results | [`07-validation.md`](07-validation.md) §4 | Measurements exist in no French file, and several of them falsify one |
-| Interface, screens, navigation, states | [`06-interface.md`](06-interface.md) | `fr/UX.md` predates the decisions and says so |
-| Interface copy, palette, spacing, chart conventions | [`fr/UX.md`](fr/UX.md) §4, §5, §7 | The exact strings and hex values exist nowhere else |
-| Scope, guard rails, roadmap, status | [`01-overview.md`](01-overview.md) | `fr/SPEC-v2.md` §4 still presents the plan as followed; §5 here records that it was not |
-| Sleep source, Health Connect integration | [`fr/SOURCES-SOMMEIL.md`](fr/SOURCES-SOMMEIL.md) §6 | 13 explicitly unverified items, tracked one by one |
-| Bench, real hardware, screen review | [`fr/BANC-ESSAI.md`](fr/BANC-ESSAI.md) | Only document; no derivative |
+| Algorithm parameter values, clinical rules | [`workings/ALGO-v2.md`](workings/ALGO-v2.md) §6 | The code cites these tables by name |
+| Algorithm derivations, the rhythm estimator, the worked example | [`03-algorithm.md`](03-algorithm.md) | The estimator the product tracks has no section in `workings/` at all; §8.7 is its only parameter table |
+| Capture, transfer protocol, energy budgets | [`workings/CAPTURE-ARCHITECTURE.md`](workings/CAPTURE-ARCHITECTURE.md) | The wire schemas and the mAh arithmetic are there |
+| The binary chunk format as it stands today | [`04-architecture.md`](04-architecture.md) §3 | The only document that states the current byte layout; the working documents state only the deltas |
+| Measured test results | [`07-validation.md`](07-validation.md) §4 | Measurements exist in no working document, and several of them falsify one |
+| Interface, screens, navigation, states | [`06-interface.md`](06-interface.md) | `workings/UX.md` predates the decisions and says so |
+| Interface copy, palette, spacing, chart conventions | [`workings/UX.md`](workings/UX.md) §4, §5, §7 | The exact strings and hex values exist nowhere else |
+| Scope, guard rails, roadmap, status | [`01-overview.md`](01-overview.md) | `workings/SPEC-v2.md` §4 still presents the plan as followed; §5 here records that it was not |
+| Sleep source, Health Connect integration | [`workings/SLEEP-SOURCES.md`](workings/SLEEP-SOURCES.md) §6 | 13 explicitly unverified items, tracked one by one in its §7 |
+| Bench, real hardware, screen review | [`workings/BENCH-LOG.md`](workings/BENCH-LOG.md) | Only document; nothing condenses it |
 | Bibliography | [`references.md`](references.md) | Single list. Nothing else may keep a parallel one |
 
 ---
@@ -169,15 +177,15 @@ who lands there from a search engine has to be warned there, not here.
 
 | Divergence | Act on |
 |---|---|
-| `fr/ALGO-v2.md` §5.5 commissions T6 (`F1 ≥ 0.90`, index error ≤ 0.10). Its denominator was changed after measurement, T22 was added to publish the cost, and T12 was never written at all. *Flagged in place* | [`07-validation.md`](07-validation.md) §3 and §4.1 |
-| `fr/SPEC-v2.md` §5.3 states the harmonic deconvolution is "bien posée même à p = 0,39". Measured on the model's own best case, it returns 2 valid fits out of 20 | [`07-validation.md`](07-validation.md) §4.3 |
-| `fr/UX.md` §2.6 specifies per-night parameter sliders and a per-night recompute. That is the exact artefact the third guard rail exists to prevent | [`01-overview.md`](01-overview.md) §4 |
-| `fr/UX.md` §2.2 has no evening seal; `fr/SPEC-v2.md` §1 attributes the seal gate to `fr/ARCHI-CAPTURE.md` §5, which does not contain it. The seal is specified in English only | [`06-interface.md`](06-interface.md) §2.2 |
-| `fr/UX.md` §6.1, §2.8 and `fr/ARCHI-CAPTURE.md` §3.4, §5.3 give three different battery warning thresholds and two different automatic-stop times | [`04-architecture.md`](04-architecture.md) §2.6 for the stop conditions; the watch thresholds are genuinely unsettled |
-| `fr/UX.md` §2.6 and §7 quote quality thresholds (97 %, 5 s, 120 s) that the adversarial review showed to be mutually inconsistent | [`01-overview.md`](01-overview.md) §5, phase P1 |
-| `fr/SOURCES-SOMMEIL.md` §4 concluded that the absence of Health Connect "is not blocking"; `fr/SPEC-v2.md` §2.3 adjudicated the point and the ruling had never been carried back. *Now quoted in place* | `fr/SPEC-v2.md` §2.3 |
-| `fr/ALGO-v2.md` §3.5 proposed gating the report behind an apnoea screen. Apnoea screening was removed from the project, and the reason is worth reading. *Flagged in place* | [`02-science.md`](02-science.md), *Pendulum does not screen for sleep apnoea* |
-| `fr/BANC-ESSAI.md` §14.7 is a dated list of twelve screen defects. Five are fixed; one looks fixed from its commit messages and is not | `fr/BANC-ESSAI.md` §14.9 |
+| `workings/ALGO-v2.md` §5.5 commissions T6 (`F1 ≥ 0.90`, index error ≤ 0.10). Its denominator was changed after measurement, T22 was added to publish the cost, and T12 was never written at all. *Flagged in place* | [`07-validation.md`](07-validation.md) §3 and §4.1 |
+| `workings/SPEC-v2.md` §5.3 states the harmonic deconvolution is "well posed even at `p = 0.39`". Measured on the model's own best case, it returns 2 valid fits out of 20. *Flagged in place* | [`07-validation.md`](07-validation.md) §4.3 |
+| `workings/UX.md` §2.6 specifies per-night parameter sliders and a per-night recompute. That is the exact artefact the third guard rail exists to prevent | [`01-overview.md`](01-overview.md) §4 |
+| `workings/UX.md` §2.2 has no evening seal; `workings/SPEC-v2.md` §1 attributes the seal gate to `workings/CAPTURE-ARCHITECTURE.md` §5, which does not contain it. The seal is specified in the numbered files only | [`06-interface.md`](06-interface.md) §2.2 |
+| `workings/UX.md` §6.1, §2.8 and `workings/CAPTURE-ARCHITECTURE.md` §3.4, §5.3 give three different battery warning thresholds and two different automatic-stop times | [`04-architecture.md`](04-architecture.md) §2.6 for the stop conditions; the watch thresholds are genuinely unsettled |
+| `workings/UX.md` §2.6 and §7 quote quality thresholds (97 %, 5 s, 120 s) that the adversarial review showed to be mutually inconsistent | [`01-overview.md`](01-overview.md) §5, phase P1 |
+| `workings/SLEEP-SOURCES.md` §4 concluded that the absence of Health Connect "is not blocking"; `workings/SPEC-v2.md` §2.3 adjudicated the point and the ruling had never been carried back. *Now quoted in place* | `workings/SPEC-v2.md` §2.3 |
+| `workings/ALGO-v2.md` §3.5 proposed gating the report behind an apnoea screen. Apnoea screening was removed from the project, and the reason is worth reading. *Flagged in place* | [`02-science.md`](02-science.md), *Pendulum does not screen for sleep apnoea* |
+| `workings/BENCH-LOG.md` §14.7 is a dated list of twelve screen defects. Five are fixed; one looks fixed from its commit messages and is not | `workings/BENCH-LOG.md` §14.9 |
 
 Two rules keep this list from growing back. **One bibliography** — a source goes in
 [`references.md`](references.md) and nowhere else, because two lists is how the Ferri 2016 citation
@@ -195,8 +203,8 @@ Stated so that silence is not read as coverage.
 - **There is no user manual.** [`09-release.md`](09-release.md) §1 covers installation and first run;
   beyond that the interface is meant to be legible without one, which is a claim nobody has tested on
   a second person.
-- **The Compose implementation guide exists only in French**, in [`fr/UX.md`](fr/UX.md) §8, and only
-  in the file that is otherwise superseded.
+- **The Compose implementation guide exists in one place only**, [`workings/UX.md`](workings/UX.md)
+  §8 — and that is the file which is otherwise superseded on interface questions.
 - **Nothing here is a clinical document.** Restless legs syndrome is diagnosed on five criteria
   concerning waking symptoms. No leg sensor changes that, and no document in this directory should
   be read as though it might.

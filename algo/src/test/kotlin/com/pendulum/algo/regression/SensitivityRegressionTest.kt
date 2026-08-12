@@ -7,47 +7,47 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * T5 du tableau `docs/fr/ALGO-v2.md` §5.5 — courbe de sensibilite en amplitude.
+ * T5 of the `docs/workings/ALGO-v2.md` §5.5 table — amplitude sensitivity curve.
  *
- * **Ce que ce test verifie vraiment, et pourquoi son abscisse est ce qu'elle est.** L'enonce dit
- * « Se dans [0,35 ; 0,65] a 8x le plancher (le seuil, par construction) ». Or le seuil de
- * declenchement vaut `max(k_on . plancher, Theta_abs, f_cal . gainCal)` et, sur une nuit calme,
- * c'est le **plancher absolu** qui l'emporte, pas le terme relatif : rapporter l'amplitude au
- * plancher de bruit brut donnerait un « 8x » qui ne correspondrait a rien. L'abscisse retenue est
- * donc le rapport a `Theta_on / k_on`, le plancher **effectif** du detecteur, seule grandeur sous
- * laquelle « 8x = le seuil » est vrai par construction.
+ * **What this test really checks, and why its abscissa is what it is.** The statement says "Se in
+ * [0.35 ; 0.65] at 8x the floor (the threshold, by construction)". But the trigger threshold is
+ * `max(k_on . floor, Theta_abs, f_cal . gainCal)` and, on a quiet night, it is the **absolute
+ * floor** that wins, not the relative term: referring the amplitude to the raw noise floor would
+ * give an "8x" that would correspond to nothing. The abscissa retained is therefore the ratio to
+ * `Theta_on / k_on`, the **effective** floor of the detector, the only quantity under which
+ * "8x = the threshold" is true by construction.
  *
- * L'ordonnee est mesuree contre `accelTruth`, comme toutes les metriques (§5.3). La nuit est ici
- * generee sans rotations pures de cheville pour que la sensibilite mesuree ne soit pas confondue
- * avec le taux de manques mecanique — c'est deux choses differentes et T5 ne mesure que la premiere.
+ * The ordinate is measured against `accelTruth`, like every metric (§5.3). The night is generated
+ * here without pure ankle rotations so that the measured sensitivity is not confused with the
+ * mechanical miss rate — these are two different things and T5 measures only the first.
  */
 class SensitivityRegressionTest {
 
     /**
-     * **T5 — Se <= 0,05 a 4x ; Se dans [0,35 ; 0,65] a 8x ; Se >= 0,95 a 16x.**
+     * **T5 — Se <= 0.05 at 4x ; Se in [0.35 ; 0.65] at 8x ; Se >= 0.95 at 16x.**
      *
-     * Intention : borner la pente de la courbe de detection. Trop raide, le detecteur est un
-     * comparateur et la moindre derive de gain change le compte ; trop molle, le seuil ne veut plus
-     * rien dire et la moitie du bruit passe. La pente est pilotee par `sigmaLog` du generateur, qui
-     * est pour cette raison un parametre et non une constante.
+     * Intent: bound the slope of the detection curve. Too steep, and the detector is a comparator
+     * where the slightest gain drift changes the count; too soft, and the threshold no longer means
+     * anything and half the noise gets through. The slope is driven by the generator's `sigmaLog`,
+     * which is for that reason a parameter and not a constant.
      */
     @Test
-    @DisplayName("T5 — courbe de sensibilite : 0,05 a 4x, ~0,5 a 8x, 0,95 a 16x le plancher effectif")
+    @DisplayName("T5 — sensitivity curve: 0.05 at 4x, ~0.5 at 8x, 0.95 at 16x the effective floor")
     fun t5_sensitivityCurveCrossesFiftyPercentAtTheThreshold() {
         val ratios = doubleArrayOf(4.0, 8.0, 16.0)
         val sensitivities = ratios.map { ArrayList<Double>() }
         val runs = ArrayList<DetectionRun>()
 
         for (seed in SEEDS) {
-            // Plancher effectif mesure sur une nuit de bruit seul de meme specification : il ne
-            // depend pas des mouvements, donc le mesurer a part n'introduit aucune circularite.
+            // Effective floor measured on a noise-only night of the same specification: it does not
+            // depend on the movements, so measuring it separately introduces no circularity.
             val floor = probeEffectiveFloorG(seed)
-            assertThat(floor).`as`("plancher effectif de la graine %d", seed).isGreaterThan(0.0)
+            assertThat(floor).`as`("effective floor of seed %d", seed).isGreaterThan(0.0)
 
             for ((k, ratio) in ratios.withIndex()) {
                 val night = fixedAmplitudeNight(seed, minutes = 20.0, envelopeAmplitudeG = ratio * floor)
-                // Calibration desactivee : le terme `f_cal . gainCal` deplacerait le seuil et
-                // l'abscisse ne serait plus celle que l'enonce decrit.
+                // Calibration disabled: the `f_cal . gainCal` term would shift the threshold and the
+                // abscissa would no longer be the one the statement describes.
                 val a = analyse(night, calibrated = false)
                 val m = Scoring.match(a.retained, night.truth.accelLegMovements)
                 sensitivities[k].add(m.sensitivity)
@@ -59,24 +59,24 @@ class SensitivityRegressionTest {
         val se8 = medianOf(sensitivities[1])
         val se16 = medianOf(sensitivities[2])
 
-        assertThat(se4).`as`("Se a 4x le plancher effectif").isLessThanOrEqualTo(0.05)
-        assertThat(se8).`as`("Se au seuil (8x)").isBetween(0.35, 0.65)
-        assertThat(se16).`as`("Se a 16x le plancher effectif").isGreaterThanOrEqualTo(0.95)
+        assertThat(se4).`as`("Se at 4x the effective floor").isLessThanOrEqualTo(0.05)
+        assertThat(se8).`as`("Se at the threshold (8x)").isBetween(0.35, 0.65)
+        assertThat(se16).`as`("Se at 16x the effective floor").isGreaterThanOrEqualTo(0.95)
 
-        // La courbe agregee doit etre monotone : une sensibilite qui redescend quand l'amplitude
-        // monte signale une machine d'etats qui fusionne ou tronque les gros evenements.
+        // The aggregated curve must be monotonic: a sensitivity that goes back down when the
+        // amplitude goes up signals a state machine that merges or truncates the large events.
         //
-        // `minCount = 20` n'affaiblit pas l'assertion, il la rend mesurable. Le balayage place tous
-        // ses evenements a exactement 4x, 8x et 16x : les trois bins reels comptent ~1 080 evenements
-        // chacun, et les bins intermediaires ne recoivent que le residu de calage de l'amplitude —
-        // 3 evenements sur 3 240 dans [6 ; 8), 1 dans [3 ; 4). Le bin a 3 evenements sortait a 2/3 et
-        // faisait echouer la monotonie contre un bin a 1 077 evenements. Comparer un taux estime sur
-        // 3 tirages a un taux estime sur mille ne teste pas le detecteur, il teste le tirage.
+        // `minCount = 20` does not weaken the assertion, it makes it measurable. The sweep places
+        // all its events at exactly 4x, 8x and 16x: the three real bins hold ~1 080 events each, and
+        // the intermediate bins receive only the residue of the amplitude calibration — 3 events out
+        // of 3 240 in [6 ; 8), 1 in [3 ; 4). The bin with 3 events came out at 2/3 and made
+        // monotonicity fail against a bin with 1 077 events. Comparing a rate estimated on 3 draws
+        // to a rate estimated on a thousand does not test the detector, it tests the draw.
         val curve = Scoring.sensitivityCurve(runs, minCount = 20)
         assertThat(curve).isNotEmpty
         for (i in 1 until curve.size) {
             assertThat(curve[i].second)
-                .`as`("courbe de sensibilite non monotone entre %s et %s", curve[i - 1], curve[i])
+                .`as`("sensitivity curve not monotonic between %s and %s", curve[i - 1], curve[i])
                 .isGreaterThanOrEqualTo(curve[i - 1].second - 1e-9)
         }
     }

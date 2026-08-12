@@ -3,58 +3,56 @@ package com.pendulum.format.wire
 import java.io.IOException
 
 /**
- * Structures de fil du transfert montre -> telephone (ARCHI-CAPTURE §2.3).
+ * Wire structures of the watch -> phone transfer (CAPTURE-ARCHITECTURE.md §2.3).
  *
- * Elles vivent dans `:format` — JVM pur, zero dependance Android — pour trois raisons :
- * les deux extremites du protocole partagent le meme code d'encodage, la symetrie
- * encodage/decodage est testable sans appareil, et le module `phone` peut relire un
- * `DataItem` sans embarquer le module `wear`.
+ * They live in `:format` — pure JVM, zero Android dependency — for three reasons: both ends of
+ * the protocol share the same encoding code, the encode/decode symmetry is testable without a
+ * device, and the `phone` module can read back a `DataItem` without pulling in the `wear` module.
  *
- * L'encodage est un octet de version suivi de champs petit-boutistes de taille fixe, les
- * chaines et tableaux etant prefixes de leur longueur en u16. C'est plus verbeux qu'un
- * `DataMap`, et c'est le but : un `DataMap` est un dictionnaire dont la lecture echoue en
- * silence quand une cle change de nom, alors qu'ici un changement de layout est rejete au
- * premier octet.
+ * The encoding is a version byte followed by fixed-size little-endian fields, strings and arrays
+ * being prefixed with their length as u16. It is more verbose than a `DataMap`, and that is the
+ * point: a `DataMap` is a dictionary whose reading fails silently when a key is renamed, whereas
+ * here a layout change is rejected at the first byte.
  */
 object WireProtocol {
 
-    /** Version des structures de fil. Independante de `ChunkFormat.FORMAT_VERSION`. */
+    /** Version of the wire structures. Independent of `ChunkFormat.FORMAT_VERSION`. */
     const val VERSION = 1
 
     /**
-     * Rotation de chunk : le chunk courant est ferme des que `elapsed >= 300 s`
-     * **ou** `bytesWritten >= 92 160`. Les deux conditions existent parce qu'aucune ne suffit :
-     * la duree borne la perte en cas de mort de la montre, le plafond d'octets garantit que
-     * le chunk reste sous les 100 Ko d'un `DataItem` meme si `fs` reel derive a 52,6 Hz ou
-     * si un mode degrade change la cadence.
+     * Chunk rotation: the current chunk is closed as soon as `elapsed >= 300 s`
+     * **or** `bytesWritten >= 92 160`. Both conditions exist because neither is sufficient:
+     * the duration bounds the loss should the watch die, the byte ceiling guarantees that
+     * the chunk stays under the 100 KB of a `DataItem` even if the real `fs` drifts to 52.6 Hz
+     * or a degraded mode changes the rate.
      */
     const val CHUNK_ROTATION_MS = 300_000L
 
-    /** 90 Kio. Voir [CHUNK_ROTATION_MS] : c'est le garde-fou dur des deux. */
+    /** 90 KiB. See [CHUNK_ROTATION_MS]: this is the hard guard rail of the two. */
     const val CHUNK_ROTATION_BYTES = 92_160L
 
     /**
-     * Cadence nominale de la telemetrie de nuit
-     * ([com.pendulum.format.TelemetryPoint]) : un point par minute.
+     * Nominal rate of the night telemetry
+     * ([com.pendulum.format.TelemetryPoint]): one point per minute.
      *
-     * **Elle divise [CHUNK_ROTATION_MS], et ce n'est pas un reglage.** Un chunk est l'unite de
-     * perte du protocole ; si la cadence de telemetrie etait une horloge independante, un chunk
-     * perdu emporterait un trou de telemetrie qu'aucun autre chunk ne comblerait, et le trou ne
-     * serait meme pas comptable. En divisant la rotation, chaque chunk complet porte au moins un
-     * point — cinq, en marche reelle — et le telephone peut affirmer « il manque un point » plutot
-     * que de constater un silence. `WireCodecTest` verrouille la divisibilite.
+     * **It divides [CHUNK_ROTATION_MS], and that is not a setting.** A chunk is the unit of loss
+     * of the protocol; if the telemetry rate were an independent clock, a lost chunk would take
+     * with it a telemetry hole that no other chunk would fill, and the hole would not even be
+     * countable. By dividing the rotation, every complete chunk carries at least one point — five,
+     * in real operation — and the phone can state "a point is missing" rather than observe a
+     * silence. `WireCodecTest` locks the divisibility down.
      *
-     * Cote montre, cette cadence n'est **pas** un nouveau timer : elle est celle de
-     * `RecordingService.minuteTick`, la branche qui lit deja la batterie une fois par minute. Voir
-     * la KDoc de ce tick pour pourquoi il ne reveille rien.
+     * On the watch side this rate is **not** a new timer: it is that of
+     * `RecordingService.minuteTick`, the branch that already reads the battery once a minute. See
+     * the KDoc of that tick for why it wakes nothing up.
      */
     const val TELEMETRY_PERIOD_MS = 60_000L
 
-    /** Plafond documente de la charge utile d'un `DataItem`. */
+    /** Documented ceiling of a `DataItem` payload. */
     const val MAX_DATA_ITEM_BYTES = 100 * 1024
 }
 
-/** Espace de noms des `DataItem` et des canaux. Les chemins sont derives de l'UUID de session. */
+/** Namespace of the `DataItem`s and channels. Paths are derived from the session UUID. */
 object WirePaths {
 
     const val SESSION_PREFIX = "/pendulum/session/"
@@ -65,37 +63,35 @@ object WirePaths {
     const val SWEEP_REQUEST = "/pendulum/sweep-request"
 
     /**
-     * Le contexte du soir scelle, publie par le **telephone** et lu par la montre.
+     * The sealed evening context, published by the **phone** and read by the watch.
      *
-     * C'est la seule porte du produit : `Preflight` refuse le demarrage tant que l'item n'existe
-     * pas. Il vivait cote montre uniquement, dans `DataLayerTransfer`, et le telephone ne
-     * l'ecrivait jamais — donc START etait bloque en permanence, avec pour tout symptome le
-     * message « remplissez le formulaire du soir sur le telephone » devant un formulaire qui
-     * n'existait pas.
+     * It is the only gate of the product: `Preflight` refuses to start as long as the item does
+     * not exist. It lived on the watch side only, in `DataLayerTransfer`, and the phone never
+     * wrote it — so START was permanently blocked, with as its only symptom the message
+     * "fill in the evening form on the phone" in front of a form that did not exist.
      *
-     * Il est ici, dans le module partage, pour la raison qui vaut pour tous les autres chemins :
-     * **le mode de defaillance du Data Layer est le silence, pas l'erreur.** Deux constantes
-     * recopiees qui divergent d'un caractere ne produisent aucun message ; elles produisent une
-     * montre qui ne demarre plus jamais.
+     * It is here, in the shared module, for the reason that holds for every other path:
+     * **the failure mode of the Data Layer is silence, not error.** Two copied constants that
+     * diverge by one character produce no message; they produce a watch that never starts again.
      */
     const val CONTEXT_PREFIX = "/pendulum/context/"
 
     /**
-     * Montre → telephone : « ouvre le formulaire du soir ».
+     * Watch → phone: "open the evening form".
      *
-     * Repli du chemin `RemoteActivityHelper`. Le telephone n'a **pas** le droit de lancer une
-     * activite en recevant ce message — Android bloque les lancements depuis l'arriere-plan — il
-     * poste une notification dont le tap, lui, est une exemption explicite.
+     * Fallback for the `RemoteActivityHelper` path. The phone is **not** allowed to launch an
+     * activity on receiving this message — Android blocks launches from the background — it posts
+     * a notification whose tap, in turn, is an explicit exemption.
      */
     const val OPEN_PHONE = "/pendulum/open-phone"
 
     /**
-     * Telephone → montre : « demarre l'enregistrement ».
+     * Phone → watch: "start recording".
      *
-     * Ecart assume vis-a-vis de `docs/06-interface.md` §2.2, qui reserve le demarrage a un geste
-     * physique sur la montre. Le garde-fou reste entier : `RecordingService` re-verifie le
-     * preflight avant `startSession`, donc une demande sans contexte scelle est refusee cote
-     * montre quelle qu'en soit l'origine.
+     * A deliberate departure from `docs/06-interface.md` §2.2, which reserves starting for a
+     * physical gesture on the watch. The guard rail remains whole: `RecordingService` re-checks
+     * the preflight before `startSession`, so a request without a sealed context is refused on
+     * the watch side whatever its origin.
      */
     const val START_REQUEST = "/pendulum/start-request"
 
@@ -104,9 +100,9 @@ object WirePaths {
     fun session(sessionHex: String) = SESSION_PREFIX + sessionHex
 
     /**
-     * L'index est zero-pade sur 5 chiffres : l'ordre lexicographique des chemins doit
-     * coincider avec l'ordre des chunks, faute de quoi un listing trie livre le chunk 10
-     * avant le chunk 2.
+     * The index is zero-padded to 5 digits: the lexicographic order of the paths must coincide
+     * with the order of the chunks, failing which a sorted listing delivers chunk 10 before
+     * chunk 2.
      */
     fun chunk(sessionHex: String, idx: Int) = "$CHUNK_PREFIX$sessionHex/${"%05d".format(idx)}"
 
@@ -117,54 +113,53 @@ object WirePaths {
     fun sweep(sessionHex: String) = SWEEP_PREFIX + sessionHex
 
     /**
-     * Cle de nuit : la date locale de la **soiree**, la bascule ayant lieu a midi.
+     * Night key: the local date of the **evening**, the rollover happening at noon.
      *
-     * Un START a 1 h 30 se rattache donc au formulaire rempli la veille au soir, et non a une
-     * soiree qui n'a pas encore eu lieu. Sans cette bascule, quiconque se couche apres minuit
-     * verrait son contexte scelle rattache a la mauvaise nuit — et la montre refuserait de
-     * demarrer en affirmant qu'il n'a rien rempli.
+     * A START at 1:30 therefore attaches to the form filled in the previous evening, and not to
+     * an evening that has not happened yet. Without this rollover, anyone going to bed after
+     * midnight would see their sealed context attached to the wrong night — and the watch would
+     * refuse to start, claiming they had filled in nothing.
      *
-     * La fonction est ici plutot que dans chacun des deux modules parce que les deux cotes
-     * doivent produire **exactement** la meme chaine : le telephone ecrit `context(nightKey(...))`
-     * et la montre lit `context(nightKey(...))`, et un decalage d'un jour est indiscernable d'une
-     * absence de contexte.
+     * The function is here rather than in each of the two modules because both sides must produce
+     * **exactly** the same string: the phone writes `context(nightKey(...))` and the watch reads
+     * `context(nightKey(...))`, and a one-day shift is indistinguishable from an absent context.
      *
-     * @param zone fuseau explicite. Les deux appareils sont normalement dans le meme, mais le
-     *   defaut implicite rendrait le decalage invisible a la lecture du code le jour ou ils ne le
-     *   seraient plus.
+     * @param zone explicit time zone. Both devices are normally in the same one, but the implicit
+     *   default would make the shift invisible when reading the code on the day they no longer
+     *   are.
      */
     fun nightKey(nowMs: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
         val local = java.time.Instant.ofEpochMilli(nowMs).atZone(zone)
-        val soiree = if (local.hour < BASCULE_SOIREE_HEURE) local.minusDays(1) else local
-        return "%04d-%02d-%02d".format(soiree.year, soiree.monthValue, soiree.dayOfMonth)
+        val evening = if (local.hour < EVENING_ROLLOVER_HOUR) local.minusDays(1) else local
+        return "%04d-%02d-%02d".format(evening.year, evening.monthValue, evening.dayOfMonth)
     }
 
-    /** Midi. Avant, on est encore dans la nuit de la veille ; apres, dans la soiree du jour. */
-    const val BASCULE_SOIREE_HEURE = 12
+    /** Noon. Before it we are still in the previous night; after it, in the current evening. */
+    const val EVENING_ROLLOVER_HOUR = 12
 }
 
-/** Etat d'une session vu du telephone (ARCHI-CAPTURE §2.7). */
+/** State of a session as seen from the phone (CAPTURE-ARCHITECTURE.md §2.7). */
 enum class SessionState(val code: Int) {
-    /** La montre a annonce la nuit et n'a pas encore annonce sa fin. */
+    /** The watch has announced the night and has not yet announced its end. */
     OPEN(0),
 
-    /** Fermeture propre annoncee par la montre. */
+    /** Clean close announced by the watch. */
     CLOSED(1),
 
-    /** Plus de nouvelles depuis plus de 45 min : la montre reviendra peut-etre. */
+    /** No news for more than 45 min: the watch may yet come back. */
     STALE(2),
 
-    /** Delai depasse : on analyse ce qu'on a, sans attendre la suite. */
+    /** Deadline passed: we analyse what we have, without waiting for the rest. */
     TRUNCATED(3),
     ;
 
     companion object {
         fun fromCode(code: Int): SessionState = entries.firstOrNull { it.code == code }
-            ?: throw WireFormatException("SessionState inconnu : $code")
+            ?: throw WireFormatException("unknown SessionState: $code")
     }
 }
 
-/** Cause d'arret d'une session (ARCHI-CAPTURE §3.4). Jamais devinee : `UNKNOWN` est une reponse. */
+/** Stop cause of a session (CAPTURE-ARCHITECTURE.md §3.4). Never guessed: `UNKNOWN` is an answer. */
 enum class StopReason(val code: Int) {
     USER(0),
     CHARGING(1),
@@ -174,21 +169,21 @@ enum class StopReason(val code: Int) {
     WAKE_DETECTED(5),
     DISK_FULL(6),
 
-    /** Reprise apres reboot/kill : la session n'a pas ete fermee par une condition d'arret. */
+    /** Recovery after reboot/kill: the session was not closed by a stop condition. */
     CRASH(7),
     UNKNOWN(255),
     ;
 
     companion object {
         fun fromCode(code: Int): StopReason = entries.firstOrNull { it.code == code }
-            ?: throw WireFormatException("StopReason inconnu : $code")
+            ?: throw WireFormatException("unknown StopReason: $code")
     }
 }
 
-/** Charge utile mal formee ou produite par une version incompatible. */
+/** Malformed payload, or one produced by an incompatible version. */
 class WireFormatException(message: String) : IOException(message)
 
-/** Representation hexadecimale minuscule d'un UUID de session, telle qu'elle apparait dans les chemins. */
+/** Lowercase hexadecimal form of a session UUID, as it appears in the paths. */
 fun ByteArray.toSessionHex(): String {
     val sb = StringBuilder(size * 2)
     for (b in this) {
@@ -198,9 +193,9 @@ fun ByteArray.toSessionHex(): String {
     return sb.toString()
 }
 
-/** Inverse de [toSessionHex]. */
+/** Inverse of [toSessionHex]. */
 fun sessionHexToBytes(hex: String): ByteArray {
-    require(hex.length % 2 == 0) { "chaine hexadecimale de longueur impaire : ${hex.length}" }
+    require(hex.length % 2 == 0) { "hexadecimal string of odd length: ${hex.length}" }
     return ByteArray(hex.length / 2) {
         ((digit(hex[it * 2]) shl 4) or digit(hex[it * 2 + 1])).toByte()
     }
@@ -210,11 +205,11 @@ private const val HEX = "0123456789abcdef"
 
 private fun digit(c: Char): Int {
     val d = Character.digit(c, 16)
-    require(d >= 0) { "caractere hexadecimal invalide : $c" }
+    require(d >= 0) { "invalid hexadecimal character: $c" }
     return d
 }
 
-/** Ecriture petit-boutiste sur un tableau qui grandit. */
+/** Little-endian writing onto a growing array. */
 internal class WireWriter(capacity: Int = 64) {
     private var buf = ByteArray(capacity)
     private var pos = 0
@@ -267,12 +262,12 @@ internal class WireWriter(capacity: Int = 64) {
     fun toByteArray(): ByteArray = buf.copyOf(pos)
 }
 
-/** Lecture petit-boutiste. Toute lecture au-dela de la fin leve [WireFormatException]. */
+/** Little-endian reading. Any read past the end throws [WireFormatException]. */
 internal class WireReader(private val buf: ByteArray) {
     private var pos = 0
 
     private fun need(n: Int) {
-        if (pos + n > buf.size) throw WireFormatException("charge utile tronquee a l'offset $pos")
+        if (pos + n > buf.size) throw WireFormatException("payload truncated at offset $pos")
     }
 
     fun u8(): Int {
@@ -326,11 +321,11 @@ internal class WireReader(private val buf: ByteArray) {
         return IntArray(n) { i32() }
     }
 
-    /** Verifie l'octet de version en tete de charge utile. */
+    /** Checks the version byte at the head of the payload. */
     fun version(what: String): Int {
         val v = u8()
         if (v != WireProtocol.VERSION) {
-            throw WireFormatException("$what : version de fil $v, attendue ${WireProtocol.VERSION}")
+            throw WireFormatException("$what: wire version $v, expected ${WireProtocol.VERSION}")
         }
         return v
     }

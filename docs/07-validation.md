@@ -24,7 +24,7 @@ There is no ground truth available to an individual. Polysomnography with surfac
 anterior* is the reference, and it is not obtainable by someone building an application at home. Nor
 is there a defensible substitute: a second consumer device measures the same thing with the same
 class of error, and agreement between two estimators derived from the same movement is not evidence
-of accuracy. The adversarial review ([`fr/REVUE-CRITIQUE.md`](fr/REVUE-CRITIQUE.md), F-20) rejected
+of accuracy. The adversarial review ([`workings/CRITICAL-REVIEW.md`](workings/CRITICAL-REVIEW.md), F-20) rejected
 exactly that kind of reassuring, empty figure.
 
 What remains is a ladder of partial checks. None of them is validation; each of them can *falsify*
@@ -173,7 +173,7 @@ worst-case assertion where indicated.
 | **T22** | Nominal night, threshold policy | Fraction of `accelTruth` below `Θ_on`: **0.70 ± 0.07**. Raw retained count before any series rule: **0.30 ± 0.06**. Share of the true index that survives the threshold: **0.06 ± 0.03** | The under-count itself, as a published number. It is what makes T6's restricted denominator honest rather than a moved goalpost, and the middle row is the differential diagnosis of the last one |
 | `RhythmMeasurementTest` | Rhythm under the real miss rate: nominal night, and the true train thinned at imposed rates. Unnumbered — it is not in the specification's table | Measurements, printed. Three **inverted** assertions: at most a quarter of fits are valid, the fundamental's error at least doubles between 30 % and 70 % missed, and the KS statistic *falls* as the miss rate rises | §4.3. The metric the product is actually built on, checked outside the regime the module was designed for |
 
-T22 is numbered 22 and not 18 because [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §5.5 already assigns T18–T21
+T22 is numbered 22 and not 18 because [`workings/ALGO-v2.md`](workings/ALGO-v2.md) §5.5 already assigns T18–T21
 to the four assertions described below, none of which is written yet. Reusing T18 would have created
 a silent collision in a table several documents quote.
 
@@ -223,7 +223,7 @@ nights must produce a rhythm but refuse an hourly index; the circularity test (a
 the same reason as T11) must show that the sleep mask collapses when the anti-circularity layer is
 disabled; injected format corruption must be rejected at 100 % with no healthy block rejected; and
 the incremental pass must cover at least 90 % of the movements found by the definitive pass. They are
-specified in [`fr/ALGO-v2.md`](fr/ALGO-v2.md) §5.5.
+specified in [`workings/ALGO-v2.md`](workings/ALGO-v2.md) §5.5.
 
 ---
 
@@ -888,14 +888,14 @@ published clinical rule and stays.
   `μ` the interpolator's magnitude is `√(1 − 4μ(1−μ)·sin²(πfT))`, worst at `μ = 0.5` where it is
   `|cos(πfT)|`: **1.6 %** at `T = 1/52 s`, **1.8 %** at `T = 1/50 s`. Averaging over a uniform `μ` —
   the reading that might have justified 0.2 % — still gives ≈ **1.1 %**. `03-algorithm.md` §1.1 and
-  `fr/ALGO-v2.md` §1.1 now state the correct bound and carry the correction note. `TimelineTest`
+  `workings/ALGO-v2.md` §1.1 now state the correct bound and carry the correction note. `TimelineTest`
   continues to assert the verifiable bound (instantaneous error below 3 %) rather than the number.
 - **The 0.7 Hz cell of the filter design table is wrong. — Corrected.** It read 0.915; the exact
   order-2 value is `(f/fc)²/√(1 + (f/fc)⁴) = 1.96/2.2004 = 0.891`. Re-checking the whole table while
   correcting it turned up a second, smaller error in the same column: the order-2 filter at
   fc = 0.3 Hz reads 0.982 where the exact value is `5.4444/5.5355 = 0.984`. The 0.25 Hz column and the
   entire order-4 row are exact to three decimals, as previously recorded. Both cells are corrected in
-  `03-algorithm.md` §1.2 and `fr/ALGO-v2.md` §1.2, and the derived claim "−0.6 dB at 0.7 Hz" becomes
+  `03-algorithm.md` §1.2 and `workings/ALGO-v2.md` §1.2, and the derived claim "−0.6 dB at 0.7 Hz" becomes
   **−0.9 dB**; the design conclusion is unchanged. `FiltersTest` now asserts the exact value
   `0.891 ± 0.002` instead of the loose bound `> 0.88` it had to use while the table disagreed with the
   filter.
@@ -926,7 +926,7 @@ one a generator can use — is not published anywhere. The only bound on it is t
 window of the Coleman criteria the paper applies.
 
 The correction is therefore not "pick the right number" but "stop attributing the number to Sforza".
-`02-science.md`, `03-algorithm.md`, `references.md` and `fr/ALGO-v2.md` §5.1 now state the mean as
+`02-science.md`, `03-algorithm.md`, `references.md` and `workings/ALGO-v2.md` §5.1 now state the mean as
 4.2 s and label the ± 0.14 as a standard error. The generator keeps **σ = 1.4 s**, relabelled in
 `DurationSpec` as what it is — a modelling choice, CV = 0.33, ±2σ quantiles at roughly 1.9–8.0 s,
 comfortably inside the scoring window. A σ of 0.14 s would make the law a point mass, which is
@@ -1035,6 +1035,6 @@ that.
 ---
 
 *The adversarial review that motivated most of the guard rails described here is
-[`fr/REVUE-CRITIQUE.md`](fr/REVUE-CRITIQUE.md): 38 defects, and nine specific paths by which the
+[`workings/CRITICAL-REVIEW.md`](workings/CRITICAL-REVIEW.md): 38 defects, and nine specific paths by which the
 number can be wrong while looking credible. The interface consequences are in
 [`06-interface.md`](06-interface.md); the algorithmic ones in [`03-algorithm.md`](03-algorithm.md).*

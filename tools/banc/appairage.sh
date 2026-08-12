@@ -1,64 +1,66 @@
 #!/usr/bin/env bash
-# Etat de l'appairage entre le telephone et la montre du banc, verifie en ligne de commande.
+# State of the pairing between the bench phone and the bench watch, checked from the command line.
 #
-# A lancer SUR le Mac. Chaque etape emet son propre marqueur sur la sortie standard : ssh via
-# Tailscale ne propage pas les codes de sortie, donc l'appelant distant lit les marqueurs et
-# jamais `$?`.
+# To be run ON the Mac. Every step emits its own marker on standard output: ssh over Tailscale does
+# not propagate exit codes, so the remote caller reads the markers and never `$?`.
 #
-# Usage : appairage.sh <serie-telephone> <serie-montre>
-#   ex.   appairage.sh emulator-5578 emulator-5576
+# Usage: appairage.sh <phone-serial> <watch-serial>
+#   e.g. appairage.sh emulator-5578 emulator-5576
 #
-# CE QUE CE SCRIPT MESURE, ET CE QU'IL NE MESURE PAS. Il constate trois faits distincts, et la
-# lecon de §7.1 est qu'ils ne s'impliquent pas : la configuration d'appairage peut exister, la
-# chaine TCP peut etre etablie, et **aucun octet applicatif ne traverser pour autant**. Le seul
-# fait qui prouve un Data Layer vivant est le dernier : un item pose par le telephone et relu
-# par la montre. Sur emulateur, il n'a jamais ete obtenu.
+# WHAT THIS SCRIPT MEASURES, AND WHAT IT DOES NOT. It establishes three distinct facts, and the
+# lesson of §7.1 is that they do not imply one another: the pairing configuration can exist, the
+# TCP chain can be established, and **not one application byte need cross for all that**. The only
+# fact that proves a live Data Layer is the last one: an item laid down by the phone and read back
+# by the watch. On an emulator, it was never obtained.
 #
-# En particulier : `NodeClient.connectedNodes` rend une liste NON VIDE des que la montre porte
-# `device_paired=1`, meme emulateur telephone eteint. L'absence de « Phone unreachable » sur
-# l'ecran de preflight ne prouve donc rien sur la liaison. Voir docs/fr/BANC-ESSAI.md §7.1.
+# In particular: `NodeClient.connectedNodes` returns a NON-EMPTY list as soon as the watch carries
+# `device_paired=1`, even with the phone emulator switched off. The absence of "Phone unreachable"
+# on the preflight screen therefore proves nothing about the link. See docs/workings/BENCH-LOG.md
+# §7.1.
 
-PHONE="${1:?serie du telephone manquante}"
-WATCH="${2:?serie de la montre manquante}"
+PHONE="${1:?missing phone serial}"
+WATCH="${2:?missing watch serial}"
 ADB="${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}"
 UICTL="$(dirname "$0")/uictl.py"
 
-echo "=== 1. le compagnon est-il la ==="
-# `com.google.android.apps.wear.companion` est la version moderne, sideloadee depuis un vrai
-# telephone. `com.google.android.wearable.app` est l'ancienne, absente de toutes les images.
+echo "=== 1. is the companion there ==="
+# `com.google.android.apps.wear.companion` is the modern version, sideloaded from a real phone.
+# `com.google.android.wearable.app` is the old one, absent from every image.
 if "$ADB" -s "$PHONE" shell pm list packages 2>/dev/null | tr -d '\r' \
    | grep -q "com.google.android.apps.wear.companion"; then
   echo "APPAIRAGE_COMPAGNON_PRESENT"
 else
-  echo "APPAIRAGE_COMPAGNON_ABSENT — installer wear-companion.apk (adb install -r -g)"
+  echo "APPAIRAGE_COMPAGNON_ABSENT — install wear-companion.apk (adb install -r -g)"
 fi
 
-echo "=== 2. le pont 5601, dans le bon sens ==="
-# LE SENS COMPTE, et le rapport de reconnaissance l'avait inverse. C'est le TELEPHONE qui ECOUTE
-# sur 5601 (verifiable : `cat /proc/net/tcp` cote telephone, port 15E1 en etat 0A) ; la montre
-# compose 10.0.2.2:5601, c'est-a-dire la boucle locale de l'hote vue depuis son bac a sable
-# reseau. Le transfert doit donc pointer vers le telephone, pas vers la montre.
+echo "=== 2. the 5601 bridge, the right way round ==="
+# THE DIRECTION MATTERS, and the reconnaissance report had it backwards. It is the PHONE that
+# LISTENS on 5601 (checkable: `cat /proc/net/tcp` on the phone side, port 15E1 in state 0A); the
+# watch dials 10.0.2.2:5601, that is to say the host loopback as seen from its network sandbox. The
+# forward must therefore point at the phone, not at the watch.
 "$ADB" -s "$WATCH" forward --remove-all > /dev/null 2>&1
 "$ADB" -s "$PHONE" forward tcp:5601 tcp:5601 > /dev/null 2>&1
 echo "APPAIRAGE_FORWARD $("$ADB" forward --list | tr -d '\r' | tr '\n' ';')"
 
-echo "=== 3. la chaine TCP est-elle reellement etablie ==="
-# 15E1 = 5601, 0202000A = 10.0.2.2. Etat 01 = ESTABLISHED, 0A = LISTEN.
-# Piege : apres un rechargement de snapshot, l'etat TCP de l'invite est restaure depuis la RAM et
-# la socket parait etablie meme sans rien en face. Toujours croiser avec la vue de l'hote.
+echo "=== 3. is the TCP chain really established ==="
+# 15E1 = 5601, 0202000A = 10.0.2.2. State 01 = ESTABLISHED, 0A = LISTEN.
+# Trap: after a snapshot reload, the guest's TCP state is restored from RAM and the socket looks
+# established even with nothing on the other end. Always cross-check with the host's view.
 W_SOCK=$("$ADB" -s "$WATCH" shell cat /proc/net/tcp6 2>/dev/null | tr -d '\r' | grep -ci 15E1)
 P_LISTEN=$("$ADB" -s "$PHONE" shell cat /proc/net/tcp6 2>/dev/null | tr -d '\r' | grep -ci 15E1)
 H_ESTAB=$(lsof -nP -iTCP:5601 2>/dev/null | grep -c ESTABLISHED)
+# The keys of this line stay as they are: they are quoted word for word in
+# `docs/workings/BENCH-LOG.md` §7, which is a dated log.
 echo "APPAIRAGE_CHAINE montre=$W_SOCK telephone=$P_LISTEN hote_etabli=$H_ESTAB"
 
-echo "=== 4. la configuration d'appairage cote montre ==="
-# Pose par le compagnon quand `EmulatorActivity` a abouti. Survit au snapshot et au redemarrage.
+echo "=== 4. the pairing configuration on the watch side ==="
+# Laid down by the companion once `EmulatorActivity` has completed. Survives snapshot and reboot.
 echo "APPAIRAGE_CONFIG $("$ADB" -s "$WATCH" shell settings get secure device_paired 2>/dev/null | tr -d '\r')"
 
-echo "=== 5. le seul fait qui prouve un Data Layer vivant ==="
-# La montre bloque sur CONTEXT_NOT_SEALED tant que l'item `/pendulum/context/<cle>` pose par le
-# telephone ne lui est pas parvenu. C'est un aller simple d'un DataItem reel, et non une lecture
-# de configuration : si ce bloqueur disparait, des octets ont traverse.
+echo "=== 5. the only fact that proves a live Data Layer ==="
+# The watch blocks on CONTEXT_NOT_SEALED for as long as the `/pendulum/context/<key>` item laid
+# down by the phone has not reached it. That is a one-way trip of a real DataItem, and not a
+# configuration read: if this blocker disappears, bytes have crossed.
 "$ADB" -s "$WATCH" shell input keyevent KEYCODE_WAKEUP > /dev/null 2>&1
 "$ADB" -s "$WATCH" shell svc power stayon true > /dev/null 2>&1
 "$ADB" -s "$WATCH" shell am force-stop com.pendulum > /dev/null 2>&1
@@ -66,11 +68,11 @@ echo "=== 5. le seul fait qui prouve un Data Layer vivant ==="
 sleep 20
 
 if ADB="$ADB" python3 "$UICTL" "$WATCH" find "Fill in the evening form" 2>/dev/null | grep -q UICTL_OK; then
-  echo "APPAIRAGE_DATALAYER_MUET — le contexte scelle sur le telephone n'est pas arrive"
+  echo "APPAIRAGE_DATALAYER_MUET — the context sealed on the phone never arrived"
 elif ADB="$ADB" python3 "$UICTL" "$WATCH" find "Battery" 2>/dev/null | grep -q UICTL_OK; then
-  echo "APPAIRAGE_DATALAYER_VIVANT — un DataItem a traverse"
+  echo "APPAIRAGE_DATALAYER_VIVANT — a DataItem crossed"
 else
-  echo "APPAIRAGE_INDETERMINE — l'ecran de preflight n'a pas ete atteint, relire la capture"
+  echo "APPAIRAGE_INDETERMINE — the preflight screen was not reached, read the capture"
   ADB="$ADB" python3 "$UICTL" "$WATCH" shot /tmp/banc-appairage-echec.png
 fi
 

@@ -11,225 +11,228 @@ import kotlin.math.max
 import kotlin.math.sqrt
 
 /**
- * Rythme fondamental des mouvements périodiques, estimé par **déconvolution des harmoniques** de
- * l'intervalle inter-mouvements (`SPEC-v2.md` §5.3). C'est la métrique de suivi du produit.
+ * Fundamental rhythm of the periodic movements, estimated by **harmonic deconvolution** of the
+ * inter-movement interval (`SPEC-v2.md` §5.3). This is the product's follow-up metric.
  *
- * # Pourquoi la moyenne brute du log est inutilisable
+ * # Why the raw mean of the log is unusable
  *
- * L'IMI suit une loi log-normale (Skeba 2016), et la moyenne de son log a une variabilité nuit à
- * nuit de **3,6 %** contre **43,2 %** pour le compte horaire — douze fois moins. C'est ce qui
- * justifie de changer de métrique principale. Mais un taux de mouvements manqués détruit cette
- * grandeur :
+ * The IMI follows a log-normal law (Skeba 2016), and the mean of its log has a night-to-night
+ * variability of **3.6 %** against **43.2 %** for the hourly count — twelve times less. That is
+ * what justifies changing the primary metric. But a rate of missed movements destroys this
+ * quantity:
  *
- * si chaque mouvement est manqué indépendamment avec une probabilité `p`, un intervalle observé
- * recouvre `N` intervalles vrais, `N` géométrique, et le biais sur la moyenne du log vaut
- * `E[ln N] = Σ_k p^(k−1)(1−p)·ln k` :
+ * if each movement is missed independently with a probability `p`, an observed interval covers
+ * `N` true intervals, `N` geometric, and the bias on the mean of the log is
+ * `E[ln N] = Σ_k p^(k−1)(1−p)·ln k`:
  *
- * | `p`  | biais (nats) | facteur sur l'intervalle |
+ * | `p`  | bias (nats)  | factor on the interval   |
  * |------|--------------|--------------------------|
- * | 0,20 | +0,158       | ×1,17 |
- * | 0,30 | +0,255       | ×1,29 |
- * | 0,39 | **+0,357**   | **×1,43** |
- * | 0,50 | +0,508       | ×1,66 |
- * | 0,70 | +0,915       | ×2,50 |
+ * | 0.20 | +0.158       | ×1.17 |
+ * | 0.30 | +0.255       | ×1.29 |
+ * | 0.39 | **+0.357**   | **×1.43** |
+ * | 0.50 | +0.508       | ×1.66 |
+ * | 0.70 | +0.915       | ×2.50 |
  *
- * (La dernière ligne corrige le tableau du §5.3, qui donne +0,901 / ×2,46 : la série
- * `Σ p^(k−1)(1−p)·ln k` converge lentement à `p = 0,70` et 0,901 correspond à une somme arrêtée
- * vers `k = 15`. Les quatre autres lignes sont exactes à 3 décimales. Voir [rawLogBias].)
+ * (The last row corrects the table of §5.3, which gives +0.901 / ×2.46: the series
+ * `Σ p^(k−1)(1−p)·ln k` converges slowly at `p = 0.70` and 0.901 corresponds to a sum stopped
+ * around `k = 15`. The four other rows are exact to 3 decimals. See [rawLogBias].)
  *
- * À 39 % de manqués — le chiffre mesuré par Terrill 2013 : 39 % des mouvements visibles à l'EMG ne
- * déplacent **aucun** capteur de cheville, une dorsiflexion pure ne déplaçant pas un boîtier situé
- * au-dessus de l'axe articulaire — le biais vaut **+0,357 nats**, soit **3,3 fois** la variabilité
- * nuit à nuit qu'on cherche justement à exploiter (≈ 0,11 nats pour un IMI de 21 s).
+ * At 39 % missed — the figure measured by Terrill 2013: 39 % of the movements visible on EMG move
+ * **no** ankle sensor at all, a pure dorsiflexion not displacing a case located above the joint
+ * axis — the bias is **+0.357 nats**, that is **3.3 times** the night-to-night variability that we
+ * are precisely trying to exploit (≈ 0.11 nats for an IMI of 21 s).
  *
- * **La déconvolution n'est donc pas un raffinement : c'est la condition d'existence de la métrique.**
+ * **Deconvolution is therefore not a refinement: it is the condition of existence of the metric.**
  *
- * # Le modèle
+ * # The model
  *
  * ```
  * log I_obs  ~  Σ_{k=1..K} w_k · N(μ + ln k, σ²)        w_k ∝ p^(k−1)(1−p)
  * ```
  *
- * estimé par espérance-maximisation sur `(μ, σ, p)`. Les centroïdes sont séparés de `ln 2 ≈ 0,69`
- * nats pour un `σ` typique de 0,2 à 0,4 : la séparation vaut 1,7 à 3,5 σ, la déconvolution est bien
- * posée même à `p = 0,39` où le pic fondamental pèse encore 61 % et le premier harmonique 24 %.
+ * estimated by expectation-maximisation on `(μ, σ, p)`. The centroids are separated by
+ * `ln 2 ≈ 0.69` nats for a typical `σ` of 0.2 to 0.4: the separation is worth 1.7 to 3.5 σ, the
+ * deconvolution is well posed even at `p = 0.39`, where the fundamental peak still weighs 61 % and
+ * the first harmonic 24 %.
  *
- * Trois sorties, **d'importance égale** :
- *  - `exp(μ)` = période fondamentale, débarrassée du taux de manqués ;
- *  - `p` = taux de manqués **mesuré**. Métrique de qualité gratuite, et critère de comparabilité :
- *    un `p` qui saute d'une nuit à l'autre signale deux nuits non comparables ;
- *  - `alternationSuspect` : un `p` proche de 0,5 avec un pic fondamental faible évoque des
- *    mouvements qui alternent entre les jambes, qu'un capteur unilatéral ne voit qu'une fois sur
- *    deux — un résultat clinique en soi.
+ * Three outputs, **of equal importance**:
+ *  - `exp(μ)` = fundamental period, rid of the miss rate;
+ *  - `p` = **measured** miss rate. A free quality metric, and a comparability criterion: a `p`
+ *    that jumps from one night to the next signals two nights that are not comparable;
+ *  - `alternationSuspect`: a `p` close to 0.5 with a weak fundamental peak suggests movements
+ *    alternating between the legs, which a unilateral sensor sees only one time out of two — a
+ *    clinical result in itself.
  *
- * # Trois approximations, énoncées plutôt que cachées
+ * # Three approximations, stated rather than hidden
  *
- * 1. **Composantes de même `σ`.** Un intervalle observé de rang `k` est la *somme* de `k`
- *    intervalles log-normaux, dont le log a une dispersion plus faible (≈ `σ/√k`) et une moyenne
- *    légèrement supérieure à `μ + ln k`. Le modèle littéral du §5.3 ignore ces deux corrections ;
- *    à `σ ≤ 0,3` elles valent moins de 1,5 % sur la période et le gain de complexité ne le vaut pas.
- *    Elles sont en revanche la première chose à revoir si `σ` estimé dépasse 0,4.
- * 2. **Troncature à `K` harmoniques.** La queue `k > K` s'agglomère sur la dernière composante et
- *    tire `p` **vers le haut**. À `K = 5` et `p = 0,39`, la queue pèse 0,9 % : biais négligeable.
- *    À `p = 0,65` elle pèse 7,5 % et l'estimation de `p` n'est plus fiable — ce que la mesure
- *    d'adéquation ci-dessous détecte.
- * 3. **Indépendance des manqués — probablement fausse, et c'est codé comme tel.** L'accéléromètre
- *    rate d'abord les mouvements de faible amplitude ; si une salve décroît en amplitude, les
- *    manqués s'agglomèrent en fin de série et le pic 2× est **sous-peuplé** par rapport au modèle
- *    géométrique. Le module mesure donc l'adéquation du modèle aux données ([RhythmFit.geometricMisfit]
- *    et [RhythmFit.ksStatistic]) et **invalide** le résultat quand elle est mauvaise, plutôt que de
- *    rendre un chiffre faux avec l'air sûr.
+ * 1. **Components of the same `σ`.** An observed interval of rank `k` is the *sum* of `k`
+ *    log-normal intervals, whose log has a lower dispersion (≈ `σ/√k`) and a mean slightly higher
+ *    than `μ + ln k`. The literal model of §5.3 ignores these two corrections; at `σ ≤ 0.3` they
+ *    are worth less than 1.5 % on the period and the added complexity is not worth it. They are,
+ *    on the other hand, the first thing to revisit if the estimated `σ` exceeds 0.4.
+ * 2. **Truncation at `K` harmonics.** The tail `k > K` clumps onto the last component and pulls
+ *    `p` **upward**. At `K = 5` and `p = 0.39`, the tail weighs 0.9 %: negligible bias. At
+ *    `p = 0.65` it weighs 7.5 % and the estimation of `p` is no longer reliable — which the
+ *    goodness-of-fit measure below detects.
+ * 3. **Independence of the misses — probably false, and it is coded as such.** The accelerometer
+ *    misses the low-amplitude movements first; if a burst decreases in amplitude, the misses clump
+ *    at the end of the series and the 2× peak is **under-populated** with respect to the geometric
+ *    model. The module therefore measures the fit of the model to the data
+ *    ([RhythmFit.geometricMisfit] and [RhythmFit.ksStatistic]) and **invalidates** the result when
+ *    it is bad, rather than returning a wrong figure with a confident air.
  *
- *    Ce que la mesure d'adéquation attrape et ce qu'elle n'attrape pas, vérifié par simulation :
- *    - **attrapé** — une distribution dont le pic 2× manque (harmoniques peuplés dans le désordre) :
- *      distance en variation totale de 0,12 à 0,25 contre 0,04 au pire pour un mélange conforme ;
- *    - **non attrapé, et ce n'est pas un défaut** — une probabilité de manqué qui *croît le long de
- *      la salve* (0 au début, 0,85 à la fin). Le mélange de géométriques qui en résulte reste de
- *      forme quasi géométrique (écart 0,012) et l'estimation de la période reste juste à 0,5 % ;
- *      `p` s'y lit alors comme un **taux moyen sur la nuit**, ce qu'il est. La dépendance ne fait
- *      donc pas dérailler l'estimation tant qu'elle ne creuse pas un harmonique particulier.
+ *    What the goodness-of-fit measure catches and what it does not, verified by simulation:
+ *    - **caught** — a distribution whose 2× peak is missing (harmonics populated out of order):
+ *      total variation distance of 0.12 to 0.25 against 0.04 at worst for a conforming mixture;
+ *    - **not caught, and that is not a defect** — a miss probability that *grows along the burst*
+ *      (0 at the start, 0.85 at the end). The resulting mixture of geometrics keeps a quasi
+ *      geometric shape (gap 0.012) and the estimation of the period stays accurate to 0.5 %; `p`
+ *      then reads as an **average rate over the night**, which is what it is. The dependence
+ *      therefore does not derail the estimation as long as it does not hollow out one particular
+ *      harmonic.
  *
- *    **Réserve mesurée, et elle est sérieuse : ces deux mesures d'adéquation ne sont pas des mesures
- *    de confiance.** `docs/07-validation.md` §4.3 les mesure à taux de manqués imposé sur le train
- *    vrai : quand `p` monte de 0,00 à 0,70, l'erreur sur le fondamental est multipliée par trois
- *    (0,067 → 0,201) alors que le KS **descend** de 0,116 à 0,071 et que le `geometricMisfit` reste
- *    plat. Il est accepté davantage d'ajustements à `p = 0,70` (4/20) qu'à `p = 0,00` (0/20), où
- *    l'estimation est trois fois meilleure. Le mécanisme se comprend après coup : éclaircir un train
- *    étale la distribution des intervalles, et un mélange log-normal à `σ` libre épouse **mieux** un
- *    histogramme large et lisse, quoi qu'il advienne de la position du mode. Ces deux statistiques
- *    mesurent l'**adéquation globale** du mélange ; ce qu'il faudrait borner est l'**identifiabilité
- *    de `μ`**, qui est une autre grandeur. Ce sont donc `TOO_FEW_INTERVALS` et
- *    `MISS_RATE_SATURATED` — des gardes de capacité, pas d'adéquation — qui font tout le refus utile
- *    aujourd'hui. §4.3 propose ce qu'il faudrait à la place ; la décision n'est pas prise ici.
+ *    **A measured reservation, and it is a serious one: these two goodness-of-fit measures are not
+ *    confidence measures.** `docs/07-validation.md` §4.3 measures them at an imposed miss rate on
+ *    the true train: when `p` rises from 0.00 to 0.70, the error on the fundamental is multiplied
+ *    by three (0.067 → 0.201) while the KS **goes down** from 0.116 to 0.071 and the
+ *    `geometricMisfit` stays flat. More fits are accepted at `p = 0.70` (4/20) than at `p = 0.00`
+ *    (0/20), where the estimation is three times better. The mechanism is understood after the
+ *    fact: thinning out a train spreads the distribution of the intervals, and a log-normal
+ *    mixture with a free `σ` fits a wide and smooth histogram **better**, whatever happens to the
+ *    position of the mode. These two statistics measure the **global fit** of the mixture; what
+ *    would need to be bounded is the **identifiability of `μ`**, which is another quantity. It is
+ *    therefore `TOO_FEW_INTERVALS` and `MISS_RATE_SATURATED` — capacity guards, not fit guards —
+ *    that do all the useful refusing today. §4.3 proposes what would be needed instead; the
+ *    decision is not taken here.
  *
- * # Une limite d'identifiabilité, à connaître avant de lire `alternationSuspect`
+ * # An identifiability limit, to be known before reading `alternationSuspect`
  *
- * Une alternance **strictement déterministe** gauche/droite (un mouvement sur deux exactement) est
- * mathématiquement **indiscernable** d'un rythme deux fois plus lent sans aucun manqué : les deux
- * produisent exactement la même suite d'intervalles. Aucune méthode fondée sur les seuls intervalles
- * ne peut les séparer. Ce que le modèle détecte, c'est la latéralisation **stochastique** (chaque
- * mouvement visible avec une probabilité ≈ 1/2), qui, elle, laisse une signature nette : `p ≈ 0,5`
- * avec des harmoniques peuplés. Deux nuits avec le capteur sur la jambe opposée restent le seul
- * moyen de trancher le cas déterministe (`SPEC-v2.md` §6 question 6).
+ * A **strictly deterministic** left/right alternation (exactly every other movement) is
+ * mathematically **indistinguishable** from a rhythm twice as slow with no miss at all: the two
+ * produce exactly the same sequence of intervals. No method founded on the intervals alone can
+ * separate them. What the model detects is **stochastic** lateralisation (each movement visible
+ * with a probability ≈ 1/2), which does leave a clear signature: `p ≈ 0.5` with populated
+ * harmonics. Two nights with the sensor on the opposite leg remain the only way to settle the
+ * deterministic case (`SPEC-v2.md` §6 question 6).
  */
 
-/** Paramètres de la déconvolution. Aucun n'introduit d'aléa ; l'initialisation est déterministe. */
+/** Deconvolution parameters. None introduces randomness; the initialisation is deterministic. */
 data class RhythmConfig(
     /**
-     * Nombre d'harmoniques du mélange (`k = 1..maxHarmonics`). Borné : au-delà, les composantes
-     * lointaines ne captent plus que du bruit et gonflent `p`.
+     * Number of harmonics in the mixture (`k = 1..maxHarmonics`). Bounded: beyond that, the
+     * distant components capture nothing but noise and inflate `p`.
      */
     val maxHarmonics: Int = 5,
-    /** Sous ce nombre d'intervalles, aucun résultat n'est produit. */
+    /** Below this number of intervals, no result is produced. */
     val minIntervals: Int = 30,
-    /** Borne basse de sélection : écarte les fragments intra-salve (bimodalité 2–4 s). */
+    /** Lower selection bound: excludes the intra-burst fragments (2–4 s bimodality). */
     val minIntervalSec: Double = 5.0,
     /**
-     * Borne haute de sélection. À régler avec [maxHarmonics] : elle doit couvrir
-     * `maxHarmonics × fondamental attendu` (≈ 22–26 s), sans quoi les harmoniques hauts sont
-     * amputés et `p` sous-estimé.
+     * Upper selection bound. To be tuned together with [maxHarmonics]: it must cover
+     * `maxHarmonics × expected fundamental` (≈ 22–26 s), failing which the high harmonics are
+     * amputated and `p` underestimated.
      */
     val maxIntervalSec: Double = 150.0,
     val maxIterations: Int = 300,
-    /** Critère d'arrêt : plus grande variation d'un paramètre entre deux itérations. */
+    /** Stopping criterion: largest variation of a parameter between two iterations. */
     val tolerance: Double = 1e-10,
     val sigmaFloor: Double = 1e-4,
     val sigmaCeiling: Double = 1.5,
-    /** Au-delà, le signal ne contient plus assez de fondamental pour parler de rythme. */
+    /** Beyond this, the signal no longer contains enough fundamental to speak of a rhythm. */
     val maxMissRate: Double = 0.90,
     /**
-     * Seuil d'adéquation distributionnelle (Kolmogorov–Smirnov). **Délibérément absolu et non
-     * indexé sur `n`** : avec ~2 000 intervalles, un test formel rejetterait n'importe quel modèle
-     * paramétrique. On ne teste pas une hypothèse, on refuse une inadéquation grossière.
+     * Distributional goodness-of-fit threshold (Kolmogorov–Smirnov). **Deliberately absolute and
+     * not indexed on `n`**: with ~2 000 intervals, a formal test would reject any parametric model
+     * whatsoever. We are not testing a hypothesis, we are refusing a gross misfit.
      */
     val maxKs: Double = 0.08,
     /**
-     * Seuil de la distance en variation totale entre les poids géométriques ajustés et la part
-     * réellement attribuée à chaque harmonique. C'est **le** garde-fou contre l'hypothèse
-     * d'indépendance des manqués (approximation 3 ci-dessus).
+     * Threshold of the total variation distance between the fitted geometric weights and the share
+     * actually attributed to each harmonic. This is **the** guard rail against the hypothesis of
+     * independence of the misses (approximation 3 above).
      *
-     * Calibré sur simulation : un mélange conforme au modèle donne 0,007 à 0,041 (jusqu'à
-     * `p = 0,65`, `σ` de 0,10 à 0,40) ; une distribution dont le pic 2× est absent donne 0,118 à
-     * 0,250. Le seuil est posé au milieu de cet écart, du côté conservateur.
+     * Calibrated by simulation: a mixture conforming to the model gives 0.007 to 0.041 (up to
+     * `p = 0.65`, `σ` from 0.10 to 0.40); a distribution whose 2× peak is absent gives 0.118 to
+     * 0.250. The threshold is placed in the middle of that gap, on the conservative side.
      */
     val maxGeometricMisfit: Double = 0.10,
-    /** Sous cette dispersion, la statistique KS n'a plus de sens : le gain KS est neutralisé. */
+    /** Below this dispersion, the KS statistic makes no sense: the KS check is neutralised. */
     val ksMinSigma: Double = 0.02,
     /**
-     * Borne **basse** du drapeau d'alternance. Posée à 0,48 et non à 0,50 parce que sur un train
-     * purement périodique l'estimation de `p` est biaisée **vers le haut** d'environ +0,03 par la
-     * troncature à [maxHarmonics] : un taux vrai de 0,39 (manqués purement mécaniques, Terrill)
-     * ressort entre 0,40 et 0,44, et un taux vrai de 0,50 (latéralisation stochastique) entre 0,53
-     * et 0,55. Le seuil sépare les deux avec une marge des deux côtés, et `RhythmTest` l'assertionne
-     * dans les deux sens.
+     * **Lower** bound of the alternation flag. Set at 0.48 and not at 0.50 because on a purely
+     * periodic train the estimation of `p` is biased **upward** by about +0.03 by the truncation
+     * at [maxHarmonics]: a true rate of 0.39 (purely mechanical misses, Terrill) comes out between
+     * 0.40 and 0.44, and a true rate of 0.50 (stochastic lateralisation) between 0.53 and 0.55.
+     * The threshold separates the two with a margin on both sides, and `RhythmTest` asserts it in
+     * both directions.
      *
-     * **Réserve mesurée, de signe opposé.** Ce +0,03 vaut pour un train dont *tous* les intervalles
-     * appartiennent au mélange harmonique. Sur une nuit nominale complète — où des mouvements isolés
-     * et des RRLM s'intercalent entre les séries — `p` est au contraire **sous**-estimé :
-     * `docs/07-validation.md` §4.3 le mesure à 0,098 pour un taux vrai de 0,00, 0,213 pour 0,30 et
-     * 0,333 pour 0,50. Sur une telle nuit, une latéralisation réelle ressortirait donc **sous** 0,48
-     * et ce drapeau ne se lèverait pas. Le corriger demanderait de calibrer le seuil sur des trains
-     * mêlés, ce qui est une décision de calibration clinique et non une correction : elle n'est pas
-     * prise ici, elle est écrite.
+     * **A measured reservation, of the opposite sign.** That +0.03 holds for a train whose
+     * intervals *all* belong to the harmonic mixture. On a complete nominal night — where isolated
+     * movements and RRLMs are interleaved between the series — `p` is on the contrary
+     * **under**-estimated: `docs/07-validation.md` §4.3 measures it at 0.098 for a true rate of
+     * 0.00, 0.213 for 0.30 and 0.333 for 0.50. On such a night, a real lateralisation would
+     * therefore come out **below** 0.48 and this flag would not be raised. Correcting it would
+     * require calibrating the threshold on mixed trains, which is a clinical calibration decision
+     * and not a correction: it is not taken here, it is written down.
      */
     val alternationMinMissRate: Double = 0.48,
     /**
-     * Borne **haute** du drapeau d'alternance. Sans elle, la condition était une demi-droite, et
-     * « une fois sur deux » ne se distinguait pas de « presque tout le temps ».
+     * **Upper** bound of the alternation flag. Without it, the condition was a half-line, and "one
+     * time out of two" was not distinguished from "almost all the time".
      *
-     * Le drapeau affirme quelque chose de clinique — les mouvements alternent peut-être entre les
-     * jambes — et il le déduisait d'un `p` élevé, quelle qu'en soit la cause. Mesuré sur la nuit
-     * nominale (§4.3), où le générateur ne produit **aucune** alternance et où le taux de manqués
-     * vaut 0,73 à 0,83 pour une raison purement amplitudinaire, il se levait **14 fois sur 20**.
-     * C'était la seule sortie du système à être activement fausse plutôt que simplement absente.
+     * The flag asserts something clinical — the movements are perhaps alternating between the legs
+     * — and it used to deduce that from a high `p`, whatever its cause. Measured on the nominal
+     * night (§4.3), where the generator produces **no** alternation and where the miss rate is
+     * 0.73 to 0.83 for a purely amplitude-related reason, it was raised **14 times out of 20**.
+     * It was the only output of the system to be actively wrong rather than simply absent.
      *
-     * La valeur 0,65 n'est pas choisie pour faire passer une mesure : c'est celle que ce fichier
-     * énonçait déjà deux paragraphes plus haut, à l'approximation nº 2 — au-delà de `p = 0,65` la
-     * queue tronquée pèse 7,5 % et « l'estimation de `p` n'est plus fiable ». Un drapeau ne peut pas
-     * s'appuyer sur une grandeur que le module déclare lui-même non fiable. Elle laisse intacte la
-     * plage 0,53–0,55 où ressort une latéralisation vraie sur train pur, que `RhythmTest` assertionne.
+     * The value 0.65 is not chosen to make a measurement pass: it is the one this file already
+     * stated two paragraphs above, at approximation no. 2 — beyond `p = 0.65` the truncated tail
+     * weighs 7.5 % and "the estimation of `p` is no longer reliable". A flag cannot rest on a
+     * quantity that the module itself declares unreliable. It leaves intact the 0.53–0.55 range
+     * where a true lateralisation comes out on a pure train, which `RhythmTest` asserts.
      *
-     * **Ce que la borne ne répare pas, et il faut le lire avant de croire ce drapeau.** Elle fait
-     * tomber le compte de 14/20 à 1/20 sur la nuit nominale, mais le balayage de `calFraction` (§4.4)
-     * montre qu'à `f_cal = 0,06`, où le taux de manqués descend justement vers 0,5, il remonte à
-     * **11/20** — toujours sans la moindre alternance dans le générateur. C'est attendu et ce n'est
-     * pas réglable : `p` et la part du fondamental sont **les mêmes** selon qu'une moitié des
-     * mouvements manque parce qu'ils sont sous le seuil ou parce qu'ils sont sur l'autre jambe. La
-     * seule grandeur qui séparerait les deux est l'amplitude des événements détectés — une
-     * latéralisation est aveugle à l'amplitude, un seuil ne l'est pas — et `Rhythm` ne reçoit que des
-     * intervalles. Symétriquement, au taux fait pour lui (0,50) le drapeau ne se lève que 3 fois sur
-     * 20 sur un train réaliste. **Faux positif d'un côté, presque aveugle de l'autre :** ce drapeau
-     * demande une décision de conception, pas un réglage.
+     * **What the bound does not repair, and it must be read before believing this flag.** It
+     * brings the count down from 14/20 to 1/20 on the nominal night, but the `calFraction` sweep
+     * (§4.4) shows that at `f_cal = 0.06`, where the miss rate drops precisely towards 0.5, it
+     * climbs back to **11/20** — still without the slightest alternation in the generator. This is
+     * expected and it is not tunable: `p` and the share of the fundamental are **the same**
+     * whether half of the movements are missing because they are below the threshold or because
+     * they are on the other leg. The only quantity that would separate the two is the amplitude of
+     * the detected events — a lateralisation is blind to amplitude, a threshold is not — and
+     * `Rhythm` only receives intervals. Symmetrically, at the rate it is made for (0.50) the flag
+     * is raised only 3 times out of 20 on a realistic train. **A false positive on one side,
+     * almost blind on the other:** this flag calls for a design decision, not a tuning.
      */
     val alternationMaxMissRate: Double = 0.65,
     /**
-     * « Pic fondamental faible », mesuré sur la part **empirique** de la première composante et non
-     * sur le poids du modèle — sans quoi la condition serait une simple redite de `p`.
+     * "Weak fundamental peak", measured on the **empirical** share of the first component and not
+     * on the model weight — failing which the condition would be a mere restatement of `p`.
      */
     val alternationMaxFundamentalShare: Double = 0.55,
 )
 
-/** Pourquoi un ajustement a été refusé. `null` = résultat valide. */
+/** Why a fit was refused. `null` = valid result. */
 enum class RhythmReject {
     TOO_FEW_INTERVALS,
     NOT_CONVERGED,
-    /** `p` collé au plafond : plus de fondamental exploitable. */
+    /** `p` stuck at the ceiling: no exploitable fundamental left. */
     MISS_RATE_SATURATED,
-    /** `σ` collé au plafond : la distribution n'a pas de mode identifiable. */
+    /** `σ` stuck at the ceiling: the distribution has no identifiable mode. */
     SIGMA_SATURATED,
-    /** Les manqués ne sont pas géométriques — probablement agglomérés en fin de salve. */
+    /** The misses are not geometric — probably clumped at the end of the burst. */
     GEOMETRIC_MISFIT,
-    /** La forme globale de la distribution n'est pas celle du mélange ajusté. */
+    /** The global shape of the distribution is not that of the fitted mixture. */
     DISTRIBUTION_MISFIT,
 }
 
 /**
- * Ajustement complet. [RhythmResult] est la sortie contractuelle ; ce type ajoute les diagnostics
- * qui permettent de savoir **pourquoi** on a le droit — ou pas — de croire le chiffre.
+ * Complete fit. [RhythmResult] is the contractual output; this type adds the diagnostics that make
+ * it possible to know **why** one is entitled — or not — to believe the figure.
  *
- * @param componentShare part moyenne des observations attribuée à chaque harmonique (responsabilités
- *   moyennes). À comparer à `RhythmResult.harmonicWeights`, qui sont les poids géométriques du
- *   modèle : leur écart est [geometricMisfit].
+ * @param componentShare average share of the observations attributed to each harmonic (average
+ *   responsibilities). To be compared with `RhythmResult.harmonicWeights`, which are the geometric
+ *   weights of the model: their gap is [geometricMisfit].
  */
 data class RhythmFit(
     val result: RhythmResult,
@@ -265,14 +268,14 @@ private const val LN_2PI = 1.8378770664093453
 
 object Rhythm {
 
-    // --- Points d'entrée -------------------------------------------------------------------
+    // --- Entry points ----------------------------------------------------------------------
 
     /**
-     * Entrée **recommandée** : tous les CLM de sommeil consécutifs.
+     * **Recommended** entry point: all the consecutive sleep CLMs.
      *
-     * Ne pas partir des séries déjà construites : la construction de série a **déjà** filtré les
-     * intervalles hors [10, 90] s, c'est-à-dire précisément les harmoniques hauts que l'on cherche
-     * à modéliser. Estimer `p` sur des intervalles pré-filtrés le sous-estime mécaniquement.
+     * Do not start from the already-built series: the series construction has **already** filtered
+     * out the intervals outside [10, 90] s, that is to say precisely the high harmonics that we
+     * are trying to model. Estimating `p` on pre-filtered intervals mechanically underestimates it.
      */
     fun fromClms(
         clms: List<Clm>,
@@ -287,8 +290,8 @@ object Rhythm {
     ): RhythmFit = fit(intervalsOf(clms, mask, cfg), cfg)
 
     /**
-     * Repli quand seules les séries sont disponibles (mode incrémental). Voir la réserve de
-     * [fromClms] : `p` y est structurellement sous-estimé.
+     * Fallback when only the series are available (incremental mode). See the reservation in
+     * [fromClms]: `p` is structurally underestimated there.
      */
     fun fromSeries(series: List<PlmSeries>, cfg: RhythmConfig = RhythmConfig()): RhythmResult {
         val acc = ArrayList<Double>()
@@ -296,7 +299,7 @@ object Rhythm {
         return fit(DoubleArray(acc.size) { acc[it] }, cfg).result
     }
 
-    /** Intervalles onset-à-onset entre CLM de sommeil consécutifs, filtrés par la fenêtre de [cfg]. */
+    /** Onset-to-onset intervals between consecutive sleep CLMs, filtered by the [cfg] window. */
     fun intervalsOf(clms: List<Clm>, mask: SleepMask, cfg: RhythmConfig = RhythmConfig()): DoubleArray {
         val lookup = SleepLookup(mask.windows)
         val acc = ArrayList<Double>(clms.size)
@@ -313,21 +316,21 @@ object Rhythm {
     fun estimate(imiSec: DoubleArray, cfg: RhythmConfig = RhythmConfig()): RhythmResult =
         fit(imiSec, cfg).result
 
-    // --- Ajustement -------------------------------------------------------------------------
+    // --- Fit --------------------------------------------------------------------------------
 
     /**
-     * Déconvolution proprement dite. Pure, déterministe, sans aléa : l'initialisation est une
-     * grille fixe de points de départ (quantiles des données × trois valeurs de `p`), et le
-     * meilleur en vraisemblance gagne. Deux exécutions sur la même entrée sont identiques au bit.
+     * The deconvolution proper. Pure, deterministic, with no randomness: the initialisation is a
+     * fixed grid of starting points (data quantiles × three values of `p`), and the best one in
+     * likelihood wins. Two runs on the same input are identical to the bit.
      */
     fun fit(imiSec: DoubleArray, cfg: RhythmConfig = RhythmConfig()): RhythmFit {
-        require(cfg.maxHarmonics >= 1) { "maxHarmonics doit etre >= 1" }
+        require(cfg.maxHarmonics >= 1) { "maxHarmonics must be >= 1" }
         require(cfg.minIntervalSec > 0.0 && cfg.maxIntervalSec > cfg.minIntervalSec) {
-            "fenetre de selection des intervalles incoherente"
+            "inconsistent interval selection window"
         }
 
-        // Selection : on ne garde que ce que le modele peut expliquer. Le filtre haut coupe aussi
-        // les intervalles inter-series (plusieurs minutes) qui ne sont pas des harmoniques.
+        // Selection: we keep only what the model can explain. The upper filter also cuts the
+        // inter-series intervals (several minutes), which are not harmonics.
         var kept = 0
         for (v in imiSec) {
             if (v >= cfg.minIntervalSec && v <= cfg.maxIntervalSec && v.isFinite()) kept++
@@ -342,10 +345,10 @@ object Rhythm {
 
         val k = cfg.maxHarmonics
 
-        // --- Grille d'initialisation deterministe ---------------------------------------
-        // mu0 : deux quantiles bas. Sous un taux de manques eleve, la mediane peut deja tomber
-        // entre le fondamental et le premier harmonique ; le quartile bas, lui, reste dans le
-        // fondamental tant que p < 0,75.
+        // --- Deterministic initialisation grid ------------------------------------------
+        // mu0: two low quantiles. Under a high miss rate, the median can already fall between the
+        // fundamental and the first harmonic; the low quartile, for its part, stays within the
+        // fundamental as long as p < 0.75.
         val mu0s = doubleArrayOf(quantileOf(x, 0.25), quantileOf(x, 0.50))
         val p0s = doubleArrayOf(0.10, 0.40, 0.65)
         val mad = madOf(x)
@@ -356,8 +359,8 @@ object Rhythm {
         for (mu0 in mu0s) {
             for (p0 in p0s) {
                 val s = runEm(x, mu0, sigma0, p0, cfg)
-                // Comparaison stricte : a vraisemblance egale, le premier de la grille gagne.
-                // C'est ce qui rend le choix reproductible au bit.
+                // Strict comparison: at equal likelihood, the first of the grid wins. That is what
+                // makes the choice reproducible to the bit.
                 if (s.logLik > bestLogLik) {
                     bestLogLik = s.logLik
                     em = s
@@ -368,14 +371,14 @@ object Rhythm {
         val weights = geometricWeights(em.p, k)
         val share = responsibilityShare(x, em.mu, em.sigma, weights)
 
-        // --- Adequation du modele aux donnees -------------------------------------------
-        // (a) Forme des poids : les manques sont-ils vraiment geometriques ? Si l'accelerometre
-        //     rate preferentiellement les fins de salve, le pic 2x est sous-peuple et cette
-        //     distance en variation totale explose, alors meme que la moyenne des rangs colle.
+        // --- Fit of the model to the data -----------------------------------------------
+        // (a) Shape of the weights: are the misses really geometric? If the accelerometer
+        //     preferentially misses the ends of bursts, the 2x peak is under-populated and this
+        //     total variation distance explodes, even though the mean of the ranks matches.
         var tv = 0.0
         for (i in 0 until k) tv += abs(share[i] - weights[i])
         val geometricMisfit = 0.5 * tv
-        // (b) Forme globale de la distribution.
+        // (b) Global shape of the distribution.
         val ks = ksStatistic(x, em.mu, em.sigma, weights)
 
         var reject: RhythmReject? = null
@@ -387,12 +390,12 @@ object Rhythm {
         else if (em.sigma > cfg.ksMinSigma && ks > cfg.maxKs) reject = RhythmReject.DISTRIBUTION_MISFIT
 
         val valid = reject == null
-        // Le drapeau d'alternance ne depend pas de `valid` : il se lit AVEC lui. Une nuit invalide
-        // dont p vaut 0,5 reste une nuit ou l'hypothese d'alternance merite d'etre posee.
+        // The alternation flag does not depend on `valid`: it is read WITH it. An invalid night
+        // whose p is 0.5 remains a night where the alternation hypothesis deserves to be raised.
         //
-        // C'est une **bande** et non une demi-droite : au-dela de `alternationMaxMissRate`, `p` ne
-        // dit plus « une fois sur deux » mais « presque tout le temps », ce qui est un defaut de
-        // detection et non une lateralisation. Voir la KDoc de ce parametre.
+        // It is a **band** and not a half-line: beyond `alternationMaxMissRate`, `p` no longer
+        // says "one time out of two" but "almost all the time", which is a detection defect and
+        // not a lateralisation. See the KDoc of that parameter.
         val alternation = em.p >= cfg.alternationMinMissRate &&
             em.p <= cfg.alternationMaxMissRate &&
             share[0] <= cfg.alternationMaxFundamentalShare
@@ -420,8 +423,8 @@ object Rhythm {
 
     private fun emptyFit(intervals: Int, reject: RhythmReject): RhythmFit = RhythmFit(
         result = RhythmResult(
-            // NaN et non 0.0 : « pas de valeur » doit empoisonner visiblement tout calcul aval,
-            // pas se faire passer pour une periode nulle.
+            // NaN and not 0.0: "no value" must visibly poison every downstream computation, not
+            // pass itself off as a zero period.
             fundamentalSec = Double.NaN,
             muLog = Double.NaN,
             sigmaLog = Double.NaN,
@@ -440,7 +443,7 @@ object Rhythm {
         reject = reject,
     )
 
-    // --- Espérance-maximisation --------------------------------------------------------------
+    // --- Expectation-maximisation ------------------------------------------------------------
 
     private class EmState(
         val mu: Double,
@@ -475,9 +478,9 @@ object Rhythm {
             for (i in 0 until k) lw[i] = if (weights[i] > 0.0) ln(weights[i]) else Double.NEGATIVE_INFINITY
             val lnSigma = ln(sigma)
 
-            var s1 = 0.0   // Σ r·y          avec y = x − ln k
+            var s1 = 0.0   // Σ r·y          with y = x − ln k
             var s2 = 0.0   // Σ r·y²
-            var sk = 0.0   // Σ r·k          → rang moyen, ce qui identifie p
+            var sk = 0.0   // Σ r·k          → mean rank, which is what identifies p
 
             for (i in 0 until n) {
                 var maxLp = Double.NEGATIVE_INFINITY
@@ -502,9 +505,9 @@ object Rhythm {
             val muNew = s1 / n
             val varNew = s2 / n - muNew * muNew
             val sigmaNew = sqrt(max(varNew, 0.0)).coerceIn(cfg.sigmaFloor, cfg.sigmaCeiling)
-            // MLE exacte de p pour une geometrique TRONQUEE a k composantes : le rang moyen du
-            // modele est strictement croissant en p, donc la racine est unique et la dichotomie
-            // converge sans risque de cycle.
+            // Exact MLE of p for a geometric TRUNCATED at k components: the mean rank of the model
+            // is strictly increasing in p, so the root is unique and the bisection converges with
+            // no risk of cycling.
             val pNew = solveMissRate(sk / n, k).coerceIn(0.0, cfg.maxMissRate)
 
             val delta = max(abs(muNew - mu), max(abs(sigmaNew - sigma), abs(pNew - p)))
@@ -520,9 +523,9 @@ object Rhythm {
         return EmState(mu, sigma, p, logLikelihood(x, mu, sigma, geometricWeights(p, k)), iterations, converged)
     }
 
-    // --- Primitives du mélange ---------------------------------------------------------------
+    // --- Mixture primitives ------------------------------------------------------------------
 
-    /** Poids `w_k ∝ p^(k−1)(1−p)`, tronqués à `k` composantes et renormalisés. */
+    /** Weights `w_k ∝ p^(k−1)(1−p)`, truncated at `k` components and renormalised. */
     internal fun geometricWeights(p: Double, k: Int): DoubleArray {
         val w = DoubleArray(k)
         var acc = 0.0
@@ -532,7 +535,7 @@ object Rhythm {
             acc += w[i]
             pk *= p
         }
-        if (!(acc > 0.0)) {          // p = 1 : degenere, on repartit uniformement
+        if (!(acc > 0.0)) {          // p = 1: degenerate, we spread uniformly
             w.fill(1.0 / k)
             return w
         }
@@ -540,7 +543,7 @@ object Rhythm {
         return w
     }
 
-    /** Rang moyen `E[k]` sous les poids tronqués. Strictement croissant en `p`, de 1 à (k+1)/2. */
+    /** Mean rank `E[k]` under truncated weights. Strictly increasing in `p`, from 1 to (k+1)/2. */
     internal fun meanRank(p: Double, k: Int): Double {
         val w = geometricWeights(p, k)
         var m = 0.0
@@ -549,8 +552,8 @@ object Rhythm {
     }
 
     /**
-     * Inverse [meanRank] par dichotomie — 80 tours, donc convergence à ~1e-24 : le résultat ne
-     * dépend d'aucun ordre d'évaluation et reste identique au bit d'une exécution à l'autre.
+     * Inverts [meanRank] by bisection — 80 turns, hence convergence to ~1e-24: the result depends
+     * on no evaluation order and stays identical to the bit from one run to the next.
      */
     internal fun solveMissRate(meanK: Double, k: Int): Double {
         if (k <= 1) return 0.0
@@ -585,7 +588,7 @@ object Rhythm {
         return acc
     }
 
-    /** Part moyenne des observations attribuée à chaque harmonique (responsabilités moyennes). */
+    /** Average share of the observations attributed to each harmonic (average responsibilities). */
     private fun responsibilityShare(
         x: DoubleArray,
         mu: Double,
@@ -613,7 +616,7 @@ object Rhythm {
         return share
     }
 
-    /** Statistique de Kolmogorov–Smirnov entre l'empirique et le mélange ajusté. */
+    /** Kolmogorov–Smirnov statistic between the empirical distribution and the fitted mixture. */
     private fun ksStatistic(
         x: DoubleArray,
         mu: Double,
@@ -647,8 +650,8 @@ object Rhythm {
     internal fun normalCdf(z: Double): Double = 0.5 * erfc(-z * 0.7071067811865476)
 
     /**
-     * `erfc` par l'approximation rationnelle de Numerical Recipes (erreur relative < 1,2e-7).
-     * Aucune dépendance externe, aucun tirage, résultat identique à chaque exécution.
+     * `erfc` by the rational approximation from Numerical Recipes (relative error < 1.2e-7).
+     * No external dependency, no draw, identical result on every run.
      */
     internal fun erfc(x: Double): Double {
         val z = abs(x)
@@ -662,9 +665,9 @@ object Rhythm {
     }
 
     /**
-     * Biais théorique de la moyenne du log dû aux manqués : `E[ln N] = Σ p^(k−1)(1−p)·ln k`.
-     * Exposé pour le rapport et pour vérifier, sur données simulées, que la déconvolution enlève
-     * bien ce que la moyenne brute contient (§5.3).
+     * Theoretical bias of the mean of the log due to the misses: `E[ln N] = Σ p^(k−1)(1−p)·ln k`.
+     * Exposed for the report and to check, on simulated data, that the deconvolution does remove
+     * what the raw mean contains (§5.3).
      */
     fun rawLogBias(p: Double, terms: Int = 200): Double {
         if (!(p > 0.0)) return 0.0

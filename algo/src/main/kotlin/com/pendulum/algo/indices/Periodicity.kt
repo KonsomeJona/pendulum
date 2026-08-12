@@ -5,77 +5,77 @@ import com.pendulum.algo.model.PiResult
 import com.pendulum.algo.model.SleepMask
 
 /**
- * Periodicity Index de Ferri.
+ * Ferri's Periodicity Index.
  *
- * # La convention retenue, et pourquoi il faut en choisir une
+ * # The convention retained, and why one has to be chosen
  *
- * Deux formes contradictoires du PI circulent — **dans les publications de Ferri lui-même**. Elles
- * diffèrent sur deux points indépendants, ce qui fait quatre variantes possibles :
+ * Two contradictory forms of the PI are in circulation — **within Ferri's own publications**. They
+ * differ on two independent points, which makes four possible variants:
  *
- *  - la borne basse de la fenêtre de périodicité est-elle stricte (`10 < IMI`) ou inclusive
- *    (`10 ≤ IMI`) ? De même pour la borne haute ;
- *  - le numérateur compte-t-il des **intervalles** qualifiants, ou des **mouvements** appartenant à
- *    une séquence périodique (`PLMS_alt / LMS_total`, forme légèrement supérieure) ?
+ *  - is the lower bound of the periodicity window strict (`10 < IMI`) or inclusive (`10 ≤ IMI`)?
+ *    Likewise for the upper bound;
+ *  - does the numerator count qualifying **intervals**, or **movements** belonging to a periodic
+ *    run (`PLMS_alt / LMS_total`, a slightly higher form)?
  *
- * Les deux formes donnent des valeurs différentes sur la même nuit. Mélangées, elles produisent une
- * tendance dans laquelle une partie de la variation observée n'est qu'un changement de définition.
+ * The two forms give different values on the same night. Mixed together, they produce a trend in
+ * which part of the observed variation is nothing but a change of definition.
  *
- * **Convention de ce module, unique et jamais mélangée** ([PiConvention.FERRI_INTERVALS_LOW_EXCLUSIVE]) :
+ * **Convention of this module, single and never mixed** ([PiConvention.FERRI_INTERVALS_LOW_EXCLUSIVE]):
  *
  * ```
- * IMI_k = onset_{k+1} − onset_k                        k = 1..N−1   (N = CLM pendant le sommeil)
- * qualifiant(k)  ⟺  imiLowExclusiveSec < IMI_k ≤ imiHighInclusiveSec     (10 s exclu, 90 s inclus)
- * Découper la suite des IMI en séquences maximales d'intervalles qualifiants CONSÉCUTIFS.
- * PI = ( Σ longueur(R) pour toute séquence R de longueur ≥ minRunLength ) / (N − 1)
+ * IMI_k = onset_{k+1} − onset_k                        k = 1..N−1   (N = CLM during sleep)
+ * qualifying(k)  ⟺  imiLowExclusiveSec < IMI_k ≤ imiHighInclusiveSec (10 s excluded, 90 s included)
+ * Split the sequence of IMIs into maximal runs of CONSECUTIVE qualifying intervals.
+ * PI = ( Σ length(R) over every run R of length ≥ minRunLength ) / (N − 1)
  * ```
  *
- * — **borne basse stricte, borne haute inclusive** ;
- * — **numérateur en intervalles**, pas en mouvements ;
- * — longueur minimale de séquence = **3 intervalles**, soit 4 mouvements (Ferri 2006), ce qui aligne
- *   le PI sur la règle de série clinique (≥ 4 CLM) ;
- * — fenêtre **10–90 s**, pas 10–50 s.
+ * — **strict lower bound, inclusive upper bound**;
+ * — **numerator in intervals**, not in movements;
+ * — minimum run length = **3 intervals**, that is 4 movements (Ferri 2006), which aligns the PI on
+ *   the clinical series rule (≥ 4 CLM);
+ * — window **10–90 s**, not 10–50 s.
  *
- * La convention est reproduite dans [PiDetail.convention] pour qu'un résultat archivé reste
- * interprétable même si ce fichier change un jour. Un changement de convention **doit** bumper le
- * `paramsHash` et déclencher un rescore de toutes les nuits (garde-fou nº 3 de `SPEC-v2.md` §3).
+ * The convention is reproduced in [PiDetail.convention] so that an archived result stays
+ * interpretable even if this file changes one day. A change of convention **must** bump the
+ * `paramsHash` and trigger a rescore of every night (guard rail no. 3 of `SPEC-v2.md` §3).
  *
- * # Le garde-fou de taux
+ * # The rate guard rail
  *
- * Sous [PeriodicityConfig.minLmRatePerHour] mouvements par heure, le PI est **ininterprétable**
- * (Drakatos 2021) : son dénominateur `N − 1` devient si petit qu'une poignée d'intervalles décide
- * de tout. C'est exactement ce qui explique l'instabilité publiée du groupe témoin (0,092 ± 0,152
- * chez Ferri 2022 contre 0,220 ± 0,229 chez Mogavero 2024). Sous ce taux, [PiResult.valid] est faux
- * et la valeur ne doit pas être affichée.
+ * Below [PeriodicityConfig.minLmRatePerHour] movements per hour, the PI is **uninterpretable**
+ * (Drakatos 2021): its denominator `N − 1` becomes so small that a handful of intervals decides
+ * everything. That is exactly what explains the published instability of the control group
+ * (0.092 ± 0.152 in Ferri 2022 against 0.220 ± 0.229 in Mogavero 2024). Below this rate,
+ * [PiResult.valid] is false and the value must not be displayed.
  *
- * # Ce que le PI ne sauve pas
+ * # What the PI does not save
  *
- * Il ne discrimine **pas** les mouvements liés à la respiration : les RRLM sont périodiques eux
- * aussi, et le cycle apnéique (25–45 s) recouvre le mode PLMS (22–26 s). Le PI n'est pas un
- * garde-fou anti-RRLM et ne doit jamais être présenté comme tel (§3.5).
+ * It does **not** discriminate movements linked to breathing: RRLMs are periodic too, and the
+ * apnoeic cycle (25–45 s) overlaps the PLMS mode (22–26 s). The PI is not an anti-RRLM guard rail
+ * and must never be presented as one (§3.5).
  *
- * Valeurs de référence : seuil diagnostique ≈ **0,50** ; SJSR 0,601 ± 0,189 ; témoins 0,092 ± 0,152.
+ * Reference values: diagnostic threshold ≈ **0.50**; RLS 0.601 ± 0.189; controls 0.092 ± 0.152.
  */
 
-/** Une seule valeur aujourd'hui : le type existe pour rendre la convention explicite à l'archivage. */
+/** A single value today: the type exists to make the convention explicit at archiving time. */
 enum class PiConvention {
-    /** Borne basse stricte, borne haute inclusive, numérateur en intervalles. */
+    /** Strict lower bound, inclusive upper bound, numerator in intervals. */
     FERRI_INTERVALS_LOW_EXCLUSIVE,
 }
 
 data class PeriodicityConfig(
-    /** 10 s **exclu** : un IMI de exactement 10,0 s ne qualifie pas. */
+    /** 10 s **excluded**: an IMI of exactly 10.0 s does not qualify. */
     val imiLowExclusiveSec: Double = 10.0,
-    /** 90 s **inclus** : un IMI de exactement 90,0 s qualifie. */
+    /** 90 s **included**: an IMI of exactly 90.0 s qualifies. */
     val imiHighInclusiveSec: Double = 90.0,
-    /** En **intervalles** (3 intervalles = 4 mouvements). */
+    /** In **intervals** (3 intervals = 4 movements). */
     val minRunLength: Int = 3,
-    /** Sous ce taux de LM par heure de sommeil analysable, le PI est ininterprétable. */
+    /** Below this rate of LM per hour of analysable sleep, the PI is uninterpretable. */
     val minLmRatePerHour: Double = 10.0,
 )
 
 /**
- * Détail du calcul, pour l'export et les tests. [PiResult] reste la sortie contractuelle ;
- * ce type ajoute ce qui permet de vérifier *comment* le chiffre a été obtenu.
+ * Detail of the computation, for the export and the tests. [PiResult] remains the contractual
+ * output; this type adds what makes it possible to check *how* the figure was obtained.
  */
 data class PiDetail(
     val pi: PiResult,
@@ -86,24 +86,24 @@ data class PiDetail(
     val intervalsInCountedRuns: Int,
     val runCount: Int,
     val longestRunLength: Int,
-    /** Dénominateur du seul garde-fou de taux — le PI lui-même n'a **pas** de dénominateur temporel. */
+    /** Denominator of the rate guard rail only — the PI itself has **no** temporal denominator. */
     val denominatorMin: Double,
 )
 
 object Periodicity {
 
-    /** Convention en clair, à recopier dans l'export et le rapport médical. */
+    /** The convention in plain words, to be copied into the export and the medical report. */
     const val CONVENTION_DOC: String =
-        "PI de Ferri, convention Pendulum : intervalles qualifiants 10 s (exclu) < IMI <= 90 s (inclus), " +
-            "sequences maximales d'au moins 3 intervalles consecutifs, numerateur en INTERVALLES " +
-            "(jamais en mouvements), denominateur N-1 sur les CLM de sommeil."
+        "Ferri PI, Pendulum convention: qualifying intervals 10 s (excluded) < IMI <= 90 s " +
+            "(included), maximal runs of at least 3 consecutive intervals, numerator in " +
+            "INTERVALS (never in movements), denominator N-1 on the sleep CLMs."
 
     /**
-     * Point d'entrée aligné sur `ALGO-v2.md` §4.3.
+     * Entry point aligned with `ALGO-v2.md` §4.3.
      *
-     * @param clms tous les CLM candidats en ordre chronologique ; seuls les retenus (`isClm`) et
-     *   situés dans une époque de sommeil entrent dans le calcul.
-     * @param fsHz conservé pour la stabilité de l'API ; les instants viennent de `Clm.onsetMsRel`.
+     * @param clms all the candidate CLMs in chronological order; only the retained ones (`isClm`)
+     *   and located within a sleep epoch enter the computation.
+     * @param fsHz kept for the stability of the API; the instants come from `Clm.onsetMsRel`.
      */
     fun ferriIndex(
         clms: List<Clm>,
@@ -112,14 +112,14 @@ object Periodicity {
         cfg: PeriodicityConfig = PeriodicityConfig(),
     ): PiResult = detail(clms, mask, fsHz, cfg).pi
 
-    /** Même calcul que [ferriIndex], mais avec le détail des séquences. */
+    /** Same computation as [ferriIndex], but with the detail of the runs. */
     fun detail(
         clms: List<Clm>,
         mask: SleepMask,
         fsHz: Double,
         cfg: PeriodicityConfig = PeriodicityConfig(),
     ): PiDetail {
-        require(fsHz > 0.0) { "fsHz doit etre > 0" }
+        require(fsHz > 0.0) { "fsHz must be > 0" }
         val lookup = SleepLookup(mask.windows)
         val onsets = ArrayList<Long>(clms.size)
         for (c in clms) {
@@ -134,11 +134,11 @@ object Periodicity {
     }
 
     /**
-     * Cœur du calcul, exposé pour les tests et pour le mode incrémental.
+     * Core of the computation, exposed for the tests and for the incremental mode.
      *
-     * @param imiSec intervalles onset-à-onset **consécutifs**, en secondes, dans l'ordre.
-     * @param sleepClmCount `N`, nombre de CLM de sommeil ayant produit ces intervalles.
-     * @param analysableSleepMin dénominateur du **seul** garde-fou de taux (le PI n'en a pas).
+     * @param imiSec **consecutive** onset-to-onset intervals, in seconds, in order.
+     * @param sleepClmCount `N`, number of sleep CLMs that produced these intervals.
+     * @param analysableSleepMin denominator of the rate guard rail **only** (the PI has none).
      */
     fun fromIntervals(
         imiSec: DoubleArray,
@@ -146,7 +146,7 @@ object Periodicity {
         analysableSleepMin: Double,
         cfg: PeriodicityConfig = PeriodicityConfig(),
     ): PiDetail {
-        require(cfg.minRunLength >= 1) { "minRunLength doit etre >= 1" }
+        require(cfg.minRunLength >= 1) { "minRunLength must be >= 1" }
         val total = imiSec.size
 
         var qualifying = 0
@@ -154,8 +154,8 @@ object Periodicity {
         var runCount = 0
         var longest = 0
         var run = 0
-        // Balayage unique : on ferme la sequence courante des qu'un intervalle ne qualifie plus.
-        // `i == total` est un tour de fermeture, pour ne pas dupliquer le code apres la boucle.
+        // Single sweep: the current run is closed as soon as an interval no longer qualifies.
+        // `i == total` is a closing turn, so as not to duplicate the code after the loop.
         for (i in 0..total) {
             val qualifies = i < total &&
                 imiSec[i] > cfg.imiLowExclusiveSec && imiSec[i] <= cfg.imiHighInclusiveSec
@@ -175,10 +175,10 @@ object Periodicity {
         val hours = analysableSleepMin / 60.0
         val rate = if (hours > 0.0) sleepClmCount / hours else 0.0
         val piValue = if (total > 0) counted.toDouble() / total else 0.0
-        // Trois conditions independantes, toutes necessaires :
-        //  - assez d'intervalles pour qu'une sequence de minRunLength puisse seulement exister ;
-        //  - un denominateur temporel connu pour evaluer le taux ;
-        //  - un taux de LM au-dessus du plancher d'interpretabilite.
+        // Three independent conditions, all of them necessary:
+        //  - enough intervals for a run of minRunLength to be able to exist at all;
+        //  - a known temporal denominator to evaluate the rate;
+        //  - an LM rate above the interpretability floor.
         val valid = total >= cfg.minRunLength && hours > 0.0 && rate >= cfg.minLmRatePerHour
 
         return PiDetail(

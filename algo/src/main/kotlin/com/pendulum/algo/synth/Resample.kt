@@ -4,24 +4,24 @@ import com.pendulum.algo.model.SampleBlock
 import com.pendulum.algo.model.SimpleBlock
 
 /**
- * Decimation d'une nuit deja generee (test T9, « decimation 50 -> 25 Hz »).
+ * Decimation of an already generated night (test T9, "decimation 50 -> 25 Hz").
  *
- * On decime le **signal existant**, sans filtre anti-repliement, plutot que de regenerer la nuit a
- * 25 Hz. Les deux ne sont pas equivalents et la difference est le sujet meme du test : la sonnerie
- * de matelas a 8-20 Hz se replie sur la bande utile quand on jette un echantillon sur deux, alors
- * qu'elle n'existerait tout simplement pas dans une nuit generee directement a 25 Hz. Regenerer
- * serait la version docile de ce test.
+ * The **existing signal** is decimated, without any anti-aliasing filter, rather than regenerating
+ * the night at 25 Hz. The two are not equivalent and the difference is the very subject of the
+ * test: the 8-20 Hz mattress ringing aliases onto the useful band when every other sample is
+ * thrown away, whereas it would simply not exist in a night generated directly at 25 Hz.
+ * Regenerating would be the docile version of this test.
  *
- * La verite terrain est inchangee : les memes mouvements ont eu lieu.
+ * The ground truth is unchanged: the same movements took place.
  */
 object Resample {
 
     fun decimate(blocks: List<SampleBlock>, factor: Int): List<SampleBlock> {
-        require(factor >= 1) { "facteur de decimation doit etre >= 1" }
+        require(factor >= 1) { "decimation factor must be >= 1" }
         if (factor == 1) return blocks
         val out = ArrayList<SampleBlock>(blocks.size)
-        // Phase globale : elle traverse les blocs, sinon la cadence resultante serait irreguliere
-        // aux frontieres de bloc et l'etape −1 rejetterait des blocs sains.
+        // Global phase: it carries across blocks, otherwise the resulting rate would be irregular
+        // at block boundaries and step −1 would reject healthy blocks.
         var phase = 0
         for (b in blocks) {
             val n = b.x.size
@@ -47,7 +47,7 @@ object Resample {
         return out
     }
 
-    /** Meme formule que l'etape 0 : interpolation exacte de l'en-tete, jamais `tFirst + i/fs`. */
+    /** Same formula as step 0: exact interpolation of the header, never `tFirst + i/fs`. */
     private fun sampleTimeNs(b: SampleBlock, i: Int): Long {
         val n = b.x.size
         if (n <= 1) return b.tFirstNs

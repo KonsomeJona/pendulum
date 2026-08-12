@@ -13,11 +13,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 
 /**
- * Formes : rayons fermes, et surtout **pas de gelule**.
+ * Shapes: restrained radii, and above all **no pill**.
  *
- * Un bouton entierement arrondi lit « application grand public ». Ce produit est un instrument de
- * mesure qu'on montre a un medecin ; le registre visuel fait partie du message. Rayon 10 dp pour
- * les boutons et les champs, 14 dp pour les cartes, 20 dp en haut des feuilles modales.
+ * A fully rounded button reads as "consumer application". This product is a measuring instrument
+ * that one shows to a doctor; the visual register is part of the message. Radius 10 dp for buttons
+ * and fields, 14 dp for cards, 20 dp at the top of modal sheets.
  */
 object PendulumShapes {
     val card = RoundedCornerShape(14.dp)
@@ -35,34 +35,34 @@ object PendulumShapes {
     )
 }
 
-/** Ce que l'utilisateur peut choisir dans Reglages › Apparence. */
+/** What the user can choose in Settings > Appearance. */
 enum class ThemeMode { System, Dark, Light }
 
 /**
- * Le theme.
+ * The theme.
  *
- * **Sombre par defaut, et `isSystemInDarkTheme()` volontairement ignore** tant que l'utilisateur
- * n'a pas choisi [ThemeMode.System]. Le motif n'est pas esthetique : cette application se
- * consulte a 7 h du matin ou en pleine nuit, souvent dans le noir, d'une seule main. Un ecran
- * clair a ce moment-la eblouit, et un utilisateur eblouit lit mal un intervalle de confiance.
+ * **Dark by default, and `isSystemInDarkTheme()` deliberately ignored** until the user has chosen
+ * [ThemeMode.System]. The reason is not aesthetic: this application is consulted at 7 am or in the
+ * middle of the night, often in the dark, with one hand. A light screen at that moment dazzles, and
+ * a dazzled user reads a confidence interval badly.
  *
- * [render] permet a l'export de reutiliser exactement les memes fonctions de dessin avec la
- * palette claire et des epaisseurs en points : `RenderTarget.Print` force le clair quel que soit
- * [mode], parce qu'un PDF sombre est illisible imprime.
+ * [render] lets the export reuse exactly the same drawing functions with the light palette and
+ * stroke widths in points: `RenderTarget.Print` forces light whatever [mode] says, because a dark
+ * PDF is illegible in print.
  *
- * ### Le theme peint son fond, et ce n'est pas une commodite
+ * ### The theme paints its own background, and that is not a convenience
  *
- * Compose ne peint aucun fond de lui-meme : un `MaterialTheme` ne fait que **porter** des jetons,
- * et la fenetre Android reste visible partout ou la composition ne dessine rien. Le fond etait
- * donc peint par accident, par le `containerColor` du `Scaffold` de `PendulumNavHost` — et
- * l'assistant du premier lancement, qui est une simple `Column` sans `Scaffold`, laissait voir le
- * fond **clair** que le systeme donne a une application sans `android:theme`. Le texte, lui,
- * restait dans la palette sombre : 1,06:1 mesure, sur l'ecran qui porte « ceci n'est pas un
- * dispositif medical ».
+ * Compose paints no background of its own: a `MaterialTheme` only **carries** tokens, and the
+ * Android window stays visible everywhere the composition draws nothing. The background was
+ * therefore painted by accident, by the `containerColor` of the `Scaffold` in `PendulumNavHost` —
+ * and the first-launch onboarding, which is a plain `Column` without a `Scaffold`, let the **light**
+ * background that the system gives an application without an `android:theme` show through. The
+ * text, meanwhile, stayed in the dark palette: 1.06:1 measured, on the very screen that carries
+ * "this is not a medical device".
  *
- * Le `Surface` ci-dessous rend le fond solidaire de la palette, pour tout l'arbre, sans qu'un
- * ecran ait a y penser. La seconde moitie de la reparation est dans `res/values/themes.xml` :
- * elle couvre l'image dessinee **avant** que Compose ne s'execute.
+ * The `Surface` below makes the background follow the palette, for the whole tree, without a screen
+ * having to think about it. The second half of the repair is in `res/values/themes.xml`: it covers
+ * the image drawn **before** Compose runs.
  */
 @Composable
 fun PendulumTheme(
@@ -85,14 +85,14 @@ fun PendulumTheme(
         LocalSpacing provides Spacing,
     ) {
         MaterialTheme(
-            // Pas de dynamicColorScheme() : voir la KDoc de PendulumColors.
+            // No dynamicColorScheme(): see the KDoc of PendulumColors.
             colorScheme = pendulum.toMaterialScheme(),
             typography = PendulumType.material,
             shapes = PendulumShapes.material,
         ) {
-            // `Surface` et non `Box(background)` : il pose aussi `contentColor`, donc un composant
-            // Material qui ne precise pas sa couleur de texte prend `onBackground` — c'est-a-dire
-            // `textPrimary` — au lieu du noir par defaut.
+            // `Surface` and not `Box(background)`: it also sets `contentColor`, so a Material
+            // component that does not state its text colour takes `onBackground` — that is,
+            // `textPrimary` — instead of the default black.
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = pendulum.background,

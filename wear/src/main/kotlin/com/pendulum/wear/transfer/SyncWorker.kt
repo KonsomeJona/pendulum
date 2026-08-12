@@ -16,19 +16,18 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Rattrapage du transfert **hors service** : au matin, apres un reboot, apres un retour de
- * portee, ou quand le plafond d'items en vol s'est libere.
+ * Transfer catch-up **outside the service**: in the morning, after a reboot, after coming back
+ * into range, or when the ceiling of items in flight has freed up.
  *
- * Il ne double pas le service : pendant l'enregistrement c'est le service qui pousse, a chaque
- * troisieme chunk ferme. Ce worker existe pour les moments ou plus personne n'enregistre et ou
- * il reste des fichiers sur le disque — c'est-a-dire exactement le scenario « le telephone etait
- * eteint toute la nuit ».
+ * It does not duplicate the service: during recording it is the service that pushes, on every
+ * third closed chunk. This worker exists for the moments when nobody is recording any more and
+ * files are still on disk — that is to say exactly the "the phone was switched off all night"
+ * scenario.
  *
- * **Aucune contrainte reseau** : le Data Layer n'est pas le reseau, et une contrainte qui ne
- * correspond a rien empeche simplement le worker de tourner. La seule contrainte est
- * energetique, et elle est verifiee ici plutot que declaree, parce que `WorkManager` ne sait
- * exprimer que « batterie pas faible » (15 %) la ou la regle est « chargeur **ou** batterie
- * au-dessus de 30 % ».
+ * **No network constraint**: the Data Layer is not the network, and a constraint that corresponds
+ * to nothing simply keeps the worker from running. The only constraint is an energy one, and it is
+ * checked here rather than declared, because `WorkManager` can only express "battery not low"
+ * (15 %) where the rule is "charger **or** battery above 30 %".
  */
 class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
 
@@ -38,8 +37,8 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
         val pct = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 100
         val charging = bm?.isCharging ?: false
         if (!charging && pct < 30) {
-            // Reessayer plutot qu'echouer : le rattrapage n'est jamais urgent, et il aura lieu
-            // sur le chargeur du matin de toute facon.
+            // Retry rather than fail: the catch-up is never urgent, and it will take place on the
+            // morning charger in any case.
             return@withContext Result.retry()
         }
 
@@ -56,15 +55,15 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
             val hex = dir.name
             val files = dir.listFiles { f: File -> f.name.endsWith(".pendulum") } ?: emptyArray()
             if (files.isEmpty()) {
-                // Session entierement acquittee : le repertoire ne contient plus que son
-                // sidecar, on le libere. C'est la purge de quota, faite au fil de l'eau.
+                // Fully acknowledged session: the directory holds nothing but its sidecar any
+                // more, so it is released. This is the quota purge, done as we go.
                 if (hex != activeHex) dir.deleteRecursively()
                 continue
             }
             try {
                 DataLayerTransfer.pushChunks(ctx, hex, dir, urgentLast = true)
             } catch (e: Exception) {
-                Log.w(TAG, "poussee de $hex impossible, on reessaiera", e)
+                Log.w(TAG, "could not push $hex, will retry", e)
                 return@withContext Result.retry()
             }
         }
@@ -72,10 +71,10 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
     }
 
     /**
-     * Une session dont le marqueur existe encore alors que plus rien n'enregistre n'a pas ete
-     * fermee par une condition d'arret : elle a ete tuee. On la ferme donc explicitement avec
-     * `stopReason = CRASH` — le telephone doit pouvoir distinguer « la nuit n'est pas finie » de
-     * « la montre ne repond plus », et deviner n'est pas une reponse acceptable.
+     * A session whose marker still exists while nothing is recording any more was not closed by a
+     * stop condition: it was killed. It is therefore closed explicitly with `stopReason = CRASH` —
+     * the phone must be able to tell "the night is not over" from "the watch is not answering any
+     * more", and guessing is not an acceptable answer.
      */
     private fun finalizeCrashedSession(ctx: Context, store: SessionStore, hex: String) {
         val marker = store.readMarker() ?: return
@@ -90,7 +89,7 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
             )
             store.clearActive()
         } catch (e: Exception) {
-            Log.w(TAG, "fermeture de la session $hex impossible", e)
+            Log.w(TAG, "could not close session $hex", e)
         }
     }
 
@@ -105,8 +104,8 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
             }.build()
             WorkManager.getInstance(ctx).enqueueUniqueWork(
                 UNIQUE_NAME,
-                // REPLACE : une demande plus recente porte forcement plus d'information que
-                // celle qui attendait, et deux rattrapages simultanes n'ont aucun sens.
+                // REPLACE: a more recent request necessarily carries more information than the one
+                // that was waiting, and two simultaneous catch-ups make no sense.
                 ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<SyncWorker>().setInputData(data).build(),
             )

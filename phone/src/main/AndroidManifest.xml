@@ -1,69 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Manifeste du module `:phone`.
+  Manifest of the `:phone` module.
 
-  ### Ce qui n'y est PAS, et c'est le point le plus important du fichier
+  ### What is NOT in it, and this is the most important point of the file
 
-  **Aucune permission `INTERNET`.** L'application ne peut donc, par construction du systeme,
-  ouvrir aucune socket : `SecurityException` immediate. C'est une garantie *verifiable* — un
-  `aapt dump permissions` suffit a la controler — la ou une politique de confidentialite est
-  une promesse. Une nuit de sommeil, une dose de medicament et un questionnaire clinique ne
-  quittent cet appareil que par l'export explicite de `export/`, vers un emplacement choisi par
-  l'utilisateur via SAF.
+  **No `INTERNET` permission.** By construction of the system the application therefore cannot
+  open any socket: immediate `SecurityException`. That is a *verifiable* guarantee — an
+  `aapt dump permissions` is enough to check it — where a privacy policy is a promise. A night of
+  sleep, a medication dose and a clinical questionnaire leave this device only through the
+  explicit export of `export/`, to a location the user chooses via SAF.
 
-  Corollaire a tenir dans le temps : **aucun SDK d'analytique, de crash reporting ou de
-  publicite.** Tous exigent `INTERNET` ; en ajouter un ferait remonter la permission par fusion
-  de manifeste et retirerait silencieusement la garantie ci-dessus.
+  A corollary to hold to over time: **no analytics, crash-reporting or advertising SDK.** They all
+  require `INTERNET`; adding one would pull the permission up through manifest merging and
+  silently remove the guarantee above.
 
-  `ACCESS_NETWORK_STATE` n'est pas declaree non plus : WorkManager ne l'exige que pour les
-  contraintes reseau, et aucun worker d'ici n'en pose.
+  `ACCESS_NETWORK_STATE` is not declared either: WorkManager only requires it for network
+  constraints, and no worker here sets any.
 
-  ### Sauvegarde
-  `allowBackup="false"` **et** les deux fichiers de regles : voir la KDoc de
-  `res/xml/data_extraction_rules.xml` pour la raison — le transfert D2D est un canal distinct
-  qu'`allowBackup` ne couvre pas.
+  ### Backup
+  `allowBackup="false"` **and** the two rule files: see the KDoc of
+  `res/xml/data_extraction_rules.xml` for the reason — D2D transfer is a separate channel that
+  `allowBackup` does not cover.
 
   ### Theme
-  `android:theme` est **obligatoire ici** : sans lui, Android n'applique pas un theme neutre mais
-  `Theme.DeviceDefault.Light.DarkActionBar`, dont le fond de fenetre clair transparait partout ou
-  la composition n'en peint pas. Voir `res/values/themes.xml`, qui porte la mesure.
+  `android:theme` is **mandatory here**: without it, Android does not apply a neutral theme but
+  `Theme.DeviceDefault.Light.DarkActionBar`, whose light window background shows through
+  everywhere the composition does not paint one. See `res/values/themes.xml`, which carries the
+  measurement.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      Health Connect. `READ_SLEEP` seul ne suffit pas : `SleepFetchWorker` tourne par
-      construction application fermee (le fournisseur ne synchronise pas au reveil mais quand
-      sa politique batterie le decide), et sans `READ_HEALTH_DATA_IN_BACKGROUND` la lecture
-      echoue silencieusement hors premier plan. C'est un manque de la SPEC v1, corrige ici.
-      `SOURCES-SOMMEIL.md` §6.
+      Health Connect. `READ_SLEEP` alone is not enough: `SleepFetchWorker` runs by construction
+      with the application closed (the provider does not synchronise on waking but when its
+      battery policy decides), and without `READ_HEALTH_DATA_IN_BACKGROUND` the read fails
+      silently outside the foreground. That is a gap in SPEC v1, corrected here.
+      `docs/workings/SLEEP-SOURCES.md` section 6.
     -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
     <!--
-      Au-dela de 30 jours d'historique, la lecture des donnees ecrites par une AUTRE application
-      est refusee. `RescoreAllWorker` relit l'hypnogramme de toutes les nuits depuis le brut :
-      sans cette permission, un rescore sur une campagne de plus d'un mois perd son denominateur.
+      Beyond 30 days of history, reading data written by ANOTHER application is refused.
+      `RescoreAllWorker` reads the hypnogram of every night again from the raw signal: without this
+      permission, a rescore over a campaign longer than a month loses its denominator.
     -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
 
     <!--
-      Demandee a l'accueil, mais **rien ne poste encore de notification cote telephone** : le rappel
-      du soir est concu (c'est un garde-fou, pas un confort — on oublie de lancer l'enregistrement
-      les soirs de fatigue, c'est-a-dire des soirs correles au resultat) et pas implemente. La
-      permission est donc en avance sur la fonctionnalite. Si le rappel est abandonne, retirer cette
-      ligne et le bouton correspondant : demander une permission inutilisee affaiblit exactement
-      l'argument de minimalisme verifiable que fait le reste de ce fichier.
+      Requested on the home screen, but **nothing posts a notification on the phone side yet**: the evening
+      reminder is designed (it is a guard rail, not a convenience — people forget to start the
+      recording on tired evenings, that is, on evenings correlated with the result) and not
+      implemented. The permission is therefore ahead of the feature. If the reminder is abandoned,
+      remove this line and the matching button: asking for an unused permission weakens exactly the
+      argument of verifiable minimalism the rest of this file makes.
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
-      Visibilite de paquets (Android 11+ filtre les requetes de paquet).
+      Package visibility (Android 11+ filters package queries).
 
-      Health Connect, et les deux applications compagnons Wear OS. Ces dernieres sont la
-      reparation du premier etat de l'ecran d'appairage — « aucune montre appairee » se corrige
-      dans l'application du constructeur, jamais dans un magasin — et sans ces declarations
-      `getLaunchIntentForPackage` rend `null` meme lorsqu'elles sont installees. L'echec est
-      silencieux : le bouton ne fait rien et rien ne dit pourquoi.
+      Health Connect, and the two Wear OS companion applications. The latter are the repair for the
+      first state of the pairing screen — "no watch paired" is corrected in the manufacturer's
+      application, never in a store — and without these declarations
+      `getLaunchIntentForPackage` returns `null` even when they are installed. The failure is
+      silent: the button does nothing and nothing says why.
     -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -83,9 +83,9 @@
         android:theme="@style/Theme.Pendulum">
 
         <!--
-          Activite principale. La CLASSE appartient au paquet `com.pendulum.phone.ui` et n'est pas
-          ecrite ici : ce manifeste ne fait que la declarer, parce qu'un module Android n'a
-          qu'un manifeste.
+          Main activity. The CLASS belongs to the package `com.pendulum.phone.ui` and is not
+          written here: this manifest only declares it, because an Android module has a single
+          manifest.
         -->
         <activity
             android:name="com.pendulum.phone.ui.MainActivity"
@@ -97,17 +97,17 @@
             </intent-filter>
 
             <!--
-              Lien profond ouvert **depuis la montre**, par `RemoteActivityHelper`.
+              Deep link opened **from the watch**, by `RemoteActivityHelper`.
 
-              L'API n'accepte qu'un `ACTION_VIEW` avec une URI navigable, d'ou `BROWSABLE`. C'est
-              la contrainte du seul chemin qui fonctionne : envoyer un message et appeler
-              `startActivity` depuis le `WearableListenerService` est bloque depuis Android 10 —
-              le service tourne en arriere-plan — et l'echec est silencieux.
+              The API accepts only an `ACTION_VIEW` with a browsable URI, hence `BROWSABLE`. That
+              is the constraint of the only path that works: sending a message and calling
+              `startActivity` from the `WearableListenerService` has been blocked since Android 10
+              — the service runs in the background — and the failure is silent.
 
-              Schema personnalise plutot qu'un App Link `https` verifie : ce dernier exigerait
-              d'heberger un `assetlinks.json`, donc de dependre d'un domaine, pour une application
-              qui ne declare meme pas la permission Internet. Le prix assume est qu'un
-              constructeur peut afficher une boite « ouvrir avec » au premier usage.
+              A custom scheme rather than a verified `https` App Link: the latter would require
+              hosting an `assetlinks.json`, and therefore depending on a domain, for an application
+              that does not even declare the Internet permission. The accepted price is that a
+              manufacturer may show an "open with" dialog on first use.
             -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -118,14 +118,14 @@
         </activity>
 
         <!--
-          Justification des permissions Health Connect — **deux declarations obligatoires**.
+          Health Connect permissions rationale — **two mandatory declarations**.
 
-          Le chemin `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` est celui de l'APK
-          Health Connect (Android 13 et anterieur) ; l'alias `ViewPermissionUsageActivity` est
-          celui du framework (Android 14+, Health Connect integre au systeme). Avec
-          `minSdk 30`, les deux parties du parc existent : n'en declarer qu'une fait que Health
-          Connect **refuse d'afficher l'application** sur l'autre moitie, et le symptome est
-          « l'app n'apparait pas dans la liste », pas une erreur.
+          The `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` path is the one of the Health
+          Connect APK (Android 13 and earlier); the `ViewPermissionUsageActivity` alias is the
+          framework one (Android 14+, Health Connect built into the system). With `minSdk 30`, both
+          halves of the field exist: declaring only one makes Health Connect **refuse to show the
+          application** on the other half, and the symptom is "the app does not appear in the
+          list", not an error.
         -->
         <activity
             android:name="com.pendulum.phone.health.PermissionsRationaleActivity"
@@ -147,19 +147,19 @@
         </activity-alias>
 
         <!--
-          Declencheur opportuniste de la lecture Health Connect.
+          Opportunistic trigger for the Health Connect read.
 
-          `ACTION_POWER_CONNECTED` est l'une des rares diffusions EXEMPTEES de la restriction
-          d'enregistrement au manifeste d'Android 8 : elle reveille encore une application
-          fermee, ce qui est exactement le cas d'usage — telephone sur son socle a cote de la
-          montre, application non ouverte depuis le matin.
+          `ACTION_POWER_CONNECTED` is one of the few broadcasts EXEMPT from the Android 8
+          restriction on manifest registration: it still wakes a closed application, which is
+          exactly the use case — phone on its dock next to the watch, application not opened since
+          the morning.
 
-          Le motif est dans `FetchSchedule` : la synchronisation de la montre de poignet vers
-          Health Connect n'est pas un evenement aleatoire, elle est correlee a l'usage — montre
-          sur le chargeur, application source ouverte. Un repli exponentiel seul attend donc le
-          rang T+4 h alors que la donnee est arrivee a T+2 h 05.
+          The reason is in `FetchSchedule`: the synchronisation from the wrist watch to Health
+          Connect is not a random event, it is correlated with usage — watch on the charger, source
+          application opened. Exponential backoff alone therefore waits for the T+4 h rung when the
+          data arrived at T+2 h 05.
 
-          `exported="false"` : personne d'autre que le systeme n'a de raison de l'atteindre.
+          `exported="false"`: nobody other than the system has any reason to reach it.
         -->
         <receiver
             android:name="com.pendulum.phone.work.PowerConnectedReceiver"
@@ -170,33 +170,34 @@
         </receiver>
 
         <!--
-          Reception Data Layer. `exported="true"` est impose par le protocole : c'est le service
-          Google Play qui demarre ce service, y compris quand l'application n'a jamais ete ouverte
-          — ce qui est exactement le cas d'usage (le telephone recoit les chunks pendant la nuit,
-          ecran eteint).
+          Data Layer reception. `exported="true"` is imposed by the protocol: it is the Google Play
+          service that starts this service, including when the application has never been opened —
+          which is exactly the use case (the phone receives the chunks during the night, screen
+          off).
 
-          **Pas d'`android:permission`, et c'est mesure.** Ce service a longtemps porte
-          `android:permission="com.google.android.gms.permission.BIND_WEARABLE_LISTENER"`, et cette
-          ligne interdisait *toute* livraison : la permission n'est definie par aucun paquet, et
-          surtout Play Services ne la **demande** pas — 384 permissions declarees, pas celle-la.
-          Une permission d'installation n'est accordee qu'aux paquets qui la declarent, donc
-          aucun `protectionLevel` ne repare quoi que ce soit : la definir soi-meme en `signature`
-          puis en `signatureOrSystem` a ete essaye, et le refus est identique au caractere pres
+          **No `android:permission`, and that is measured.** This service long carried
+          `android:permission="com.google.android.gms.permission.BIND_WEARABLE_LISTENER"`, and that
+          line forbade *every* delivery: the permission is defined by no package, and above all
+          Play Services does not **request** it — 384 permissions declared, not that one. An
+          install-time permission is granted only to the packages that declare it, so no
+          `protectionLevel` repairs anything: defining it ourselves as `signature` and then as
+          `signatureOrSystem` was tried, and the refusal is identical down to the character
           (`Permission Denial: ... requires com.google.android.gms.permission.BIND_WEARABLE_LISTENER`).
-          Le mode de defaillance est le silence : l'application ne voit rien, seul le journal
-          systeme porte la trace. `BANC-ESSAI.md` §12.1.
+          The failure mode is silence: the application sees nothing, only the system log carries
+          the trace. `docs/workings/BENCH-LOG.md` section 12.1.
 
-          **Ce qui protege ce service a la place, et qui est un vrai verrou.** Le `onBind` de
-          `WearableListenerService` est `final` et ne controle pas l'appelant, mais les onze
-          methodes de l'interface AIDL passent toutes par le meme filtre, qui compare
-          `Binder.getCallingUid()` a l'UID des services Google Play et laisse tomber l'evenement
-          sinon (`E WearableLS: Caller is not GooglePlayServices`). Mesure faite : un appel emis
-          depuis un processus qui n'est pas GMS n'atteint jamais `onDataChanged`. S'y ajoutent le
-          Data Layer, qui ne transporte qu'entre memes `applicationId` et meme signature, le CRC-32
-          verifie par charge utile, l'`INSERT OR IGNORE`, et l'absence de permission `INTERNET`.
+          **What protects this service instead, and is a real lock.** The `onBind` of
+          `WearableListenerService` is `final` and does not check the caller, but the eleven
+          methods of the AIDL interface all go through the same filter, which compares
+          `Binder.getCallingUid()` against the UID of the Google Play services and drops the event
+          otherwise (`E WearableLS: Caller is not GooglePlayServices`). Measurement made: a call
+          issued from a process that is not GMS never reaches `onDataChanged`. To that are added
+          the Data Layer, which only carries between the same `applicationId` and the same
+          signature, the CRC-32 checked per payload, the `INSERT OR IGNORE`, and the absence of the
+          `INTERNET` permission.
 
-          Le filtre `DATA_CHANGED` est restreint par prefixe de chemin : on ne veut pas etre
-          reveille par les items d'une autre application.
+          The `DATA_CHANGED` filter is restricted by path prefix: we do not want to be woken by the
+          items of another application.
         -->
         <service
             android:name="com.pendulum.phone.ingest.PendulumListenerService"
@@ -210,9 +211,9 @@
             </intent-filter>
 
             <!--
-              Repli quand `RemoteActivityHelper` echoue cote montre. Le service **ne lance pas
-              d'activite** : il poste une notification, dont le tap est la seule exemption fiable
-              au blocage des lancements depuis l'arriere-plan.
+              Fallback when `RemoteActivityHelper` fails on the watch side. The service **does not
+              start an activity**: it posts a notification, whose tap is the only reliable exemption
+              from the blocking of launches from the background.
             -->
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />

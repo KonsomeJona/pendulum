@@ -6,25 +6,25 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * La deduplication est le point le plus contre-intuitif de l'integration Health Connect :
- * `readRecords()` ne dedoublonne rien. Si deux applications ont ecrit la nuit, on recoit deux
- * sessions qui se chevauchent, et les concatener double a peu pres le temps de sommeil — donc
- * divise l'index par deux, sans le moindre avertissement.
+ * Deduplication is the most counter-intuitive point of the Health Connect integration:
+ * `readRecords()` deduplicates nothing. If two applications have written the night, we receive two
+ * overlapping sessions, and concatenating them roughly doubles the sleep time — hence halves the
+ * index, without the slightest warning.
  */
 class SleepSourceSelectorTest {
 
-    private val nuitDebut = 1_000_000_000L
-    private val nuitFin = nuitDebut + 8 * 3_600_000L
+    private val nightStart = 1_000_000_000L
+    private val nightEnd = nightStart + 8 * 3_600_000L
 
     private fun stages(from: Long, count: Int, types: List<Int>): List<StageSpan> =
         (0 until count).map {
             StageSpan(from + it * 600_000L, from + (it + 1) * 600_000L, types[it % types.size])
         }
 
-    private fun candidat(
+    private fun candidate(
         pkg: String,
-        start: Long = nuitDebut,
-        end: Long = nuitFin,
+        start: Long = nightStart,
+        end: Long = nightEnd,
         stageTypes: List<Int> = listOf(4, 5, 6, 1),
         stageCount: Int = 40,
         lastModified: Long = 0L,
@@ -38,122 +38,121 @@ class SleepSourceSelectorTest {
     )
 
     @Test
-    fun `une seule source est retenue quand deux applications ecrivent la meme nuit`() {
-        val samsung = candidat("com.sec.android.app.shealth")
-        val sleepAsAndroid = candidat("com.urbandroid.sleep")
+    fun `a single source is kept when two applications write the same night`() {
+        val samsung = candidate("com.sec.android.app.shealth")
+        val sleepAsAndroid = candidate("com.urbandroid.sleep")
 
         val s = SleepSourceSelector.select(
-            listOf(samsung, sleepAsAndroid), nuitDebut, nuitFin, preferredPackage = null,
+            listOf(samsung, sleepAsAndroid), nightStart, nightEnd, preferredPackage = null,
         )
 
         assertThat(s.chosen).isNotNull()
         assertThat(s.rejected).hasSize(1)
-        // On ne fusionne jamais : l'ensemble retenu + ecarte doit couvrir exactement l'entree.
+        // We never merge: the kept set plus the rejected set must cover the input exactly.
         assertThat(listOfNotNull(s.chosen) + s.rejected)
             .containsExactlyInAnyOrder(samsung, sleepAsAndroid)
     }
 
     @Test
-    fun `la source preferee l'emporte des qu'elle couvre la moitie de la fenetre`() {
-        val prefere = candidat("com.pref", start = nuitDebut, end = nuitDebut + 5 * 3_600_000L)
-        val autre = candidat("com.autre")
+    fun `the preferred source wins as soon as it covers half the window`() {
+        val preferred = candidate("com.pref", start = nightStart, end = nightStart + 5 * 3_600_000L)
+        val other = candidate("com.other")
 
         val s = SleepSourceSelector.select(
-            listOf(autre, prefere), nuitDebut, nuitFin, preferredPackage = "com.pref",
+            listOf(other, preferred), nightStart, nightEnd, preferredPackage = "com.pref",
         )
 
         assertThat(s.chosen?.packageName).isEqualTo("com.pref")
-        assertThat(s.reason).isEqualTo("SOURCE_PREFEREE")
+        assertThat(s.reason).isEqualTo("PREFERRED_SOURCE")
     }
 
     @Test
-    fun `la source preferee ne l'emporte pas si elle ne couvre presque rien`() {
-        // Une session de 30 min sur une nuit de 8 h : le fournisseur prefere n'a manifestement
-        // pas synchronise. Lui donner la priorite ferait un denominateur de 30 min et un index
-        // seize fois trop grand.
-        val prefereTropCourt = candidat("com.pref", start = nuitDebut, end = nuitDebut + 1_800_000L)
-        val complet = candidat("com.autre")
+    fun `the preferred source does not win if it covers almost nothing`() {
+        // A 30 min session over an 8 h night: the preferred provider has plainly not synchronised.
+        // Giving it priority would make a 30 min denominator and an index sixteen times too big.
+        val preferredTooShort = candidate("com.pref", start = nightStart, end = nightStart + 1_800_000L)
+        val complete = candidate("com.other")
 
         val s = SleepSourceSelector.select(
-            listOf(prefereTropCourt, complet), nuitDebut, nuitFin, preferredPackage = "com.pref",
+            listOf(preferredTooShort, complete), nightStart, nightEnd, preferredPackage = "com.pref",
         )
 
-        assertThat(s.chosen?.packageName).isEqualTo("com.autre")
+        assertThat(s.chosen?.packageName).isEqualTo("com.other")
     }
 
     @Test
-    fun `un vrai hypnogramme bat une duree deguisee en hypnogramme`() {
-        val dureeSeule = candidat("com.duree", stageTypes = listOf(2), stageCount = 40)
-        val vraiHypnogramme = candidat("com.stades", stageTypes = listOf(4, 5, 6, 1), stageCount = 40)
+    fun `a real hypnogram beats a duration disguised as a hypnogram`() {
+        val durationOnly = candidate("com.duration", stageTypes = listOf(2), stageCount = 40)
+        val realHypnogram = candidate("com.stages", stageTypes = listOf(4, 5, 6, 1), stageCount = 40)
 
         val s = SleepSourceSelector.select(
-            listOf(dureeSeule, vraiHypnogramme), nuitDebut, nuitFin, preferredPackage = null,
+            listOf(durationOnly, realHypnogram), nightStart, nightEnd, preferredPackage = null,
         )
 
-        assertThat(s.chosen?.packageName).isEqualTo("com.stades")
-        assertThat(s.reason).isEqualTo("PLUS_DE_STADES")
+        assertThat(s.chosen?.packageName).isEqualTo("com.stages")
+        assertThat(s.reason).isEqualTo("MORE_STAGES")
     }
 
     @Test
-    fun `STAGE_TYPE_UNKNOWN ne compte pas comme un stade`() {
-        // Une source qui remplit le champ sans le renseigner ne doit pas passer pour un
-        // hypnogramme : c'est le piege « typesDistincts = [0] ».
-        val inconnu = candidat("com.inconnu", stageTypes = listOf(0), stageCount = 40)
-        assertThat(inconnu.distinctStageTypes).isEqualTo(0)
+    fun `STAGE_TYPE_UNKNOWN does not count as a stage`() {
+        // A source that fills the field without filling it in must not pass for a hypnogram: this
+        // is the "distinctStageTypes = [0]" trap.
+        val unknown = candidate("com.unknown", stageTypes = listOf(0), stageCount = 40)
+        assertThat(unknown.distinctStageTypes).isEqualTo(0)
     }
 
     @Test
-    fun `a egalite de stades, la plus longue couverture gagne`() {
-        val court = candidat("com.court", stageTypes = listOf(4, 5), stageCount = 10)
-        val long = candidat("com.long", stageTypes = listOf(4, 5), stageCount = 40)
+    fun `on a tie in stages, the longest coverage wins`() {
+        val short = candidate("com.short", stageTypes = listOf(4, 5), stageCount = 10)
+        val long = candidate("com.long", stageTypes = listOf(4, 5), stageCount = 40)
 
         val s = SleepSourceSelector.select(
-            listOf(court, long), nuitDebut, nuitFin, preferredPackage = null,
+            listOf(short, long), nightStart, nightEnd, preferredPackage = null,
         )
         assertThat(s.chosen?.packageName).isEqualTo("com.long")
     }
 
     @Test
-    fun `la selection est deterministe a egalite parfaite`() {
-        // Deux lectures des memes donnees doivent choisir la meme source, quel que soit l'ordre
-        // de retour de l'API — sinon deux analyses de la meme nuit donneraient deux chiffres.
-        val a = candidat("com.aaa")
-        val b = candidat("com.bbb")
+    fun `the selection is deterministic on a perfect tie`() {
+        // Two reads of the same data must choose the same source, whatever order the API returned
+        // them in — otherwise two analyses of the same night would give two figures.
+        val a = candidate("com.aaa")
+        val b = candidate("com.bbb")
 
-        val s1 = SleepSourceSelector.select(listOf(a, b), nuitDebut, nuitFin, null)
-        val s2 = SleepSourceSelector.select(listOf(b, a), nuitDebut, nuitFin, null)
+        val s1 = SleepSourceSelector.select(listOf(a, b), nightStart, nightEnd, null)
+        val s2 = SleepSourceSelector.select(listOf(b, a), nightStart, nightEnd, null)
 
         assertThat(s1.chosen?.packageName).isEqualTo(s2.chosen?.packageName)
         assertThat(s1.chosen?.packageName).isEqualTo("com.aaa")
     }
 
     @Test
-    fun `une sieste d'apres-midi ne concerne pas la nuit`() {
-        val sieste = candidat(
-            "com.sieste",
-            start = nuitFin + 6 * 3_600_000L,
-            end = nuitFin + 7 * 3_600_000L,
+    fun `an afternoon nap does not concern the night`() {
+        val nap = candidate(
+            "com.nap",
+            start = nightEnd + 6 * 3_600_000L,
+            end = nightEnd + 7 * 3_600_000L,
         )
-        val s = SleepSourceSelector.select(listOf(sieste), nuitDebut, nuitFin, null)
+        val s = SleepSourceSelector.select(listOf(nap), nightStart, nightEnd, null)
         assertThat(s.chosen).isNull()
-        assertThat(s.reason).isEqualTo("AUCUNE_SESSION_RECOUVRANTE")
+        assertThat(s.reason).isEqualTo("NO_OVERLAPPING_SESSION")
     }
 
     @Test
-    fun `le verdict distingue un probleme de latence d'un probleme de stades`() {
-        val tropCourt = candidat("com.x", start = nuitDebut, end = nuitDebut + 1_800_000L)
-        assertThat(SleepSourceSelector.verdictOf(tropCourt, nuitDebut, nuitFin)).isEqualTo("LATENCE")
+    fun `the verdict tells a latency problem from a stages problem`() {
+        val tooShort = candidate("com.x", start = nightStart, end = nightStart + 1_800_000L)
+        assertThat(SleepSourceSelector.verdictOf(tooShort, nightStart, nightEnd)).isEqualTo("LATENCY")
 
-        val sansStades = candidat("com.y", stageCount = 0)
-        assertThat(SleepSourceSelector.verdictOf(sansStades, nuitDebut, nuitFin))
-            .isEqualTo("STADES_ABSENTS")
+        val withoutStages = candidate("com.y", stageCount = 0)
+        assertThat(SleepSourceSelector.verdictOf(withoutStages, nightStart, nightEnd))
+            .isEqualTo("STAGES_MISSING")
 
-        // Stades presents mais couvrant moins de 80 % de la session : hypnogramme troue.
-        val troue = candidat("com.z", stageTypes = listOf(4, 5, 6), stageCount = 10)
-        assertThat(SleepSourceSelector.verdictOf(troue, nuitDebut, nuitFin))
-            .isEqualTo("HYPNOGRAMME_TROUE")
+        // Stages present but covering less than 80 % of the session: gappy hypnogram.
+        val gappy = candidate("com.z", stageTypes = listOf(4, 5, 6), stageCount = 10)
+        assertThat(SleepSourceSelector.verdictOf(gappy, nightStart, nightEnd))
+            .isEqualTo("HYPNOGRAM_GAPPY")
 
-        val bon = candidat("com.ok", stageTypes = listOf(4, 5, 6, 1), stageCount = 48)
-        assertThat(SleepSourceSelector.verdictOf(bon, nuitDebut, nuitFin)).isEqualTo("OK")
+        val good = candidate("com.ok", stageTypes = listOf(4, 5, 6, 1), stageCount = 48)
+        assertThat(SleepSourceSelector.verdictOf(good, nightStart, nightEnd)).isEqualTo("OK")
     }
 }

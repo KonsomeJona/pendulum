@@ -16,7 +16,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
 
-/** Tests de l'etape 7 : comptes horaires, encadrement respiratoire, porte de publication. */
+/** Tests of step 7: hourly counts, respiratory bracketing, publication gate. */
 class IndicesTest {
 
     private val pi = PiResult(periodicityIndex = 0.61, valid = true, totalIntervals = 99, lmRatePerHour = 14.3)
@@ -44,32 +44,32 @@ class IndicesTest {
     )
 
     @Test
-    fun `le denominateur est le sommeil ANALYSABLE, jamais le TST brut`() {
+    fun `the denominator is ANALYSABLE sleep, never raw TST`() {
         val clms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)
         val mask = maskOf(tstMin = 420.0, analysableTstMin = 300.0)
 
         val r = compute(clms, listOf(seriesOver(clms, 0, 9)), mask)
 
         assertThat(r.plmsCount).isEqualTo(10)
-        assertThat(r.plmi).isCloseTo(2.0, within(1e-9))            // 10 / 5 h analysables
-        assertThat(r.plmi).isNotEqualTo(10.0 / 7.0)                // et surtout PAS 10 / 7 h brutes
+        assertThat(r.plmi).isCloseTo(2.0, within(1e-9))            // 10 / 5 analysable h
+        assertThat(r.plmi).isNotEqualTo(10.0 / 7.0)                // and above all NOT 10 / 7 raw h
         assertThat(r.tstMin).isEqualTo(420.0)
         assertThat(r.analysableTstMin).isEqualTo(300.0)
     }
 
     @Test
-    fun `le second index est rapporte au temps passe au lit`() {
+    fun `the second index is referred to the time spent in bed`() {
         val clms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 12)
         val mask = maskOf(analysableTstMin = 300.0, analysableSptMin = 360.0)
 
         val r = compute(clms, listOf(seriesOver(clms, 0, 11)), mask)
 
-        assertThat(r.plmiSpt).isCloseTo(2.0, within(1e-9))          // 12 / 6 h de SPT analysable
-        assertThat(r.plmi).isCloseTo(2.4, within(1e-9))             // 12 / 5 h de TST analysable
+        assertThat(r.plmiSpt).isCloseTo(2.0, within(1e-9))          // 12 / 6 h of analysable SPT
+        assertThat(r.plmi).isCloseTo(2.4, within(1e-9))             // 12 / 5 h of analysable TST
     }
 
     @Test
-    fun `sans denominateur, aucun taux n'est invente`() {
+    fun `without a denominator, no rate is invented`() {
         val clms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)
         val mask = maskOf(analysableTstMin = 0.0, tstMin = 0.0, analysableSptMin = 0.0, sptMin = 0.0)
 
@@ -81,10 +81,10 @@ class IndicesTest {
     }
 
     @Test
-    fun `mouvements isoles, en serie, et intervalles courts sont comptes separement`() {
-        val enSerie = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)
-        val isoles = clmsAtSec(20_000.0, 20_100.0, 20_200.0)
-        val clms = enSerie + isoles
+    fun `isolated movements, in-series movements, and short intervals are counted separately`() {
+        val inSeries = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)
+        val isolated = clmsAtSec(20_000.0, 20_100.0, 20_200.0)
+        val clms = inSeries + isolated
 
         val r = compute(clms, listOf(seriesOver(clms, 0, 9)), maskOf(analysableTstMin = 300.0))
 
@@ -94,8 +94,8 @@ class IndicesTest {
     }
 
     @Test
-    fun `la borne basse d'intervalle court depend du jeu de regles`() {
-        // Intervalles de 7 s : au-dessus de la borne AASM (5 s), en dessous de la borne WASM (10 s).
+    fun `the short-interval lower bound depends on the rule set`() {
+        // Intervals of 7 s: above the AASM bound (5 s), below the WASM bound (10 s).
         val clms = clmsAtSec(600.0, 607.0, 629.0, 651.0, 673.0)
         val mask = maskOf(analysableTstMin = 300.0)
 
@@ -109,7 +109,7 @@ class IndicesTest {
     }
 
     @Test
-    fun `le PLMW se rapporte au WASO, pas au TST`() {
+    fun `the PLMW is referred to the WASO, not to the TST`() {
         val windows = listOf(
             SleepWindow(0L, 3_600_000L, Stage.SLEEP),
             SleepWindow(3_600_000L, 7_200_000L, Stage.AWAKE_IN_BED),
@@ -129,27 +129,27 @@ class IndicesTest {
 
         assertThat(r.plmsCount).isEqualTo(0)
         assertThat(r.plmwCount).isEqualTo(5)
-        assertThat(r.plmw).isCloseTo(5.0, within(1e-9))     // 5 evenements / 1 h de WASO analysable
+        assertThat(r.plmw).isCloseTo(5.0, within(1e-9))     // 5 events / 1 h of analysable WASO
         assertThat(r.plmi).isCloseTo(0.0, within(1e-12))
     }
 
     @Test
-    fun `le split-half rapporte les deux moities de nuit separement`() {
-        // SPT = [0, 420 min], milieu a 210 min. 6 evenements avant, 4 apres.
-        val avant = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 6)
-        val apres = clmsEvery(startSec = 13_000.0, stepSec = 22.0, count = 4)
-        val clms = avant + apres
+    fun `the split-half reports the two halves of the night separately`() {
+        // SPT = [0, 420 min], midpoint at 210 min. 6 events before, 4 after.
+        val before = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 6)
+        val after = clmsEvery(startSec = 13_000.0, stepSec = 22.0, count = 4)
+        val clms = before + after
         val mask = maskOf(tstMin = 420.0, analysableTstMin = 300.0)
 
         val r = compute(clms, listOf(seriesOver(clms, 0, 5), seriesOver(clms, 6, 9)), mask)
 
-        // Chaque moitie porte 210 min de sommeil, ramenes a 300/420 de couverture analysable = 2,5 h.
+        // Each half carries 210 min of sleep, scaled by the 300/420 analysable coverage = 2.5 h.
         assertThat(r.plmiFirstHalf).isCloseTo(6.0 / 2.5, within(1e-9))
         assertThat(r.plmiSecondHalf).isCloseTo(4.0 / 2.5, within(1e-9))
     }
 
     @Test
-    fun `l'histogramme des IMI porte sur tous les CLM de sommeil, bins de 2 s`() {
+    fun `the IMI histogram bears on every sleep CLM, bins of 2 s`() {
         val clms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)
 
         val r = compute(clms, listOf(seriesOver(clms, 0, 9)), maskOf(analysableTstMin = 300.0))
@@ -162,23 +162,23 @@ class IndicesTest {
     }
 
     @Test
-    fun `le pire cas respiratoire retire les series dont l'IMI median est dans la bande apneique`() {
-        val plms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)          // rythme PLMS
-        val apnee = clmsEvery(startSec = 5_000.0, stepSec = 30.0, count = 10)       // bande 25-45 s
-        val clms = plms + apnee
+    fun `the respiratory worst case removes the series whose median IMI is in the apnoeic band`() {
+        val plms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)          // PLMS rhythm
+        val apnoeic = clmsEvery(startSec = 5_000.0, stepSec = 30.0, count = 10)     // 25-45 s band
+        val clms = plms + apnoeic
         val mask = maskOf(analysableTstMin = 300.0)
 
         val r = compute(clms, listOf(seriesOver(clms, 0, 9), seriesOver(clms, 10, 19)), mask)
 
         assertThat(r.plmi).isCloseTo(4.0, within(1e-9))                 // 20 / 5 h
         assertThat(r.plmiRespWorstCase).isCloseTo(2.0, within(1e-9))    // 10 / 5 h
-        // L'ECART entre les deux bornes est l'indicateur d'incertitude a afficher : sans canal
-        // respiratoire, rien ne permet de situer la vraie valeur dans l'intervalle.
+        // The SPREAD between the two bounds is the uncertainty indicator to display: without a
+        // respiratory channel, nothing lets the true value be located inside the interval.
         assertThat(Plmi.respiratoryBiasSpread(r)).isCloseTo(2.0, within(1e-9))
     }
 
     @Test
-    fun `l'independance du denominateur est propagee telle quelle`() {
+    fun `the independence of the denominator is propagated as it is`() {
         val clms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)
         val series = listOf(seriesOver(clms, 0, 9))
 
@@ -198,7 +198,7 @@ class IndicesTest {
     }
 
     @Test
-    fun `un denominateur circulaire ne peut pas porter le resultat principal`() {
+    fun `a circular denominator cannot carry the primary result`() {
         val mask = maskOf(
             analysableTstMin = 420.0,
             source = MaskSource.ACCEL_IMMOBILITY,
@@ -212,7 +212,7 @@ class IndicesTest {
     }
 
     @Test
-    fun `la porte de publication suit les seuils en dur du paragraphe 3-7-2`() {
+    fun `the publication gate follows the hard-coded thresholds of paragraph 3-7-2`() {
         assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 420.0), false))
             .isEqualTo(PublicationGate.FULL)
         assertThat(Plmi.publicationGate(maskOf(analysableTstMin = 240.0), false))
@@ -226,7 +226,7 @@ class IndicesTest {
     }
 
     @Test
-    fun `un masque accelerometrique non convergent interdit tout PLMI`() {
+    fun `a non-converged accelerometer mask forbids any PLMI`() {
         val mask = maskOf(
             analysableTstMin = 420.0,
             source = MaskSource.ACCEL_IMMOBILITY,
@@ -239,7 +239,7 @@ class IndicesTest {
     }
 
     @Test
-    fun `une nuit tronquee a 3 h ne publie pas de PLMI mais garde le PI et le compte`() {
+    fun `a night truncated at 3 h publishes no PLMI but keeps the PI and the count`() {
         val clms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 40)
         val mask = maskOf(tstMin = 170.0, analysableTstMin = 170.0, sptMin = 180.0, analysableSptMin = 180.0)
 
@@ -252,7 +252,7 @@ class IndicesTest {
     }
 
     @Test
-    fun `les CLM rejetes ne comptent nulle part`() {
+    fun `rejected CLM count nowhere`() {
         val clms = listOf(
             clmAt(600_000L),
             clmAt(622_000L, reject = com.pendulum.algo.model.ClmRejectReason.POSTURAL),
@@ -262,13 +262,13 @@ class IndicesTest {
         val r = compute(clms, emptyList(), maskOf(analysableTstMin = 300.0))
 
         assertThat(r.isolatedCount).isEqualTo(2)
-        // Les deux CLM retenus sont espaces de 44 s : un seul intervalle, dans le bin [44, 46).
+        // The two retained CLM are 44 s apart: a single interval, in the [44, 46) bin.
         assertThat(r.imiHistogram[22]).isEqualTo(1)
         assertThat(r.imiHistogram.sum()).isEqualTo(1)
     }
 
     @Test
-    fun `les metadonnees du resultat sont celles du masque et des parametres`() {
+    fun `the result metadata are those of the mask and of the parameters`() {
         val clms = clmsEvery(startSec = 600.0, stepSec = 22.0, count = 10)
 
         val r = compute(clms, listOf(seriesOver(clms, 0, 9)), maskOf(), rule = SeriesRule.WASM_2016)
