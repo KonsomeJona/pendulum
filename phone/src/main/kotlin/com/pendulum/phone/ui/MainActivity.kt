@@ -516,6 +516,7 @@ fun PendulumNavHost(nav: NavHostController = rememberNavController()) {
                     onErase = { nav.navigate(ROUTE_ERASE) },
                     onImportNight = { opener.launch(arrayOf("*/*")) },
                     onP1Report = { nav.navigate(ROUTE_P1) },
+                    onCycleTheme = vm::cycleTheme,
                 )
             }
             // The notice, read-only. No blocking scroll and no checkboxes: the gate is the

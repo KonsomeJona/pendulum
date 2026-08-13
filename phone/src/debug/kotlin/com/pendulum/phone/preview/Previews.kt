@@ -235,7 +235,7 @@ private fun SettingsPreview() = PendulumTheme {
             algoVersion = text("1.4.0"),
             theme = text(R.string.settings_theme_dark),
         ),
-        {}, {}, {}, {},
+        {}, {}, {}, {}, {},
     )
 }
 

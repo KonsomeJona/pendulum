@@ -64,6 +64,12 @@ fun SettingsScreen(
     onErase: () -> Unit,
     onImportNight: () -> Unit,
     onP1Report: () -> Unit,
+    /**
+     * Cycles the theme. The row used to be an [InlineValue] — it displayed the stored choice and
+     * could not change it, so the only reachable theme was the default. A setting that answers
+     * without obeying is worse than an absent one: it is evidence the product works.
+     */
+    onCycleTheme: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val c = LocalPendulumColors.current
@@ -118,7 +124,13 @@ fun SettingsScreen(
             SectionHeader(stringResource(R.string.settings_appearance))
             // Dark by default, and forced at first launch: consulted at night and in the morning,
             // often in the dark.
-            InlineValue(stringResource(R.string.settings_theme), state.theme.resolve())
+            // Cycling rather than a dialogue: three values, and the current one is written on the
+            // row. A dialogue would be one more screen for a choice that is read at a glance.
+            SettingsRow(
+                stringResource(R.string.settings_theme),
+                state.theme.resolve(),
+                onCycleTheme,
+            )
         }
 
         PendulumCard {

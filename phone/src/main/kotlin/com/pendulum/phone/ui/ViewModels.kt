@@ -838,6 +838,28 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Advances the theme by one: system, then light, then dark, then round again.
+     *
+     * The row that shows the theme was an inert value for as long as this setter had no caller —
+     * it displayed a stored choice it could not change, so the only reachable theme was the
+     * default. The order starts at `System` because that is the one a reader looking for a light
+     * screen wants first, and dark stays the default for the reason `PendulumTheme` gives: this
+     * application is read at 7 a.m. or in the middle of the night, and a light screen dazzles.
+     */
+    fun cycleTheme() {
+        viewModelScope.launch {
+            val current = prefs.theme.first()
+            prefs.setTheme(
+                when (current) {
+                    PendulumPreferences.THEME_DARK -> PendulumPreferences.THEME_SYSTEM
+                    PendulumPreferences.THEME_SYSTEM -> PendulumPreferences.THEME_LIGHT
+                    else -> PendulumPreferences.THEME_DARK
+                }
+            )
+        }
+    }
+
     fun setTheme(theme: String) {
         viewModelScope.launch { prefs.setTheme(theme) }
     }

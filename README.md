@@ -94,6 +94,88 @@ The full set, with the three defects that only a real render exposed, is in
 1 August 2026 and predate a change to the navigation bar; the home screen is from real hardware on
 4 August.
 
+## Your first nights, step by step
+
+What follows is one run of the current build, in the order you would meet it: the six setup steps,
+one evening, the watch, the morning after, and the screen you will look at when nothing seems to be
+happening. Captured on 13 August 2026 on a phone emulator (Android 14, 1080 × 2400) and on a Pixel
+Watch 3.
+
+**The nights on these screens are synthetic.** No accelerometer has yet spent a night at an ankle
+running this software, so the populated screens were filled by a seeding path that exists in the
+debug build only and is not compiled into a release. The screens are real; the nights are not.
+
+### Setting up, in six steps
+
+| | |
+|---|---|
+| <img src="docs/images/screens/walk-01-notice.png" width="290" alt="Step 1 of 6, What Pendulum cannot do: the end of the notice text, then a card of four separate confirmations all unticked, a greyed button reading I have read and understood, and below it the reason: confirm the four limits above"> | <img src="docs/images/screens/walk-02-requirements.png" width="290" alt="Step 2 of 6, What Pendulum needs: three blocks, a Wear OS watch at the ankle, a source of sleep stages, and three nights minimum with five to seven preferred"> |
+| **1 — What it cannot do.** The notice cannot be swiped past. The button stays disabled until the text has been scrolled to the end and each of the four limits has been ticked separately, and the greyed button carries whichever of the two is still missing. | **2 — What it needs.** Stated before anything is installed: a watch at the ankle, a separate source of sleep stages, and three nights before there is anything to read. |
+| <img src="docs/images/screens/walk-03-pairing.png" width="290" alt="Step 3 of 6, Watch pairing: a card saying no watch is paired with this phone, a link to open the watch companion app, a disabled Continue button, and a link reading continue without a watch for now"> | <img src="docs/images/screens/walk-04-where-to-wear.png" width="290" alt="Step 4 of 6, Where to wear the watch: a drawing of a lower leg seen from the front with the watch on the shin above the ankle bone, three rules underneath, and a field for the strap setting"> |
+| **3 — The watch.** The check happens before the first night rather than after it. Here nothing is paired, so `Continue` is disabled and the only way past is an explicit choice to go on without a watch. | **4 — Where to wear it.** On the front of the shin, just above the ankle bone; never on the bone itself. The case orientation is free. The strap hole is recorded here, because a looser strap changes the amplitude. |
+| <img src="docs/images/screens/walk-05-sleep-source.png" width="290" alt="Step 5 of 6, Where do your sleep stages come from: a card explaining why a second device is needed, a card saying background reading is unavailable on this phone, a disabled Continue button with the reason allow Health Connect first, and a link reading continue without a hypnogram"> | <img src="docs/images/screens/walk-06-notifications.png" width="290" alt="Step 6 of 6, Notifications and measurement conditions: one switch to allow notifications, a line saying one notification per night on waking and no others, and the Finish button"> |
+| **5 — Where sleep comes from.** The second device is not optional, and the step says why: one sensor cannot honestly measure both the movements and the sleep they happen in. This phone had no source at all, which is the state described under [when nothing appears](#when-nothing-appears). | **6 — Notifications.** One per night, on waking, when the analysis is ready. No others. |
+
+### The evening, and the seal
+
+| | | |
+|---|---|---|
+| <img src="docs/images/screens/walk-07-evening-form.png" width="220" alt="The evening record: left or right leg, a strap and hole field reading hole 4, then switches for alone in bed, coffee after 16:00 and unusual exercise, and an alcohol field"> | <img src="docs/images/screens/walk-08-seal.png" width="220" alt="A confirmation dialog over the form: once sealed, this context can no longer be changed, check the leg and the strap hole, with a seal button and a read it again button"> | <img src="docs/images/screens/walk-09-home-armed.png" width="220" alt="Home after sealing: the strap line reads hole 4 left leg, the sentence press START on the watch, an enabled button to start recording on the watch, and a note saying the context is sealed on this phone"> |
+| **The record.** Which leg, which strap hole, alone in bed, coffee after 16:00, unusual exercise, alcohol, and the evening dose as free text. | **What sealing costs.** The dialog states it before you agree: once sealed, this context cannot be changed. | **Armed.** The phone now says what to do next, and it is on the watch. |
+
+### The watch, and the two ways to lose a night
+
+<img src="docs/images/screens/walk-10-watch-blocked.png" width="290" alt="The round watch screen, pure black: Not ready, battery 100 per cent, free space 12.0 GB, then in amber, fill in the evening form on the phone, the watch will not start until it is sealed">
+
+One static screen, no animation, and no result of any kind. Two things routinely cost a night here:
+
+- **The seal comes first.** The watch will not start until the evening record is sealed on the
+  phone. This is a refusal in the code, not a reminder, and the watch says so rather than failing
+  quietly.
+- **The charger stops the recording.** Charging sustained for a minute is read as the end of the
+  night, alongside waking and a ten-hour limit. Starting a recording with the watch still on its
+  charger therefore ends it about a minute later.
+
+### The morning
+
+| | |
+|---|---|
+| <img src="docs/images/screens/walk-11-home-morning.png" width="290" alt="Home in the morning: the night of 12 August recorded and quality checked, a paragraph saying the figure of a single night is not put in front of you at waking, and a button reading show the result"> | <img src="docs/images/screens/walk-12-nights.png" width="290" alt="The list of nights: one marked provisional and truncated, one marked excluded with the reason not alone in bed, one marked eligible, and a card saying nights are excluded by criteria set before the computation and that there is no way to exclude one by hand"> |
+| **The figure is not put in front of you.** The night is recorded and its quality checked; showing the figure is a deliberate tap, and the time of that tap is written into the report. | **Every night keeps its state and its reason.** Eligible, provisional, excluded — and no button to exclude a night by hand, since a night removed after seeing its figure would manufacture the trend. |
+
+### Three eligible nights, then a trend
+
+<img src="docs/images/screens/walk-13-trend.png" width="290" alt="The trend chart: nightly values drawn as separate points between 19 and 24 seconds, never joined, two dashed horizontal bands, a calendar X axis from 4 to 11 August with a gap, and a Y axis starting at zero">
+
+Points, never a line. Two dashed bands: the interval, and the smallest change this method can
+detect. A calendar X axis, so a night not recorded leaves a hole rather than being closed up. Y
+anchored at zero. What each element is for is argued in
+[`docs/06-interface.md`](docs/06-interface.md).
+
+### When nothing appears
+
+| | |
+|---|---|
+| <img src="docs/images/screens/walk-14-trend-refused.png" width="290" alt="The trend screen with two nights of three: no chart at all, the four recorded nights listed with their durations, and a disabled export button reading export unavailable, three nights minimum"> | <img src="docs/images/screens/walk-15-settings.png" width="290" alt="Settings: counting rule, preferred sleep source, parameter profile, wearing reference, automatic stop on the charger on waking or after ten hours, then a paragraph on the accelerometer mask, then a devices block where watch and Health Connect both read as a dash"> |
+| **This is the ordinary case, not a fault.** Below three eligible nights there is no chart, no median and no export — and there is no code path that produces one. Four nights were recorded here and two of them are eligible; the refusal lists all four, so you can see they arrived. | **Where to look.** `Preferred sleep source` and the `Health Connect` line say whether a second source was found. Home carries the same line, as `sleep source not identified`. |
+
+The discouraging case is the one that looks exactly like a bug and is not. **A night recorded
+without an independent sleep record is captured, transferred, analysed and stored like any other,
+and it does not appear in the list at all** — so the counter does not move and the trend stays
+refused, night after night. The night is not lost: it is on the phone, with its raw signal and its
+result, and it joins the list the day a sleep source covers it. But nothing on screen says it is
+there, which is why this page insists on the point. The reason is on the settings screen in the application's
+own words: *the accelerometer mask alone cannot carry the main result — the denominator would be
+computed from the same signal as the numerator.* The fix is not in Pendulum: it is a second
+application writing sleep sessions into Health Connect — a wrist wearable, a ring, an under-mattress
+sensor. [`docs/05-devices.md`](docs/05-devices.md) compares eleven sources and marks which of them
+are confirmed to write there rather than assumed to.
+
+The screens this walk-through leaves out — one night in detail, the report for a physician, the
+hardware feasibility gate, erasure — are in [`docs/08-screens.md`](docs/08-screens.md), and what the
+application does with a night from reception to score is in
+[`docs/01-overview.md`](docs/01-overview.md).
+
 ## Why the rhythm, and not the usual number
 
 A pendulum's period does not depend on how far it swings. Huygens proved it in 1656, and it is why
