@@ -260,7 +260,22 @@
 
     <string name="onboarding_notif_title">Notifications and measurement conditions</string>
     <string name="onboarding_notif_allow">Allow notifications</string>
-    <string name="onboarding_notif_reason">One notification per night, on waking, when the analysis is ready. No others.</string>
+<!--
+      What the wizard says once the notification permission has been answered.
+
+      The step used to say nothing at all: the launcher callback was empty, so allowing and
+      refusing left the screen identical and the only way to know was to leave for the system
+      settings. A gesture a screen asks for must leave a visible trace, whichever way it goes.
+
+      The refusal wording names what is lost and stops there. Refusing is legitimate — the
+      reminder is a comfort, the measurement does not depend on it — and a step that scolded the
+      user for a choice it declares acceptable would be arguing with itself.
+    -->
+    <string name="onboarding_notif_allowed">Notifications allowed</string>
+    <string name="onboarding_notif_granted">Allowed. One notification per night, on waking.</string>
+    <string name="onboarding_notif_denied">Refused. Nothing will remind you to start the recording in the evening, and nothing will tell you when the analysis is ready. The measurement itself is unaffected, and this can be changed at any time in the system settings.</string>
+
+        <string name="onboarding_notif_reason">One notification per night, on waking, when the analysis is ready. No others.</string>
     <!--
       **No caller**: step 4 of onboarding took this content over, by showing it.
 

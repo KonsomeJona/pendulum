@@ -1,6 +1,7 @@
 package com.pendulum.phone.health
 
 import android.content.Context
+import android.util.Log
 import android.os.Build
 import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
@@ -189,7 +190,23 @@ class SleepReader(private val context: Context) {
         client ?: return null
         val to = Instant.ofEpochMilli(nowMs)
         val from = to.minus(days.toLong(), ChronoUnit.DAYS)
-        return runCatching { SleepSources.summarise(readCandidates(from, to), zone) }.getOrNull()
+        return runCatching { SleepSources.summarise(readCandidates(from, to), zone) }
+            .onSuccess { observed ->
+                // The only place that says out loud what Health Connect actually holds.
+                //
+                // Whether a provider really writes sleep there is the single question that decides
+                // whether a night ever becomes visible, and until now it could be answered only by
+                // opening Health Connect by hand. The screens infer it — no source raises `E-HC-01`
+                // — but three different states render nothing at all, so their silence proves
+                // nothing. One line, at INFO, naming each source and its session count.
+                Log.i(
+                    TAG,
+                    "sleep sources over $days days: " + if (observed.isEmpty()) "none" else
+                        observed.joinToString { "${it.packageName}=${it.nights}n stages=${it.hasStages}" },
+                )
+            }
+            .onFailure { Log.w(TAG, "reading the sleep sources failed", it) }
+            .getOrNull()
     }
 
     /**
@@ -241,6 +258,8 @@ class SleepReader(private val context: Context) {
     }
 
     companion object {
+
+        private const val TAG = "PendulumSleep"
 
         /**
          * `READ_HEALTH_DATA_HISTORY` is requested because `RescoreAllWorker` re-reads the

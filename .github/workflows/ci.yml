@@ -158,6 +158,26 @@ jobs:
       - name: Lint the three Android modules
         run: ./gradlew :wear:lintDebug :phone:lintDebug :sleepwriter:lintSourceADebug --console=plain --continue
 
+      # The two APKs the run was actually built from.
+      #
+      # They were assembled and thrown away: to try a branch on a device, you had to build it
+      # yourself, which is exactly the step that makes a report like "it does not do that on my
+      # phone" impossible to settle. `always()` on purpose — a build whose tests failed is often
+      # the one you most want to install and reproduce.
+      #
+      # These are debug-signed, so they will not install over a release build without an uninstall
+      # first. That is Android refusing to swap a signing key under an application, not a defect.
+      - name: Upload debug APKs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks-debug
+          path: |
+            phone/build/outputs/apk/debug/*.apk
+            wear/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload lint reports
         if: always()
         uses: actions/upload-artifact@v4

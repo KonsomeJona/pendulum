@@ -24,6 +24,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import android.os.Build
+import android.content.pm.PackageManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -746,16 +750,50 @@ fun NotificationsPage(onFinish: () -> Unit) {
         // manifest is not enough. Without it, the evening reminder does not appear, and forgetting
         // to start the recording is not a random event — it is forgotten on evenings of tiredness
         // or of travel, that is, on evenings correlated with the result one is trying to measure.
+        // Accepting a refusal and saying nothing about it are two different things, and this
+        // callback used to be empty. Whatever the answer, the screen was identical before and
+        // after: the one gesture the step asks for produced no visible trace, so the only way to
+        // know it had worked was to leave the application and open the system settings.
+        //
+        // The outcome is read from the system rather than remembered from the callback, so a
+        // permission granted outside this screen shows correctly on a return.
+        val context = LocalContext.current
+        fun granted() = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+
+        var allowed by remember { mutableStateOf(granted()) }
+        var answered by remember { mutableStateOf(false) }
+
         val notificationsLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission(),
-        ) { /* refusal accepted: the reminder is a comfort, not a condition */ }
+        ) {
+            allowed = granted()
+            answered = true
+        }
 
         Button(
             onClick = { notificationsLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) },
             shape = PendulumShapes.button,
+            enabled = !allowed,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(stringResource(R.string.onboarding_notif_allow))
+            Text(
+                stringResource(
+                    if (allowed) R.string.onboarding_notif_allowed
+                    else R.string.onboarding_notif_allow
+                )
+            )
+        }
+
+        // Amber and not red on a refusal, following the rule the rest of the product keeps: red is
+        // for what is broken, amber for a situation the user chose. Losing the reminder is a
+        // situation — the measurement itself is unaffected — and the line says what it costs
+        // rather than scolding.
+        if (allowed) {
+            Paragraph(stringResource(R.string.onboarding_notif_granted), color = c.accent)
+        } else if (answered) {
+            Paragraph(stringResource(R.string.onboarding_notif_denied), color = c.attention)
         }
         Paragraph(stringResource(R.string.onboarding_notif_reason))
         Button(onClick = onFinish, shape = PendulumShapes.button, modifier = Modifier.fillMaxWidth()) {
