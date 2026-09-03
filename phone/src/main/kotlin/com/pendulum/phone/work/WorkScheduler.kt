@@ -81,6 +81,55 @@ object WorkScheduler {
     }
 
     /**
+     * The analysis run again for a night whose series of chunks has **just become complete**.
+     *
+     * ```
+     * IngestWorker  ->  AnalyzeWorker
+     * (reconcile)       (score with every chunk, and whatever hypnogram is already in the database)
+     * ```
+     *
+     * ### What it repairs
+     *
+     * The chain of [enqueueNightChain] is launched by the CLOSED session item, and the CLOSED item
+     * is not the end of the transfer: `finalizeSession` on the watch puts it **before** the final
+     * burst, the Data Layer orders nothing between distinct items, and a phone that was off all
+     * night receives it with twenty-four chunks while the rest follow at the pace of the
+     * acknowledgements. So the analysis was triggered by the close, not by the completeness of
+     * the data. `PendulumListenerService.onChunk` relaunched the chain when the completing chunk
+     * landed — but only once the night was *scored*, because the relaunch used [enqueueNightChain]
+     * and its `KEEP`, which drops a request while the previous chain is enqueued or running. The
+     * chunk that landed **after** `AnalyzeWorker` had listed the files and **before** it wrote
+     * `analyzedAtMs` fell in between: not seen by the chain, not relaunching anything. That night
+     * was scored with `received < declared`, hence `closedCleanly = false`, shown as truncated and
+     * kept out of the trend for good — a gap of a few seconds that the KDoc of `onChunk` used to
+     * name as "what only a different work policy could close". This is that policy.
+     *
+     * `APPEND_OR_REPLACE`, on the **same unique name** as the night chain: if that chain is still
+     * enqueued or running, this one is appended after it and runs on the complete series; if it
+     * is finished, this one simply runs. Nothing is dropped, nothing running is cancelled — a
+     * `REPLACE` would cut `SleepFetchWorker` between its `hc_snapshot` row and the scheduling of
+     * the next rung, and the ladder would stop there. The price is one analysis more on the night
+     * where the CLOSED item overtook its last chunk, which is exactly the night whose first
+     * analysis was wrong.
+     *
+     * Only the two links that read the chunks: the Health Connect ladder of the first chain is
+     * already running under its own unique name, and `AnalysisRunner` reads whatever hypnogram the
+     * ladder has stored so far.
+     */
+    fun enqueueLateRescore(context: Context, sessionHex: String) {
+        val data = workDataOf(KEY_SESSION to sessionHex)
+        val ingest = OneTimeWorkRequestBuilder<IngestWorker>()
+            .setInputData(data).setConstraints(constraints).build()
+        val analyze = OneTimeWorkRequestBuilder<AnalyzeWorker>()
+            .setInputData(data).setConstraints(constraints).build()
+
+        WorkManager.getInstance(context)
+            .beginUniqueWork("$CHAIN-$sessionHex", ExistingWorkPolicy.APPEND_OR_REPLACE, ingest)
+            .then(analyze)
+            .enqueue()
+    }
+
+    /**
      * The chain of the "end of night" button, and its order differs from [enqueueNightChain].
      *
      * ```

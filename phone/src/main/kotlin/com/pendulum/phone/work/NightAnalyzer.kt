@@ -172,8 +172,33 @@ object NightAnalyzer {
 
         var agreement: MaskAgreement? = null
         if (!hcWindows.isNullOrEmpty()) {
-            masks[MaskSource.HEALTH_CONNECT] = MaskFusion.fromHealthConnect(hcWindows, coverage)
-            agreement = MaskFusion.align(accelMask, hcWindows, params.fusion)
+            // Clipped to what was actually recorded, and this is not a detail: it is the
+            // denominator of the published index.
+            //
+            // The hypnogram comes from another device, which knows nothing of our grid. It can
+            // start before our first sample and — the common case — carry on for hours after our
+            // last one, because a watch that died at 3 am does not stop the phone that scores the
+            // sleep. That sleep enters no numerator: no movement can be detected where nothing was
+            // recorded. But it did enter `tstMin`, so it inflated the denominator, and an index of
+            // movements per hour of sleep came out **divided by up to two**.
+            //
+            // That is the one direction of error this project cannot afford. An index that reads
+            // too high gets checked; an index that reads too low is a reassuring figure that ends a
+            // search — the false negative that stops someone from seeing a physician.
+            //
+            // `coverage` is untouched and keeps its job: prorating the holes *inside* the grid,
+            // where it is a documented approximation. This clip only removes the overflow, where
+            // the approximation had nothing to approximate. It is the same rule as §3.7.2 rule 1,
+            // "SPT_end = last valid sample, do not extrapolate", applied to the external mask too.
+            val signalEndMs = Math.round(timeline.signal.n * 1000.0 / fsHz)
+            val hcInSignal = clipToSignal(hcWindows, signalEndMs)
+            if (hcInSignal.isNotEmpty()) {
+                masks[MaskSource.HEALTH_CONNECT] = MaskFusion.fromHealthConnect(hcInSignal, coverage)
+                // `align` gets the clipped windows too: its ΔTST compares two masks, and comparing
+                // a clipped one against an unclipped one would report a disagreement that is only
+                // the overflow measuring itself.
+                agreement = MaskFusion.align(accelMask, hcInSignal, params.fusion)
+            }
         }
 
         // --- The four results ---------------------------------------------------------------
@@ -274,6 +299,19 @@ object NightAnalyzer {
         val totalSec = gridPoints / fsHz
         return if (totalSec <= 0.0) 0.0 else (analysableSec / totalSec).coerceIn(0.0, 1.0)
     }
+
+    /**
+     * Restricts external sleep windows to `[0, signalEndMs]` — the span actually recorded.
+     *
+     * A window that straddles an edge is cut, not dropped: the recorded part of it is real sleep
+     * and belongs in the denominator. A window entirely outside collapses and disappears.
+     */
+    private fun clipToSignal(windows: List<SleepWindow>, signalEndMs: Long): List<SleepWindow> =
+        windows.mapNotNull {
+            val a = maxOf(it.startMsRel, 0L)
+            val b = minOf(it.endMsRel, signalEndMs)
+            if (b > a) SleepWindow(a, b, it.stage) else null
+        }
 
     /** The two rule sets, exposed for the tests and for the display. */
     val RULES: List<SeriesRule> = listOf(SeriesRule.AASM_V3, SeriesRule.WASM_2016)

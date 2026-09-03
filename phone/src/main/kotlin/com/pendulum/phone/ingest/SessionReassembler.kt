@@ -1,6 +1,7 @@
 package com.pendulum.phone.ingest
 
 import com.pendulum.algo.model.SampleBlock
+import com.pendulum.format.ChunkHeader
 import com.pendulum.format.ChunkReader
 import com.pendulum.format.ChunkScanResult
 import java.io.File
@@ -52,6 +53,16 @@ object SessionReassembler {
          * placed on the night, and it is better not to place it at all than to place it at random.
          */
         val anchor: TimeAnchor?,
+        /**
+         * How many times the watch rebooted in the middle of this session, each one bridged by
+         * [bridgeEpoch]. Zero for a normal night.
+         *
+         * Reported rather than silent: a bridged night is intact — that is the whole point of the
+         * repair — but the bridge rests on a wall-clock difference, so a night that needed one is
+         * not measured under quite the same conditions as one that did not. A reader who has to
+         * explain an odd figure should be able to see that a reboot happened.
+         */
+        val epochResets: Int,
     ) {
         val sampleCount: Long get() = blocks.sumOf { it.x.size.toLong() }
     }
@@ -74,15 +85,28 @@ object SessionReassembler {
         val incomplete = ArrayList<Int>()
         var nominalRateHz = 0
         var anchor: TimeAnchor? = null
+        var prevHeader: ChunkHeader? = null
+        val epoch = EpochBridge()
 
         for (f in files) {
             val idx = indexOf(f) ?: continue
+            // Read from the header, which arrives before the first block:
+            //  - the nominal rate **of this chunk**, because it changes in flight;
+            //  - the boot epoch, because it changes when the watch restarts.
+            var chunkNominalHz = 0.0
             val scan = f.inputStream().buffered().use { input ->
-                ChunkReader.forEachBlock(input) { decoded ->
+                ChunkReader.forEachBlock(
+                    input,
+                    onHeader = { h ->
+                        chunkNominalHz = h.nominalRateHz.toDouble()
+                        bridgeEpoch(h, prevHeader, blocks, epoch)
+                        prevHeader = h
+                    },
+                ) { decoded ->
                     // `adoptInPlace`: the block comes out of the reader and is not read anywhere
                     // else, so converting its arrays in place saves ~19 MB of peak memory over a
                     // night without risking anything. See the contract of BlockAdapter.
-                    blocks += BlockAdapter.adoptInPlace(decoded)
+                    blocks += BlockAdapter.adoptInPlace(decoded, chunkNominalHz, epoch.offsetNs)
                 }
             }
             if (nominalRateHz == 0) nominalRateHz = scan.header.nominalRateHz
@@ -135,6 +159,7 @@ object SessionReassembler {
             truncatedTail = scans.any { it.second.truncatedTail },
             desynchronised = desynchronised,
             anchor = anchor,
+            epochResets = epoch.resets,
         )
     }
 
@@ -159,4 +184,74 @@ object SessionReassembler {
 
     /** Fallback rate when no header could be read. `:algo` recomputes `fs` anyway. */
     const val DEFAULT_RATE_HZ = 50
+
+    /**
+     * The running shift applied to the sensor time base, and how many reboots it has bridged.
+     *
+     * Mutable and carried across the whole reassembly, because the shifts **accumulate**: a night
+     * that survives two reboots must place the third epoch after the second, not after the first.
+     */
+    private class EpochBridge {
+        var offsetNs: Long = 0L
+        var resets: Int = 0
+    }
+
+    /**
+     * Places a new boot epoch on the time scale of the previous one, when the watch has restarted
+     * in the middle of a session.
+     *
+     * ### Why this is needed at all
+     *
+     * A reboot mid-night is a case the watch handles on purpose: `BootReceiver` resumes the **same**
+     * session — same `sessionHex`, chunk numbering carried on, `FLAG_GAP_BEFORE` set on the first
+     * block. What nothing handled is that `SensorEvent.timestamp` is `elapsedRealtimeNanos`, which
+     * restarts from zero at boot. Every post-reboot block therefore dates *before* the last
+     * pre-reboot one, and step −1 rejected them one after another as `NON_MONOTONIC` — because it
+     * compares against the last **accepted** block, which never advances again. The result was a
+     * night cut in half at the reboot, reported as an integrity failure although every file was
+     * intact, with the second half sitting unused on the phone's disk.
+     *
+     * Step −1 only ever knew how to handle a jump **forward** (> 14 h = clock reset, cut the
+     * session). A reboot is a jump backwards.
+     *
+     * ### Why the wall clock is legitimate here, and only here
+     *
+     * `SPEC-v2` §2 forbids computing durations by differencing wall clocks, and rightly so. This is
+     * the one place where there is no alternative: two boot epochs share **no** monotonic clock, so
+     * the wall clock is the only bridge between them. Its error is seconds; the hole it measures is
+     * minutes. And that error lands *inside* the hole, which is longer than `gapSegmentSec`: step 0
+     * turns it into a `SEGMENT_BREAK`, the filters restart on the new segment, and `SeriesBuilder`
+     * forbids any series from spanning it. So no inter-movement interval — the quantity this whole
+     * application measures — is ever computed across the bridge.
+     *
+     * The bridging is **counted**, never silent: see [Night.epochResets].
+     */
+    private fun bridgeEpoch(
+        h: ChunkHeader,
+        prev: ChunkHeader?,
+        blocks: List<SampleBlock>,
+        epoch: EpochBridge,
+    ) {
+        // `startElapsedRealtimeNs` is monotonic within one boot and can only go backwards across
+        // one: it is the only field that tells the epochs apart. The chunk header is also the only
+        // place it is visible — the block headers carry the raw sensor stamps alone.
+        if (prev == null || h.startElapsedRealtimeNs >= prev.startElapsedRealtimeNs) return
+
+        epoch.resets++
+        val wallNs = (h.startWallMs - prev.startWallMs) * 1_000_000L
+        epoch.offsetNs += prev.firstEventTimestampNs + wallNs - h.firstEventTimestampNs
+
+        // The wall clock may itself have stepped backwards — a watch resynchronises over NTP right
+        // after booting, and that correction can exceed the reboot's own duration. Without this
+        // floor the bridge would land on, or before, the last sample already stacked, and step −1
+        // would reject the new epoch as `NON_MONOTONIC` or `OVERLAP`: exactly the defect being
+        // fixed, reintroduced by its own fix. Two sample periods of clearance, so the gap stays a
+        // gap and never becomes an overlap.
+        val last = blocks.lastOrNull() ?: return
+        val hz = if (h.nominalRateHz > 0) h.nominalRateHz else DEFAULT_RATE_HZ
+        val floorNs = last.tLastNs + 2 * (1_000_000_000L / hz)
+        if (h.firstEventTimestampNs + epoch.offsetNs < floorNs) {
+            epoch.offsetNs = floorNs - h.firstEventTimestampNs
+        }
+    }
 }

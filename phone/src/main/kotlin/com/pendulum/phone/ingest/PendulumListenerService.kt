@@ -1,11 +1,8 @@
 package com.pendulum.phone.ingest
 
 import android.util.Log
-import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
-import com.google.android.gms.wearable.PutDataRequest
-import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import com.pendulum.format.wire.LivePreview
 import com.pendulum.format.wire.SessionHeader
@@ -101,8 +98,9 @@ class PendulumListenerService : WearableListenerService() {
         }
 
         for ((hex, toResend) in touched) {
-            runCatching { publishAck(hex, toResend.sorted()) }
-                .onFailure { Log.w(TAG, "acknowledgement not published for $hex", it) }
+            runCatching {
+                runBlocking { AckPublisher.publish(this@PendulumListenerService, db, hex, toResend.sorted()) }
+            }.onFailure { Log.w(TAG, "acknowledgement not published for $hex", it) }
         }
     }
 
@@ -183,6 +181,25 @@ class PendulumListenerService : WearableListenerService() {
             )
         )
 
+        // The chunks that arrived **before** this header. The Data Layer orders nothing between
+        // distinct items, and the morning resynchronisation of a phone that was off all night
+        // delivers the chunks and the header in whatever order it likes; `onChunk` keeps such a
+        // chunk on disk and inserts nothing, because its row is the child of a cascading foreign
+        // key onto the row this method has just created. Now that the row exists, those files get
+        // their rows and their telemetry, and the acknowledgement that frees their slots on the
+        // watch. Without this, they waited for `IngestWorker` at the close — a night that started
+        // this way kept its first 24 chunks in flight, unacknowledged, until morning, and the
+        // watch, at its ceiling, sent nothing else: two hours shown out of eight.
+        //
+        // Done on every header, not only on the one that created the row: it costs one directory
+        // listing and one query per file when there is nothing to do, and a state that converges
+        // on every arrival is easier to reason about than one that depends on which item came
+        // first.
+        if (ChunkIngestor.reconcileDisk(db, store, h.sessionHex) > 0) {
+            runCatching { AckPublisher.publish(this@PendulumListenerService, db, h.sessionHex) }
+                .onFailure { Log.w(TAG, "acknowledgement not published for ${h.sessionHex}", it) }
+        }
+
         if (h.state == SessionState.CLOSED) {
             dao.markClosed(
                 hex = h.sessionHex,
@@ -192,7 +209,11 @@ class PendulumListenerService : WearableListenerService() {
                 stopReason = h.stopReason?.name,
                 tzOffsetEndMin = offsetAt(h),
             )
-            // The watch has finished sending: this is the moment to launch the full chain.
+            // The watch has finished sending — or at least announced the end: the CLOSED item
+            // may overtake the last burst, and a phone that was off all night receives it with
+            // twenty-four chunks while the rest follow. The chain runs now anyway, so that the
+            // waking screen has something to say; the chunk that completes the series relaunches
+            // the analysis from `onChunk` (`WorkScheduler.enqueueLateRescore`).
             WorkScheduler.enqueueNightChain(applicationContext, h.sessionHex)
         }
     }
@@ -236,6 +257,30 @@ class PendulumListenerService : WearableListenerService() {
 
         store.write(meta.sessionHex, meta.idx, bytes)
 
+        // The chunk row and the telemetry rows are children of a cascading foreign key onto
+        // `night_session`, and `INSERT OR IGNORE` does not cover foreign keys — SQLite's conflict
+        // clause applies to UNIQUE, NOT NULL, CHECK and PRIMARY KEY, nothing else. Until
+        // 4 September 2026 a chunk landing before its session item — the Data Layer orders
+        // nothing between distinct items, and the morning resynchronisation of a phone that was
+        // off all night delivers chunks and header in whatever order it likes — was written to
+        // disk above, then thrown out of this method by `SQLiteConstraintException` at the first
+        // insert, swallowed by the `catch` of `onDataChanged` as "item ignored", and acknowledged
+        // as nothing. The item stayed in the store, so the watch never re-put it; the file stayed
+        // on disk, so nothing re-read it before `IngestWorker` at the close — which never
+        // acknowledged either. Each such chunk held one of the watch's 24 in-flight slots until
+        // morning: a night that started this way showed its first two hours and nothing after.
+        //
+        // The file is kept — the bytes were verified, they are the night — and no row is
+        // attempted: `onSession` reconciles the directory against the database the moment the
+        // header lands, and publishes the acknowledgement that frees the slots. No resend is
+        // asked for either: the watch would re-put bytes the phone already holds, and the phone
+        // would refuse them again for the same reason.
+        val night = db.nightDao().find(meta.sessionHex)
+        if (night == null) {
+            Log.w(TAG, "chunk ${meta.idx} of ${meta.sessionHex} kept on disk: session not announced yet")
+            return@runBlocking null
+        }
+
         // The file is read back to find out whether it is *complete*: the end marker is the only
         // thing that tells a closed chunk from a chunk still being written, and a chunk that is
         // not complete must never be acknowledged.
@@ -264,7 +309,7 @@ class PendulumListenerService : WearableListenerService() {
             )
         }
 
-        db.chunkDao().insertIfAbsent(
+        val inserted = db.chunkDao().insertIfAbsent(
             ChunkEntity(
                 sessionHex = meta.sessionHex,
                 idx = meta.idx,
@@ -278,8 +323,41 @@ class PendulumListenerService : WearableListenerService() {
                 complete = complete,
                 receivedAtMs = System.currentTimeMillis(),
             )
-        )
+        ) != -1L
         db.nightDao().touchChunkArrival(meta.sessionHex, System.currentTimeMillis())
+
+        // A chunk can arrive **after** the night has been closed and scored, and nothing brought
+        // the analysis back to it. `finalizeSession` on the watch puts the CLOSED session item
+        // (urgent) and then the final burst with only its last item urgent; the Data Layer
+        // promises no order between distinct items and may hold a non-urgent one back for up to
+        // 30 minutes. And when the phone was off all night, the ceiling of 24 items in flight
+        // means the CLOSED item lands with two hours of chunks while six more hours follow at the
+        // pace of the acknowledgements. In both cases the chain launched by the CLOSED item scored
+        // the night with `received < declared`, hence `closedCleanly = false`, hence a night shown
+        // as truncated and kept out of the trend — and the late chunks were inserted and
+        // acknowledged into a night nobody re-read. `RescoreWorker` only re-runs when a hypnogram
+        // changes, so on a phone without Health Connect the truncation was permanent; the
+        // watchdog only looks at OPEN and STALE nights.
+        //
+        // The analysis is relaunched from here exactly once: at the arrival that completes the
+        // announced series. Not before the series is complete, so that a backlog of seventy chunks
+        // does not enqueue seventy analyses; not on a duplicate, so that a re-put of a chunk
+        // already held does not enqueue one either. And **whether or not the night is scored
+        // yet**: until 4 September 2026 the relaunch went through `enqueueNightChain` and its
+        // `KEEP`, so it waited for `analyzedAtMs` — and the chunk that landed after `AnalyzeWorker`
+        // had listed the files but before it wrote `analyzedAtMs` was neither seen by that
+        // analysis nor relaunching one. A few seconds wide, and the night it fell in was
+        // truncated for good. `enqueueLateRescore` uses `APPEND_OR_REPLACE`: appended after the
+        // chain in flight if there is one, run at once otherwise, never dropped.
+        if (completesDeclaredSeries(
+                inserted = inserted,
+                declaredChunks = night.totalChunks,
+                completeChunks = db.chunkDao().completeIndices(meta.sessionHex).size,
+            )
+        ) {
+            Log.i(TAG, "series of ${meta.sessionHex} complete, analysis relaunched")
+            WorkScheduler.enqueueLateRescore(applicationContext, meta.sessionHex)
+        }
         null
     }
 
@@ -301,23 +379,11 @@ class PendulumListenerService : WearableListenerService() {
     // ------------------------------------------------------------------
     // /pendulum/ack
     // ------------------------------------------------------------------
-
-    /**
-     * The acknowledgement is recomputed **entirely from the database**, every single time. That is
-     * more expensive than an incremental counter and that is the point: the cost is one query over
-     * a few dozen rows, the benefit is that no in-memory state can diverge from the truth.
-     */
-    private fun publishAck(sessionHex: String, needResend: List<Int>) = runBlocking {
-        val complete = db.chunkDao().completeIndices(sessionHex)
-        val ack = AckBuilder.build(sessionHex, complete, needResend, System.currentTimeMillis())
-        val request = PutDataRequest.create(WirePaths.ack(sessionHex))
-            .setData(ack.encode())
-            // Without `setUrgent()`, the system may delay the synchronisation by 30 minutes.
-            // The watch keeps its files until the acknowledgement: delaying it means saturating
-            // its disk and its ceiling of items in flight for nothing.
-            .setUrgent()
-        Tasks.await(Wearable.getDataClient(this@PendulumListenerService).putDataItem(request))
-    }
+    //
+    // The acknowledgement is recomputed **entirely from the database**, every single time, by
+    // `AckPublisher`. It lived here as a private method until 4 September 2026, which made this
+    // service its only caller — and a row that came into the database by any other road
+    // (`IngestWorker`, the reconciliation in `onSession`) was never acknowledged.
 
     private fun sessionHexOfChunkPath(path: String): String? {
         val rest = path.removePrefix(WirePaths.CHUNK_PREFIX)
@@ -325,8 +391,39 @@ class PendulumListenerService : WearableListenerService() {
         return if (slash <= 0) null else rest.substring(0, slash)
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "PendulumIngest"
+
+        /**
+         * Whether the chunk that just arrived is the one that completes the series the watch
+         * announced — the one arrival after which the analysis must run again.
+         *
+         * **Pure**, taken out of the `runBlocking` of `onChunk` that reads the database, for the
+         * same reason as `WatchdogWorker.nextState`: the three conditions are the contract, and
+         * each one left out has a cost that a test can name. Without `inserted`, a re-put of a
+         * chunk the phone already holds would relaunch the analysis every time. Without
+         * `declaredChunks`, a night the watch never closed would relaunch on every arrival — that
+         * night belongs to the watchdog. Without the count reaching the declared total, every
+         * chunk of a backlog would enqueue an analysis.
+         *
+         * There is deliberately **no** `analyzedAtMs` condition any more. It was there because the
+         * relaunch went through `enqueueNightChain`, whose `KEEP` drops a request while the chain
+         * launched by the CLOSED item is enqueued or running — and it left the chunk that landed
+         * while that chain was between listing the files and writing `analyzedAtMs` neither
+         * analysed nor relaunching. `WorkScheduler.enqueueLateRescore` appends instead of
+         * dropping, so the completing chunk relaunches whatever the state of the night.
+         *
+         * @param inserted the arrival created a row — `false` for a duplicate.
+         * @param declaredChunks `night_session.totalChunks`, null until the watch closes the night.
+         * @param completeChunks number of complete chunk rows of the session, this arrival
+         *   included.
+         */
+        fun completesDeclaredSeries(
+            inserted: Boolean,
+            declaredChunks: Int?,
+            completeChunks: Int,
+        ): Boolean =
+            inserted && declaredChunks != null && completeChunks >= declaredChunks
 
         /**
          * Three, because a transport failure resolves itself in one or two attempts and beyond

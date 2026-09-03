@@ -35,13 +35,14 @@ object BlockAdapter {
      * whole night, prefer [adoptInPlace]: 1.5 million samples x 3 axes x 4 bytes make ~19 MB, and
      * duplicating them doubles the memory peak for nothing.
      */
-    fun copyOf(block: DecodedBlock): SampleBlock = AdaptedBlock(
+    fun copyOf(block: DecodedBlock, nominalHz: Double = 0.0): SampleBlock = AdaptedBlock(
         tFirstNs = block.tFirstNs,
         tLastNs = block.tLastNs,
         flags = block.flags,
         x = FloatArray(block.sampleCount) { (block.x[it] / G_IN_MS2).toFloat() },
         y = FloatArray(block.sampleCount) { (block.y[it] / G_IN_MS2).toFloat() },
         z = FloatArray(block.sampleCount) { (block.z[it] / G_IN_MS2).toFloat() },
+        nominalHz = nominalHz,
     )
 
     /**
@@ -51,8 +52,18 @@ object BlockAdapter {
      * in here **must not be read again afterwards**. That holds by construction in the only real
      * caller, [SessionReassembler], which consumes the stream of `ChunkReader.forEachBlock` and
      * discards every block once it has adapted it.
+     *
+     * [offsetNs] shifts the block's time base. It is `0` for every chunk of a normal night and only
+     * becomes non-zero across a **reboot of the watch**, where `SensorEvent.timestamp` restarts
+     * from zero while the session carries on: see the bridging in [SessionReassembler]. The shift
+     * belongs here rather than in `:algo` for the same reason as the unit conversion — `:algo` is
+     * given samples on one continuous scale and knows nothing of chunks, headers, or boots.
      */
-    fun adoptInPlace(block: DecodedBlock): SampleBlock {
+    fun adoptInPlace(
+        block: DecodedBlock,
+        nominalHz: Double = 0.0,
+        offsetNs: Long = 0L,
+    ): SampleBlock {
         val n = block.sampleCount
         val inv = (1.0 / G_IN_MS2).toFloat()
         for (i in 0 until n) {
@@ -60,7 +71,10 @@ object BlockAdapter {
             block.y[i] *= inv
             block.z[i] *= inv
         }
-        return AdaptedBlock(block.tFirstNs, block.tLastNs, block.flags, block.x, block.y, block.z)
+        return AdaptedBlock(
+            block.tFirstNs + offsetNs, block.tLastNs + offsetNs,
+            block.flags, block.x, block.y, block.z, nominalHz,
+        )
     }
 
     /**
@@ -79,5 +93,6 @@ object BlockAdapter {
         override val x: FloatArray,
         override val y: FloatArray,
         override val z: FloatArray,
+        override val nominalHz: Double = 0.0,
     ) : SampleBlock
 }

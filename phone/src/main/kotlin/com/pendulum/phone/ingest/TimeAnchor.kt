@@ -1,5 +1,7 @@
 package com.pendulum.phone.ingest
 
+import com.pendulum.format.ChunkHeader
+
 /**
  * The conversion between the wall clock and the sensor timeline.
  *
@@ -21,24 +23,89 @@ package com.pendulum.phone.ingest
  * daylight-saving change. A hypnogram shifted by an hour raises no exception: it simply produces a
  * wrong aPLM-i.
  *
+ * ### Which instant `startWallMs` describes
+ *
+ * The anchor reads `startWallMs` and `firstEventTimestampNs` as one and the same instant. Until
+ * 4 September 2026 they were not: the watch stamped the wall clock when the first **block** reached
+ * the disk and the sample stamp at the first **sample**, and a chunk opens from the first FIFO
+ * flush — in `WAKEUP 30 s`, the mode measured on the Pixel Watch 3, that flush is up to thirty
+ * seconds after the sample it carries. Every wall clock converted here — the hypnogram, the
+ * bedtime journal — therefore landed 10 to 60 s too early on the timeline, which is the same thing
+ * as every movement landing that much too late against the hypnogram: one 30 s sleep epoch,
+ * varying from one night to the next with the phase between `registerListener` and the first
+ * burst. A movement at a wake/sleep boundary changed epoch, hence AASM status, silently.
+ *
+ * The watch now stamps all three clocks at the first sample, so a header it produces carries no
+ * age. The age is still readable from a header that predates that change — a night already
+ * recorded, a bench file — because the boot clock and the sample stamp share a base:
+ * `startElapsedRealtimeNs - firstEventTimestampNs` is how old the first sample was when the chunk
+ * opened. [firstSampleWallMs] pulls the wall clock back by it. On a header the watch has already
+ * pulled back, that difference is zero and nothing is subtracted twice — the two corrections are
+ * compatible only because the watch moves **both** its clocks, and whoever changes that side to
+ * "raw `startElapsedRealtimeNs`" again would make this side subtract the age a second time.
+ *
+ * The age is only subtracted when it is plausible, within the same window as on the watch: some
+ * OEMs exclude suspend time from `SensorEvent.timestamp`, so two hours into the night the
+ * difference no longer measures a burst, and on the bench the sample stamps run ahead of the boot
+ * clock. Outside the window the anchor stays merely late, as it was, rather than moved by hours.
+ *
  * @param startWallMs wall clock at the opening of the **first** chunk.
  * @param firstEventTimestampNs `SensorEvent.timestamp` of the first sample of the first chunk.
  * @param timelineT0Ns `tFirstNs` of the first block actually decoded. It can differ from
  *   [firstEventTimestampNs] if the very first blocks were rejected by the integrity check — hence
  *   two fields and not one.
+ * @param startElapsedRealtimeNs `elapsedRealtimeNanos` at the opening of the first chunk, from the
+ *   same header. Defaults to [firstEventTimestampNs] — "no age", which is what the current watch
+ *   writes — so that a caller built on the three historical fields keeps its exact behaviour;
+ *   [of] reads all four from the header and is what a reassembler should use.
  */
 data class TimeAnchor(
     val startWallMs: Long,
     val firstEventTimestampNs: Long,
     val timelineT0Ns: Long,
+    val startElapsedRealtimeNs: Long = firstEventTimestampNs,
 ) {
 
-    /** Offset, in milliseconds, between the origin of the timeline and `startWallMs`. */
+    /** How old the first sample was when the chunk opened, or zero when the two clocks disagree. */
+    private val burstAgeMs: Long
+        get() {
+            val ageNs = startElapsedRealtimeNs - firstEventTimestampNs
+            return if (ageNs in 0..MAX_BURST_AGE_NS) ageNs / 1_000_000L else 0L
+        }
+
+    /** Wall clock (epoch ms) of the **first sample**, which is what [startWallMs] was meant to be. */
+    val firstSampleWallMs: Long get() = startWallMs - burstAgeMs
+
+    /** Offset, in milliseconds, between the origin of the timeline and the first sample. */
     private val t0OffsetMs: Long get() = (timelineT0Ns - firstEventTimestampNs) / 1_000_000L
 
     /** Wall clock (epoch ms) -> milliseconds relative to the timeline. */
-    fun toMsRel(wallMs: Long): Long = (wallMs - startWallMs) - t0OffsetMs
+    fun toMsRel(wallMs: Long): Long = (wallMs - firstSampleWallMs) - t0OffsetMs
 
     /** Relative milliseconds -> wall clock. For display and export only. */
-    fun toWallMs(msRel: Long): Long = startWallMs + msRel + t0OffsetMs
+    fun toWallMs(msRel: Long): Long = firstSampleWallMs + msRel + t0OffsetMs
+
+    companion object {
+
+        /**
+         * Ceiling of a plausible age for the first sample of a chunk: twice the report latency
+         * the watch may ask of its sensor (`SensorStrategy.MAX_LATENCY_US`, 60 s). The same value
+         * as the watch's `ChunkStore.MAX_BURST_AGE_NS`, kept in step by hand — the two modules do
+         * not see each other. Beyond it the two clocks do not share a base and the difference
+         * measures nothing that should be subtracted.
+         */
+        const val MAX_BURST_AGE_NS: Long = 120_000_000_000L
+
+        /**
+         * The anchor of a night, from the header of its first decoded chunk.
+         *
+         * @param timelineT0Ns `tFirstNs` of the first block actually decoded from that chunk.
+         */
+        fun of(header: ChunkHeader, timelineT0Ns: Long): TimeAnchor = TimeAnchor(
+            startWallMs = header.startWallMs,
+            firstEventTimestampNs = header.firstEventTimestampNs,
+            timelineT0Ns = timelineT0Ns,
+            startElapsedRealtimeNs = header.startElapsedRealtimeNs,
+        )
+    }
 }

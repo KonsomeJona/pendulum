@@ -7,6 +7,7 @@ import com.pendulum.algo.model.DiaryWindow
 import com.pendulum.algo.model.MaskSource
 import com.pendulum.algo.model.SleepWindow
 import com.pendulum.phone.db.ClmEventEntity
+import com.pendulum.phone.db.HcSnapshotEntity
 import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.db.ParamProfileEntity
 import com.pendulum.phone.db.PlmResultEntity
@@ -74,7 +75,16 @@ object AnalysisRunner {
             return false
         }
 
-        val hcWindows = loadHypnogram(db, sessionHex, night.anchor!!, params)
+        // One snapshot row, read once, feeding both the windows and the name of their origin: the
+        // mask and its label cannot then come from two different readings. `latestWithSession`
+        // and not `latest` — see its KDoc: `hc_snapshot` logs every rung of the fetch ladder, and
+        // the ladder carries on after a success, so the newest row is quite often a rung that read
+        // nothing. With `latest` here, that rung dropped the hypnogram from the rescore, and wrote
+        // `sourcePackage = NULL` into the windows of the runs where the hypnogram did survive —
+        // hence a night whose source read "Health Connect" with no application name, although the
+        // database knew it two rows up.
+        val hcSnapshot = db.hcSnapshotDao().latestWithSession(sessionHex)
+        val hcWindows = loadHypnogram(hcSnapshot, night.anchor!!, params)
         val diary = loadDiary(db, sessionHex, night.anchor!!)
         val baselineGain = baselineGainOf(db, sessionHex)
 
@@ -88,15 +98,15 @@ object AnalysisRunner {
             params = params,
         )
 
-        persist(db, session, night, result, params)
+        persist(db, session, night, result, params, hcPackage = hcSnapshot?.selectedPackage)
         return true
     }
 
     // ------------------------------------------------------------------
 
     /**
-     * The hypnogram retained by the last Health Connect read, re-read from
-     * `hc_snapshot.selectedStagesCsv`.
+     * The hypnogram retained by the last Health Connect **reading**, re-read from
+     * `hc_snapshot.selectedStagesCsv` of the row [analyse] chose.
      *
      * We do **not** re-read Health Connect here. Two reasons: a rescore must be able to run on a
      * database restored from a bundle, on a phone that has never seen this night; and re-reading
@@ -104,13 +114,12 @@ object AnalysisRunner {
      * make the rescore non-reproducible — two successive runs with no parameter change could
      * produce two figures.
      */
-    private suspend fun loadHypnogram(
-        db: PendulumDatabase,
-        sessionHex: String,
+    private fun loadHypnogram(
+        snap: HcSnapshotEntity?,
         anchor: TimeAnchor,
         params: AnalysisParams,
     ): List<SleepWindow>? {
-        val snap = db.hcSnapshotDao().latest(sessionHex) ?: return null
+        if (snap == null) return null
         if (snap.selectedStagesCsv.isBlank() && snap.sessionStartMs == null) return null
         val stages = Hypnogram.decodeCsv(snap.selectedStagesCsv)
         val start = snap.sessionStartMs ?: return null
@@ -152,12 +161,19 @@ object AnalysisRunner {
 
     // ------------------------------------------------------------------
 
+    /**
+     * @param hcPackage the application that published the hypnogram the Health Connect windows
+     *   were built from — `selectedPackage` of the very snapshot row [loadHypnogram] read, so the
+     *   windows and their origin are one reading. It is what `comparable_night.sourcePackage`
+     *   aggregates, hence what the screens name as the sleep source of the night.
+     */
     private suspend fun persist(
         db: PendulumDatabase,
         session: NightSessionEntity,
         night: SessionReassembler.Night,
         r: NightAnalyzer.Result,
         params: AnalysisParams,
+        hcPackage: String?,
     ) {
         val hex = session.sessionHex
 
@@ -169,11 +185,7 @@ object AnalysisRunner {
                     stage = w.stage.name,
                     startMsRel = w.startMsRel,
                     endMsRel = w.endMsRel,
-                    sourcePackage = if (source == MaskSource.HEALTH_CONNECT) {
-                        db.hcSnapshotDao().latest(hex)?.selectedPackage
-                    } else {
-                        null
-                    },
+                    sourcePackage = if (source == MaskSource.HEALTH_CONNECT) hcPackage else null,
                     paramsHash = r.paramsHash,
                 )
             }

@@ -78,6 +78,13 @@ class DurationsInventoryTest {
         "SleepReader.kt:400L" to
             "the round trip of a system dialog — it does not open any faster " +
             "because a bench compresses time",
+        // Back to the first family. This one converts a count of grid points into the span they
+        // cover, to clip an external hypnogram to what was actually recorded: `n / fsHz` is
+        // seconds, times 1000 is milliseconds. Compressing it would not shorten a delay, it would
+        // state that the recording covers a different span than it does — and the denominator of
+        // the published index is built on that span.
+        "NightAnalyzer.kt:1000.0" to
+            "seconds -> milliseconds conversion of the recorded span, not a delay",
     )
 
     @Test
