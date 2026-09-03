@@ -68,7 +68,8 @@ class RecordingService : Service() {
 
         const val RATE_HZ = 50
 
-        /** One tick every ten seconds of **awake** time. See [tick]. */
+        /** The period of the `fsync`, and the unit the 30 s and 60 s jobs are multiples of. See
+         *  [periodic]. */
         private val TICK_MS = Durations.ACTIVE.serviceTickMs
 
         /** Seen from the watchdog: a `bindService` to answer a binary question would cost more
@@ -96,7 +97,7 @@ class RecordingService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var startElapsedMs = 0L
-    private var ticks = 0
+    private var schedule: TickSchedule? = null
     private var closedChunks = 0
     private var lastClosedIdx = -1
 
@@ -312,8 +313,8 @@ class RecordingService : Service() {
         batterySeries.clear()
         closedChunks = 0
         lastClosedIdx = current.lastChunkIndex
-        ticks = 0
         startElapsedMs = SystemClock.elapsedRealtime()
+        schedule = TickSchedule(TICK_MS, startElapsedMs)
         stopping = false
 
         if (resume) {
@@ -322,7 +323,7 @@ class RecordingService : Service() {
             pl.markNextBlock(ChunkFormat.FLAG_GAP_BEFORE)
         }
 
-        publishSessionOpen(current, m)
+        publishSessionOpen(current)
 
         src.start(m, handler, sink)
         offBodySensor = sm.getDefaultSensor(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT)?.also {
@@ -349,6 +350,10 @@ class RecordingService : Service() {
     /** Samples, wherever they come from, go here and nowhere else. */
     private val sink = SampleSink { x, y, z, tsNs, arrivalNs, nowMs ->
         pipeline?.onEvent(x, y, z, tsNs, arrivalNs, nowMs)
+        // `nowMs` is `SystemClock.elapsedRealtime()`: the one clock that advances while the SoC
+        // is suspended. Deciding the periods here, in the wake of a wake-up that draining the
+        // FIFO causes anyway, costs no wake-up and bounds their latency by `maxReportLatencyUs`.
+        periodic(nowMs)
     }
 
     /** Off-body stays wired straight to `SensorManager`: it does not go through [SensorPipeline],
@@ -365,34 +370,67 @@ class RecordingService : Service() {
     }
 
     /**
-     * Single tick, every ten seconds of uptime. A `Handler` does not advance while the SoC is
-     * suspended: this tick therefore causes **no wake-up**, it runs in the wake of the wake-ups
-     * that draining the FIFO causes anyway. That is also why there is only one timer and not
-     * three — the 30 s and 60 s periods are counted multiples of it.
+     * Single timer, every ten seconds of uptime. A `Handler` does not advance while the SoC is
+     * suspended: this tick causes **no wake-up**, it runs in the wake of the wake-ups that
+     * draining the FIFO causes anyway. It is the safety net of [periodic] for the stretches in
+     * which no sample arrives — the decision itself is not taken here, and not on this clock.
      */
     private fun tick() {
         if (!isRunning || stopping) return
-        ticks++
-        try {
-            store?.sync()
-        } catch (e: Exception) {
-            Log.e(TAG, "fsync failed", e)
-        }
-
-        gaps?.consumePendingStep()?.let(::applyDegradation)
-
-        if (ticks % 3 == 0) publishUiState()
-        if (ticks % 6 == 0) minuteTick()
-
+        periodic(SystemClock.elapsedRealtime())
         handler.postDelayed(::tick, TICK_MS)
     }
 
-    private fun minuteTick() {
+    /**
+     * The periodic work, decided on `elapsedRealtime` and never on the ticks of the `Handler`.
+     *
+     * The three periods — `fsync`, state publication, the minute — used to be counted in ticks of
+     * [tick], that is, in **uptime**, which does not advance while the SoC is suspended. In the
+     * nominal `WAKEUP 30 s` mode the processor is awake a few per cent of the time between two
+     * bursts, so sixty seconds of uptime were on the order of half an hour of night: the six
+     * stop conditions were evaluated every half hour (a `LOW_BATTERY` seen thirty minutes late is
+     * a watch the system switches off before the clean close and the final burst; the 10:00
+     * cut-off fell towards 10:30), the telemetry points the phone counts as "one a minute" came
+     * one per half hour, and the "five points per chunk" the rotation was supposed to guarantee
+     * did not exist — the rotation runs on `elapsedRealtime`, the tick did not. The bench never
+     * saw it, running on the dock with adb attached, which keeps the processor awake; nor did the
+     * degraded modes, whose wake lock is exactly what makes the two clocks agree.
+     *
+     * Called from the sink at every sample and from [tick]: cheap when nothing is due, and the
+     * work is **posted** rather than run in line. Coming from the sink we are in the middle of a
+     * burst, and the minute can finalise the session — closing the store under the samples still
+     * being delivered would open a new chunk after the close. The post runs once the burst is
+     * drained, on this same thread.
+     */
+    private fun periodic(nowElapsedMs: Long) {
+        if (!isRunning || stopping) return
+        val due = schedule?.due(nowElapsedMs) ?: return
+        if (!due.any) return
+        handler.post { runDue(due) }
+    }
+
+    private fun runDue(due: TickSchedule.Due) {
+        if (!isRunning || stopping) return
+        if (due.sync) {
+            try {
+                store?.sync()
+            } catch (e: Exception) {
+                Log.e(TAG, "fsync failed", e)
+            }
+            gaps?.consumePendingStep()?.let(::applyDegradation)
+        }
+        if (due.ui) publishUiState()
+        if (due.minuteMs > 0) minuteTick(due.minuteMs)
+    }
+
+    /** @param sinceMs real elapsed time since the previous minute job: what the off-body counter
+     *   has to add, since a minute job that comes late covers more than sixty seconds. */
+    private fun minuteTick(sinceMs: Long) {
         val bm = getSystemService(BatteryManager::class.java)
         val pct = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
         val charging = bm?.isCharging ?: false
         if (pct >= 0) batterySeries += pct
-        if (offBody) offBodySeconds += 60
+        if (offBody) offBodySeconds += sinceMs / 1_000
         writeTelemetry(bm, pct, charging)
 
         val reason = stopConditions?.evaluate(
@@ -422,16 +460,18 @@ class RecordingService : Service() {
      * lines, zero gaps, zero escalation, no wake lock and the same PID over thirty-two minutes of
      * deep Doze. That is the result not to spoil. Telemetry therefore adds **no periodic
      * `Handler`, no alarm and no wake lock**: it is carried by [minuteTick], that is, by the
-     * service's only tick, whose KDoc explains that it lives on the uptime clock — which does not
-     * advance while the SoC is suspended. The point therefore falls in the wake of a wake-up that
-     * draining the FIFO causes anyway, and never in place of a stretch of sleep.
+     * minute of [periodic], decided on `elapsedRealtime` in the wake of a FIFO flush. The point
+     * therefore falls in the wake of a wake-up that draining the FIFO causes anyway, and never in
+     * place of a stretch of sleep.
      *
      * The choice of the minute rather than another period follows the same logic: it is the
      * branch that **already reads the battery**, and its period is also that of [GapMonitor]'s
      * measurement window — each point therefore carries a freshly closed window rather than a
      * half-filled one. And 60 s divides the 300 s of the chunk rotation, which guarantees that a
      * complete chunk carries five points: without that division, a lost chunk would take with it
-     * a telemetry gap that no other chunk would fill. See
+     * a telemetry gap that no other chunk would fill. That guarantee only holds because both
+     * periods now run on the same clock — counted in uptime, the minute stretched to half an hour
+     * in batched mode and a chunk carried zero or one point. See
      * [WireProtocol.TELEMETRY_PERIOD_MS][com.pendulum.format.wire.WireProtocol.TELEMETRY_PERIOD_MS].
      *
      * The counters are only consumed if the point can actually go out: otherwise we would lose
@@ -549,6 +589,19 @@ class RecordingService : Service() {
         val flags = m.modeFlags
         syncExecutor.execute {
             try {
+                // The announcement is a prerequisite of the burst, not a courtesy. On the phone
+                // the chunk row carries a cascading foreign key to the session row: a chunk that
+                // lands before `/pendulum/session/<hex>` is written to disk, then rejected by the
+                // key, swallowed, and acknowledged as nothing — the watch keeps pushing, the
+                // phone keeps ignoring, and the night shows two hours out of eight. If the
+                // announcement failed at START it is retried here, before any chunk leaves.
+                if (!sessionAnnounced) {
+                    sessionAnnounced = announceSession(m)
+                    if (!sessionAnnounced) {
+                        Log.w(TAG, "burst withheld: session not announced yet")
+                        return@execute
+                    }
+                }
                 val dir = sessionStore.sessionDir(m.sessionHex)
                 backlogged = DataLayerTransfer.pushChunks(this, m.sessionHex, dir, urgentLast = true)
                 DataLayerTransfer.putLive(
@@ -661,28 +714,41 @@ class RecordingService : Service() {
 
     // --- utilities ---
 
-    private fun publishSessionOpen(m: SessionMarker, mode: AcquisitionMode) {
-        syncExecutor.execute {
-            try {
-                DataLayerTransfer.putSession(
-                    this,
-                    SessionHeader(
-                        sessionHex = m.sessionHex,
-                        startWallMs = m.startWallMs,
-                        tzOffsetMin = TimeZone.getDefault().getOffset(m.startWallMs) / 60_000,
-                        zoneId = m.zoneId,
-                        nominalRateHz = mode.rateHz,
-                        modeFlags = mode.modeFlags,
-                        plannedStopWallMs = m.plannedStopWallMs,
-                        state = SessionState.OPEN,
-                    ),
-                )
-            } catch (e: Exception) {
-                // Without this item, the phone will not know a night exists until it receives its
-                // first chunk. That is a display delay, not a loss of data.
-                Log.w(TAG, "session announcement failed", e)
-            }
-        }
+    /** True once `/pendulum/session/<hex>` has been put with `OPEN`. Written and read on the
+     *  transfer thread only. */
+    private var sessionAnnounced = false
+
+    private fun publishSessionOpen(m: SessionMarker) {
+        syncExecutor.execute { sessionAnnounced = announceSession(m) }
+    }
+
+    /**
+     * Puts the `OPEN` header. Transfer thread only.
+     *
+     * The failure used to be logged as "a display delay, not a loss of data", and never retried:
+     * the phone would learn of the night from its first chunk. It does not — the chunk row on the
+     * phone is the child of a cascading foreign key to the session row, so a chunk without its
+     * session is rejected, swallowed and acknowledged as nothing, and the whole night after it
+     * with it. [push] calls this again before every burst until it succeeds.
+     */
+    private fun announceSession(m: SessionMarker): Boolean = try {
+        DataLayerTransfer.putSession(
+            this,
+            SessionHeader(
+                sessionHex = m.sessionHex,
+                startWallMs = m.startWallMs,
+                tzOffsetMin = TimeZone.getDefault().getOffset(m.startWallMs) / 60_000,
+                zoneId = m.zoneId,
+                nominalRateHz = m.nominalRateHz,
+                modeFlags = m.modeFlags,
+                plannedStopWallMs = m.plannedStopWallMs,
+                state = SessionState.OPEN,
+            ),
+        )
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "session announcement failed, retried at the next burst", e)
+        false
     }
 
     private fun publishUiState() {

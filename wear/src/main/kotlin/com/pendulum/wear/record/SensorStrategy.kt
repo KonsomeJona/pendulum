@@ -30,7 +30,10 @@ object SensorStrategy {
     const val RESERVED_FOR_NONWAKEUP_BATCH = 3000
 
     private const val MIN_LATENCY_US = 10_000_000
-    private const val MAX_LATENCY_US = 60_000_000
+
+    /** Also the bound `ChunkStore` accepts for the age of a chunk's first sample: no burst can be
+     *  older than the longest latency ever requested here. */
+    const val MAX_LATENCY_US = 60_000_000
 
     /**
      * @param isWakeUp `Sensor.isWakeUpSensor` of the sensor that was retained.

@@ -46,6 +46,10 @@ class ChunkStore(
     /** Rotation duration bound. A parameter rather than a constant read deep inside [writeBlock]:
      *  this is what makes rotation testable at a chosen scale, with no clock to tamper with. */
     private val rotationMs: Long = Durations.ACTIVE.chunkRotationMs,
+    /** The wall clock and the boot clock, injected for the same reason as [rotationMs]: the anchor
+     *  written by [open] is only testable if both can be set by hand. */
+    private val wallClockMs: () -> Long = System::currentTimeMillis,
+    private val elapsedNs: () -> Long = android.os.SystemClock::elapsedRealtimeNanos,
 ) {
 
     /** Index of the next chunk to open. Carries the numbering on after a resume: never reset, the
@@ -204,9 +208,10 @@ class ChunkStore(
     /**
      * `fsync` of the current chunk. No effect if no chunk is open.
      *
-     * Called every ten seconds *of awake time*: the tick is a `Handler` on the uptime clock,
-     * which does not advance while the SoC is suspended. The `fsync` therefore falls naturally
-     * just after each FIFO flush, and causes **no wake-up of its own**.
+     * Called every ten seconds of `elapsedRealtime`, decided by `TickSchedule` in the wake of a
+     * FIFO flush or of the service tick — whichever comes first — so it causes **no wake-up of its
+     * own**. It used to be counted in ticks of the uptime clock, which does not advance while the
+     * SoC is suspended: in batched mode that made "ten seconds" a matter of minutes.
      */
     fun sync() {
         val fos = out ?: return
@@ -252,12 +257,41 @@ class ChunkStore(
         val idx = nextIndex
         val file = chunkFile(idx)
         val fos = FileOutputStream(file)
+        // The three clocks of the header describe **one instant: the first sample**, never the
+        // moment the first block reaches the disk. A chunk opens from `writeBlock`, that is, at
+        // the first FIFO flush — in `WAKEUP 30 s`, the mode measured on the Pixel Watch 3
+        // (BENCH-LOG §12.4, reserved=3000), that burst is already thirty seconds old when it
+        // arrives; in continuous mode the 512-sample cut still puts 10.24 s between the first
+        // sample and the write. The header used to stamp `startWallMs` and
+        // `startElapsedRealtimeNs` at the write and `firstEventTimestampNs` at the sample, and
+        // `TimeAnchor` on the phone reads `(startWallMs, firstEventTimestampNs)` as simultaneous:
+        // every movement of the night was projected 10 to 60 s too late against the Health
+        // Connect hypnogram and the bedtime journal — a whole 30 s sleep epoch, varying from one
+        // night to the next with the phase between `registerListener` and the first burst. A
+        // movement at a wake/sleep boundary changed epoch, hence AASM status, silently.
+        //
+        // Both wall and boot clocks are pulled back by the same age, so that a reader pairing
+        // *any* two of the three fields is right — the format's own KDoc reads
+        // `startWallMs / startElapsedRealtimeNs` as a pair for the telemetry, and `TimeAnchor`
+        // reads `startWallMs / firstEventTimestampNs`; pulling back only the wall clock would
+        // have made the two pairs contradict each other, and a phone-side correction computing
+        // the age from the boot clock would then subtract it a second time.
+        //
+        // The age is only subtracted when it is plausible: `SensorEvent.timestamp` is not
+        // guaranteed to share the `elapsedRealtimeNanos` base (some OEMs exclude suspend time),
+        // and on the bench `SyntheticSource` replays sensor time 250 times faster than wall time,
+        // so the sample stamps run ahead of the boot clock. Outside the window the header stays
+        // raw — the anchor merely late, as before, and the raw triplet still visible to the phone
+        // for what the format calls drift detection — rather than moved by hours.
+        val openedElapsedNs = elapsedNs()
+        val ageNs = openedElapsedNs - firstEventTsNs
+        val burstAgeNs = if (ageNs in 0..MAX_BURST_AGE_NS) ageNs else 0L
         val header = ChunkHeader(
             sessionUuid = sessionUuid,
             chunkIndex = idx,
             nominalRateHz = rateHz,
-            startWallMs = System.currentTimeMillis(),
-            startElapsedRealtimeNs = android.os.SystemClock.elapsedRealtimeNanos(),
+            startWallMs = wallClockMs() - burstAgeNs / 1_000_000L,
+            startElapsedRealtimeNs = openedElapsedNs - burstAgeNs,
             firstEventTimestampNs = firstEventTsNs,
             sensorResolution = sensorResolution,
             sensorMaxRange = sensorMaxRange,
@@ -265,7 +299,7 @@ class ChunkStore(
             // guaranteed share, the only one that explains the behaviour observed on read-back.
             fifoMaxEventCount = fifoReserved.coerceIn(0, 0xFFFF),
             modeFlags = modeFlags,
-            tzOffsetMin = TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000,
+            tzOffsetMin = TimeZone.getDefault().getOffset(wallClockMs()) / 60_000,
         )
         // The header is written in the writer's constructor: the file is valid from its very
         // first millisecond.
@@ -282,6 +316,16 @@ class ChunkStore(
         // the file exists on disk but empty, and a cut here leaves a file with no magic.
         bos.flush()
         measure(fos)
+    }
+
+    private companion object {
+        /**
+         * Ceiling of a plausible age for the first sample of a chunk: twice the report latency
+         * the strategy may ask of the sensor. Hardware time, not a wall-clock duration — the bench
+         * compresses neither the FIFO nor this bound. Beyond it the two clocks do not share a base
+         * and the difference measures nothing that should be subtracted.
+         */
+        const val MAX_BURST_AGE_NS: Long = 2L * SensorStrategy.MAX_LATENCY_US * 1_000L
     }
 }
 

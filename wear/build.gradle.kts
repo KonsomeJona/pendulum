@@ -37,18 +37,27 @@ android {
     // debug key — a debug-signed artefact passing itself off as a release is exactly the kind of
     // confusion that ends up being published. `assembleRelease` therefore fails cleanly locally,
     // and only CI produces signed artefacts.
+    //
+    // Blank counts as absent, exactly as in `:phone`. On GitHub Actions a secret that was never
+    // created still reaches the build as an **empty** variable — `${{ secrets.X }}` expands to ""
+    // and the runner exports it anyway — so `System.getenv` returns "" and not `null`. Written
+    // against `null`, the two fallbacks below (`"pendulum"` for the alias, the store password for
+    // the key) never fired in CI, and the signer failed with an empty alias twenty minutes into
+    // the job, after every test and lint had passed.
+    fun releaseEnv(name: String) = System.getenv(name)?.takeIf { it.isNotBlank() }
+
     val keystoreFile = rootProject.file("release.keystore")
     val hasKeystore = keystoreFile.exists() &&
-        System.getenv("PENDULUM_KEYSTORE_PASSWORD") != null
+        releaseEnv("PENDULUM_KEYSTORE_PASSWORD") != null
 
     signingConfigs {
         if (hasKeystore) {
             create("release") {
                 storeFile = keystoreFile
-                storePassword = System.getenv("PENDULUM_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("PENDULUM_KEY_ALIAS") ?: "pendulum"
-                keyPassword = System.getenv("PENDULUM_KEY_PASSWORD")
-                    ?: System.getenv("PENDULUM_KEYSTORE_PASSWORD")
+                storePassword = releaseEnv("PENDULUM_KEYSTORE_PASSWORD")
+                keyAlias = releaseEnv("PENDULUM_KEY_ALIAS") ?: "pendulum"
+                keyPassword = releaseEnv("PENDULUM_KEY_PASSWORD")
+                    ?: releaseEnv("PENDULUM_KEYSTORE_PASSWORD")
             }
         }
     }

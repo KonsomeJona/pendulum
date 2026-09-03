@@ -53,6 +53,21 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
         val dirs = store.chunksRoot.listFiles()?.filter { it.isDirectory } ?: emptyList()
         for (dir in dirs) {
             val hex = dir.name
+            // The acknowledgement is re-read and applied **before** anything is pushed. Without
+            // this, the worker only ever called `pushChunks`, which skips every index still in
+            // the store: a file already acknowledged whose deletion had not gone through — an
+            // `applyAck` cut short by a timeout, a kill of the service mid-loop — was never
+            // visited again by any pass. "Sync now" then did nothing, `Preflight` counted the
+            // file as pending every evening, and the directory was never released. A failure
+            // here is logged and not retried: the push below is still worth doing, and the next
+            // run re-reads anyway.
+            try {
+                DataLayerTransfer.readAck(ctx, hex)?.let { ack ->
+                    DataLayerTransfer.applyAck(ctx, ack, dir)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "could not re-apply the ack of $hex", e)
+            }
             val files = dir.listFiles { f: File -> f.name.endsWith(".pendulum") } ?: emptyArray()
             if (files.isEmpty()) {
                 // Fully acknowledged session: the directory holds nothing but its sidecar any

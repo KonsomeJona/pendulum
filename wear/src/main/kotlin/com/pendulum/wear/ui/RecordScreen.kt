@@ -5,13 +5,16 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,14 +29,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -518,7 +520,18 @@ private fun RecordingContent(state: RecordUiState, onStop: () -> Unit) {
 /**
  * Full-width button, with no elevation, no animated ripple and no pill shape — the pill signals
  * "consumer application", and the shadow survives neither the dark theme nor a screenshot.
+ *
+ * The input goes through `combinedClickable` and not through `pointerInput { detectTapGestures }`,
+ * which is what the absence of ripple had first been bought with. `detectTapGestures` emits no
+ * semantics at all: no `Role.Button`, no click action, no long-click action, and no disabled
+ * state. Under TalkBack the node was read as a plain label — START did nothing on double-tap, and
+ * STOP, which only answers a long press, offered no long-click action, so a recording could not be
+ * ended other than by waiting for the automatic stop. Switch Access had the same dead end.
+ * `combinedClickable(indication = null)` keeps the absence of ripple and exposes all of the above;
+ * with `enabled = false` it sets `disabled()` itself. The minimum height is the 48 dp touch
+ * target, which 12 dp of padding around one line of `button` type fell just short of.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FlatButton(
     label: String,
@@ -528,18 +541,24 @@ private fun FlatButton(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val longPress: ((Offset) -> Unit)? = onLongClick?.let { action -> { _: Offset -> action() } }
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .background(
                 color = if (enabled) color else MaterialTheme.colors.surface.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(14.dp),
             )
-            .pointerInput(enabled, onClick, longPress) {
-                if (!enabled) return@pointerInput
-                detectTapGestures(onTap = { onClick() }, onLongPress = longPress)
-            }
+            // `padding` stays after the click modifier so that the touch area covers it, as the
+            // `pointerInput` used to.
+            .combinedClickable(
+                enabled = enabled,
+                role = Role.Button,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            )
             .padding(vertical = 12.dp, horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {

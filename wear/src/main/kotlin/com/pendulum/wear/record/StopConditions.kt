@@ -110,6 +110,11 @@ class StopConditions(
  */
 class WakeDetector {
 
+    private companion object {
+        /** 20 epochs of 30 s = the ten-minute sliding window. */
+        const val WINDOW_EPOCHS = 20
+    }
+
     /** RMS beyond which an epoch counts as locomotion, in m/s^2. */
     private val locomotionThreshold = 1.5
 
@@ -118,7 +123,8 @@ class WakeDetector {
     private var above = 0
     private var total = 0
 
-    /** Fraction of active epochs over the window, within `0..1`. */
+    /** Fraction of active epochs over the window, within `0..1`. Stays at zero until the window
+     *  holds its twenty epochs. */
     var ratio: Double = 0.0
         private set
 
@@ -128,8 +134,17 @@ class WakeDetector {
         if (rms > locomotionThreshold) above++
         if (tsNs - epochStartNs >= 30_000_000_000L) {
             epochs.addLast(above > total / 2)
-            if (epochs.size > 20) epochs.removeFirst() // 20 epochs of 30 s = 10 min
-            ratio = if (epochs.isEmpty()) 0.0 else epochs.count { it }.toDouble() / epochs.size
+            if (epochs.size > WINDOW_EPOCHS) epochs.removeFirst()
+            // No verdict on a partial window. The ratio used to divide by the number of epochs
+            // closed *so far*, bounded above by twenty but never below: the very first active
+            // epoch read 1.0, and the first minute tick after START — pressed on the watch, then
+            // the walk to the bed at several m/s^2 at the ankle — closed the night as
+            // WAKE_DETECTED after one minute, cleanly, with nobody awake to see it. The same held
+            // at 2.5 min for five active epochs (a trip to the bathroom right after START). The
+            // window is sliding only once it is full: before that, the "80 % of ten minutes" the
+            // KDoc promises does not exist, and neither does the verdict.
+            ratio = if (epochs.size < WINDOW_EPOCHS) 0.0
+            else epochs.count { it }.toDouble() / WINDOW_EPOCHS
             epochStartNs = tsNs
             above = 0
             total = 0

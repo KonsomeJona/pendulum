@@ -224,15 +224,44 @@ class WakeDetectorTest {
     @Test
     @DisplayName("an epoch flips on a strict majority of active seconds, not on a tie")
     fun `majority bound within the epoch`() {
-        // First epoch: 31 calls (the 31st closes it). 16 active seconds out of 31 = majority.
+        // The verdict only exists once the window holds its 20 epochs: the first epoch carries
+        // the majority under test, the 19 that follow are sleep epochs. 31 calls close the first
+        // epoch, then 30 per epoch. 16 active seconds out of 31 = majority.
         val active = WakeDetector()
-        feed(active, activeSeconds = 16, totalSeconds = 31)
-        assertThat(active.ratio).isEqualTo(1.0)
+        feed(active, activeSeconds = 16, totalSeconds = 31 + 19 * 30)
+        assertThat(active.ratio).isCloseTo(0.05, within(1e-9)) // 1 active epoch out of 20
 
         // 15 out of 31: a rounded tie is not enough, the epoch stays a sleep epoch.
         val quiet = WakeDetector()
-        feed(quiet, activeSeconds = 15, totalSeconds = 31)
+        feed(quiet, activeSeconds = 15, totalSeconds = 31 + 19 * 30)
         assertThat(quiet.ratio).isEqualTo(0.0)
+    }
+
+    @Test
+    @DisplayName("the walk to bed just after START never stops the night")
+    fun `no verdict before the window is full`() {
+        // The defect this pins: the ratio used to divide by the number of epochs closed *so far*,
+        // so the very first active epoch read 1.0, and the first minute tick after START —
+        // pressed on the watch, then a walk to the bed at several m/s^2 — closed the night as
+        // WAKE_DETECTED after one minute. The sleeper only found out in the morning.
+        val d = WakeDetector()
+        var ts = T0
+
+        // START, then two minutes of walking to the bed: 4 epochs, every one of them active.
+        repeat(121) {
+            d.onSecond(ACTIVE_RMS, ts)
+            ts += 1_000_000_000L
+        }
+        assertThat(d.ratio).isEqualTo(0.0)
+
+        // Then the person lies down. The window fills with sleep epochs and the ratio never
+        // reaches the 0.80 of StopConditions — at its fullest, 4 active epochs out of 20.
+        repeat(16 * 30) {
+            d.onSecond(QUIET_RMS, ts)
+            ts += 1_000_000_000L
+            assertThat(d.ratio).isLessThan(0.80)
+        }
+        assertThat(d.ratio).isCloseTo(0.20, within(1e-9))
     }
 
     @Test
