@@ -221,12 +221,17 @@ object Checks {
         // quality indicator and the criterion that says whether two nights measure the same thing:
         // two nights whose rates differ widely cannot be compared.
         //
-        // When the rhythm fit was refused — the frequent case — there is no rate at all. The row
+        // When the rhythm fit was refused — the frequent case — there is no rate to show. The row
         // stays, with a dash and an unknown state: it is the same convention as the largest gap row
         // above, and for the same reason — a `✓` or a `✗` on an absent value asserts a check that
         // never took place.
+        //
+        // The rate is dropped because the fit was **refused**, not because `:algo` returned
+        // nothing: on five of the six refusals the column holds a finite estimate, and reading it
+        // raw put "90.0% / 20.0% ✗" here — the model's own ceiling, judged as a measurement — on a
+        // night whose rhythm row, one card up, says "not fitted". `Mapping.missRate` is the gate.
         result?.let {
-            val rate = night.missRate
+            val rate = Mapping.missRate(night)
             add(
                 Check(
                     label = text(R.string.night_detail_missed_rate),

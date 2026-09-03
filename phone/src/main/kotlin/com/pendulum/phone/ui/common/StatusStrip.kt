@@ -42,7 +42,19 @@ fun StatusStrip(
 
         is WakingState.AwaitingTransfer -> PendulumCard {
             Title(stringResource(R.string.waking_pending_title, state.date))
-            Paragraph(stringResource(R.string.waking_pending_body, state.mb, state.minutes))
+            // The size and the delay are one estimate, and it exists only once the watch has
+            // announced its chunk count. Before that — a night it has not closed — the model
+            // carries `null` for both, and the body says so in words: the formatted variant used
+            // to be filled with "0.0 MB" and "1 minutes" on exactly that morning.
+            val mb = state.mb
+            val minutes = state.minutes
+            Paragraph(
+                if (mb != null && minutes != null) {
+                    stringResource(R.string.waking_pending_body, mb, minutes)
+                } else {
+                    stringResource(R.string.waking_pending_body_unknown)
+                },
+            )
             Spacer(Modifier.height(Spacing.sm.dp))
             Button(onClick = onAction, shape = PendulumShapes.button) {
                 Text(stringResource(R.string.waking_pending_action))
@@ -138,6 +150,13 @@ private fun Title(text: String) {
 @Composable
 private fun PreviewPending() = PendulumTheme {
     StatusStrip(WakingState.AwaitingTransfer("12 March", "8.8", 4))
+}
+
+@Preview(name = "Wake-up — state 1 pending, night not closed", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)
+@Composable
+private fun PreviewPendingUnknownSize() = PendulumTheme {
+    // The watch has gone quiet without closing: no chunk count, hence no size and no delay.
+    StatusStrip(WakingState.AwaitingTransfer("12 March", null, null))
 }
 
 @Preview(name = "Wake-up — state 2 transfer", widthDp = 411, backgroundColor = 0xFF0E1116, showBackground = true)

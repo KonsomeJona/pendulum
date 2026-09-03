@@ -17,7 +17,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,23 +92,46 @@ fun EveningContextScreen(
 ) {
     val c = LocalPendulumColors.current
 
-    var leg by remember { mutableStateOf(EveningEntry.LEG_RIGHT) }
-    // Pre-filled with the reference noted during onboarding: it must be identical from one night to
-    // the next, so retyping it every evening would be both tedious and an opportunity to diverge.
-    var strap by remember { mutableStateOf(strapReference) }
-    var alone by remember { mutableStateOf(true) }
-    var medication by remember { mutableStateOf("") }
-    var coffee by remember { mutableStateOf(false) }
-    var alcohol by remember { mutableStateOf("") }
-    var exercise by remember { mutableStateOf(false) }
-    var notes by remember { mutableStateOf("") }
+    // `rememberSaveable` and not `remember`, for every field. The activity neither fixes its
+    // orientation nor declares `configChanges`, so a rotation or an unfolding recreates it, and a
+    // process killed by an incoming call at 23:00 does the same. Every field used to go back to
+    // its default — leg to "right", "alone" to true, the dose and the notes to blank — and a form
+    // retyped at that hour is retyped in a hurry or abandoned, which leaves the evening unsealed
+    // and the watch refusing to start. Same reason as the four acknowledgements of
+    // `DisclaimerPage`. All the values are strings and booleans: the Bundle takes them as they
+    // are, no `Saver` to write.
+    var leg by rememberSaveable { mutableStateOf(EveningEntry.LEG_RIGHT) }
+    // The strap field shows the reference noted during onboarding until the user touches it, and
+    // only what they typed is state — `null` as long as they have not.
+    //
+    // It used to be `remember { mutableStateOf(strapReference) }`, which freezes the parameter at
+    // the first composition. The ViewModel exposes the reference as a `StateFlow` seeded with "",
+    // whose DataStore value arrives a frame later, so the field was empty every single evening and
+    // the button greyed out with "strap missing". The user retyped the reference by hand, and one
+    // evening "hole 5" instead of "hole 4" is a night sealed for good with a different strap —
+    // exactly the divergence the pre-fill exists to prevent. Deriving the value keeps the field in
+    // step with the reference for as long as the user has not spoken, without an effect that would
+    // race the restored state after a process death.
+    var strapEdit by rememberSaveable { mutableStateOf<String?>(null) }
+    val strap = strapEdit ?: strapReference
+    var alone by rememberSaveable { mutableStateOf(true) }
+    var medication by rememberSaveable { mutableStateOf("") }
+    var coffee by rememberSaveable { mutableStateOf(false) }
+    var alcohol by rememberSaveable { mutableStateOf("") }
+    var exercise by rememberSaveable { mutableStateOf(false) }
+    var notes by rememberSaveable { mutableStateOf("") }
 
-    var confirmation by remember { mutableStateOf(false) }
+    var confirmation by rememberSaveable { mutableStateOf(false) }
 
     // The strap is the only required field: it is a hard comparability criterion, and a night
     // sealed without it will come out excluded in the morning. All the others have a defensible
     // default value.
     val complete = strap.isNotBlank()
+
+    // After normalisation the only text the alcohol field can hold that no parser reads is a lone
+    // ".". Sealing it used to record 0.0 without a word, on a row the triggers then refuse to
+    // correct — so the button carries the reason instead of letting it through.
+    val alcoholReadable = alcoholParsable(alcohol)
 
     PendulumScreen(modifier) {
         Text(stringResource(R.string.tonight_seal_title), style = PendulumType.titleL, color = c.textPrimary)
@@ -130,7 +153,7 @@ fun EveningContextScreen(
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedTextField(
                 value = strap,
-                onValueChange = { strap = it },
+                onValueChange = { strapEdit = it },
                 label = { Text(stringResource(R.string.tonight_field_strap)) },
                 supportingText = { Text(stringResource(R.string.tonight_field_strap_help), style = PendulumType.caption) },
                 singleLine = true,
@@ -147,7 +170,10 @@ fun EveningContextScreen(
             Spacer(Modifier.height(Spacing.s.dp))
             OutlinedTextField(
                 value = alcohol,
-                onValueChange = { alcohol = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                // Not a bare digit-and-dot filter: a French keyboard sends the comma, and the
+                // filter used to drop it, so "1,5" was sealed as fifteen units. See
+                // `normaliseAlcoholInput` for what is kept and what is refused.
+                onValueChange = { alcohol = normaliseAlcoholInput(it) },
                 label = { Text(stringResource(R.string.tonight_field_alcohol)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
@@ -224,6 +250,7 @@ fun EveningContextScreen(
             unavailableReason = when {
                 blocked -> stringResource(R.string.tonight_seal_locked)
                 !complete -> stringResource(R.string.tonight_field_strap_missing)
+                !alcoholReadable -> stringResource(R.string.tonight_field_alcohol_invalid)
                 else -> null
             },
             onClick = { confirmation = true },

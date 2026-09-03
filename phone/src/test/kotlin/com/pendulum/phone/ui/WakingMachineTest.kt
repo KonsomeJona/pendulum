@@ -85,8 +85,48 @@ class WakingMachineTest {
         assertThat(s).isInstanceOf(WakingState.AwaitingTransfer::class.java)
         s as WakingState.AwaitingTransfer
         assertThat(s.date).isEqualTo("12 March")
-        // 17 chunks x 1.2 MB estimated at 200 kB/s: about 102 s, rounded up to 2 minutes.
-        assertThat(s.minutes).isGreaterThan(0)
+        // 17 chunks x 1.2 MB estimated at 200 kB/s: about 102 s, rounded up to 2 minutes. The
+        // watch announced its chunk count, so both figures exist — this is the case the other
+        // state-1 test is the counterpart of.
+        assertThat(s.mb).isNotNull()
+        assertThat(s.minutes).isNotNull()
+        assertThat(s.minutes!!).isGreaterThan(0)
+    }
+
+    /**
+     * The defect this test pins down.
+     *
+     * A night the watch has gone quiet on — `STALE`, no chunk for 45 min — has no `totalChunks`:
+     * the count is announced on closing, and the session has not closed. State 1 still fired,
+     * which is right, but its two figures were computed anyway: with no total, the estimated
+     * total fell back on the bytes already received, so the remainder was zero, and the strip
+     * read "**0.0 MB to transfer** … Allow **1 minutes**" — a size that says "nothing left" and a
+     * delay that says "almost done", on the one morning where the phone knows neither. Both are
+     * now `null`, and it is the type that says so: no screen can format an estimate that does
+     * not exist.
+     */
+    @Test
+    fun `state 1 - a night the watch has not closed announces neither a size nor a delay`() {
+        val s = state(
+            facts(
+                sessionState = WakingMachine.SILENT,
+                totalChunks = null,
+                chunksReceived = 10,
+                bytesReceived = 5_000_000,
+                analysedAtMs = null,
+            ),
+        )
+        assertThat(s).isInstanceOf(WakingState.AwaitingTransfer::class.java)
+        s as WakingState.AwaitingTransfer
+        assertThat(s.mb)
+            .withFailMessage(
+                "With no `totalChunks`, state 1 formatted a size: `%s`. The estimate falls back on " +
+                    "the bytes received, so this is 0.0 MB — \"nothing left to transfer\" for a night " +
+                    "the watch has not even closed.",
+                s.mb,
+            )
+            .isNull()
+        assertThat(s.minutes).isNull()
     }
 
     @Test

@@ -19,8 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -280,19 +278,28 @@ fun InlineValue(
     }
 }
 
-/** Quality flag. This is not an alert: it is a measured property of the night. */
+/**
+ * Quality flag. This is not an alert: it is a measured property of the night.
+ *
+ * Not a Material chip component, on purpose. It used to be an `AssistChip(onClick = {})`, and an
+ * assist chip is a button: it consumed the tap and announced itself to TalkBack as an action. On
+ * the night list it sits inside a row whose whole body opens the night, so tapping "gap 12 min" —
+ * the most visible element of the row — did nothing, while tapping next to it opened the night;
+ * and a screen reader heard one row plus n buttons of which n were dead. A plain box has no
+ * click of its own: the tap falls through to the row, and the label merges into the row's
+ * announcement.
+ */
 @Composable
 fun QualityChip(label: UiText) {
     val c = LocalPendulumColors.current
-    AssistChip(
-        onClick = {},
-        label = { Text(label.resolve(), style = PendulumType.caption) },
-        shape = PendulumShapes.chip,
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = c.surfaceMuted,
-            labelColor = c.textSecondary,
-        ),
-    )
+    Box(
+        Modifier
+            .clip(PendulumShapes.chip)
+            .background(c.surfaceMuted)
+            .padding(horizontal = Spacing.sm.dp, vertical = Spacing.xs.dp),
+    ) {
+        Text(label.resolve(), style = PendulumType.caption, color = c.textSecondary)
+    }
 }
 
 /**

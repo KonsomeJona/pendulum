@@ -109,6 +109,21 @@ class ThresholdsTest {
     }
 
     @Test
+    fun `the second-rank hourly count obeys the same calibration rule`() {
+        // The hourly count line had its own resource with "95% CI" written into it, and the screen
+        // formatted it without consulting `ciCalibrated`: on four eligible nights the rhythm above
+        // said "not a calibrated 95% interval" and this line promised one, on the figure the
+        // physician reads. The rendered forms are checked, as for the headline.
+        val uncalibrated = Resources.resolve(
+            text(R.string.trend_count_second_rank_uncalibrated, 18, 11, 27, 4),
+        )
+        assertThat(uncalibrated).doesNotContain("95% CI")
+        assertThat(uncalibrated).contains("not a calibrated")
+        assertThat(Resources.resolve(text(R.string.trend_count_second_rank, 18, 11, 27, 6)))
+            .contains("95% CI")
+    }
+
+    @Test
     fun `the reason for the labelling cites the measurement`() {
         val note = Resources.read(R.string.trend_interval_uncalibrated_note)
         assertThat(note).contains("75%")
@@ -215,6 +230,22 @@ class ThresholdsTest {
         // already said "the lower bound": the screen was therefore showing a negative number under
         // a note promising "the value the index would take".
         assertThat(Resources.resolve(b.lines[6].value)).startsWith("16.3")
+    }
+
+    @Test
+    fun `a refused fit leaves the missed-rate row on a dash, whatever the column holds`() {
+        // `MISS_RATE_SATURATED`: the fit is refused and the column holds 0.90 — the ceiling of the
+        // model, not a measurement. The block read the column raw and printed "90.0%" in the one
+        // place meant to make the figure verifiable.
+        val refused = ComputationPath.of(
+            n = night().copy(rhythmValid = false, missRate = 0.90),
+            result = result(),
+            recordedDurationMin = 461.0,
+            movementsKept = 96,
+            rule = text(R.string.settings_rule_aasm),
+            sleepSource = text("Samsung Health"),
+        )!!
+        assertThat(Resources.resolve(refused.lines[5].value)).isEqualTo(Mapping.DASH)
     }
 
     @Test

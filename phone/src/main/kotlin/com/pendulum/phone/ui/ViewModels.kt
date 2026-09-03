@@ -124,6 +124,7 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
     ): TrendUiState {
         val r = rhythm
         val c = count
+        val periodicity = Mapping.periodicityAggregate(aggregatableNights)
 
         // The waking status strip: a pure function, fed by the facts the repository has read. It
         // was wired onto `WakingState.None`, so the strip was never rendered and the five states
@@ -158,17 +159,28 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             // The position sentence applies to the **hourly count** and to it alone: the
             // fundamental rhythm has no published threshold transposable to an ankle measurement.
             position = Aggregate.position(c.ciLow, c.ciHigh, c.nights),
-            qualifiedPeriodicity = Aggregate.qualifyPeriodicity(medianPeriodicity, r.nights),
-            missRate = medianMissRate,
+            // Both quality medians go through `Mapping.aggregate`, like the rhythm and the count:
+            // it is the only place the three-night minimum is applied and the only one that returns
+            // the interval and the `n`. `TrendState.medianPeriodicity` / `medianMissRate` are
+            // hand-rolled without either, and the qualifier was gated on `r.nights` — the accepted
+            // rhythm fits — and not on the nights whose index is valid.
+            qualifiedPeriodicity = Aggregate.qualifyPeriodicity(
+                periodicity?.median,
+                periodicity?.nights ?: 0,
+            ),
+            missRate = Mapping.missRateAggregate(aggregatableNights),
             chart = trendChart(r),
             recordedNights = recordedNights,
             eligibleNights = eligibleNights,
             excludedNights = excludedNights,
             rule = text(R.string.settings_rule_aasm),
             mask = text(R.string.settings_health_connect),
-            // `mapNotNull`: a night without a denominator does not carry this rate, and including
-            // it as zero would lower the average by that much. `null` when none is left.
-            plmw = aggregatableNights.mapNotNull { it.plmiSpt }.takeIf { it.isNotEmpty() }?.average(),
+            // A dash, until the `comparable_night` view carries `plmw`. This line used to be the
+            // arithmetic mean of `plmiSpt` — PLMS per hour of sleep period, a different quantity,
+            // one that grows with *sleep* movements — shown under "Movements while awake": 7/h on a
+            // night whose measured PLMW was 3/h. The view exposes `plmiSpt` and not `plmw`, so the
+            // right figure cannot be read from here; the wrong one is not shown in its place.
+            plmw = null,
             waking = waking,
             wakingSession = wakingFacts?.sessionHex,
             customProfile = customProfile,

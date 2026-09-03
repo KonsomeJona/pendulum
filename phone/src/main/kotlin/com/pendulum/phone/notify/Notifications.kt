@@ -15,7 +15,7 @@ import com.pendulum.phone.R
 import com.pendulum.phone.ui.MainActivity
 
 /**
- * The phone's notifications. There are two of them, and not one more.
+ * The phone's only notification.
  *
  * ### Why a notification rather than opening the app directly
  *
@@ -24,12 +24,19 @@ import com.pendulum.phone.ui.MainActivity
  * background has been blocked since Android 10, silently. The user's tap on a notification is, by
  * contrast, an explicit and reliable exemption.
  *
- * ### What they never say
+ * ### What it never says
  *
- * **No figure.** The morning notification announces that a night has been analysed and how many
- * nights are available, never an index. Guard rail 2 masks the result at waking and journals its
- * unveiling: a notification that carried the value would be an unveiling with no trace, that is,
- * the complete circumvention of the guard rail through a side channel.
+ * **No figure.** Nothing posted here carries a result, and nothing is posted at waking at all.
+ * Guard rail 2 masks the result at waking and journals its unveiling: a notification that carried
+ * the value would be an unveiling with no trace, that is, the complete circumvention of the guard
+ * rail through a side channel. A waking notification announcing only "a night has been analysed"
+ * would be defensible on that count — but it does not exist, and until 4 September 2026 this
+ * KDoc said there were two notifications and described it as if it did. The onboarding step, the
+ * README and `docs/06-interface.md` repeated the promise, so a first-night user granted
+ * `POST_NOTIFICATIONS` for a morning notification that never came, and did not open the app —
+ * which is also the gesture that fires the opportunistic Health Connect read. Do not describe a
+ * notification here before something posts it: `AnalyzeWorker` and `RescoreWorker` post nothing,
+ * and the single call site of this object is `PendulumListenerService`, in the evening.
  */
 object Notifications {
 

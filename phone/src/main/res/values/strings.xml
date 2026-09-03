@@ -408,6 +408,7 @@
     <string name="tonight_field_coffee">Coffee after 16:00</string>
     <string name="tonight_field_exercise">Unusual exercise today</string>
     <string name="tonight_field_alcohol">Alcohol, units</string>
+    <string name="tonight_field_alcohol_invalid">The number of units cannot be read. Enter a number, for example 1.5.</string>
 
     <string name="tonight_field_dose">Dose taken this evening</string>
     <string name="tonight_field_dose_help">Free text, kept as typed. A structured field would need the list of molecules, their units and their equivalences; a structured field that is half right is worth less than a line a physician reads for themselves.</string>
@@ -461,6 +462,14 @@
     <string name="waking_pending_title">Night of %1$s recorded on the watch</string>
     <!-- %1$s: megabytes to transfer. %2$d: minutes to allow for. -->
     <string name="waking_pending_body">%1$s MB to transfer. The transfer starts when the watch is on its charger and within Bluetooth range. Allow %2$d minutes.</string>
+    <!--
+      The same state when the watch has not closed the night (no chunk for 45 min, session
+      `STALE`): it announces its chunk count on closing, so there is no size and no delay to
+      estimate from. This body used to be the one above filled with "0.0 MB" and "1 minutes" —
+      "nothing left" and "almost done" on a night the phone knows nothing about. No figure at
+      all is the only honest sentence here.
+    -->
+    <string name="waking_pending_body_unknown">The watch has not closed the night yet, so the amount to transfer is not known. The transfer starts when the watch is on its charger and within Bluetooth range.</string>
     <string name="waking_pending_action">Transfer now</string>
 
     <!-- %1$s received out of %2$s in total, in megabytes. -->
@@ -526,6 +535,17 @@
       doubled because the string goes through `String.format`.
     -->
     <string name="trend_count_second_rank">Hourly count: %1$d/h · 95%% CI %2$d–%3$d · %4$d nights</string>
+    <!--
+      The same line below six nights, where the interval is not a 95% one and must not say so —
+      the rule of `trend_interval_uncalibrated`, applied to the second-rank figure.
+
+      This line was the last one still writing "95% CI" unconditionally. `MetricHeadline` branches
+      on `Result.ciCalibrated` for the rhythm and the report branches for both, so on four eligible
+      nights the screen read "not a calibrated 95% interval" on the rhythm and, two lines down,
+      "95% CI 11–27" on the hourly count — the figure the physician reads — while the ceiling of
+      any bootstrap interval on four nights is 87.5% (`Aggregate.maxBootstrapCoverage`).
+    -->
+    <string name="trend_count_second_rank_uncalibrated">Hourly count: %1$d/h · interval %2$d–%3$d · %4$d nights · not a calibrated 95%% interval</string>
     <string name="trend_count_note">The hourly count appears here and in the report for the physician, because that is what a sleep specialist reads. It is not the quantity Pendulum follows from one night to the next: it varies twelve times as much.</string>
 
     <!--
@@ -545,6 +565,13 @@
     <string name="trend_movements_awake">Movements while awake</string>
     <string name="trend_periodicity">Periodicity</string>
     <string name="trend_missed_rate">Estimated missed rate</string>
+    <!--
+      The value of the missed rate line: median, interval, n — P2 on one line, like every other
+      aggregate. It used to be the bare median, with no `n` and no interval, computed on as little
+      as one night; "interval" and not "95% CI", because below six nights it is not one.
+      %1$d: the median, in percent. %2$d–%3$d: the interval. %4$d: the n. %5$s: its noun.
+    -->
+    <string name="trend_missed_rate_value">%1$d%% · interval %2$d–%3$d%% · %4$d %5$s</string>
     <!--
       The note on the missed rate. It says where the figure comes from — a mixture model on the
       harmonics, so an estimate and not a count — and what a jump from one night to the next
@@ -1187,6 +1214,15 @@
     -->
     <string name="trend_nights_noun_eligible">eligible nights</string>
     <string name="trend_nights_noun_fitted_rhythm">nights with an identified rhythm</string>
+    <!--
+      The nouns of the two quality medians. The miss rate exists only on an accepted fit, so its
+      `n` is neither the eligible nights nor the identified rhythms of a bootstrap on another
+      column; the periodicity index counts the nights `:algo` validated it on.
+    -->
+    <string name="trend_nights_noun_measured_rate">nights with a measured miss rate</string>
+    <string name="trend_nights_noun_valid_periodicity">nights with a valid periodicity index</string>
+    <!-- The unit of a dimensionless aggregate (a rate, an index): nothing after the figure. -->
+    <string name="trend_unit_none"></string>
     <string name="trend_interval_uncalibrated_note" formatted="false">Below six nights this interval is not a 95% interval, and Pendulum does not label it as one. Simulated on 10,000 draws, it holds the true value 75% of the time on three nights and 88% on four, where the label promises 95%.\n\nThe cause is arithmetic rather than a fault. The interval is built by resampling the nights you recorded, so it can never reach past your lowest and your highest night; with three nights, those two bounds fall on either side of the true value only three times in four. No variant of the method escapes that, so Pendulum names the interval for what it is instead of widening it by an invented amount.</string>
 
     <!--
@@ -1316,6 +1352,18 @@
     <string name="nights_reason_too_short">under 4 h analysable</string>
     <string name="nights_reason_dst_night">clock change during the night</string>
     <string name="nights_reason_default">not comparable</string>
+
+    <!--
+      Exclusion reasons of the second kind: translation of the `PublicationGate` values of `:algo`,
+      for a night whose denominator came from Health Connect and whose gate is not `FULL`. Such a
+      night used to read "provisional" — the state of a night waiting for its hypnogram — for
+      good: the hypnogram was there, the gate was the analysis's final word, and nothing was ever
+      going to recompute it. It is out of the trend, and the reason says why. The thresholds are
+      those of `PlmiConfig`: 3 h of analysable sleep for any hourly count, 4 h for the trend.
+    -->
+    <string name="nights_reason_gate_truncated">recording cut short or under 4 h of sleep: kept out of the trend</string>
+    <string name="nights_reason_gate_no_plmi">under 3 h of sleep: no hourly count</string>
+    <string name="nights_reason_gate_default">kept out of the trend by the analysis</string>
 
     <!--
       The quality chips of a night. Short by necessity — at most three fit on one list row — and

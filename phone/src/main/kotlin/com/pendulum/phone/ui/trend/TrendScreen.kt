@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import com.pendulum.phone.R
 import com.pendulum.phone.ui.text.text
 import com.pendulum.phone.ui.model.PendulumError
+import com.pendulum.phone.ui.chart.DAY_FORMAT
 import com.pendulum.phone.ui.chart.PointState
 import com.pendulum.phone.ui.chart.TrendChart
 import com.pendulum.phone.ui.common.CustomProfileBanner
@@ -49,6 +50,8 @@ import com.pendulum.phone.ui.theme.LocalPendulumColors
 import com.pendulum.phone.ui.theme.PendulumTheme
 import com.pendulum.phone.ui.theme.PendulumType
 import com.pendulum.phone.ui.theme.Spacing
+import java.time.Instant
+import java.time.ZoneId
 
 /**
  * The Trend screen: the start destination, and the first screen designed for this product.
@@ -161,7 +164,11 @@ fun TrendScreen(
                         qualifier = state.qualifiedPeriodicity,
                     )
 
-                    if (!state.rhythm.ciCalibrated) {
+                    // Both aggregates, not only the rhythm: the two `n` do not count the same
+                    // nights (every eligible night for the count, only the accepted fits for the
+                    // rhythm), so one can be calibrated while the other is not, and the note must
+                    // stand as soon as either interval on this card is not a 95% one.
+                    if (!state.rhythm.ciCalibrated || !state.count.ciCalibrated) {
                         // What the interval really is below six nights, with the measurement that
                         // says so. A badly calibrated interval displayed without reservation would
                         // be the most embarrassing defect in this product — it is the interval
@@ -177,9 +184,16 @@ fun TrendScreen(
 
                     // Second rank: the hourly count. Same P2 rule — value, interval and n on the
                     // same line — but at body text size.
+                    //
+                    // And the same calibration rule as the headline: `ciCalibrated` is read here
+                    // too. It was not, and the resource carried "95% CI" in its text — so on four
+                    // eligible nights, the rhythm above said "not a calibrated 95% interval" and
+                    // this line, two below, promised a 95% interval on a figure whose maximum
+                    // coverage is 87.5%. The report already branched; the screen contradicted it.
                     Text(
                         stringResource(
-                            R.string.trend_count_second_rank,
+                            if (state.count.ciCalibrated) R.string.trend_count_second_rank
+                            else R.string.trend_count_second_rank_uncalibrated,
                             Math.round(state.count.median).toInt(),
                             Math.round(state.count.ciLow).toInt(),
                             Math.round(state.count.ciHigh).toInt(),
@@ -246,9 +260,21 @@ fun TrendScreen(
                         state.qualifiedPeriodicity?.resolve() ?: "—",
                         note = stringResource(R.string.trend_periodicity_note),
                     )
+                    // P2 on this line too: median, interval, n. It used to be the bare median, a
+                    // "median" of one night when only one carried a rate, on a card that says two
+                    // lines up that nothing is aggregated below three nights.
                     InlineValue(
                         stringResource(R.string.trend_missed_rate),
-                        state.missRate?.let { "${Math.round(it * 100)}%" } ?: Mapping.DASH,
+                        state.missRate?.let {
+                            stringResource(
+                                R.string.trend_missed_rate_value,
+                                Math.round(it.median * 100).toInt(),
+                                Math.round(it.ciLow * 100).toInt(),
+                                Math.round(it.ciHigh * 100).toInt(),
+                                it.nights,
+                                stringResource(it.quantity.nightsNoun),
+                            )
+                        } ?: Mapping.DASH,
                         note = stringResource(R.string.trend_missed_rate_note),
                     )
                 }
@@ -294,7 +320,7 @@ fun TrendScreen(
             ),
             rows = state.chart.points.map {
                 listOf(
-                    formatShortDay(it.dateMs),
+                    formatShortDay(it.dateMs, state.chart.zoneId),
                     "${Math.round(it.value)} s",
                     stringResource(readableState(it.state)),
                 )
@@ -408,18 +434,24 @@ private fun readableState(state: PointState): Int = when (state) {
     PointState.EXCLUDED -> R.string.trend_table_state_excluded
 }
 
-private fun formatShortDay(ms: Long): String {
-    val days = ms / 86_400_000L
-    val z = days + 719468
-    val era = (if (z >= 0) z else z - 146096) / 146097
-    val doe = z - era * 146097
-    val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
-    val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
-    val mp = (5 * doy + 2) / 153
-    val d = doy - (153 * mp + 2) / 5 + 1
-    val month = if (mp < 10) mp + 3 else mp - 9
-    return "%02d/%02d".format(d, month)
-}
+/**
+ * The date of a night in the values table, **in the time zone where it was lived**.
+ *
+ * It used to divide the epoch by 86 400 000 and run a civil calendar on the quotient — that is, to
+ * date the night in UTC — while the axis ticks are labelled in `spec.zoneId` (see `calendarTicks`,
+ * whose KDoc names this very conversion as the defect it corrects). The correction had not been
+ * carried over to the table. A night opened at 00:30 in Tokyo was therefore written "13/03" on the
+ * axis and "12/03" one finger-width below, in the view that the sheet declares to be the accessible
+ * alternative and the exact-figure mode; two nights opened either side of local midnight collapsed
+ * onto the same date, and whoever copied the table for the physician got a night off by a day.
+ *
+ * The formatter is the axis's own, so the two cannot diverge again. Same fallback as
+ * `calendarTicks` on an unknown zone: the system's, never a crash on the trend screen.
+ */
+internal fun formatShortDay(ms: Long, zoneId: String): String =
+    Instant.ofEpochMilli(ms)
+        .atZone(runCatching { ZoneId.of(zoneId) }.getOrDefault(ZoneId.systemDefault()))
+        .format(DAY_FORMAT)
 
 // -----------------------------------------------------------------------------------------
 // Previews

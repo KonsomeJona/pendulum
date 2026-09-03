@@ -504,6 +504,55 @@ class P1GateTest {
     }
 
     @Test
+    fun `a second session on an evening does not break the run`() {
+        val zone = ZoneId.of("Europe/Paris")
+        fun at(day: Int, hour: Int, minute: Int) = ZonedDateTime
+            .of(2026, 3, day, hour, minute, 0, 0, zone).toInstant().toEpochMilli()
+        // The 11th carries two compliant recordings; it is still one evening. The loop used to
+        // treat the second as a break: not "day + 1", so it fell to the branch that restarts the
+        // run from that session, and three good evenings read "longest streak 2".
+        val c = P1Gate.campaign(
+            listOf(
+                P1Gate.of(night(startMs = at(12, 23, 14), coverage = 1.0)),
+                P1Gate.of(night(startMs = at(11, 23, 20), coverage = 1.0)),
+                P1Gate.of(night(startMs = at(11, 23, 14), coverage = 1.0)),
+                P1Gate.of(night(startMs = at(10, 23, 14), coverage = 1.0)),
+            )
+        )
+        assertThat(c.longestStreak).isEqualTo(3)
+        assertThat(c.crossed).isTrue()
+        assertThat(c.streakStart).isEqualTo("10 March")
+        assertThat(c.streakEnd).isEqualTo("12 March")
+    }
+
+    @Test
+    fun `a false start does not erase the night that followed it`() {
+        val zone = ZoneId.of("Europe/Paris")
+        fun at(day: Int, hour: Int, minute: Int) = ZonedDateTime
+            .of(2026, 3, day, hour, minute, 0, 0, zone).toInstant().toEpochMilli()
+        // Bedtime on the 12th: start, stop after a minute, start again. The aborted session is
+        // never analysed, so its coverage is unknown and its verdict undetermined — and an
+        // undetermined verdict used to empty the run. Four consecutive compliant evenings then
+        // read "longest streak 2" and the blocking milestone "not crossed", because of a minute
+        // nobody counts as a night — or "3" with the two sessions of the 12th the other way round,
+        // since the sort is by evening alone and the input order decided what a duplicate did.
+        val c = P1Gate.campaign(
+            listOf(
+                P1Gate.of(night(startMs = at(13, 23, 14), coverage = 1.0)),
+                P1Gate.of(night(startMs = at(12, 23, 5), analysed = false)),
+                P1Gate.of(night(startMs = at(12, 23, 14), coverage = 1.0)),
+                P1Gate.of(night(startMs = at(11, 23, 14), coverage = 1.0)),
+                P1Gate.of(night(startMs = at(10, 23, 14), coverage = 1.0)),
+            )
+        )
+        // The sessions are still counted as examined; only the run is counted over evenings.
+        assertThat(c.nightsExamined).isEqualTo(5)
+        assertThat(c.compliantNights).isEqualTo(4)
+        assertThat(c.longestStreak).isEqualTo(4)
+        assertThat(c.crossed).isTrue()
+    }
+
+    @Test
     fun `an empty campaign does not cross the gate`() {
         val c = P1Gate.campaign(emptyList())
         assertThat(c.longestStreak).isZero()

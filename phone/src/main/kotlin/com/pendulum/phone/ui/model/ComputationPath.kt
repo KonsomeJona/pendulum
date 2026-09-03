@@ -121,11 +121,13 @@ object ComputationPath {
             // at the same number twice.
             //
             // A dash when the rhythm fit was refused: there is then no rate, and "0.0%" would read
-            // as a deconvolution that missed nothing.
+            // as a deconvolution that missed nothing. Through `Mapping.missRate`, not the column:
+            // a refused fit leaves a finite `p` in the column, and this row printed it — "90.0%",
+            // the saturation ceiling — in the one block meant to make the figure verifiable.
             add(
                 Line(
                     text(R.string.night_why_missed_rate),
-                    text(n.missRate?.let { Mapping.percent(it) } ?: Mapping.DASH),
+                    text(Mapping.missRate(n)?.let { Mapping.percent(it) } ?: Mapping.DASH),
                 ),
             )
 

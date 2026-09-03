@@ -96,10 +96,10 @@ class MappingTest {
     }
 
     @Test
-    @DisplayName("a comparable night whose gate is not full is provisional, not excluded")
+    @DisplayName("a comparable night scored on the accelerometer mask is provisional, not excluded")
     fun `provisional night`() {
         val ui = Mapping.nightUi(
-            night("a", gate = "NO_PLMI"),
+            night("a", gate = "TRUNCATED_NO_TREND", maskSource = Mapping.ACCEL_MASK),
             endWallMs = null,
             sleepSource = text("Oura"),
         )
@@ -110,6 +110,64 @@ class MappingTest {
         // case at waking read as a breakage.
         assertThat(ui.state).isEqualTo(NightState.PROVISIONAL)
         assertThat(ui.reason).isNull()
+    }
+
+    /**
+     * The defect this test pins down.
+     *
+     * "Provisional" is the state of a night **waiting for its hypnogram**, and every comparable
+     * night whose gate was not `FULL` got it — the row's `maskSource` was never consulted. On a
+     * Health Connect row the hypnogram has arrived: the gate is the analysis's final word on that
+     * denominator, and nothing will ever recompute it. Such a night — cut short at 3 h 40, say,
+     * `TRUNCATED_NO_TREND` — read "◐ provisional" with no reason, on the list, on the chart (as an
+     * accelerometer-masked point, which it was not) and in the report, for the rest of the
+     * campaign. It is out of the trend for good, and that is what the screen has to say.
+     */
+    @Test
+    @DisplayName("a Health Connect night whose gate is not full is excluded, with the gate as its reason")
+    fun `gated night with a hypnogram`() {
+        val truncated = Mapping.nightUi(
+            night("a", gate = "TRUNCATED_NO_TREND", maskSource = "HEALTH_CONNECT"),
+            endWallMs = null,
+            sleepSource = text("Oura"),
+        )
+        assertThat(truncated.state)
+            .withFailMessage(
+                "A Health Connect night gated `TRUNCATED_NO_TREND` reads %s. Its hypnogram is " +
+                    "there and nothing will recompute it: \"provisional\" is a promise the " +
+                    "application cannot keep, and it kept it on screen for the whole campaign.",
+                truncated.state,
+            )
+            .isEqualTo(NightState.EXCLUDED)
+        assertThat(truncated.reason).isEqualTo(text(R.string.nights_reason_gate_truncated))
+
+        val noPlmi = Mapping.nightUi(
+            night("b", gate = "NO_PLMI", maskSource = "HEALTH_CONNECT"),
+            endWallMs = null,
+            sleepSource = text("Oura"),
+        )
+        assertThat(noPlmi.state).isEqualTo(NightState.EXCLUDED)
+        assertThat(noPlmi.reason).isEqualTo(text(R.string.nights_reason_gate_no_plmi))
+    }
+
+    @Test
+    @DisplayName("a night out of the comparison keeps that reason, whatever its gate says")
+    fun `comparability reason first`() {
+        // The most structural reason wins, as in `ComparabilityRule.evaluate`: a night on the
+        // wrong leg is not "cut short", even when it also is. Announcing the gate would send the
+        // user checking the recording when the setup was the problem.
+        val ui = Mapping.nightUi(
+            night(
+                "a",
+                gate = "TRUNCATED_NO_TREND",
+                comparable = false,
+                exclusionReason = ComparabilityRule.LEG_CHANGED,
+            ),
+            endWallMs = null,
+            sleepSource = text("Oura"),
+        )
+        assertThat(ui.state).isEqualTo(NightState.EXCLUDED)
+        assertThat(ui.reason).isEqualTo(text(R.string.nights_reason_leg_changed))
     }
 
     @Test
@@ -215,6 +273,68 @@ class MappingTest {
     fun `no flag without a reason`() {
         val flags = Mapping.flags(night("a"), gapCount = 0, gapTotalMs = 0, batteryPctLast = 62)
         assertThat(flags).isEmpty()
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The miss rate: read next to its rhythm, never without it
+    // -------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a refused fit leaves no miss rate to show, whatever the column holds")
+    fun `refused fit, no miss rate`() {
+        // `MISS_RATE_SATURATED` is the case that exposed it: the fit is refused and the column
+        // holds 0.90 — `maxMissRate`, the ceiling of the model, not a measurement. Only
+        // `TOO_FEW_INTERVALS` leaves `NULL`; the five other refusals leave a finite `p`.
+        assertThat(Mapping.missRate(night("a", rhythmValid = false, missRate = 0.90))).isNull()
+        assertThat(Mapping.missRate(night("a", rhythmValid = true, missRate = 0.21))).isEqualTo(0.21)
+
+        // And the flag reads through the same gate: it used to write "missed 90%" next to the
+        // rhythm dash of the same night.
+        val flags = Mapping.flags(
+            night("a", rhythmValid = false, missRate = 0.90),
+            gapCount = 0, gapTotalMs = 0, batteryPctLast = 62,
+        )
+        assertThat(flags).isEmpty()
+    }
+
+    @Test
+    @DisplayName("the miss rate median obeys the three-night minimum and counts only measured rates")
+    fun `miss rate aggregate`() {
+        // Three eligible nights, one of them with a refused fit: two measured rates, no median.
+        // Rolled by hand, this was a "median" of two values, without interval and without n.
+        assertThat(
+            Mapping.missRateAggregate(
+                listOf(
+                    night("a", missRate = 0.10),
+                    night("b", missRate = 0.30),
+                    night("c", rhythmValid = false, missRate = 0.90),
+                )
+            )
+        ).isNull()
+
+        val r = Mapping.missRateAggregate(
+            listOf(night("a", missRate = 0.10), night("b", missRate = 0.30), night("c", missRate = 0.20)),
+        )
+        assertThat(r).isNotNull
+        assertThat(r!!.quantity).isEqualTo(Aggregate.Quantity.MISS_RATE)
+        assertThat(r.median).isEqualTo(0.20)
+        assertThat(r.nights).isEqualTo(3)
+    }
+
+    @Test
+    @DisplayName("the periodicity median counts only the nights whose index is valid")
+    fun `periodicity aggregate`() {
+        assertThat(
+            Mapping.periodicityAggregate(
+                listOf(night("a"), night("b"), night("c").copy(periodicityValid = false)),
+            )
+        ).isNull()
+
+        val r = Mapping.periodicityAggregate(listOf(night("a"), night("b"), night("c")))
+        assertThat(r).isNotNull
+        assertThat(r!!.quantity).isEqualTo(Aggregate.Quantity.PERIODICITY)
+        assertThat(r.median).isEqualTo(0.58)
+        assertThat(r.nights).isEqualTo(3)
     }
 
     // -------------------------------------------------------------------------------------

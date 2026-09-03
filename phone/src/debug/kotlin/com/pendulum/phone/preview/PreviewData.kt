@@ -380,7 +380,18 @@ object PreviewData {
         count = count,
         position = Aggregate.position(count.ciLow, count.ciHigh, count.nights),
         qualifiedPeriodicity = Aggregate.qualifyPeriodicity(0.71, 6),
-        missRate = 0.31,
+        // A `Result` and no longer a bare rate: the trend line has to carry its interval and its
+        // `n`, so that a median taken over one night can no longer be shown as if it were the
+        // night-over-night measurement.
+        missRate = Aggregate.Result(
+            quantity = Aggregate.Quantity.MISS_RATE,
+            median = 0.31,
+            ciLow = 0.24,
+            ciHigh = 0.38,
+            nights = 6,
+            dispersion = 0.09,
+            mdc95 = 0.12,
+        ),
         chart = trendRhythm,
         recordedNights = 7,
         eligibleNights = 6,

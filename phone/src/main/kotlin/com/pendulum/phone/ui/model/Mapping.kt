@@ -1,7 +1,9 @@
 package com.pendulum.phone.ui.model
 
+import com.pendulum.algo.model.PublicationGate
 import com.pendulum.phone.db.ComparabilityRule
 import com.pendulum.phone.db.ComparableNight
+import com.pendulum.phone.db.PlmResultEntity
 import com.pendulum.phone.R
 import com.pendulum.phone.ui.text.UiText
 import com.pendulum.phone.ui.text.text
@@ -28,10 +30,27 @@ object Mapping {
      *
      * ### The three states, and why "provisional" is not "excluded"
      *
-     * A comparable night whose `gate` is not `FULL` was measured correctly: what is missing is its
-     * denominator, because the hypnogram has not arrived from Health Connect yet. It will be
-     * recomputed on its own. Filing it with the excluded nights would make the most frequent case
-     * at waking read as a failure.
+     * A comparable night scored on the **accelerometer mask** whose `gate` is not `FULL` was
+     * measured correctly: what is missing is its denominator, because the hypnogram has not
+     * arrived from Health Connect yet. It will be recomputed on its own. Filing it with the
+     * excluded nights would make the most frequent case at waking read as a failure.
+     *
+     * ### And why a gated Health Connect night is not "provisional"
+     *
+     * The rule used to be `gate != FULL` alone, and the row's `maskSource` was never consulted. On
+     * a `HEALTH_CONNECT` row the hypnogram **has** arrived: the gate is the analysis's final word
+     * on that denominator — `TRUNCATED_NO_TREND` for a recording cut short or under 4 h of sleep,
+     * `NO_PLMI` under 3 h — and nothing will ever recompute it. Such a night read "◐ provisional",
+     * with no reason, for the rest of the campaign: on the list, on the chart (drawn as an
+     * accelerometer-masked point, which it was not), in the report. "Provisional" was a promise
+     * the application could not keep.
+     *
+     * It is out of the trend for good, which is what `EXCLUDED` means here — `TrendDao.trendPoints`
+     * admits `comparable = 1 AND gate = 'FULL'` and nothing else, and this state mirrors exactly
+     * that predicate. The reason is the gate, translated by [gateReason]. The comparability reason
+     * keeps precedence when both apply: a night on the wrong leg is not "cut short", even when it
+     * also is, and announcing the gate would send the user checking the recording when the setup
+     * was the problem.
      *
      * @param zone the night's time zone, read from the session — and not the current zone. A night
      *   spent abroad must be shown at the time it was lived, otherwise the list says the user went
@@ -49,8 +68,19 @@ object Mapping {
 
         val state = when {
             !n.comparable -> NightState.EXCLUDED
-            n.gate != GATE_FULL -> NightState.PROVISIONAL
-            else -> NightState.ELIGIBLE
+            n.gate == GATE_FULL -> NightState.ELIGIBLE
+            // Not `FULL`, and the denominator is Pendulum's own: the hypnogram may still come.
+            n.maskSource == ACCEL_MASK -> NightState.PROVISIONAL
+            // Not `FULL`, and the hypnogram is there: the gate is final. See the KDoc above.
+            else -> NightState.EXCLUDED
+        }
+        // Non-null if and only if the state is EXCLUDED: the model demands it, and showing a
+        // reason next to a night that was kept would be incomprehensible. The comparability
+        // reason first — it is the more structural of the two.
+        val reason = when {
+            !n.comparable -> reason(n.exclusionReason)
+            state == NightState.EXCLUDED -> gateReason(n.gate)
+            else -> null
         }
 
         return NightUi(
@@ -62,9 +92,7 @@ object Mapping {
             readableSleep = readableDuration(n.analysableTstMin),
             sleepSource = sleepSource,
             state = state,
-            // Non-null if and only if the state is EXCLUDED: the model demands it, and showing a
-            // reason next to a night that was kept would be incomprehensible.
-            reason = if (state == NightState.EXCLUDED) reason(n.exclusionReason) else null,
+            reason = reason,
             rhythmSec = rhythmSec(n),
             plmiCount = n.plmi,
             flags = flags,
@@ -88,6 +116,28 @@ object Mapping {
      */
     fun rhythmSec(n: ComparableNight): Double? =
         n.fundamentalSec?.takeIf { n.rhythmValid && it.isFinite() && it > 0.0 }
+
+    /**
+     * A night's estimated miss rate, or `null` when there is nothing to show.
+     *
+     * The same gate as [rhythmSec]: `PlmResultEntity` stores the four outputs of the deconvolution
+     * as one fit, `rhythmValid` beside them, and a rate is read next to its rhythm — never without
+     * it. [rhythmSec] returns `null` on a refused fit; so does this.
+     *
+     * The interface assumed "refused ⇒ `null`", and that is false. `Rhythm` writes `NaN` — hence
+     * `NULL` — only through `emptyFit`, that is only for `TOO_FEW_INTERVALS`; the five other
+     * refusals (`NOT_CONVERGED`, `MISS_RATE_SATURATED`, `SIGMA_SATURATED`, `GEOMETRIC_MISFIT`,
+     * `DISTRIBUTION_MISFIT`) return the estimate `p`, **finite**, with `valid = false`.
+     * `docs/07-validation.md` §4.3 counts 13 such nights out of 20; on 5 of them the value is
+     * `MISS_RATE_SATURATED`, that is `maxMissRate = 0.90` itself — the ceiling constant of the
+     * model. Read raw, that ceiling was shown as a measurement: a "missed 90%" flag beside a rhythm
+     * dash in the list, "Missed rate 90.0% / 20.0% ✗" in the quality table, "90.0%" in the "why
+     * this number" block, and the median over such nights on the trend card.
+     */
+    fun missRate(n: ComparableNight): Double? = n.missRate?.takeIf { n.rhythmValid }
+
+    /** The same gate, on the result row rather than on the view. */
+    fun missRate(r: PlmResultEntity): Double? = r.missRate?.takeIf { r.rhythmValid }
 
     /**
      * `21 s`, or the mention of the refusal. **The only place where a rhythm is formatted**: the
@@ -150,6 +200,20 @@ object Mapping {
         else -> text(R.string.nights_reason_default)
     }
 
+    /**
+     * Exclusion reasons of the second kind: the translation of the `PublicationGate` values, for
+     * a night whose hypnogram arrived and whose gate is nonetheless not `FULL`. See [nightUi].
+     *
+     * The values are matched by the enum's own names and not by copied strings: `plm_result.gate`
+     * is written as `PublicationGate.name` (`PlmResultEntity`), and a renamed gate would otherwise
+     * fall silently on the default sentence.
+     */
+    fun gateReason(gate: String): UiText = when (gate) {
+        PublicationGate.TRUNCATED_NO_TREND.name -> text(R.string.nights_reason_gate_truncated)
+        PublicationGate.NO_PLMI.name -> text(R.string.nights_reason_gate_no_plmi)
+        else -> text(R.string.nights_reason_gate_default)
+    }
+
     private fun zoneOf(zoneId: String): ZoneId =
         runCatching { ZoneId.of(zoneId) }.getOrDefault(ZoneId.systemDefault())
 
@@ -175,8 +239,10 @@ object Mapping {
             add(Flag(text(R.string.nights_flag_battery, batteryPctLast)))
         }
         // No flag when the miss rate is unknown: an absent flag already says "nothing to report",
-        // and raising one on a value that does not exist would signal a measurement.
-        n.missRate?.let { rate ->
+        // and raising one on a value that does not exist would signal a measurement. "Unknown"
+        // includes a refused fit — see [missRate]: the column then still holds a finite `p`, and
+        // the flag read it and wrote "missed 90%" next to the rhythm dash of the same night.
+        missRate(n)?.let { rate ->
             if (rate > NOTABLE_MISS_RATE_THRESHOLD) {
                 add(Flag(text(R.string.nights_flag_missed, Math.round(rate * 100).toInt())))
             }
@@ -224,6 +290,32 @@ object Mapping {
             mdc95 = Aggregate.mdc95(dispersion, measured.size),
         )
     }
+
+    /**
+     * The median miss rate over the nights that carry one, with its interval and its `n`, or
+     * `null` below three such nights.
+     *
+     * Through [aggregate] and nothing else: it used to be `median(mapNotNull { it.missRate })`,
+     * which applied no minimum — a "median" of one value went to the trend card and to the campaign
+     * report — and read the column raw, so the finite `p` of a refused fit (see [missRate]) entered
+     * it. The `n` counts the nights whose fit was accepted, which is usually far fewer than the
+     * eligible nights.
+     */
+    fun missRateAggregate(nights: List<ComparableNight>): Aggregate.Result? =
+        aggregate(Aggregate.Quantity.MISS_RATE, nights) { missRate(it) }
+
+    /**
+     * The median periodicity index over the nights `:algo` validated it on, or `null` below three.
+     *
+     * Same producer, same reason. The `n` is the number of nights whose index is valid — never the
+     * number of eligible nights, and never the number of accepted rhythm fits, which is what the
+     * qualifier used to be gated on: an index over one valid night was qualified on the strength of
+     * five fitted rhythms.
+     */
+    fun periodicityAggregate(nights: List<ComparableNight>): Aggregate.Result? =
+        aggregate(Aggregate.Quantity.PERIODICITY, nights.filter { it.periodicityValid }) {
+            it.periodicityIndex
+        }
 
     /**
      * `5 h 12` — never `5.2 h` nor `312 min`.

@@ -9,6 +9,7 @@ import com.pendulum.phone.ui.chart.defaultMargins
 import com.pendulum.phone.ui.chart.findNearestPoint
 import com.pendulum.phone.ui.chart.plotArea
 import com.pendulum.phone.ui.model.Aggregate
+import com.pendulum.phone.ui.trend.formatShortDay
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
@@ -137,6 +138,19 @@ class TrendChartTest {
         assertThat(Instant.ofEpochMilli(start).atZone(ZoneId.of("UTC")).dayOfMonth).isEqualTo(13)
         assertThat(g).hasSize(1)
         assertThat(g.first().label).isEqualTo("12/03")
+    }
+
+    @Test
+    fun `the values table dates a night on the same local day as the axis`() {
+        // 00:30 on 13 March in Tokyo is 15:30 UTC on 12 March. The axis was corrected to label the
+        // tick in the night's zone; the values table — declared to be the accessible alternative
+        // and the exact-figure mode — kept dividing the epoch by 86 400 000, and wrote "12/03" one
+        // finger-width under a tick that said "13/03". Same instant, same zone, same formatter.
+        val start = bedTime("Asia/Tokyo", 13, 0, 30)
+        assertThat(Instant.ofEpochMilli(start).atZone(ZoneId.of("UTC")).dayOfMonth).isEqualTo(12)
+
+        assertThat(calendarTicks(start, start, "Asia/Tokyo").single().label).isEqualTo("13/03")
+        assertThat(formatShortDay(start, "Asia/Tokyo")).isEqualTo("13/03")
     }
 
     @Test

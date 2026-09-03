@@ -103,6 +103,20 @@ object Aggregate {
     ) {
         RHYTHM_SECONDS(R.string.trend_unit_seconds, 0, R.string.trend_nights_noun_fitted_rhythm),
         HOURLY_COUNT(R.string.trend_unit_per_hour, 0, R.string.trend_nights_noun_eligible),
+
+        /**
+         * The two quality medians of the trend card. Dimensionless, hence `trend_unit_none`.
+         *
+         * They are quantities of this enum and not two hand-rolled medians because
+         * `Mapping.aggregate` is the only producer of a [Result], hence the only place where
+         * [MIN_NIGHTS_AGGREGATE] is applied and the only one that returns the interval and the `n`
+         * P2 demands. Rolled by hand, they were computed over one night, without an interval and
+         * without an `n`, and the report printed "Median periodicity index: 0.58" — above the
+         * published RLS threshold — two lines under "Pendulum computes no aggregate below three
+         * eligible nights".
+         */
+        MISS_RATE(R.string.trend_unit_none, 2, R.string.trend_nights_noun_measured_rate),
+        PERIODICITY(R.string.trend_unit_none, 2, R.string.trend_nights_noun_valid_periodicity),
     }
 
     /**

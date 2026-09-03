@@ -213,16 +213,35 @@ class TextsTest {
     // ---------------------------------------------------------------------------------
 
     /**
+     * The empty resources that are meant to be empty, each with the one sentence that says why.
+     *
+     * Same shape as the `tolerances` map of `DurationsInventoryTest`, and for the same reason: a
+     * generated baseline would silence the check without recording a single **why**, and the next
+     * empty string — the accidental one — would slip in beside the deliberate ones unnoticed.
+     * `containsExactly` below means the list has to be maintained in both directions: an
+     * unexplained empty string fails, and so does an entry whose resource has been filled in or
+     * deleted.
+     */
+    private val DELIBERATELY_EMPTY = mapOf(
+        "trend_unit_none" to
+            "The unit of a dimensionless quantity. `Aggregate.Quantity` types its unit as a " +
+            "non-null @StringRes, so a miss rate and a periodicity index — which are ratios, and " +
+            "carry no unit at all — need a resource that renders as nothing. Writing '(none)' or " +
+            "'-' there would print a fake unit next to the figure.",
+    )
+
+    /**
      * A resource renamed on one side only does not compile; an **empty** resource compiles
      * perfectly well and makes every `doesNotContain` assertion in the module pass. This test
-     * therefore refuses empty strings, which are the only silent failure this format allows.
+     * therefore refuses empty strings, which are the only silent failure this format allows —
+     * except for the handful listed in [DELIBERATELY_EMPTY], which carry their reason.
      */
     @Test
     fun `no resource string is empty`() {
         val empty = stringsFromXml(resourceFile()!!.readText())
             .filterValues { it.isBlank() }
             .keys
-        assertThat(empty).isEmpty()
+        assertThat(empty).containsExactlyInAnyOrderElementsOf(DELIBERATELY_EMPTY.keys)
     }
 
     // ---------------------------------------------------------------------------------

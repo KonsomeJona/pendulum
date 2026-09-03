@@ -178,8 +178,14 @@ internal fun calendarTicks(
     return out
 }
 
-/** `DD/MM`. The day first: it is the day that changes between two ticks. */
-private val DAY_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM", Locale.UK)
+/**
+ * `DD/MM`. The day first: it is the day that changes between two ticks.
+ *
+ * Shared with the values table of the trend screen (`formatShortDay`), which is declared to be the
+ * accessible alternative to this axis: the two must not be able to print two different dates for
+ * one night, and they did — the table kept its own UTC arithmetic after the axis was corrected.
+ */
+internal val DAY_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM", Locale.UK)
 
 /**
  * Search for the nearest point, acceptance radius 24 dp.

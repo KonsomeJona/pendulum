@@ -75,7 +75,21 @@ data class NightUi(
 sealed interface WakingState {
     data object None : WakingState
 
-    data class AwaitingTransfer(val date: String, val mb: String, val minutes: Int) : WakingState
+    /**
+     * State 1: the night is on the watch and nothing, or not everything, has come over yet.
+     *
+     * @param mb the megabytes still to transfer, formatted, or `null` when the watch has not
+     *   announced its chunk count — it does so on closing, and a session gone quiet (`STALE`) has
+     *   not closed. The estimate then has no total to start from, and the two figures used to be
+     *   computed all the same: the total fell back on the bytes already received, the remainder
+     *   came out at zero, and the strip read "0.0 MB to transfer … Allow 1 minutes" — "nothing
+     *   left" and "almost done", on the one morning where neither is known. `null` is what the
+     *   phone actually knows, and the type keeps a screen from formatting an estimate that does
+     *   not exist.
+     * @param minutes the delay to allow for, rounded up, or `null` for the same reason and in
+     *   the same cases as [mb]: the two are one estimate, never present one without the other.
+     */
+    data class AwaitingTransfer(val date: String, val mb: String?, val minutes: Int?) : WakingState
 
     data class Transfer(val receivedMb: String, val totalMb: String, val chunk: Int, val chunks: Int) : WakingState {
         /** The percentage never goes backwards: the transfer resumes where it stopped. */
@@ -292,8 +306,12 @@ sealed interface TrendUiState {
         val count: Aggregate.Result,
         val position: Aggregate.Position,
         val qualifiedPeriodicity: UiText?,
-        /** `null` when it could not be measured. See [plmw]. */
-        val missRate: Double?,
+        /**
+         * The median miss rate with its interval and its `n`, or `null` below three nights that
+         * carry one. A [Aggregate.Result] and no longer a bare `Double`: the line used to show a
+         * median of as little as one night, with nothing beside it to say so.
+         */
+        val missRate: Aggregate.Result?,
         val chart: TrendChartSpec,
         val recordedNights: Int,
         val eligibleNights: Int,

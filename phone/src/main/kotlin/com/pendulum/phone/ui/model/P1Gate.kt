@@ -155,15 +155,34 @@ object P1Gate {
     }
 
     fun campaign(verdicts: List<NightVerdict>): Campaign {
-        val sorted = verdicts.sortedBy { it.evening }
+        // One entry per evening, before the run is counted.
+        //
+        // Two sessions can attach to the same night — a false start at bedtime, stopped after a
+        // minute and started again; a nap begun after the noon rollover of `WirePaths.nightKey` —
+        // and the run is counted over evenings, not over sessions. It is collapsed here rather than
+        // inside the loop, because there a repeated evening did not merely fail to lengthen the
+        // run, as the comment promised: it fell into the `else` branch and restarted the run from
+        // that session, and a non-compliant duplicate — the aborted minute is never analysed, so
+        // its coverage is unknown — emptied it. Four consecutive compliant evenings with one false
+        // start in the middle read "longest streak 2" or "3" depending on which of the two sessions
+        // the sort left first, and the blocking milestone "not crossed" on the first of the two.
+        //
+        // The evening keeps its compliant session when it has one: a night that held, held, and
+        // the false start that framed it proves nothing about it.
+        val perEvening = verdicts
+            .groupBy { it.evening }
+            .map { (_, sameEvening) ->
+                sameEvening.firstOrNull { it.verdict == Compliance.COMPLIANT }
+                    ?: sameEvening.first()
+            }
+        val sorted = perEvening.sortedBy { it.evening }
         var current = ArrayList<NightVerdict>()
         var best = emptyList<NightVerdict>()
         for (v in sorted) {
             val previous = current.lastOrNull()
             current = when {
                 v.verdict != Compliance.COMPLIANT -> ArrayList()
-                // Exactly the day before. A skipped evening breaks the streak; a repeated evening —
-                // two sessions attached to the same night — does not lengthen it.
+                // Exactly the day before. A skipped evening breaks the streak.
                 previous != null && v.evening == previous.evening.plusDays(1) ->
                     current.apply { add(v) }
                 else -> arrayListOf(v)

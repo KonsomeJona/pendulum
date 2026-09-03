@@ -116,13 +116,23 @@ object WakingMachine {
 
         if (facts.analysedAtMs == null) {
             return when {
-                // State 1: the watch has closed, nothing has arrived yet.
-                total == null || facts.chunksReceived == 0 ->
+                // State 1: the watch has closed and nothing has arrived yet — or it has not closed
+                // at all (`STALE`, no chunk for 45 min), in which case `totalChunks` is unknown,
+                // whatever number of chunks is already here.
+                //
+                // The estimate exists only in the first case. With no total, `estimatedTotalBytes`
+                // has nothing to extrapolate from and falls back on the bytes received, so the
+                // remainder was zero and the strip read "0.0 MB to transfer … Allow 1 minutes"
+                // for a night the watch had not even closed. The two figures now stay `null`
+                // together: one estimate, present or absent as a whole.
+                total == null || facts.chunksReceived == 0 -> {
+                    val remaining = total?.let { remainingBytes(facts) }
                     WakingState.AwaitingTransfer(
                         date = facts.readableDate,
-                        mb = megabytes(remainingBytes(facts)),
-                        minutes = estimatedMinutes(remainingBytes(facts)),
+                        mb = remaining?.let { megabytes(it) },
+                        minutes = remaining?.let { estimatedMinutes(it) },
                     )
+                }
 
                 // State 2: it is arriving. The percentage never goes backwards — it is computed on
                 // the number of chunks present in the database, and a chunk already received does
