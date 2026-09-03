@@ -1,6 +1,7 @@
 package com.pendulum.format.wire
 
 import java.io.IOException
+import java.util.Locale
 
 /**
  * Wire structures of the watch -> phone transfer (CAPTURE-ARCHITECTURE.md §2.3).
@@ -95,6 +96,39 @@ object WirePaths {
      */
     const val START_REQUEST = "/pendulum/start-request"
 
+    /**
+     * Phone → watch: "everything you sent me before this instant has been erased; forget it."
+     *
+     * A `DataItem` carrying an [EraseOrder], and **not** a message like [SWEEP_REQUEST] or
+     * [START_REQUEST]. The two orders above are gestures made in front of the watch, and a
+     * message that fails when the watch is out of range is reported as such. An erasure is a
+     * different thing: it is a **state** — "the phone disowns what it received before T" — and
+     * it must reach a watch that is in a drawer, switched off, or out of range at the moment the
+     * user types the confirmation, because that is exactly the watch that still holds the most
+     * unsent chunks. Only the replicated store gives that guarantee; a message would simply be
+     * lost, and the watch would push its files back into a phone that no longer knows the night
+     * they belong to.
+     *
+     * What this repairs. "Erase everything" cancelled the work, deleted the chunk files and wiped
+     * the database, and never spoke to the Data Layer. Three things survived it, none of them
+     * visible on the screen that had just announced "0 B on disk":
+     *  - the watch's chunk items still in flight, which `pushChunks` never re-puts (it skips every
+     *    index present in the store) and which no acknowledgement ever names again — the files
+     *    behind them stayed on the watch for good, "N chunks pending" every evening;
+     *  - a night being recorded: at its close the watch re-put the session item, `insertIfAbsent`
+     *    recreated the row, the final burst was ingested, the analysis chain ran, and a night the
+     *    user had erased at 3 a.m. was on the screen at 7 a.m., truncated to its last quarter of
+     *    an hour;
+     *  - every chunk that landed in between: `onChunk` wrote the file to `filesDir` before the
+     *    row insertion failed on the missing session, so eight hours of erased accelerometry came
+     *    back on the phone's disk, unknown to the database and counted by nothing.
+     *
+     * The payload is the erasure instant, and the watch compares it with the **start** of each
+     * session it holds: a night started after the erasure is not the phone's to disown, and the
+     * order may reach the watch hours late, after such a night has begun.
+     */
+    const val ERASE = "/pendulum/erase"
+
     fun context(nightKey: String) = CONTEXT_PREFIX + nightKey
 
     fun session(sessionHex: String) = SESSION_PREFIX + sessionHex
@@ -103,8 +137,16 @@ object WirePaths {
      * The index is zero-padded to 5 digits: the lexicographic order of the paths must coincide
      * with the order of the chunks, failing which a sorted listing delivers chunk 10 before
      * chunk 2.
+     *
+     * The locale is pinned to [Locale.ROOT] because `String.format` without one localises the
+     * digits of `%d` as soon as the default locale's zero is not '0' — ar-EG, fa-IR, bn-BD,
+     * ne-NP, my-MM, on the JDK and on Android's ICU alike. Before the pin, a watch in Arabic
+     * published `/pendulum/chunk/<hex>/٠٠٠٠٧` and a phone in English listened for `.../00007`:
+     * two different strings, so the chunk was never matched and never acknowledged, and the
+     * Data Layer reported nothing, because silence is its failure mode.
      */
-    fun chunk(sessionHex: String, idx: Int) = "$CHUNK_PREFIX$sessionHex/${"%05d".format(idx)}"
+    fun chunk(sessionHex: String, idx: Int) =
+        "$CHUNK_PREFIX$sessionHex/${"%05d".format(Locale.ROOT, idx)}"
 
     fun live(sessionHex: String) = LIVE_PREFIX + sessionHex
 
@@ -131,7 +173,13 @@ object WirePaths {
     fun nightKey(nowMs: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
         val local = java.time.Instant.ofEpochMilli(nowMs).atZone(zone)
         val evening = if (local.hour < EVENING_ROLLOVER_HOUR) local.minusDays(1) else local
-        return "%04d-%02d-%02d".format(evening.year, evening.monthValue, evening.dayOfMonth)
+        // Locale.ROOT for the same reason as in `chunk`: this key is the one string the two
+        // devices must agree on, and the digits of `%d` follow the default locale. A phone in
+        // Arabic sealed `/pendulum/context/٢٠٢٦-٠٩-٠٣`, the watch looked for `.../2026-09-03`,
+        // and START stayed refused for the night with no error anywhere. Even with both devices
+        // in the same locale, `P1Gate` parses this key back with `LocalDate.parse`, which only
+        // accepts ASCII digits — so the P1 screen crashed for those users instead.
+        return "%04d-%02d-%02d".format(Locale.ROOT, evening.year, evening.monthValue, evening.dayOfMonth)
     }
 
     /** Noon. Before it we are still in the previous night; after it, in the current evening. */
@@ -182,6 +230,34 @@ enum class StopReason(val code: Int) {
 
 /** Malformed payload, or one produced by an incompatible version. */
 class WireFormatException(message: String) : IOException(message)
+
+/**
+ * `/pendulum/erase` — phone → watch, `setUrgent()`. See [WirePaths.ERASE] for why it is an item.
+ *
+ * @param erasedBeforeMs the instant of the erasure on the phone's wall clock. Every session
+ *   whose `startWallMs` is earlier is disowned: its files and its items go, and if it is still
+ *   being recorded it is stopped. A session started at or after this instant is left alone.
+ *
+ * Versioned and framed like every other structure of the protocol, and not the bare decimal
+ * string the context item carries: the watch has to **read this number back** and act on it,
+ * where the context item is only ever tested for presence. A payload that cannot be read must be
+ * refused at the first byte rather than parsed into zero — zero would disown nothing, silently.
+ */
+data class EraseOrder(val erasedBeforeMs: Long) {
+
+    fun encode(): ByteArray = WireWriter(16)
+        .u8(WireProtocol.VERSION)
+        .i64(erasedBeforeMs)
+        .toByteArray()
+
+    companion object {
+        fun decode(bytes: ByteArray): EraseOrder {
+            val r = WireReader(bytes)
+            r.version("EraseOrder")
+            return EraseOrder(erasedBeforeMs = r.i64())
+        }
+    }
+}
 
 /** Lowercase hexadecimal form of a session UUID, as it appears in the paths. */
 fun ByteArray.toSessionHex(): String {

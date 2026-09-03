@@ -104,6 +104,23 @@ object Calibration {
         val floors = ArrayList<Float>()
         for (c in clms) {
             if ((c.flags and ClmFlags.GROSS_BODY) == 0) continue
+            // Filter on the **flags**, not on `reject`: a gross body movement always carries
+            // `reject == GROSS_BODY`, which would hide everything else, and `reject` holds a single
+            // reason whose priority order can bury the blind zone behind another one. Flags
+            // accumulate, so they are the only place where both facts are readable at once.
+            //
+            //  - IN_BLIND_ZONE: inside a hole the movement channel is fed zeros (step 0), and the
+            //    step back to ~1 g of gravity at the end of the hole rings through the 0.5 Hz
+            //    high-pass at 390-550 mg on the coarse envelope. That is *larger* than a real turn
+            //    (Sicbaldi, 377 +/- 63 mg), so the artefact is classified GROSS_BODY and pulled the
+            //    night's only gain reference upwards — by an amount that depends on the number of
+            //    FIFO holes rather than on anything about the sleeper. Two nights with different
+            //    hole counts stopped being comparable, which is the one thing this standard exists
+            //    to make possible. The blind zone bounds the ringing for the *detector*; it never
+            //    protected the gain, because this loop never looked at it.
+            //  - TRUNCATED: an event clipped by a segment edge has its peak measured on a partial
+            //    event, which biases the median downwards.
+            if ((c.flags and (ClmFlags.IN_BLIND_ZONE or ClmFlags.TRUNCATED)) != 0) continue
             if (!c.peakAmpG.isNaN()) peaks.add(c.peakAmpG)
             if (!c.noiseFloorG.isNaN()) floors.add(c.noiseFloorG)
         }

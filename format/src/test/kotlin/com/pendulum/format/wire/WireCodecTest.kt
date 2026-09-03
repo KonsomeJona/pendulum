@@ -4,6 +4,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.random.Random
 
@@ -27,6 +31,29 @@ class WireCodecTest {
         val paths = listOf(2, 10, 100).map { WirePaths.chunk(sessionHex, it) }
         assertThat(paths).isSorted()
         assertThat(paths.first()).isEqualTo("/pendulum/chunk/$sessionHex/00002")
+    }
+
+    @Test
+    fun `paths and night keys stay ASCII whatever the default locale`() {
+        // `String.format` without a locale hands `%d` to `java.util.Formatter`, which localises
+        // the digits as soon as the default locale's zero is not '0'. In ar-EG, 7 is written ٧:
+        // the phone sealed `/pendulum/context/٢٠٢٦-٠٩-٠٣` while a watch left in English looked
+        // for `/pendulum/context/2026-09-03`, never found it, and refused START without a single
+        // error message — the exact silent failure the KDoc of `CONTEXT_PREFIX` warns about.
+        // With the same locale on both sides the keys matched, but `P1Gate` then did
+        // `LocalDate.parse(nightKey)` on the Arabic-Indic string and crashed the P1 screen.
+        val previous = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("ar-EG"))
+            assertThat(WirePaths.chunk(sessionHex, 7)).isEqualTo("/pendulum/chunk/$sessionHex/00007")
+            val evening = ZonedDateTime.of(2026, 9, 3, 20, 0, 0, 0, ZoneOffset.UTC)
+            val key = WirePaths.nightKey(evening.toInstant().toEpochMilli(), ZoneOffset.UTC)
+            assertThat(key).isEqualTo("2026-09-03")
+            // The consumer that crashed: `P1Gate` parses the key back into a LocalDate.
+            assertThat(LocalDate.parse(key)).isEqualTo(LocalDate.of(2026, 9, 3))
+        } finally {
+            Locale.setDefault(previous)
+        }
     }
 
     @Test
@@ -160,6 +187,31 @@ class WireCodecTest {
         assertThat(ack.isAcked(14)).isTrue()   // bit 2
         assertThat(ack.isAcked(15)).isTrue()   // bit 3
         assertThat(ack.isAcked(20)).isFalse()  // outside the bitmap
+    }
+
+    @Test
+    fun `an erase order survives a round trip`() {
+        // The instant is what the watch compares each session's start against: a session begun
+        // after it is not the phone's to disown. Off by one bit, and a night recorded after the
+        // erasure would be thrown away — or a night recorded before it kept.
+        val order = EraseOrder(erasedBeforeMs = 1_757_000_000_123L)
+        assertThat(EraseOrder.decode(order.encode())).isEqualTo(order)
+        assertThat(WirePaths.ERASE).isEqualTo("/pendulum/erase")
+    }
+
+    @Test
+    fun `a bare erase order is refused rather than read as instant zero`() {
+        // The context item carries a bare decimal string, and that is fine for an item only ever
+        // tested for presence. The erase order is read back and acted on: a payload the watch
+        // cannot understand must raise, because "instant 0" would disown nothing at all and the
+        // erasure would silently not reach the watch.
+        assertThatThrownBy { EraseOrder.decode("1757000000123".toByteArray()) }
+            .isInstanceOf(WireFormatException::class.java)
+            .hasMessageContaining("wire version")
+        val bytes = EraseOrder(1_757_000_000_123L).encode()
+        assertThatThrownBy { EraseOrder.decode(bytes.copyOf(bytes.size - 1)) }
+            .isInstanceOf(WireFormatException::class.java)
+            .hasMessageContaining("truncated")
     }
 
     // --- Decoding robustness ---

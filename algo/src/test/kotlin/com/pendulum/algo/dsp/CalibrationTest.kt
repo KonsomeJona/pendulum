@@ -73,12 +73,50 @@ class CalibrationTest {
         assertThat(cal.gainCalG).isNaN()
     }
 
-    private fun clm(peak: Float, floor: Float, gross: Boolean) = com.pendulum.algo.model.Clm(
+    /**
+     * A hole in the recording makes the movement channel step back to ~1 g at its edge, and the
+     * high-pass rings at 390-550 mg — larger than a real turn (377 +/- 63 mg). The artefact is
+     * therefore classified `GROSS_BODY` and, before this was fixed, it entered the median that
+     * defines the night's only gain reference. The gain then depended on how many FIFO holes the
+     * night happened to contain, which is exactly what makes two nights incomparable.
+     */
+    @Test
+    fun `movements measured across a blind zone stay out of the gain reference`() {
+        val real = listOf(0.360f, 0.372f, 0.377f, 0.384f, 0.396f)
+            .map { clm(peak = it, floor = 0.010f, gross = true) }
+        val ringing = listOf(0.480f, 0.510f, 0.540f, 0.550f)
+            .map { clm(peak = it, floor = 0.010f, gross = true, blind = true) }
+
+        val cal = Calibration.fromGrossBodyMovements(real + ringing)
+
+        assertThat(cal.gainCalG).isEqualTo(0.377f)
+        assertThat(cal.gainSource).isEqualTo(com.pendulum.algo.model.GainSource.GROSS_BODY)
+    }
+
+    /** A night whose only gross body movements sit in blind zones has no founded gain at all. */
+    @Test
+    fun `a night with nothing but ringing has no gain source`() {
+        val ringing = listOf(0.480f, 0.510f)
+            .map { clm(peak = it, floor = 0.010f, gross = true, blind = true) }
+
+        val cal = Calibration.fromGrossBodyMovements(ringing)
+
+        assertThat(cal.gainSource).isEqualTo(com.pendulum.algo.model.GainSource.NONE)
+        assertThat(cal.gainCalG).isNaN()
+    }
+
+    private fun clm(
+        peak: Float,
+        floor: Float,
+        gross: Boolean,
+        blind: Boolean = false,
+    ) = com.pendulum.algo.model.Clm(
         onsetIdx = 0, offsetIdx = 100, onsetMsRel = 0L, durationMs = 2000,
         peakAmpG = peak, medianAmpG = peak / 2f, noiseFloorG = floor,
         thresholdOnG = 0.08f, thresholdOffG = 0.025f,
         tiltChangeDeg = 0f, tiltExcursionDeg = 0f,
-        flags = if (gross) com.pendulum.algo.model.ClmFlags.GROSS_BODY else 0,
-        reject = null,
+        flags = (if (gross) com.pendulum.algo.model.ClmFlags.GROSS_BODY else 0) or
+            (if (blind) com.pendulum.algo.model.ClmFlags.IN_BLIND_ZONE else 0),
+        reject = if (blind) com.pendulum.algo.model.ClmRejectReason.BLIND_ZONE else null,
     )
 }

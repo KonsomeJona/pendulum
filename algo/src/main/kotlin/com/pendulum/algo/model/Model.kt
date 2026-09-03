@@ -21,6 +21,21 @@ interface SampleBlock {
     val x: FloatArray
     val y: FloatArray
     val z: FloatArray
+
+    /**
+     * Nominal rate declared by the chunk header that carried this block, in Hz; `0.0` when the
+     * producer does not know it, in which case the caller's session nominal is used instead.
+     *
+     * A session is **not** at a single rate, and treating it as one destroyed data. Auto-degradation
+     * step 3 re-registers the sensor at 25 Hz in the middle of the night
+     * (`SensorStrategy.degradedTo(3)`) and rotates the chunk, so the new rate lands in the *next*
+     * header — the watch records the change correctly. But the phone kept only the first chunk's
+     * nominal, and integrity check no. 3 then measured every post-degradation block against 50 Hz:
+     * a 50 % deviation against a 20 % tolerance, so every one of them was rejected as
+     * `IMPLAUSIBLE_RATE`. The whole point of degrading is to keep recording; the night was thrown
+     * away precisely when the watch had managed to save it.
+     */
+    val nominalHz: Double get() = 0.0
 }
 
 /** Trivial implementation, used by the synthetic generator and the adapters. */
@@ -31,11 +46,16 @@ data class SimpleBlock(
     override val x: FloatArray,
     override val y: FloatArray,
     override val z: FloatArray,
+    override val nominalHz: Double = 0.0,
 ) : SampleBlock {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is SimpleBlock) return false
+        // `nominalHz` is part of the identity: two blocks holding the same samples but recorded at
+        // different rates are not the same block, and saying otherwise would let a test that
+        // straddles an auto-degradation pass while comparing the wrong thing.
         return tFirstNs == other.tFirstNs && tLastNs == other.tLastNs && flags == other.flags &&
+            nominalHz == other.nominalHz &&
             x.contentEquals(other.x) && y.contentEquals(other.y) && z.contentEquals(other.z)
     }
 
@@ -43,6 +63,7 @@ data class SimpleBlock(
         var r = tFirstNs.hashCode()
         r = 31 * r + tLastNs.hashCode()
         r = 31 * r + flags
+        r = 31 * r + nominalHz.hashCode()
         r = 31 * r + x.contentHashCode()
         r = 31 * r + y.contentHashCode()
         r = 31 * r + z.contentHashCode()

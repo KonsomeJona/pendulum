@@ -76,14 +76,25 @@ object Integrity {
         // Collection for check no. 9: median of the norms over the static windows.
         val staticNorms = ArrayList<Double>()
 
-        // Nominal interval between two samples, used by the overlap check.
-        val nominalStepNs = if (nominalHz > 0.0) 1e9 / nominalHz else 2e7
-        val minInterBlockNs = (0.5 * nominalStepNs).toLong()
-
         var prev: SampleBlock? = null
 
         for (b in blocks) {
             var ok = true
+
+            // The nominal rate is a property of the BLOCK, not of the session. A night can change
+            // rate in flight: auto-degradation step 3 re-registers the sensor at 25 Hz and rotates
+            // the chunk, so the rate is carried by each chunk header. Measuring every block against
+            // the *first* chunk's nominal rejected the whole post-degradation half of the night as
+            // `IMPLAUSIBLE_RATE` — a 50 % deviation against a 20 % tolerance — which threw the
+            // recording away exactly when the degradation had managed to save it.
+            //
+            // `nominalHz` (the session-wide argument) remains the fallback: the synthetic
+            // generator and every block built by hand leave `b.nominalHz` at 0.
+            val nom = if (b.nominalHz > 0.0) b.nominalHz else nominalHz
+
+            // Nominal interval between two samples, used by the overlap check.
+            val nominalStepNs = if (nom > 0.0) 1e9 / nom else 2e7
+            val minInterBlockNs = (0.5 * nominalStepNs).toLong()
 
             // --- 1. Size consistency ----------------------------------------------------
             val n = b.x.size
@@ -105,7 +116,7 @@ object Integrity {
             if (ok && n >= 2) {
                 val spanNs = (b.tLastNs - b.tFirstNs).toDouble()
                 val fsBlock = if (spanNs > 0.0) (n - 1) * 1e9 / spanNs else Double.POSITIVE_INFINITY
-                if (nominalHz > 0.0 && abs(fsBlock - nominalHz) / nominalHz > cfg.maxRateDeviation) {
+                if (nom > 0.0 && abs(fsBlock - nom) / nom > cfg.maxRateDeviation) {
                     bump(IntegrityViolation.IMPLAUSIBLE_RATE)
                     ok = false
                 }

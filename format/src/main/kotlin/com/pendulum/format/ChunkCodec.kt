@@ -458,10 +458,16 @@ object ChunkReader {
         /** The telemetry points of the chunk. Ignored by default: most callers — the watch's
          *  burst, the export, the reassembly — are only interested in the signal. */
         onTelemetry: (TelemetryPoint) -> Unit = {},
+        /** The chunk header, delivered **before** the first block. The header is also returned in
+         *  [ChunkScanResult], but that only arrives once the whole chunk has been read: a caller
+         *  that must tag each block with something the header carries — the nominal rate, which
+         *  changes from one chunk to the next after an auto-degradation — cannot wait for it. */
+        onHeader: (ChunkHeader) -> Unit = {},
         onBlock: (DecodedBlock) -> Unit,
     ): ChunkScanResult {
         val sc = ByteScanner(input, BUFFER_SIZE)
         val header = readHeader(sc)
+        onHeader(header)
 
         val blockHeader = ByteArray(ChunkFormat.BLOCK_HEADER_SIZE)
         val payload = ByteArray(ChunkFormat.MAX_SAMPLES_PER_BLOCK * ChunkFormat.BYTES_PER_SAMPLE)
