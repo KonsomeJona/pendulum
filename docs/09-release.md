@@ -145,7 +145,7 @@ git push origin main --tags
 ```
 
 The tag triggers [`release.yml`](../.github/workflows/release.yml), which runs the unit tests,
-refuses to publish if anything other than the documented failure appears, builds the four signed
+refuses to publish if any test fails or if Gradle produced no report at all, builds the four signed
 artifacts, computes their hashes, and attaches everything to a GitHub release.
 
 ### Why the release job refuses to fall back to debug signing
@@ -155,10 +155,17 @@ artifact. A debug-signed APK published as a release installs and runs perfectly 
 be upgraded, because the real release key will not match. Failing loudly at build time is much
 cheaper than discovering this after people have installed it.
 
-### The one test that is allowed to fail
+### No test is allowed to fail
 
-T6, and only T6. Both workflows check that no *other* test failed, so the tolerance cannot quietly
-grow to cover a regression. It fails because of a conflict between three published specifications
-rather than a defect in the code; the analysis is in [`07-validation.md`](07-validation.md). Making
-it pass would mean raising the visibility threshold of the synthetic ground truth, which would hide
-the under-count it exists to measure.
+The project tolerated one failure by name for a long time, T6, and this section used to say so —
+"T6, and only T6" — long after the workflows had stopped doing it. That exception no longer exists:
+T6 passes since its denominator was redefined, and the under-count it excluded became a published,
+monitored quantity of its own, T22. The history is in [`07-validation.md`](07-validation.md) §4.1.
+The stale paragraph was not harmless: a contributor who saw T6 red after touching the detector and
+read here that this was the documented state would have stopped looking for the regression, and
+someone cutting a release would have expected the tag to publish over it. It does not.
+
+Both workflows now go through [`tools/ci/verifier-tests.py`](../tools/ci/verifier-tests.py), which
+fails on any red test — and also when Gradle produced **no** report at all, the case of a
+compilation error, which reading the XML reports alone would let through as a silent success. Do
+not reintroduce a named exception under another form.

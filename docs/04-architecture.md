@@ -433,7 +433,7 @@ anything that does not date an event.
 off  size  field                    type
   0     8  FILE_MAGIC "PENDCHNK"    ascii
   8     2  formatVersion            u16
- 10     2  headerSize               u16   total header length (80 in v1)
+ 10     2  headerSize               u16   total header length (80 in v1 and v2)
  12     2  nominalRateHz            u16
  14     2  fifoMaxEventCount        u16   ← write fifoReservedEventCount here (§2.2)
  16    16  sessionUuid              bytes
@@ -460,6 +460,17 @@ that only *appended* fields: it reads what it knows at fixed offsets, verifies t
 `headerSize − 2`, and ignores the rest. `formatVersion` is incremented only for an *incompatible*
 change — block layout, quantisation, or the meaning of an existing field.
 
+The format is at **`FORMAT_VERSION = 2`**. v2 adds the telemetry block of §3.4; the addition is
+additive on writing but incompatible on *reading*, which is why the version moved: a v1 reader does
+not know `TLM!`, counts it as a missing magic, resynchronises on the next signal block and returns
+`desynchronised = true` — announcing a damaged file that is perfectly sound, exactly the kind of
+false red that sends people hunting for a failure that does not exist. The reverse direction holds
+without reservation: a v1 chunk still decodes here (`ChunkCodecTest."a v1 format chunk still
+decodes"`), because the repository never deletes raw data and a rescoring on the day the algorithm
+changes has to read every night ever recorded. Until 2026-09 this section described v1 only, with
+no version number, a footer magic that did not exist in the code and no telemetry block at all —
+while `README.md` names it the only document that states the current byte layout.
+
 **Time zone.** An IANA identifier (`Europe/Paris`, up to 32 bytes) does not fit in the header
 without inflating it, and storing it per block would be absurd. The header carries only what a
 binary re-read needs — the UTC offset in minutes, i16, covering −18:00 to +18:00 — and the full IANA
@@ -484,36 +495,120 @@ The payload is `count × 6` bytes: three axes, i16 each, quantised at **1 LSB = 
 therefore covers −16 g to +15.9995 g, well beyond anything an ankle produces, at a resolution of
 0.00049 g that stays far below the noise floor of a MEMS accelerometer.
 
-Block flags: `FLAG_FIFO_BOUNDARY`, `FLAG_GAP_BEFORE`, `FLAG_OFF_BODY`, `FLAG_SATURATED`,
-`FLAG_NON_FINITE`. The last two are set by the writer and matter more than they look. A sample
+Block flags: `FLAG_FIFO_BOUNDARY` (bit 0), `FLAG_GAP_BEFORE` (1), `FLAG_OFF_BODY` (2),
+`FLAG_SATURATED` (3), `FLAG_NON_FINITE` (4), `FLAG_SENSOR_CLIPPED` (5). The last three are set by
+the writer and matter more than they look. A sample
 clipped at ±32767 LSB would otherwise be undetectable on re-read, and the clipping distractor in
 the verification phase would pass for real movement. A NaN or infinite sample is replaced by zero,
 which is indistinguishable from free fall — `FLAG_NON_FINITE` is the only trace that the
 substitution happened. Both are also counted, per sample rather than per axis, since a sample is
 unusable as soon as one of its axes was clipped or substituted.
 
+`FLAG_SENSOR_CLIPPED` marks a block where at least one sample touched the **sensor range** —
+`sensorMaxRange` from the file header, typically 78.45 m/s² (8 g) or 39.23 (4 g). It is distinct
+from `FLAG_SATURATED`, which marks the ceiling of the *format* at 16 g, and the two do not overlap:
+a sensor at 8 g clips at half of what the format can encode, so a movement can be clipped by the
+hardware without ever coming near `FLAG_SATURATED` — and until this flag existed that clipping was
+completely invisible on read-back. Past the rail the envelope of the movement is artificially flat
+at the top: the artefact looks like a genuine plateau, it underestimates the amplitude, and it is
+the amplitude that decides the detection threshold. A movement kept or rejected on a block carrying
+this flag was decided on its clipping, not on the signal. The flag localises the artefact to the
+block; the `clippedSamples` counter of the telemetry point (§3.4) gives its volume.
+
 The CRC is **CRC-16/CCITT-FALSE** (polynomial 0x1021, init 0xFFFF, no reflection, no final xor),
 chosen for a table-free implementation at negligible cost. Detecting that a block is corrupt
 matters more than the strength of the code. A separate **CRC-32 over the whole chunk file** travels
 in the transfer metadata (§4) and is what covers the transport.
 
-### 3.4 End-of-file marker — 32 bytes
+### 3.4 Telemetry block — 16-byte header, then `count` points of 48 bytes
 
 ```
 off  size  field
-  0     8  FILE_FOOTER_MAGIC "ENDPendulum!"
+  0     4  TELEMETRY_MAGIC "TLM!"
+  4     2  count       u16   number of points, 1..64 (MAX_TELEMETRY_POINTS)
+  6     2  pointSize   u16   size of one point, in bytes (48 in v2)
+  8     2  flags       u16   reserved, zero
+ 10     2  crc         u16 = crc16(header[0, 10) then payload)
+ 12     4  reserved, zero
+```
+
+Telemetry blocks are interleaved **between** signal blocks, never inside one: every block of the
+format is self-delimited and protected by its own CRC, so the interleaving costs nothing on
+read-back and any block remains skippable on its own. The writer emits one point per block rather
+than an accumulated burst, because a block is the unit of loss of the format — accumulating ten
+minutes of telemetry to write them at once would lose ten minutes where only one is lost. The
+overhead is 16 header bytes per point, about 0.09 % of a chunk.
+
+**Why telemetry travels inside the chunks rather than on a channel of its own.** It inherits the
+durability already built and already verified on real hardware: append-only writing, per-block
+CRC-16, transport CRC-32, push every 15 min, ack, deletion only after ack — there is nothing new
+to make reliable. A second transport path would be a second failure mode, and the constant lesson
+of this repository is that the Data Layer fails by silence. The throughput is negligible: one
+point per minute against fifty samples per second, ~23 KB against ~9 MB over an eight-hour night,
+so no size trade-off is displaced — least of all `WireProtocol.CHUNK_ROTATION_BYTES`, which stays
+the hard guard rail under the 100 KB ceiling of a `DataItem`.
+
+`pointSize` carries for the point the same evolution rule as `headerSize` for the file header: a
+newer writer may append fields at the tail of the point, an older reader reads what it knows at
+fixed offsets and skips the rest. A `pointSize` *smaller* than 48 is rejected, as is a `count`
+outside 1..64 — there would not be enough bytes to fill the fields, or the payload length would be
+aberrant — and the block is then counted as corrupt and the reader resynchronises. A telemetry
+block, valid or not, never moves the bounds of a damaged region: a point is not signal, so it
+cannot delimit a zone of lost signal.
+
+A point, 48 bytes, little-endian:
+
+```
+off  size  field
+  0     8  elapsedRealtimeNs     i64   the only clock a duration is computed on
+  8     8  sensorTsNs            i64   last SensorEvent.timestamp seen, 0 if none
+ 16     4  batteryChargeUah      i32   BATTERY_PROPERTY_CHARGE_COUNTER, or CHARGE_UNKNOWN
+ 20     4  maxIntervalUs         u32   worst inter-sample interval over the last window
+ 24     4  fsyncTotalUs          u32   since the previous point
+ 28     4  fsyncMaxUs            u32   since the previous point
+ 32     2  temperatureDeciC      i16   battery temperature, or TEMPERATURE_UNKNOWN
+ 34     2  measuredRateCentiHz   u16   fs actually delivered (50 Hz → 5000)
+ 36     2  jitterStdUs           u16   sd of the inter-sample intervals, saturated at 65 535
+ 38     2  clippedSamples        u16   since the previous point
+ 40     2  fsyncCount            u16   since the previous point
+ 42     1  batteryPct            u8    0..100, or BATTERY_UNKNOWN (255)
+ 43     1  offBody               u8    0 worn, 1 removed, 255 no off-body sensor
+ 44     1  charging              u8
+ 45     3  reserved, zero
+```
+
+`fsyncCount`, `fsyncTotalUs`, `fsyncMaxUs` and `clippedSamples` count **since the previous point**,
+not since the start of the night: the point carries its own dating, so a lost point costs one
+minute of attribution and nothing more, whereas cumulative counters would have required the phone
+to differentiate a series without knowing whether it has holes. The field-by-field reasoning — why
+the coulomb counter and not the percentage, why the worst interval and not the mean, why the
+temperature cross-validates the off-body signal — is the KDoc of `TelemetryPoint` in
+`ChunkFormat.kt`, which is the authority for the point's semantics.
+
+### 3.5 End-of-file marker — 32 bytes
+
+```
+off  size  field
+  0     8  FILE_FOOTER_MAGIC "ENDPEND!"
   8     4  blockCount        u32
  12     8  sampleCount       i64
  20     8  lastTimestampNs   i64
- 28     2  reserved, zero
+ 28     2  telemetryCount    u16   number of telemetry points in the chunk
  30     2  crc               u16 = crc16(footer[0, 30))
 ```
+
+The magic is `ENDPEND!` — eight ASCII bytes, the width of the field. Until 2026-09 this table
+printed `ENDPendulum!`, twelve characters in an eight-byte field, a string that appears nowhere in
+the code: a reader written from it would never find a footer, would report every chunk as
+incomplete, and the phone would never acknowledge — and therefore never delete — anything.
 
 Without this marker nothing distinguishes a complete chunk from one still being written, and the
 phone can acknowledge — and therefore cause the deletion of — a partial file. The redundant counters
 are a bonus: they quantify what was lost when a re-read finds fewer blocks than the footer declares.
+`telemetryCount` occupies the two bytes that v1 left at zero, so a v1 chunk read by a v2 reader
+announces zero telemetry points, which is exactly the truth.
 
-### 3.5 What the reader gives back
+### 3.6 What the reader gives back
 
 `ChunkReader.forEachBlock` is streaming: each decoded block is handed to a callback and forgotten.
 The materialised `read()` variant exists for tests and short files; on a whole night it would hold
@@ -531,6 +626,9 @@ result distinguishes the cases that matter:
 - `damagedRanges` — each lost region located both in the file (`fileOffset`, `byteLength`) and in
   time (`afterTimestampNs`, `beforeTimestampNs`). That pairing is what turns "3 blocks lost" into
   "30 s missing at 03:12".
+- `telemetryPointCount` and `declaredTelemetryPointCount` — the points decoded, and the number the
+  footer announced (`null` without a marker). Their difference, `lostTelemetryPoints`, is the
+  telemetry counterpart of the block counters above. Zero on a v1 chunk, which carried none.
 
 ---
 

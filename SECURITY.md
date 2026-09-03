@@ -36,8 +36,9 @@ Particularly worth reporting:
 ## What is not a vulnerability here
 
 - **That the estimate can be wrong.** It can, and the ways it can are documented at length in
-  [`docs/07-validation.md`](docs/07-validation.md), including a test that still fails. Wrong numbers
-  are a correctness problem — open a normal issue.
+  [`docs/07-validation.md`](docs/07-validation.md), including the measurements that still fall
+  short of what the product needs (§4.2 and §4.3). Wrong numbers are a correctness problem — open a
+  normal issue.
 - **That sideloading is unsafe.** It is a deliberate choice, and its consequences are in
   [`fastlane/README.md`](fastlane/README.md).
 - **That releases are signed with a self-managed key.** They are, and losing it would be a real

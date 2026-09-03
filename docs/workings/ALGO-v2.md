@@ -1240,9 +1240,9 @@ Greedy matching in chronological order, onset tolerance **1.0 s**. Justification
 
 Each test runs on ≥ 20 seeds; the threshold applies to the median, with a secondary assertion on the worst case where indicated.
 
-> **This table is the order, not the report. Do not read it as a state.** The tests
-> exist today and [`../07-validation.md`](../07-validation.md) §3 keeps the living list of them,
-> with two differences that must be known before citing a row from here.
+> **This table is the order, not the report. Do not read it as a state.** **T1 to T7 and T22 exist
+> today. T8 to T21 do not.** [`../07-validation.md`](../07-validation.md) §3 keeps the living list,
+> and three things must be known before citing a row from here.
 >
 > **T6 no longer sits on the same denominator.** It used to be measured against the whole `accelTruth`;
 > it is now measured against `accelTruth` **restricted to the events above the onset threshold**, and
@@ -1252,6 +1252,13 @@ Each test runs on ≥ 20 seeds; the threshold applies to the median, with a seco
 > would have been moving the goalposts; it is the pair that makes it a measurement.
 > [`../07-validation.md`](../07-validation.md) §4.1 is the full account, including the two
 > successive diagnoses that were themselves wrong.
+>
+> **T8 to T11 and T13 to T17 are not written.** Nothing in `algo/src/test` asserts fs invariance,
+> decimation, gaps, mechanical gain, determinism, rule divergence, ALMA, a mid-night gain jump or a
+> golden file. This paragraph used to name T12 alone, which read as a statement that the nine
+> others ran. The generator knobs they would need exist and no test calls them: `Resample.decimate`,
+> `NightSpec.fsDriftPct`, `NightSpec.truncateAtH`, `DistractorSpec.gainStep`, and the
+> `fsRealHz` / `gainMultiplier` parameters of `nominalNight` in `RegressionSupport.kt`.
 >
 > **T12 is not written.** The ±20 % sweep described here does not exist as an assertion. What exists
 > is two `@Disabled` parametric sweeps, run by hand ([`../07-validation.md`](../07-validation.md)

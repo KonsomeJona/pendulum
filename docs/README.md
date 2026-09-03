@@ -177,7 +177,7 @@ who lands there from a search engine has to be warned there, not here.
 
 | Divergence | Act on |
 |---|---|
-| `workings/ALGO-v2.md` §5.5 commissions T6 (`F1 ≥ 0.90`, index error ≤ 0.10). Its denominator was changed after measurement, T22 was added to publish the cost, and T12 was never written at all. *Flagged in place* | [`07-validation.md`](07-validation.md) §3 and §4.1 |
+| `workings/ALGO-v2.md` §5.5 commissions T6 (`F1 ≥ 0.90`, index error ≤ 0.10). Its denominator was changed after measurement, T22 was added to publish the cost, and T8 to T17 — T12 among them — were never written at all. *Flagged in place* | [`07-validation.md`](07-validation.md) §3 and §4.1 |
 | `workings/SPEC-v2.md` §5.3 states the harmonic deconvolution is "well posed even at `p = 0.39`". Measured on the model's own best case, it returns 2 valid fits out of 20. *Flagged in place* | [`07-validation.md`](07-validation.md) §4.3 |
 | `workings/UX.md` §2.6 specifies per-night parameter sliders and a per-night recompute. That is the exact artefact the third guard rail exists to prevent | [`01-overview.md`](01-overview.md) §4 |
 | `workings/UX.md` §2.2 has no evening seal; `workings/SPEC-v2.md` §1 attributes the seal gate to `workings/CAPTURE-ARCHITECTURE.md` §5, which does not contain it. The seal is specified in the numbered files only | [`06-interface.md`](06-interface.md) §2.2 |

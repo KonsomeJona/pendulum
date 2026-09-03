@@ -41,14 +41,30 @@ jobs:
       # refusal arrived some twenty minutes in; it now arrives in the first second. General rule of
       # this file: whatever can refuse must refuse early. Its outputs are only consumed by the
       # "Build signed artifacts" step, much further down.
+      #
+      # The tag comes from the `workflow_dispatch` input first, and from the ref only on a tag
+      # push. It used to be `${GITHUB_REF_NAME:-<input>}`, which reads as the same thing and is
+      # not: `GITHUB_REF_NAME` is always set, on a manual run it is the branch chosen in "Use
+      # workflow from" — `main` — so the `:-` never fell through to the input. The checkout above
+      # did use the input, so the code built was the tag's, but the version injected was `main`:
+      # `read` left `MAJOR=main`, bash evaluated `$(( main * 10000 ))` to 0, and a manual rerun of
+      # `v0.3.0` published artefacts whose Settings screen said "main" and whose `versionCode`
+      # was 0 — not installable over 0.2.0, and impossible to tie back to a figure — attached to
+      # the right tag, which is what hid it. The regex guard is there so that a hand-typed ref
+      # that is not a version (`main`, `release/1.2`) refuses in the first second instead of
+      # sailing through as `0.0.0`.
       - name: Derive the version from the tag
         id: version
         shell: bash
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
-          VERSION="${VERSION#v}"
+          VERSION="${TAG#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::'$TAG' is not a version tag (expected vMAJOR.MINOR.PATCH)."
+            exit 1
+          fi
           IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION%%-*}"
-          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
           if [ "$MINOR" -gt 99 ] || [ "$PATCH" -gt 99 ]; then
             echo "::error::minor and patch must stay below 100 for versionCode to remain monotonic."
             exit 1
@@ -66,13 +82,28 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # The store password is checked here too, and not only the keystore. A missing secret does
+      # not make the build skip signing: `hasKeystore` in the two `build.gradle.kts` used to test
+      # the variable against `null`, and a secret that does not exist reaches the runner as an
+      # **empty string** — the variable is set, it is just blank. The build then went through the
+      # full test suite and lint, some twenty minutes, before the signer refused the empty
+      # password. Same rule as the version step: whatever can refuse must refuse early.
       - name: Verify the release secrets are present
         env:
           KEYSTORE: ${{ secrets.PENDULUM_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.PENDULUM_KEYSTORE_PASSWORD }}
         run: |
+          missing=0
           if [ -z "$KEYSTORE" ]; then
             echo "::error::PENDULUM_KEYSTORE_BASE64 is not set."
-            echo "A release cannot be signed without it, and an unsigned or debug-signed"
+            missing=1
+          fi
+          if [ -z "$STORE_PASSWORD" ]; then
+            echo "::error::PENDULUM_KEYSTORE_PASSWORD is not set."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "A release cannot be signed without them, and an unsigned or debug-signed"
             echo "artifact must never be published as a release — it would install, run, and"
             echo "then be impossible to upgrade. See docs/09-release.md."
             exit 1
@@ -129,8 +160,24 @@ jobs:
       # not mean zero failures there, it means "nothing ran" — the case where publishing would be
       # the most serious, and the one that had let an untested release out. Three divergent copies
       # of this check meant three occasions to fix it in a single place.
+      #
+      # One glob per task, the seven launched by the two steps above, and not the default glob.
+      # The default guards the sum of every report on the runner, and the sum is what let a
+      # module through: with `--continue`, a `:wear` test source set that no longer compiles still
+      # leaves `:phone` writing its reports, the count stays in the hundreds, and the release
+      # went out signed with the watch never tested. The two release-variant tasks are the sharpest
+      # case — their one guard-rail test missing, the debug reports of the same module made the
+      # count for them, and nothing proved the shipped time divisor was 1 any more.
       - name: Refuse to release unless every test passed
-        run: python3 tools/ci/verifier-tests.py
+        run: |
+          python3 tools/ci/verifier-tests.py \
+            'format/build/test-results/test/*.xml' \
+            'algo/build/test-results/test/*.xml' \
+            'sleepwriter/build/test-results/testSourceADebugUnitTest/*.xml' \
+            'wear/build/test-results/testDebugUnitTest/*.xml' \
+            'phone/build/test-results/testDebugUnitTest/*.xml' \
+            'wear/build/test-results/testReleaseUnitTest/*.xml' \
+            'phone/build/test-results/testReleaseUnitTest/*.xml'
 
       # Lint too, before signing: `lintVitalRelease`, which `bundleRelease` triggers, only plays
       # the FATAL rules, and therefore let errors of ERROR severity through.
@@ -151,8 +198,10 @@ jobs:
       - name: Collect and name the artifacts
         id: collect
         run: |
-          VERSION="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
-          VERSION="${VERSION#v}"
+          # The version the build was given, not a second derivation from the ref: the two used
+          # to be computed separately, and it is the file name matching the tag that hid a build
+          # whose injected version was the branch name.
+          VERSION="${{ steps.version.outputs.name }}"
           mkdir -p artifacts
           cp phone/build/outputs/apk/release/phone-release.apk      "artifacts/pendulum-phone-${VERSION}.apk"
           cp phone/build/outputs/bundle/release/phone-release.aab   "artifacts/pendulum-phone-${VERSION}.aab"

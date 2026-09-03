@@ -11,8 +11,8 @@ name: CI
 # red any more.**
 #
 # What remains of that step, and what was never the exception, is the guard that fails when Gradle
-# has produced **no** report at all: that is the case of a compilation error, which reading the XML
-# reports alone would let through as a silent success.
+# has produced **no** report for a task: that is the case of a compilation error, which reading the
+# XML reports alone would let through as a silent success.
 
 on:
   push:
@@ -48,16 +48,28 @@ jobs:
         continue-on-error: true
         run: ./gradlew :format:test :algo:test --console=plain --continue
 
+      # The verifier below is a guard rail, and a guard rail nobody tests is the one whose
+      # regression nobody sees: the workflows read its exit code and nothing else. Standard
+      # library only, a second to run, placed before the check it protects.
+      - name: Check the verifier itself still refuses what it must
+        run: python3 tools/ci/test_verifier_tests.py
+
       # This is the step that decides, and not Gradle's exit code. It fails if a test is red, and
       # also — which matters just as much — if Gradle failed without producing a report, the case
       # where a naive `|| true` would have let a compilation error through as a success.
       #
-      # The glob is **restricted** here: `:format` and `:algo` are pure Kotlin modules, their task
-      # is called `test` and their reports come out in `build/test-results/test/`. Naming it
-      # explicitly makes this job a guard over its own scope: if `:format:test` stops running, this
-      # job says so, instead of counting another job's reports.
+      # **One glob per task**, and not one glob over both. `:format` and `:algo` are pure Kotlin
+      # modules, their task is called `test` and their reports come out in
+      # `build/test-results/test/`; a single `*/build/test-results/test/*.xml` covered both, and
+      # the verifier's guard was on the sum. With `--continue` above, a compilation error in one
+      # module lets the other write its reports, so the sum stayed non-zero and the module that
+      # never ran was invisible. Named one by one, each task has to have executed at least one
+      # test, or this job says which one did not.
       - name: Check the tests ran, and that all of them passed
-        run: python3 tools/ci/verifier-tests.py '*/build/test-results/test/*.xml'
+        run: |
+          python3 tools/ci/verifier-tests.py \
+            'format/build/test-results/test/*.xml' \
+            'algo/build/test-results/test/*.xml'
 
       - name: Upload test reports
         if: always()
@@ -140,11 +152,23 @@ jobs:
             :wear:testReleaseUnitTest :phone:testReleaseUnitTest \
             --tests '*ReleaseScaleTest' --tests '*ReleaseTimeScalingTest'
 
-      # Default glob: **all** the task variants — `testDebugUnitTest`, `testReleaseUnitTest`,
-      # flavour variants. A glob naming a single variant is exactly what left more than two hundred
-      # tests out of CI without anything saying so.
+      # One glob per task launched above, the five of them, and not the verifier's default glob.
+      # The default (`*/build/test-results/*/*.xml`) does cover every variant, and that is what it
+      # was chosen for after a glob naming a single variant had left more than two hundred tests
+      # out of CI. But it guards the **sum**: with `--continue` and `continue-on-error`, a
+      # `:wear` test source set that no longer compiles still left `:phone` and `:sleepwriter`
+      # writing their reports, the count read three hundred, no test was red, and the job was
+      # green with the watch never tested. Worse for the two release-variant tasks: their single
+      # guard-rail test missing — file deleted, or `--tests` matching nothing — was covered by the
+      # debug reports of the same module. Naming each task makes each one answer for itself.
       - name: Check the Android tests ran, and that all of them passed
-        run: python3 tools/ci/verifier-tests.py
+        run: |
+          python3 tools/ci/verifier-tests.py \
+            'wear/build/test-results/testDebugUnitTest/*.xml' \
+            'phone/build/test-results/testDebugUnitTest/*.xml' \
+            'sleepwriter/build/test-results/testSourceADebugUnitTest/*.xml' \
+            'wear/build/test-results/testReleaseUnitTest/*.xml' \
+            'phone/build/test-results/testReleaseUnitTest/*.xml'
 
       # Lint ran in **no** pipeline. `lintVitalRelease`, which `bundleRelease` triggers, only plays
       # the rules of FATAL severity: the one real lint error this project ever had — a notification

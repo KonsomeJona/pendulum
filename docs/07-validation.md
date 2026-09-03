@@ -40,7 +40,12 @@ order from "proves the least about reality" to "proves the least about the algor
 | 5 | **Internal consistency** | That the pipeline does not contradict itself: covered epochs equal decoded samples over the sampling rate; a night rebuilt from an exported bundle reproduces the index bit for bit; the incremental and definitive passes agree within a stated bound | Nothing about correctness. A consistently wrong pipeline passes |
 | 6 | **Golden files** | That a fixed recording produces the same output today as it did last month. This is the only check that survives a refactor of everything else | Nothing at all about the truth of that output — it locks in whatever was there when the file was recorded |
 
-Levels 1, 5 and 6 exist today as assertions that run on every build. Level 4 exists only as two
+Level 1 exists today as assertions that run on every build, but only for part of the table in §3:
+T1 to T7, T22 and `RhythmMeasurementTest`. Level 5 exists for the bundle round trip
+(`phone/src/test/.../export/BundleRoundTripTest.kt`) and for the integrity check
+(`algo/src/test/.../dsp/IntegrityTest.kt`); its incremental-versus-definitive half, T21, is not
+written. **Level 6 does not exist at all**: there is no golden file in this repository, and T17,
+the assertion that would compare against one, is not written. Level 4 exists only as two
 `@Disabled` sweeps run by hand (§4.1 and §4.4); its non-regression assertion, T12, is not written.
 Levels 2 and 3 are scheduled for the seven-night campaign at the end of the roadmap
 ([`01-overview.md`](01-overview.md) §5, phase P7) and have not been run — nor has the hardware gate
@@ -151,6 +156,24 @@ what happens when the detector emits more candidates than there are truth events
 Each assertion runs over at least 20 seeds; the threshold applies to the median, with a secondary
 worst-case assertion where indicated.
 
+> **Ten of the rows below are specification, not code.** Written, and running on every build:
+> **T1, T2, T3, T4, T5, T6, T7, T22** and `RhythmMeasurementTest`. **Not written: T8, T9, T10, T11,
+> T12, T13, T14, T15, T16, T17** — nor T18 to T21 in [`workings/ALGO-v2.md`](workings/ALGO-v2.md)
+> §5.5. The rows stay in this table because their numbers are cited across the repository, not
+> because they run. Until 2026-09 this document declared only T12 unwritten, which said, by
+> omission, that the nine others were tests; nothing in `algo/src/test` asserts rate invariance,
+> decimation, gap tolerance, the effect of a mechanical gain change, determinism, AASM/WASM
+> divergence over the whole chain, ALMA rejection, a mid-night gain jump, or a golden file. The
+> generator knobs those tests would need already exist and no test calls them: `Resample.decimate`,
+> `NightSpec.fsDriftPct`, `NightSpec.truncateAtH`, `DistractorSpec.gainStep`,
+> `nominalNight(fsRealHz =, gainMultiplier =)` and `analyseBlocks` in `RegressionSupport.kt`
+> (`gainMultiplier` and `truncateAtH` have one caller, the phone's debug bench `Campaign.kt`, which
+> asserts nothing). The `calibrated = false` arm of `RegressionSupport.analyse`, whose KDoc still
+> calls it "the calibration inactive arm of test T11", is used by T5 and by the sweeps — never
+> against its calibrated twin, which is the comparison T11 would make. The practical consequence:
+> a regression in the 52 → 50 Hz resampling of `Timeline` that shifted every onset by one sample,
+> or in `Calibration.fromGrossBodyMovements` that moved the index by 30 %, goes green today.
+
 | ID | Scenario | Assertion | What it protects |
 |---|---|---|---|
 | **T1** | MEMS noise alone, 30 min | **0 movements**, worst case included | The absolute floor. A detector that fires on thermal noise invents a disorder |
@@ -160,16 +183,16 @@ worst-case assertion where indicated.
 | **T5** | Isolated movements of increasing amplitude | Sensitivity **≤ 0.05** at 4× the floor, **∈ [0.35, 0.65]** at 8×, **≥ 0.95** at 16× | The slope of the detection curve. Too steep and the detector is a comparator that any gain drift shifts; too shallow and the threshold means nothing |
 | **T6** | Nominal night: true index 25/h, true periodicity 0.60, all distractors active | F1 **≥ 0.90** vs `accelTruth` **restricted to events above `Θ_on`**; relative index error **≤ 0.10** against the same denominator; periodicity error **≤ 0.05**; onset bias **≤ 300 ms**, sd **≤ 400 ms** | The end-to-end test. §4.1 is why the denominator says what it says, and T22 is the price of it |
 | **T7** | Negative night: true index 2/h | Estimated index **≤ 5/h** | The screening test. A detector producing 12/h on a healthy subject manufactures a diagnosis |
-| **T8** | Rate invariance: 50.0 / 50.3 / 52.6 Hz, same events | Index spread **≤ 2 %** | That the number is a property of the subject, not of the clock |
-| **T9** | Decimation 50 → 25 Hz | Index change **≤ 5 %** | The fallback capture mode |
-| **T10** | 2 % scattered gaps plus one 90 s gap | Index change **≤ 3 %** vs the same night without gaps | That the denominator is analysable time, not recorded time |
-| **T11** | Mechanical gain ×0.6 and ×1.8 | Calibration active: change **≤ 10 %**. Calibration inactive: change **> 40 %** — **inverted assertion** | See below |
-| **T12** | Parametric sensitivity, ±20 % on each parameter | No parameter moves the index by **> 15 %**; at ±10 % the ≷ 15/h decision flips for **no** parameter | Whether the published number survives its own tuning |
-| **T13** | Determinism | Same seed → **bit-identical** output | That every other assertion is reproducible at all |
-| **T14** | Rule divergence on non-periodic clusters | AASM index > WASM index on cluster nights; the two equal within ±2 % on a purely periodic night | That "two rule sets" are genuinely two, and not one rule with a different bound |
-| **T15** | ALMA / hypnagogic foot tremor | **0 movements** attributed to those bursts | A real clinical distractor that would inflate the index |
-| **T16** | Gain jump ×0.7 at mid-night | \|first-half index − second-half index\| **≤ 20 %** | That the noise floor adapts within a night |
-| **T17** | Golden file | 5 min of real signal plus expected JSON, exact comparison of movements and index | Regression across refactors |
+| **T8** *(not written)* | Rate invariance: 50.0 / 50.3 / 52.6 Hz, same events | Index spread **≤ 2 %** | That the number is a property of the subject, not of the clock |
+| **T9** *(not written)* | Decimation 50 → 25 Hz | Index change **≤ 5 %** | The fallback capture mode |
+| **T10** *(not written)* | 2 % scattered gaps plus one 90 s gap | Index change **≤ 3 %** vs the same night without gaps | That the denominator is analysable time, not recorded time |
+| **T11** *(not written)* | Mechanical gain ×0.6 and ×1.8 | Calibration active: change **≤ 10 %**. Calibration inactive: change **> 40 %** — **inverted assertion** | See below |
+| **T12** *(not written)* | Parametric sensitivity, ±20 % on each parameter | No parameter moves the index by **> 15 %**; at ±10 % the ≷ 15/h decision flips for **no** parameter | Whether the published number survives its own tuning |
+| **T13** *(not written)* | Determinism | Same seed → **bit-identical** output | That every other assertion is reproducible at all |
+| **T14** *(not written)* | Rule divergence on non-periodic clusters | AASM index > WASM index on cluster nights; the two equal within ±2 % on a purely periodic night | That "two rule sets" are genuinely two, and not one rule with a different bound |
+| **T15** *(not written)* | ALMA / hypnagogic foot tremor | **0 movements** attributed to those bursts | A real clinical distractor that would inflate the index |
+| **T16** *(not written)* | Gain jump ×0.7 at mid-night | \|first-half index − second-half index\| **≤ 20 %** | That the noise floor adapts within a night |
+| **T17** *(not written)* | Golden file | 5 min of real signal plus expected JSON, exact comparison of movements and index | Regression across refactors |
 | **T22** | Nominal night, threshold policy | Fraction of `accelTruth` below `Θ_on`: **0.70 ± 0.07**. Raw retained count before any series rule: **0.30 ± 0.06**. Share of the true index that survives the threshold: **0.06 ± 0.03** | The under-count itself, as a published number. It is what makes T6's restricted denominator honest rather than a moved goalpost, and the middle row is the differential diagnosis of the last one |
 | `RhythmMeasurementTest` | Rhythm under the real miss rate: nominal night, and the true train thinned at imposed rates. Unnumbered — it is not in the specification's table | Measurements, printed. Three **inverted** assertions: at most a quarter of fits are valid, the fundamental's error at least doubles between 30 % and 70 % missed, and the KS statistic *falls* as the miss rate rises | §4.3. The metric the product is actually built on, checked outside the regime the module was designed for |
 
@@ -177,8 +200,8 @@ T22 is numbered 22 and not 18 because [`workings/ALGO-v2.md`](workings/ALGO-v2.m
 to the four assertions described below, none of which is written yet. Reusing T18 would have created
 a silent collision in a table several documents quote.
 
-**One row of that table is a specification and not a test: T12 is not written.** The ±20 % sweep it
-describes does not exist as an assertion; what exists are the two parameter sweeps of §4.1 and §4.4,
+**T12 is one of the ten unwritten rows, and the one whose absence has already cost something.** The
+±20 % sweep it describes does not exist as an assertion; what exists are the two parameter sweeps of §4.1 and §4.4,
 both `@Disabled` measurements run by hand rather than guards that go red. The distinction matters
 because §4.1 uses one of those sweeps to contradict a figure that had been "awaiting T12" for the
 project's whole history.
@@ -192,10 +215,15 @@ one, and a falling one means the sub-threshold population has thinned — becaus
 amplitude law changed, or because the threshold moved — in which case today's F1 is no longer
 comparable with yesterday's. Neither direction is "better", so neither is left unguarded.
 
-### T11 is inverted, and that is the point
+### T11 would be inverted, and that is the point — it is not written
 
-T11 asserts that **without** calibration the spread must **exceed 40 %**. It is not a typo and it is
-not a lower standard: it is a test that calibration is doing something.
+> **This section describes an intended test, in the present tense, and that test does not exist.**
+> Nothing below is a measurement. It is the reasoning that a T11, once written, would have to
+> embody — kept because the reasoning is what the calibration was designed against, and because
+> this repository cited "T11 inverted" as if the check were running.
+
+T11, when it is written, must assert that **without** calibration the spread must **exceed 40 %**.
+It is not a typo and it is not a lower standard: it is a test that calibration is doing something.
 
 The reasoning is that a guard rail whose removal changes nothing is not a guard rail. If a mechanical
 gain change of ×0.6 to ×1.8 — a strap moved by one hole — did not move the index by more than 40 %
@@ -209,7 +237,7 @@ against is a project that accumulates rituals because each of them sounds pruden
 > been wired: the function was written and tested, no production caller ever invoked it, and the watch
 > screen that would have guided the user did not exist.
 >
-> T11 therefore now measures the only calibration that ships: `fromGrossBodyMovements`, which
+> T11, once written, would therefore measure the only calibration that ships: `fromGrossBodyMovements`, which
 > estimates the gain from body turns during the night. That is a **subdued** gesture rather than an
 > imposed one, so it is a weaker standard than the one this test was written against. Two consequences
 > worth stating plainly: inter-night comparability now rests on `GROSS_BODY` plus the instruction
@@ -230,7 +258,9 @@ specified in [`workings/ALGO-v2.md`](workings/ALGO-v2.md) §5.5.
 ## 4. Current status, stated plainly
 
 **148 tests in the `algo` module. 145 run and all 145 pass**; the other three are long-running
-parametric measurements kept `@Disabled` and run by hand. **T6 no longer fails — because its denominator was changed, deliberately and with the
+parametric measurements kept `@Disabled` and run by hand. Those 145 cover **8 of the 18 numbered
+rows of §3** — T1 to T7 and T22 — plus `RhythmMeasurementTest` and the module's unit tests; the
+ten other rows are specifications and are marked as such in that table. **T6 no longer fails — because its denominator was changed, deliberately and with the
 measurement in hand.** §4.1 is the whole account: what was measured, what it overturned, what was
 decided, and what is now known to be wrong elsewhere in this repository as a result.
 

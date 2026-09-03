@@ -9,18 +9,30 @@ of the guard from the `release.yml` copy that had let a release ship without its
 
 **What the guard protects.** Gradle's exit code is not enough: a CI step that neutralises it
 (`|| true`, `continue-on-error`) in order to go and read the reports lets a **compilation** error
-through — in that case Gradle writes no report at all, the failure list comes out empty, and the
-absence of a result reads as a success. Hence the non-negotiable rule below: **zero reports is a
-failure**, never a silent success.
+through — in that case Gradle writes no report **for that task**, the failure list comes out empty,
+and the absence of a result reads as a success. Hence the non-negotiable rule below: **a task that
+executed no test is a failure**, never a silent success.
 
 Usage:
     verifier-tests.py [glob ...]
 
-With no argument, the default glob covers **every** test task variant (`test`,
-`testDebugUnitTest`, `testReleaseUnitTest`, flavour variants and so on). A glob naming a single
-variant is exactly what left more than two hundred tests out of CI without anything saying so. An
-explicit glob is only passed in order to **restrict** the scope of a job that is known to produce
-only part of the reports.
+Pass **one glob per test task the job launched**, and every glob must yield at least one executed
+test. This used to be a single broad glob (`*/build/test-results/*/*.xml`) with a guard on the
+grand total, and the guard only fired when *every* module had failed: the jobs run several tasks
+under `--continue`, so a compilation error in `:wear` still let `:phone` write its three hundred
+reports, the total stayed comfortably non-zero, no test was red, and the module that never ran was
+invisible. The worst instance was the release-variant step, whose only purpose is to prove the
+time divisor is 1 in the shipped build — its report missing, the debug reports of the other module
+made the count for it, and the signed artefacts went out with nothing proving that any more.
+
+"Executed" and not merely "reported": a `@Disabled` test still appears in the XML, so a report
+whose every test was skipped counts for nothing. The skipped count is also printed, because a
+disabled guard rail hiding inside "N tests" is the same silence one size smaller.
+
+With no argument, the default glob covers every task variant at once (`test`, `testDebugUnitTest`,
+`testReleaseUnitTest`, flavour variants and so on). It exists for a manual run on a workstation,
+where it says "something ran"; it is **not** what a job should pass, since a single glob can only
+guard the sum.
 """
 
 import glob
@@ -33,28 +45,44 @@ DEFAULT_GLOB = "*/build/test-results/*/*.xml"
 def main(argv: list[str]) -> int:
     patterns = argv[1:] or [DEFAULT_GLOB]
 
-    paths = sorted({p for pattern in patterns for p in glob.glob(pattern)})
+    # Each pattern keeps its own count. Merging the matches into one set first — which is what the
+    # previous version did — is exactly what made a task with no report indistinguishable from a
+    # task whose report was counted under another pattern.
+    matched: dict[str, list[str]] = {p: sorted(glob.glob(p)) for p in patterns}
 
+    executed: dict[str, int] = {}
     total = 0
+    skipped = 0
     failures: list[str] = []
-    for path in paths:
+    for path in sorted({path for found in matched.values() for path in found}):
         root = ET.parse(path).getroot()
-        total += int(root.get("tests", 0))
+        ran = 0
         for case in root.iter("testcase"):
+            total += 1
+            if case.find("skipped") is not None:
+                skipped += 1
+                continue
+            ran += 1
             if case.find("failure") is not None or case.find("error") is not None:
                 failures.append(f"{case.get('classname')}.{case.get('name')}")
+        executed[path] = ran
 
-    # The guard. Zero reports does not mean zero failures: it means nothing ran, and that is the
-    # case where carrying on would be the most serious — it is the case of an untested release.
-    if total == 0:
-        print(f"No test report for {' '.join(patterns)} —", file=sys.stderr)
+    # The guard, per task. No executed test behind a pattern does not mean zero failures: it means
+    # nothing ran there, and that is the case where carrying on would be the most serious — it is
+    # the case of an untested release.
+    empty = [p for p, found in matched.items() if sum(executed[path] for path in found) == 0]
+    if empty:
+        print("No executed test for:", file=sys.stderr)
+        for p in empty:
+            print(f"  {p}", file=sys.stderr)
         print(
-            "compilation failed before reaching the tests, or the scope is empty.",
+            "compilation failed before reaching them, their test filter matched nothing, "
+            "or every test they hold is disabled.",
             file=sys.stderr,
         )
         return 1
 
-    print(f"{total} tests, {len(failures)} failure(s), {len(paths)} report(s)")
+    print(f"{total} tests, {skipped} skipped, {len(failures)} failure(s), {len(executed)} report(s)")
     for f in failures:
         print(f"  {f}")
 
