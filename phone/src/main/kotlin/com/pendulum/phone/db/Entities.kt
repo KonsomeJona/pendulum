@@ -229,7 +229,11 @@ data class TelemetryPointEntity(
  *   `com.pendulum.algo.model.MaskSource`.
  * @param sourcePackage `dataOrigin.packageName` when the source is Health Connect. **Without it,
  *   an abnormal night cannot be debugged**: one does not even know which application wrote the
- *   hypnogram that was used.
+ *   hypnogram that was used. It is also what the screens name as the sleep source of the night,
+ *   through `comparable_night.sourcePackage`: it is the origin of the denominator that was
+ *   **actually used** under this `paramsHash`, which neither the preference nor the last
+ *   `hc_snapshot` row is. It is written from the same snapshot row the analysis took its windows
+ *   from, so the mask and its name cannot come from two different readings.
  * @param startMsRel,endMsRel milliseconds **relative to the start of the session**, never wall
  *   clocks: an NTP resynchronisation in the middle of the night, or a daylight-saving change,
  *   would shift everything else.
@@ -300,6 +304,14 @@ data class ClmEventEntity(
  * to make the discrepancy *visible* rather than choosing in silence — it is the discrepancy
  * between the accelerometric mask and the Health Connect mask that says how far the first one can
  * be trusted.
+ *
+ * **Two rows, not four, when Health Connect returned nothing** — and that is the default case, not
+ * the exception: a user without a sleep application, and every night in the hours before its
+ * hypnogram arrives. The `ACCEL_IMMOBILITY` rows are the only ones that exist for every scored
+ * night; a reader that asks the table (or the `comparable_night` view built on it) for
+ * `HEALTH_CONNECT` alone sees nothing of such a night. The screens went through exactly such a
+ * read and lost every night without a hypnogram; they now go through `TrendDao.displayNights`,
+ * which falls back to the accelerometer row when the external one does not exist.
  *
  * @param paramsHash the hash of the parameters that produced this figure. `UNIQUE(sessionHex,
  *   paramsHash, rule, maskSource)`: two hashes coexist in the table, never in a trend — see

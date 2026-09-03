@@ -169,6 +169,32 @@ class ComparableNightPredicateTest {
     }
 
     /**
+     * Two sessions under one evening — a false start stopped after a minute and started again —
+     * and the reference subquery took *either* with a bare `LIMIT 1`: the one-minute session's
+     * `NULL` gain became the campaign's reference gain, and every night came out
+     * `CAL_GAIN_UNKNOWN`, or not, depending on the row the planner visited first. The principal
+     * session of an evening is now one definition, [PrincipalSessionSql.ORDER_BY], and this test
+     * pins that both readers use it: the view here, `NightDao.findByNightKey` through
+     * [PrincipalSessionSql.OF_EVENING]. The real proof, on SQLite, is `PrincipalSessionTest`.
+     */
+    @Test
+    fun `the reference session of an evening is the principal one, in both readers`() {
+        val order = PrincipalSessionSql.ORDER_BY
+        assertThat(order).isEqualTo("analysableMin DESC, startWallMs ASC, sessionHex ASC")
+
+        // The evening first — the reference evening is the first one sealed — then the session.
+        assertThat(ComparableNightSql.SQL).contains("ORDER BY nc.sealedAtMs ASC, $order")
+        assertThat(PrincipalSessionSql.OF_EVENING)
+            .isEqualTo("SELECT * FROM night_session WHERE nightKey = :nightKey ORDER BY $order LIMIT 1")
+
+        // No `LIMIT 1` left in the view without an order that names its row.
+        val sql = ComparableNightSql.SQL
+        val limit = sql.indexOf("LIMIT 1")
+        assertThat(limit).isPositive()
+        assertThat(sql.substring(0, limit)).contains(order)
+    }
+
+    /**
      * The view **annotates**, it does not filter: an excluded night must stay visible with its
      * reason. A `WHERE` in the view would make it disappear, and an invisible night is a night one
      * forgets to explain.

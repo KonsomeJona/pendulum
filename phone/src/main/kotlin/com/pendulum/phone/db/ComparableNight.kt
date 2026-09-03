@@ -134,6 +134,25 @@ data class ComparableNight(
     val paramsHash: String,
     val rule: String,
     val maskSource: String,
+    /**
+     * The application that published the hypnogram this row's denominator came from —
+     * `sleep_window.sourcePackage` of the windows the analysis actually used under this
+     * `paramsHash` — or `null` when the mask is Pendulum's own, or when Health Connect did not name
+     * the origin.
+     *
+     * It is in the view because the label of the sleep source was taken from **the preference**:
+     * `PendulumRepository` read `PendulumPreferences.preferredSleepSource` and wrote its app name
+     * next to every night, past and present. Two things made that wrong at once. The preference
+     * was never handed to the read (`SleepFetchWorker` passed `preferredPackage = null`), so the
+     * hypnogram came from whichever source the coverage heuristic chose — and the night was
+     * labelled with the one the user had ticked. And a preference changed today relabels every
+     * night of the campaign: a night whose denominator came from Samsung Health read "Fitness" the
+     * morning after the setting was switched, on the list, in the detail, in the quality table.
+     * The label now comes from the row, and it is `Mapping.sourceLabel` that turns it into text.
+     *
+     * `null` by default so that the many fixtures that build this row by hand need not name it.
+     */
+    val sourcePackage: String? = null,
     val gate: String,
     val independence: String,
     /**
@@ -178,6 +197,49 @@ data class ComparableNight(
 )
 
 /**
+ * **The principal session of an evening**, when an evening has more than one.
+ *
+ * Two sessions can attach to the same night key — a false start at bedtime, stopped after a
+ * minute because the strap was wrong and started again; a nap begun after the noon rollover of
+ * `WirePaths.nightKey`; a night interrupted and resumed by hand. Nothing forbade it and nothing
+ * defined which of the two *is* the night. Two readers picked one with `LIMIT 1` and no `ORDER
+ * BY`, that is to say whichever row SQLite's plan happened to visit first: the `ref` subquery of
+ * [ComparableNightSql.SQL], which takes the reference gain from it, and
+ * `NightDao.findByNightKey`, which `AnalysisRunner.baselineGainOf` and `NightExporter` read the
+ * reference session from.
+ *
+ * What that produced, on the reference evening — the first sealed one, hence the very evening a
+ * first-time user is most likely to have fumbled: with the one-minute false start chosen, its
+ * `gainCalG` — `NULL`, since calibration never saw enough signal — became the campaign's
+ * reference gain, and **every night of the campaign** came out `CAL_GAIN_UNKNOWN`. With the real
+ * night chosen, everything was fine. Which of the two happened depended on the index the query
+ * planner walked, and could change with an `ANALYZE` or a Room upgrade: a trend that empties or
+ * fills itself with no change in the sleeper.
+ *
+ * The definition: **the session with the most analysable minutes**, ties broken by the earliest
+ * start, then by the session identifier so that the order is total. Analysable minutes rather
+ * than recorded minutes because it is the criterion the comparability rule already uses, and
+ * because the reference session exists for one thing — its gain — and the session with the most
+ * analysable signal is the one whose gain is worth trusting. It is written by the analysis, so a
+ * session not yet analysed counts as zero: on the evening of the false start itself, the real
+ * night takes over as soon as it is scored, and never gives the place back.
+ *
+ * One string, used by both readers, and no third copy: [OF_EVENING] and [ComparableNightSql.SQL]
+ * are both built from it, as `const val`s — a constant concatenation is itself a compile-time
+ * constant, and each annotation then references one constant, the way `@DatabaseView` already
+ * did. The columns are unqualified on purpose — in the `ref` subquery they are unambiguous, since
+ * `night_context` carries none of them — so that the same text serves a plain `SELECT` on
+ * `night_session`.
+ */
+internal object PrincipalSessionSql {
+    const val ORDER_BY = "analysableMin DESC, startWallMs ASC, sessionHex ASC"
+
+    /** `NightDao.findByNightKey`: the principal session of one evening, or nothing. */
+    const val OF_EVENING =
+        "SELECT * FROM night_session WHERE nightKey = :nightKey ORDER BY " + ORDER_BY + " LIMIT 1"
+}
+
+/**
  * The SQL of the view, taken out of the class it annotates: an annotation cannot reference a
  * constant declared in the class it annotates without creating a circular dependency at
  * compilation.
@@ -189,6 +251,15 @@ internal object ComparableNightSql {
      * value of the two numeric constants (`240.0`, `0.35`) is hard-coded there: SQLite cannot
      * read a Kotlin constant. It is the only duplication in the file, and it is the one
      * `ComparableNightPredicateTest` watches over.
+     *
+     * The `ref` subquery orders by `sealedAtMs` first — the reference *evening* is the first one
+     * sealed — and then by [PrincipalSessionSql.ORDER_BY], which picks the reference *session*
+     * among those of that evening. Without the second half, `LIMIT 1` fell on either.
+     *
+     * `sourcePackage` is an aggregate (`MAX`) over the windows of the same `(night, hash, mask)`
+     * and not a `LIMIT 1`: every window of one mask carries the same package — one hypnogram, one
+     * origin — so the aggregate is that package, and it names its row without an order. It is
+     * `NULL` for the accelerometer mask, whose windows carry none.
      */
     const val SQL = """
             SELECT
@@ -198,6 +269,12 @@ internal object ComparableNightSql {
                 r.paramsHash          AS paramsHash,
                 r.rule                AS rule,
                 r.maskSource          AS maskSource,
+                (
+                    SELECT MAX(w.sourcePackage) FROM sleep_window w
+                    WHERE w.sessionHex = r.sessionHex
+                      AND w.paramsHash = r.paramsHash
+                      AND w.source = r.maskSource
+                )                     AS sourcePackage,
                 r.gate                AS gate,
                 r.independence        AS independence,
                 r.plmi                AS plmi,
@@ -244,8 +321,57 @@ internal object ComparableNightSql {
                 SELECT nc.leg AS refLeg, nc.strapId AS refStrapId, ns.gainCalG AS refGainCalG
                 FROM night_context nc
                 JOIN night_session ns ON ns.nightKey = nc.nightKey
-                ORDER BY nc.sealedAtMs ASC
+                ORDER BY nc.sealedAtMs ASC, """ + PrincipalSessionSql.ORDER_BY + """
                 LIMIT 1
             ) ref ON 1 = 1
+    """
+}
+
+/**
+ * **The row of a night that the screens show**, when the night has no hypnogram.
+ *
+ * `NightAnalyzer` writes the `HEALTH_CONNECT` rows only when Health Connect returned a hypnogram
+ * — the accelerometer rows exist for every scored night, the external ones only when there was
+ * something external. The three readers that fed the screens — the night list, the home card, the
+ * detail — all asked the view for `maskSource = 'HEALTH_CONNECT'` and nothing else. So a night
+ * scored without a hypnogram — the **default** path of every user without a sleep application,
+ * and of every night whose hypnogram has not arrived yet — had its four accelerometer rows in
+ * `plm_result`, its `analyzedAtMs` stamped, and **no row at all** for any screen: absent from the
+ * list, "0 nights recorded" on the home card after a night that had visibly been analysed, and a
+ * detail screen that returned `null` — a blank — for a night the user had just recorded. The
+ * documentation says the accelerometer mask "is allowed to exist and to be displayed" with its
+ * flag (`Mapping.flags`, `Situations.night` E-NIGHT-01, the circular denominator row of the
+ * computation path); none of that code ever received a row.
+ *
+ * The rule: the preferred mask's row when it exists, the fallback mask's row **only** when it does
+ * not. Never both — two rows for one night would show the same night twice, with two figures. The
+ * existence test is on `plm_result`, which carries the unique index
+ * `(sessionHex, paramsHash, rule, maskSource)`, and not on the view, which is a join built at
+ * every read. The trend is untouched: `TrendDao.trendPoints` still admits the independent
+ * denominator only, and a night shown through its fallback row is at best `TRUNCATED_NO_TREND`
+ * (`Plmi.canCarryPrimaryResult` refuses `FULL` to a circular mask), so it reads as *provisional*
+ * on the list — which is exactly the state `Mapping.nightUi` documents for it.
+ *
+ * One string, referenced by `TrendDao.displayNights`, so that `DisplayedNightSqlTest` can read it
+ * on the JVM — the same arrangement as [PrincipalSessionSql].
+ */
+internal object DisplayedNightSql {
+    const val SQL = """
+        SELECT n.* FROM comparable_night n
+        WHERE n.paramsHash = :paramsHash AND n.rule = :rule
+          AND (
+              n.maskSource = :preferredMask
+              OR (
+                  n.maskSource = :fallbackMask
+                  AND NOT EXISTS (
+                      SELECT 1 FROM plm_result p
+                      WHERE p.sessionHex = n.sessionHex
+                        AND p.paramsHash = :paramsHash
+                        AND p.rule = :rule
+                        AND p.maskSource = :preferredMask
+                  )
+              )
+          )
+        ORDER BY n.startWallMs ASC
     """
 }

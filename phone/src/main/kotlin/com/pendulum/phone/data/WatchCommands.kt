@@ -1,9 +1,13 @@
 package com.pendulum.phone.data
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.DataClient
+import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
+import com.pendulum.format.wire.EraseOrder
 import com.pendulum.format.wire.WirePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,6 +66,72 @@ object WatchCommands {
      */
     suspend fun requestStart(context: Context): Boolean =
         sendToAllNodes(context, WirePaths.START_REQUEST)
+
+    /**
+     * Tells the watch that everything it sent before [erasedBeforeMs] has been erased on the
+     * phone, and clears the replicated store of every item either side wrote about it.
+     *
+     * Not a message, unlike the two orders above: an [EraseOrder] item under
+     * `WirePaths.ERASE`, for the reason given on that path — an erasure has to reach a watch that
+     * is out of range at that moment, and only the store carries an order across the gap.
+     *
+     * ### What is deleted from the store, and why all of it
+     *
+     * Every family of paths the protocol has ever put down, in [DISOWNED_PREFIXES]:
+     *  - the phone's own acknowledgements, which would otherwise keep telling the watch which
+     *    chunks of an erased night it may delete — and, on the next night, nothing at all;
+     *  - the phone's own sealed contexts. The evening's context item outlived the database row it
+     *    stood for: `Preflight` on the watch found it and let a night start under an evening the
+     *    phone had no context for any more, and that night came out `NO_CONTEXT` in the morning
+     *    for a form the user remembered filling in;
+     *  - the watch's session, chunk and live items. They belong to the watch, but a `DataItem`
+     *    path without an authority designates the item on every node and any node may delete it.
+     *    Deleting them here, at the instant of the erasure, is what makes "before T" precise:
+     *    what is in the phone's replica at T is exactly what the phone received before T.
+     *
+     * The order goes in **first**: if the deletions time out, the watch still gets the order and
+     * does its own deletions when it applies it.
+     *
+     * @return `false` if the order could not be put or a deletion failed. The local erasure goes
+     *   ahead regardless — the phone's data is the user's first concern — but the caller must
+     *   know: the watch may still hold, and push back, chunks of the erased nights.
+     */
+    suspend fun disown(context: Context, erasedBeforeMs: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val client = Wearable.getDataClient(context)
+                val order = PutDataRequest.create(WirePaths.ERASE)
+                    .setData(EraseOrder(erasedBeforeMs).encode())
+                    // The watch may be recording: the sooner it stops, the less it records for
+                    // nothing.
+                    .setUrgent()
+                Tasks.await(client.putDataItem(order), TIMEOUT_S, TimeUnit.SECONDS)
+                for (prefix in DISOWNED_PREFIXES) {
+                    val uri = Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(prefix).build()
+                    Tasks.await(
+                        client.deleteDataItems(uri, DataClient.FILTER_PREFIX),
+                        TIMEOUT_S,
+                        TimeUnit.SECONDS,
+                    )
+                }
+                true
+            } catch (e: Exception) {
+                Log.w(TAG, "the watch could not be told about the erasure", e)
+                false
+            }
+        }
+
+    /**
+     * Every path family of the protocol, both directions. A family missing from this list is a
+     * family whose items survive "erase everything" in the replicated store, on both devices.
+     */
+    val DISOWNED_PREFIXES: List<String> = listOf(
+        WirePaths.ACK_PREFIX,
+        WirePaths.CONTEXT_PREFIX,
+        WirePaths.SESSION_PREFIX,
+        WirePaths.CHUNK_PREFIX,
+        WirePaths.LIVE_PREFIX,
+    )
 
     /**
      * Sends a message to **all** the connected nodes, and not to the first one.

@@ -76,19 +76,21 @@ class PendulumRepository(context: Context) {
         observeReading().map { it.nights }.flowOn(Dispatchers.IO)
 
     /**
-     * What three screens all three read: the sessions, the active hash, the preferred sleep source,
-     * and the nights already translated.
+     * What three screens all three read: the sessions, the active hash, and the nights already
+     * translated.
      *
      * All three assembled the same `combine` and the same `map` — twelve identical lines, copied
      * two and a half times. It was not only volume: the fallback
      * `?: AnalysisParams.DEFAULT.paramsHash` and the reverse-chronological sort appeared there
      * three times, so one screen could lose one of them without anything saying so.
+     *
+     * The preferred sleep source is no longer part of this read. It was, and it went into the
+     * label of every night: see [toNightUi].
      */
     private data class Reading(
         val sessions: List<NightSessionEntity>,
         val profile: ParamProfileEntity?,
         val hash: String,
-        val preferredSource: String?,
         val nights: List<NightUi>,
     )
 
@@ -96,22 +98,31 @@ class PendulumRepository(context: Context) {
         combine(
             db.nightDao().observeAll(),
             db.paramDao().observeActive(),
-            prefs.preferredSleepSource,
-        ) { sessions, profile, preferredSource -> Triple(sessions, profile, preferredSource) }
-            .map { (sessions, profile, preferredSource) ->
+        ) { sessions, profile -> sessions to profile }
+            .map { (sessions, profile) ->
                 val hash = profile?.paramsHash ?: AnalysisParams.DEFAULT.paramsHash
-                Reading(sessions, profile, hash, preferredSource, nightsOf(hash, sessions, preferredSource))
+                Reading(sessions, profile, hash, nightsOf(hash, sessions))
             }
 
-    /** The nights of the active hash, translated and sorted from the most recent to the oldest. */
+    /**
+     * The nights of the active hash, translated and sorted from the most recent to the oldest.
+     *
+     * Through `displayNights` and not `allNights`: this read asked for the [DEFAULT_MASK] row and
+     * nothing else, and `NightAnalyzer` writes that row only when Health Connect returned a
+     * hypnogram. A night scored without one — every night of a user with no sleep application,
+     * and every night in the hours before its hypnogram arrives — had its accelerometer rows, its
+     * `analyzedAtMs`, and no row here: absent from the list, "0 nights recorded" on the home card
+     * the morning after a night the user had just watched being analysed. The fallback row carries
+     * its own flag and reads as provisional; the trend, which goes through `trendPoints`, still
+     * never sees it.
+     */
     private suspend fun nightsOf(
         hash: String,
         sessions: List<NightSessionEntity>,
-        preferredSource: String?,
     ): List<NightUi> {
         val byHex = sessions.associateBy { it.sessionHex }
-        return db.trendDao().allNights(hash, DEFAULT_RULE, DEFAULT_MASK)
-            .map { n -> toNightUi(n, byHex[n.sessionHex], preferredSource) }
+        return db.trendDao().displayNights(hash, DEFAULT_RULE, DEFAULT_MASK, FALLBACK_MASK)
+            .map { n -> toNightUi(n, byHex[n.sessionHex]) }
             .sortedByDescending { it.startWallMs }
     }
 
@@ -134,7 +145,7 @@ class PendulumRepository(context: Context) {
      */
     fun observeTrend(): Flow<TrendState> =
         observeReading()
-            .map { (sessions, profile, hash, _, nights) ->
+            .map { (sessions, profile, hash, nights) ->
                 val aggregatable = aggregatableNights(hash)
                 val fitted = aggregatable.filter { Mapping.rhythmSec(it) != null }
 
@@ -267,7 +278,7 @@ class PendulumRepository(context: Context) {
             prefs.preferredSleepSource,
         ) { sessions, nightContext, profile, reference, preferredSource ->
             val hash = profile?.paramsHash ?: AnalysisParams.DEFAULT.paramsHash
-            val nights = nightsOf(hash, sessions, preferredSource)
+            val nights = nightsOf(hash, sessions)
 
             // `observeAll` already sorts by `startWallMs DESC`: the first row is the most recent
             // session, whatever evening it attaches to. We deliberately do not filter on the
@@ -302,14 +313,22 @@ class PendulumRepository(context: Context) {
         }.flowOn(Dispatchers.IO)
     }
 
+    /**
+     * The sleep source is labelled from **the row**, `comparable_night.sourcePackage` — the
+     * application whose hypnogram supplied this night's denominator under the active hash — and
+     * not from `prefs.preferredSleepSource`, which is what every night was labelled with until
+     * now. The preference is what the user *wants* read tonight; it says nothing about what *was*
+     * read for a given night (it was not even handed to the read, see `SleepFetchWorker`), and
+     * changing it relabelled the whole campaign at once. The home card still shows the preference,
+     * as a setting, in [observeHome]; no night does.
+     */
     private fun toNightUi(
         n: ComparableNight,
         session: NightSessionEntity?,
-        preferredSource: String?,
     ): NightUi = Mapping.nightUi(
         n = n,
         endWallMs = session?.endWallMs,
-        sleepSource = Mapping.sourceLabel(n.maskSource, preferredSource),
+        sleepSource = Mapping.sourceLabel(n.maskSource, n.sourcePackage),
         flags = Mapping.flags(
             n = n,
             gapCount = session?.gapCount ?: 0,
@@ -334,19 +353,26 @@ class PendulumRepository(context: Context) {
     suspend fun nightDetail(sessionHex: String): NightDetailUi? = withContext(Dispatchers.IO) {
         val session = db.nightDao().find(sessionHex) ?: return@withContext null
         val hash = db.paramDao().active()?.paramsHash ?: AnalysisParams.DEFAULT.paramsHash
+        // The same read as the list — `displayNights`, with its fallback — and for the same
+        // reason: asked for the Health Connect row alone, this returned `null` for every night
+        // scored without a hypnogram, and tapping such a night opened a blank screen.
         val night = db.trendDao()
-            .allNights(hash, DEFAULT_RULE, DEFAULT_MASK)
+            .displayNights(hash, DEFAULT_RULE, DEFAULT_MASK, FALLBACK_MASK)
             .firstOrNull { it.sessionHex == sessionHex }
             ?: return@withContext null
 
         val events = db.derivedDao().eventsOf(sessionHex, hash)
+        // The result row of the mask that is being displayed — `night.maskSource`, not
+        // [DEFAULT_MASK]: on a night shown through its fallback row there is no Health Connect
+        // result, and reading `DEFAULT_MASK` here would put the counts of a row that does not
+        // exist (zeros) under the figures of the row that does.
         val result = db.derivedDao().resultsOf(sessionHex, hash)
-            .firstOrNull { it.rule == DEFAULT_RULE && it.maskSource == DEFAULT_MASK }
-        val preferredSource = prefs.preferredSleepSourceNow()
+            .firstOrNull { it.rule == DEFAULT_RULE && it.maskSource == night.maskSource }
         // Resolved **once** and passed to the three places that display it. It was resolved twice
         // by two different paths, one of which hard-coded the label: the detail of a night then
-        // showed two source labels for the same night.
-        val sleepSource = Mapping.sourceLabel(night.maskSource, preferredSource)
+        // showed two source labels for the same night. From the row, not the preference — see
+        // [toNightUi].
+        val sleepSource = Mapping.sourceLabel(night.maskSource, night.sourcePackage)
 
         // The telemetry, for its part, is in the database from ingestion onwards: the device state
         // band therefore appears on nights whose envelope has not yet been read back from the raw
@@ -367,7 +393,7 @@ class PendulumRepository(context: Context) {
         }
 
         NightDetailUi(
-            night = toNightUi(night, session, preferredSource),
+            night = toNightUi(night, session),
             inBed = Mapping.readableDuration(night.analysableMin),
             chart = null,
             hypnogram = null,
@@ -395,7 +421,15 @@ class PendulumRepository(context: Context) {
                 n = night,
                 result = result,
                 recordedDurationMin = recordedDurationMin(session),
-                movementsKept = (result?.plmsCount ?: 0) + (result?.plmwCount ?: 0),
+                // `plmsCount` alone. The index at the top of the block is `plmi`, that is
+                // `plmsCount / analysableTstMin`: the movements **during sleep**, over the
+                // analysable sleep. This row used to add `plmwCount` — the movements during wake,
+                // which enter `plmw` and never `plmi` — so the one block whose purpose is to let
+                // the reader redo the division showed a numerator that does not give the figure
+                // above it: 96 PLMS and 7 PLMW read "103 movements counted" over "5 h 12", which
+                // is 19.8/h under a title saying "Why 18.4 /h". The two counts are shown
+                // separately, as `plms` and `plmw`, on the same screen.
+                movementsKept = result?.plmsCount ?: 0,
                 rule = text(R.string.settings_rule_aasm),
                 sleepSource = sleepSource,
                 // What explains a detection decision: the clipping of the sensor, the jitter and
@@ -509,6 +543,13 @@ class PendulumRepository(context: Context) {
          */
         const val DEFAULT_RULE = "AASM_V3"
         const val DEFAULT_MASK = "HEALTH_CONNECT"
+
+        /**
+         * The mask a night is shown through when it has no [DEFAULT_MASK] row —
+         * `MaskSource.ACCEL_IMMOBILITY`, the only one `NightAnalyzer` writes for every scored
+         * night. It reaches the screens only through `TrendDao.displayNights`, never the trend.
+         */
+        const val FALLBACK_MASK = "ACCEL_IMMOBILITY"
 
         /**
          * The rejection reasons of `ClmRejectReason`, on the `:algo` side, as they are persisted.

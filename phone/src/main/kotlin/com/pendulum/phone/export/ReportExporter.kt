@@ -239,7 +239,13 @@ object ReportExporter {
         val session = db.nightDao().find(sessionHex) ?: error("unknown session: $sessionHex")
         val results = db.derivedDao().resultsOf(sessionHex, params.paramsHash)
         val nightContext = db.contextDao().findForSession(sessionHex)
-        val hc = db.hcSnapshotDao().latest(sessionHex)
+        // The last **reading**, not the last attempt: `hc_snapshot` logs every rung of the fetch
+        // ladder, and the ladder carries on after a success. With `latest` here, a rung that read
+        // nothing at T+4 h made the "Denominator" section print `NO_HC_NOTE` — "no external
+        // hypnogram … circular" — under a table that still carried `HEALTH_CONNECT` rows: the
+        // figure and its explanation contradicted each other in the document handed to the
+        // physician.
+        val hc = db.hcSnapshotDao().latestWithSession(sessionHex)
         val comparable = db.trendDao().forNight(sessionHex, params.paramsHash).firstOrNull()
 
         val zone = runCatching { ZoneId.of(session.zoneId) }.getOrDefault(ZoneId.systemDefault())
@@ -284,7 +290,7 @@ object ReportExporter {
             appendLine()
             appendLine(UNDER_COUNTING)
             appendLine()
-            appendLine("| Rules | Mask | Movements | Analysable sleep | aPLM-i | Respiratory upper bound | Publication |")
+            appendLine(NIGHT_TABLE_HEADER)
             appendLine("|---|---|---|---|---|---|---|")
             for (r in results.sortedWith(compareBy({ it.maskSource }, { it.rule }))) {
                 appendLine(row(r))
@@ -360,7 +366,24 @@ object ReportExporter {
 
     // -------------------------------------------------------------------------------------
 
-    private fun row(r: PlmResultEntity): String =
+    /**
+     * The header of the single-night table, and the row that goes under it. Both `internal` so
+     * that `ReportTableTest` can pin the pairing between the sixth cell and `plmiRespWorstCase`.
+     *
+     * That cell used to read "Respiratory upper bound". `plmiRespWorstCase` is the index
+     * recomputed after removing every series whose median interval falls in the apnoeic band — by
+     * construction (`Indices.kt`, `plmsCountRespWorst <= plmsCount` over the same denominator) it
+     * is never above the aPLM-i beside it: a **lower** bound, exactly as the night detail names
+     * it (`ComputationPath`) and as the LIMITS block below now says. The report therefore printed
+     * `12.40 /h | 8.20 /h` under "aPLM-i | Respiratory upper bound": an upper bound smaller than
+     * the value. A physician reading that either distrusts the table or reads 12.4 as already
+     * corrected for respiration — the one misreading the column exists to prevent.
+     */
+    internal const val NIGHT_TABLE_HEADER =
+        "| Rules | Mask | Movements | Analysable sleep | aPLM-i | " +
+            "aPLM-i excluding apnoeic-band series (lower bound) | Publication |"
+
+    internal fun row(r: PlmResultEntity): String =
         "| ${r.rule} | ${r.maskSource} | ${r.plmsCount} | ${fmt(r.analysableTstMin)} min | " +
             "${fmt(r.plmi)} /h | ${fmt(r.plmiRespWorstCase)} /h | ${r.gate} |"
 
@@ -560,8 +583,12 @@ object ReportExporter {
           awake epoch in two (specificity ~0.52). Sleep time being the denominator, the index
           comes out **under-estimated**.
         - **The numerator may be overestimated** in the presence of breathing-related movements.
-          The "respiratory upper bound" column gives the index recomputed assuming that every
-          series whose median interval falls in the apnoeic band is of respiratory origin.
+          The single-night report carries a second column, "aPLM-i excluding apnoeic-band series
+          (lower bound)": the index recomputed after removing every series whose median interval
+          falls in the apnoeic band, as if all of them were of respiratory origin. It is a
+          guaranteed **lower** bound — by construction never above the aPLM-i beside it — and the
+          true figure lies between the two, nothing allowing it to be located inside that
+          interval.
         - **These two biases do not cancel out.** They run in opposite directions, their
           magnitudes are unknown and independent; adding them up mentally to conclude "it evens
           out" would be a mistake.

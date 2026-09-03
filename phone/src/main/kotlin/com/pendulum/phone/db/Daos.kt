@@ -32,8 +32,17 @@ interface NightDao {
      * An evening can have a sealed context and no night — that is the case of every form filled in
      * before the watch starts, hence of **all** the evenings between 8 pm and bed time. `null` is
      * a normal state here and not an anomaly.
+     *
+     * And an evening can have **two**: a false start stopped after a minute and started again, a
+     * nap after the noon rollover. This query used to be a bare `LIMIT 1`, so which of the two
+     * came back was the query planner's choice, not ours — and its callers read the reference
+     * session from it: `AnalysisRunner.baselineGainOf` took the campaign's reference gain from the
+     * row, `NightExporter` named it in the bundle. A one-minute false start chosen on the
+     * reference evening gave a `NULL` reference gain, hence a campaign with no comparable night.
+     * The order is now [PrincipalSessionSql.ORDER_BY], the same one the `comparable_night` view
+     * applies, so the two readers name the same session.
      */
-    @Query("SELECT * FROM night_session WHERE nightKey = :nightKey LIMIT 1")
+    @Query(PrincipalSessionSql.OF_EVENING)
     suspend fun findByNightKey(nightKey: String): NightSessionEntity?
 
     @Query("SELECT * FROM night_session ORDER BY startWallMs DESC")
@@ -336,6 +345,44 @@ interface HcSnapshotDao {
 
     @Query("SELECT * FROM hc_snapshot WHERE sessionHex = :hex ORDER BY fetchedAtMs DESC LIMIT 1")
     suspend fun latest(hex: String): HcSnapshotEntity?
+
+    /**
+     * The most recent row that actually **carries a session** — what the analysis, the report and
+     * the bundle must read.
+     *
+     * [latest] cannot serve them, and it did until 4 September 2026. Every attempt appends a row,
+     * including the ones that read nothing — Health Connect updating, permission revoked, the
+     * provider mid-rewrite, a read that timed out — and those rows carry `selectedStagesCsv = ''`
+     * and a null session. They exist so that the ladder advances (`attemptCount`) and so that the
+     * burst guard knows when the last *attempt* was; they were never meant to replace a hypnogram
+     * already obtained. And the ladder carries on after a success, deliberately, because a
+     * provider can rewrite a published session: a night read at T+2 h is read again at T+4 h,
+     * T+8 h, up to T+32 h.
+     *
+     * So a failed rung at T+4 h became "the hypnogram of the night" for three readers. The bundle
+     * of that night was exported **without** its hypnogram while the database still held it two
+     * rows up; the report for the physician wrote "no external hypnogram for this night … circular"
+     * under a table that still showed `HEALTH_CONNECT` rows; and the next global rescore, at the
+     * first parameter change, scored the night without its mask — `plmi` NULL under the new hash,
+     * the night dropped out of the trend with no reason displayed. Nothing flagged the regression
+     * when it happened, because `FetchSchedule.shouldRescore` sees a null record and keeps the
+     * existing results: the loss only surfaced later, in a document or after a rescore, where it
+     * could no longer be traced to the rung that caused it.
+     *
+     * The predicate mirrors what `AnalysisRunner.loadHypnogram` accepts: a chosen session with no
+     * stage span (`selectedStagesCsv` empty, `sessionStartMs` set) counts as a read, an attempt
+     * that chose nothing does not. Among the rows that pass, the newest wins, as before — a
+     * provider rewrite read at T+8 h still replaces the T+2 h reading; only the empty rows stop
+     * counting.
+     */
+    @Query(
+        """
+        SELECT * FROM hc_snapshot
+        WHERE sessionHex = :hex AND (selectedStagesCsv <> '' OR sessionStartMs IS NOT NULL)
+        ORDER BY fetchedAtMs DESC LIMIT 1
+        """
+    )
+    suspend fun latestWithSession(hex: String): HcSnapshotEntity?
 }
 
 @Dao
@@ -410,6 +457,24 @@ interface TrendDao {
         """
     )
     suspend fun allNights(paramsHash: String, rule: String, maskSource: String): List<ComparableNight>
+
+    /**
+     * One row per scored night, for the screens: the [preferredMask] row when the night has one,
+     * the [fallbackMask] row when it has not, never both.
+     *
+     * [allNights] cannot serve the screens, and it did: asked for `HEALTH_CONNECT`, it returned
+     * nothing for a night scored without a hypnogram, and that night — analysed, stamped, its
+     * accelerometer rows in `plm_result` — appeared on no screen. The why is in the KDoc of
+     * [DisplayedNightSql], the proof on SQLite in `DisplayedNightTest`. [allNights] stays for the
+     * readers that mean one mask and nothing else.
+     */
+    @Query(DisplayedNightSql.SQL)
+    suspend fun displayNights(
+        paramsHash: String,
+        rule: String,
+        preferredMask: String,
+        fallbackMask: String,
+    ): List<ComparableNight>
 
     /**
      * The points that have the right to enter a curve. `comparable = 1`, `gate = 'FULL'` **and**
