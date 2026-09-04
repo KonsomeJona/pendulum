@@ -306,7 +306,7 @@ object NightAnalyzer {
      * A window that straddles an edge is cut, not dropped: the recorded part of it is real sleep
      * and belongs in the denominator. A window entirely outside collapses and disappears.
      */
-    private fun clipToSignal(windows: List<SleepWindow>, signalEndMs: Long): List<SleepWindow> =
+    internal fun clipToSignal(windows: List<SleepWindow>, signalEndMs: Long): List<SleepWindow> =
         windows.mapNotNull {
             val a = maxOf(it.startMsRel, 0L)
             val b = minOf(it.endMsRel, signalEndMs)
