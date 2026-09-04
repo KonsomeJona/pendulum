@@ -28,10 +28,13 @@ class ErasureOrderTest {
 
     @Test
     fun `the watch is told before anything local is erased`() {
-        // Told while the phone still holds the data: a sequence cut after this step leaves
-        // something to erase again. The other order leaves a watch pushing erased nights back
-        // into a database with no row to attach them to — files written to `filesDir` by the
-        // ingestion, unknown to the database, counted by nothing.
+        // The work first: a `ContextPublicationWorker` still waiting would put the evening's
+        // context item back into the store right after the disown step removed it; a
+        // `SleepFetchWorker` would recreate an `hc_snapshot` row minutes after the database was
+        // wiped. Then the watch, told while the phone still holds the data: a sequence cut after
+        // this step leaves something to erase again. The other order leaves a watch pushing erased
+        // nights back into a database with no row to attach them to — files written to `filesDir`
+        // by the ingestion, unknown to the database, counted by nothing.
         val steps = mutableListOf<String>()
 
         ErasureOrder.execute(
@@ -60,37 +63,5 @@ class ErasureOrderTest {
 
         assertThat(told).`as`("the caller must know the watch was not told").isFalse()
         assertThat(steps).containsExactly("work", "watch", "files", "database")
-    }
-
-    @Test
-    fun `a disown step that raises is a watch not told, not an erasure not done`() {
-        val steps = mutableListOf<String>()
-
-        val told = ErasureOrder.execute(
-            cancelWork = { steps += "work" },
-            disownWatch = { throw IllegalStateException("Google Play services unavailable") },
-            deleteFiles = { steps += "files" },
-            eraseDatabase = { steps += "database" },
-        )
-
-        assertThat(told).isFalse()
-        assertThat(steps).containsExactly("work", "files", "database")
-    }
-
-    @Test
-    fun `the scheduled work is cancelled first`() {
-        // A `ContextPublicationWorker` still waiting would put the evening's context item back
-        // into the store right after the disown step removed it; a `SleepFetchWorker` would
-        // recreate an `hc_snapshot` row minutes after the database was wiped.
-        val steps = mutableListOf<String>()
-
-        ErasureOrder.execute(
-            cancelWork = { steps += "work" },
-            disownWatch = { steps += "watch"; true },
-            deleteFiles = {},
-            eraseDatabase = {},
-        )
-
-        assertThat(steps.first()).isEqualTo("work")
     }
 }

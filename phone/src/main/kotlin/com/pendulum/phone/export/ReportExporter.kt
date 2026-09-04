@@ -6,6 +6,7 @@ import com.pendulum.phone.data.TrendState
 import com.pendulum.phone.db.PlmResultEntity
 import com.pendulum.phone.db.PendulumDatabase
 import com.pendulum.phone.ui.model.Aggregate
+import com.pendulum.phone.ui.model.Mapping
 import com.pendulum.phone.ui.model.NightState
 import com.pendulum.phone.ui.model.NightUi
 import com.pendulum.phone.ui.text.resolve
@@ -174,8 +175,31 @@ object ReportExporter {
 
             appendLine("## Estimated miss rate and periodicity")
             appendLine()
-            appendLine("- Median estimated miss rate: ${fmt(state.medianMissRate)}")
-            appendLine("- Median periodicity index: ${fmt(state.medianPeriodicity)}")
+            // Through `Mapping.missRateAggregate` / `periodicityAggregate`, the same call the trend
+            // card makes: the only producer that applies the three-night minimum and returns the
+            // interval and the `n`. This section used to print two medians rolled by hand in the
+            // repository, without either, so the report wrote "Median periodicity index: 0.58" —
+            // above the published RLS threshold — over one night, two lines under the sentence
+            // saying no aggregate is computed below three.
+            val eligible = state.aggregatableNights
+            appendLine(
+                qualityRow(
+                    "Estimated miss rate",
+                    Aggregate.Quantity.MISS_RATE,
+                    Mapping.missRateAggregate(eligible),
+                    eligible.count { Mapping.missRate(it) != null },
+                    res,
+                )
+            )
+            appendLine(
+                qualityRow(
+                    "Periodicity index",
+                    Aggregate.Quantity.PERIODICITY,
+                    Mapping.periodicityAggregate(eligible),
+                    eligible.count { it.periodicityValid },
+                    res,
+                )
+            )
             appendLine()
             appendLine(MISS_RATE_NOTE)
             appendLine()
@@ -406,11 +430,34 @@ object ReportExporter {
      * A median never leaves without its interval or its `n`: that is P2, and the report is the
      * last place where one could be tempted to keep only the round figure.
      */
-    private fun aggregateRow(r: Aggregate.Result, unit: String): String {
-        val label = if (r.ciCalibrated) "95 % CI" else "interval (not calibrated below ${Aggregate.MIN_NIGHTS_CALIBRATED_CI} nights)"
-        return "- Median: ${fmt(r.median)} $unit — $label ${fmt(r.ciLow)}–${fmt(r.ciHigh)} $unit, " +
+    private fun aggregateRow(r: Aggregate.Result, unit: String): String =
+        "- Median: ${fmt(r.median)} $unit — ${ciLabel(r)} ${fmt(r.ciLow)}–${fmt(r.ciHigh)} $unit, " +
             "n = ${r.nights} nights"
+
+    /**
+     * One of the two dimensionless quality aggregates of the campaign, or the reason it is not
+     * there. Same shape as [aggregateRow] — median, interval, `n` — with the `n` named after what
+     * it counts, in the screen's own words: for these two it is usually far smaller than the
+     * eligible nights, and a bare "n = 2" under "eligible: 9" would read as a contradiction.
+     */
+    private fun qualityRow(
+        title: String,
+        quantity: Aggregate.Quantity,
+        r: Aggregate.Result?,
+        measured: Int,
+        res: Resources,
+    ): String {
+        val noun = res.getString(quantity.nightsNoun)
+        return if (r == null) {
+            "- $title: not reported, $measured $noun for ${Aggregate.MIN_NIGHTS_AGGREGATE} required."
+        } else {
+            "- $title: median ${fmt(r.median)} — ${ciLabel(r)} ${fmt(r.ciLow)}–${fmt(r.ciHigh)}, " +
+                "n = ${r.nights} $noun"
+        }
     }
+
+    private fun ciLabel(r: Aggregate.Result): String =
+        if (r.ciCalibrated) "95 % CI" else "interval (not calibrated below ${Aggregate.MIN_NIGHTS_CALIBRATED_CI} nights)"
 
     /**
      * `21,34` in French and `21.34` in English **are not the same document**, and a report that a

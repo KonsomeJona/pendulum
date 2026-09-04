@@ -120,17 +120,4 @@ class TimeAnchorTest {
         assertThat(anchor.toMsRel(WALL_MS - 28_000L)).isEqualTo(0L)
         assertThat(anchor.toWallMs(0L)).isEqualTo(WALL_MS - 28_000L)
     }
-
-    @Test
-    @DisplayName("without the boot clock, the anchor behaves as before: no correction")
-    fun `the three-field constructor assumes no age`() {
-        // The reassembler still builds the anchor from three fields; the default leaves it exactly
-        // where it was, so that a caller which has not been switched to `of` loses nothing.
-        val anchor = TimeAnchor(
-            startWallMs = WALL_MS,
-            firstEventTimestampNs = FIRST_SAMPLE_NS,
-            timelineT0Ns = FIRST_SAMPLE_NS,
-        )
-        assertThat(anchor.toMsRel(WALL_MS)).isEqualTo(0L)
-    }
 }

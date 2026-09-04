@@ -403,7 +403,7 @@ class RescoreWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p)
  * paying the same ten minutes to reach the same place. On a long campaign the tail was never
  * rescored: `TrendDao.distinctHashes()` returned two hashes for good, the trend refused to plot,
  * and the phone burnt a ten-minute CPU burst at every backoff period with no end. The campaign
- * now lives in [campaign], which skips the nights already stamped with the target hash and lets
+ * now lives in [runCampaign], which skips the nights already stamped with the target hash and lets
  * a cancellation through.
  */
 class RescoreAllWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
@@ -411,7 +411,7 @@ class RescoreAllWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
     override suspend fun doWork(): Result {
         val db = PendulumDatabase.get(applicationContext)
         val params = WorkScheduler.activeParams(applicationContext)
-        return campaign(
+        return runCampaign(
             nights = db.nightDao().allHexOldestFirst(),
             targetHash = params.paramsHash,
             stampedHash = { hex -> db.nightDao().find(hex)?.paramsHash },
@@ -491,7 +491,7 @@ class RescoreAllWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx,
          *   active, and `TrendDao.distinctHashes()` makes the two hashes visible so that the
          *   interface says so rather than draw a truncated trend.
          */
-        suspend fun campaign(
+        suspend fun runCampaign(
             nights: List<String>,
             targetHash: String,
             stampedHash: suspend (String) -> String?,

@@ -1,5 +1,6 @@
 package com.pendulum.phone.ingest
 
+import com.pendulum.format.ChunkFormat
 import com.pendulum.format.ChunkHeader
 
 /**
@@ -55,15 +56,15 @@ import com.pendulum.format.ChunkHeader
  *   [firstEventTimestampNs] if the very first blocks were rejected by the integrity check — hence
  *   two fields and not one.
  * @param startElapsedRealtimeNs `elapsedRealtimeNanos` at the opening of the first chunk, from the
- *   same header. Defaults to [firstEventTimestampNs] — "no age", which is what the current watch
- *   writes — so that a caller built on the three historical fields keeps its exact behaviour;
- *   [of] reads all four from the header and is what a reassembler should use.
+ *   same header. Equal to [firstEventTimestampNs] on a header the current watch writes — no age —
+ *   and later than it on a header that predates the pull-back. [of] reads all four fields from the
+ *   header; [SessionReassembler] builds every anchor through it.
  */
 data class TimeAnchor(
     val startWallMs: Long,
     val firstEventTimestampNs: Long,
     val timelineT0Ns: Long,
-    val startElapsedRealtimeNs: Long = firstEventTimestampNs,
+    val startElapsedRealtimeNs: Long,
 ) {
 
     /** How old the first sample was when the chunk opened, or zero when the two clocks disagree. */
@@ -87,14 +88,8 @@ data class TimeAnchor(
 
     companion object {
 
-        /**
-         * Ceiling of a plausible age for the first sample of a chunk: twice the report latency
-         * the watch may ask of its sensor (`SensorStrategy.MAX_LATENCY_US`, 60 s). The same value
-         * as the watch's `ChunkStore.MAX_BURST_AGE_NS`, kept in step by hand — the two modules do
-         * not see each other. Beyond it the two clocks do not share a base and the difference
-         * measures nothing that should be subtracted.
-         */
-        const val MAX_BURST_AGE_NS: Long = 120_000_000_000L
+        /** @see ChunkFormat.MAX_BURST_AGE_NS — the watch applies the same bound when it writes. */
+        const val MAX_BURST_AGE_NS: Long = ChunkFormat.MAX_BURST_AGE_NS
 
         /**
          * The anchor of a night, from the header of its first decoded chunk.

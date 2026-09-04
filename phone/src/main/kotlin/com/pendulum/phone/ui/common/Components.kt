@@ -168,13 +168,15 @@ fun MetricHeadline(
                 style = PendulumType.metricXL,
                 color = c.textPrimary,
             )
-            Spacer(Modifier.width(Spacing.xs.dp))
-            Text(
-                stringResource(result.quantity.unit),
-                style = PendulumType.titleM,
-                color = c.textSecondary,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
+            result.quantity.unit?.let { unit ->
+                Spacer(Modifier.width(Spacing.xs.dp))
+                Text(
+                    stringResource(unit),
+                    style = PendulumType.titleM,
+                    color = c.textSecondary,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
             qualifier?.let {
                 Spacer(Modifier.width(Spacing.sm.dp))
                 Text(
@@ -207,6 +209,18 @@ fun MetricHeadline(
 /** Rounded to the integer: never a decimal on a rhythm nor on an hourly index. */
 fun formatValue(v: Double, quantity: Aggregate.Quantity): String =
     if (quantity.decimals == 0) Math.round(v).toString() else "%.${quantity.decimals}f".format(v)
+
+/**
+ * The unit written after a figure, or nothing at all when the quantity has none.
+ *
+ * For the sentences that take the unit as a positional argument (`trend_dispersion`,
+ * `compare_estimate_line`): a dimensionless [Aggregate.Quantity] carries `unit = null`, and the
+ * sentence must still be assembled. Nothing is the only honest thing to print there — "(none)" or
+ * "-" would read as a unit beside the figure.
+ */
+@Composable
+fun formatUnit(quantity: Aggregate.Quantity): String =
+    quantity.unit?.let { stringResource(it) }.orEmpty()
 
 /**
  * The position sentence, in a frame that is **neutral in all five cases**.

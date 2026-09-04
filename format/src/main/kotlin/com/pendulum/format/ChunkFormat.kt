@@ -197,6 +197,23 @@ object ChunkFormat {
     const val G_IN_MS2 = 9.80665
 
     /**
+     * Ceiling of a plausible age for the first sample of a chunk: twice the report latency the
+     * watch may ask of its sensor (60 s).
+     *
+     * It lives here because **both sides need the same number and neither can see the other**. The
+     * watch subtracts that age when it writes the header, so `startWallMs` dates the first sample
+     * rather than the flush that delivered it; the phone subtracts whatever age an older header
+     * still carries. Two copies of the figure, kept in step by hand, is one edit away from a night
+     * placed against its hypnogram by one rule on the watch and another on the phone — and the
+     * error would be a whole AASM epoch, silently.
+     *
+     * Hardware time, not a wall-clock duration: the bench compresses neither the FIFO nor this
+     * bound, which is why it is not in the `Durations` catalogue. Beyond it the two clocks do not
+     * share a base, and their difference measures nothing that should be subtracted.
+     */
+    const val MAX_BURST_AGE_NS: Long = 120_000_000_000L
+
+    /**
      * Tolerated relative deviation between the implicit rate of a block — `(tLast - tFirst)/(N-1)`
      * — and the nominal period `1e9/fs`. Beyond it, the block most likely straddles two FIFO
      * flushes and the linear interpolation of [DecodedBlock.timestampNs] dates *all* of its

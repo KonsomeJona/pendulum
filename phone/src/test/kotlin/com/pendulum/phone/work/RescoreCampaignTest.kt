@@ -50,7 +50,7 @@ class RescoreCampaignTest {
         recorder: Recorder,
         analyse: suspend (String) -> Unit = { recorder.analysed += it },
     ): ListenableWorker.Result = runBlocking {
-        RescoreAllWorker.campaign(
+        RescoreAllWorker.runCampaign(
             nights = nights,
             targetHash = target,
             stampedHash = { stamped[it] },
@@ -152,7 +152,7 @@ class RescoreCampaignTest {
 
         assertThatThrownBy {
             runBlocking {
-                RescoreAllWorker.campaign(
+                RescoreAllWorker.runCampaign(
                     nights = listOf("a", "b", "c"),
                     targetHash = target,
                     stampedHash = { null },

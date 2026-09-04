@@ -378,7 +378,7 @@
   /* =====================================================================
      3. THE NIGHT TRACE
      A synthetic envelope built from the parameters of the worked example
-     in docs/03-algorithm.md §7. No recorded night exists.
+     in docs/03-algorithm.md §7.
      ===================================================================== */
 
   (function () {

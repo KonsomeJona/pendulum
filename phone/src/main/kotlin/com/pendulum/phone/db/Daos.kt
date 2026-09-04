@@ -350,7 +350,7 @@ interface HcSnapshotDao {
      * The most recent row that actually **carries a session** — what the analysis, the report and
      * the bundle must read.
      *
-     * [latest] cannot serve them, and it did until 4 September 2026. Every attempt appends a row,
+     * [latest] cannot serve them, and it did. Every attempt appends a row,
      * including the ones that read nothing — Health Connect updating, permission revoked, the
      * provider mid-rewrite, a read that timed out — and those rows carry `selectedStagesCsv = ''`
      * and a null session. They exist so that the ladder advances (`attemptCount`) and so that the
@@ -449,24 +449,16 @@ abstract class ParamDao {
 @Dao
 interface TrendDao {
 
-    @Query(
-        """
-        SELECT * FROM comparable_night
-        WHERE paramsHash = :paramsHash AND rule = :rule AND maskSource = :maskSource
-        ORDER BY startWallMs ASC
-        """
-    )
-    suspend fun allNights(paramsHash: String, rule: String, maskSource: String): List<ComparableNight>
-
     /**
      * One row per scored night, for the screens: the [preferredMask] row when the night has one,
      * the [fallbackMask] row when it has not, never both.
      *
-     * [allNights] cannot serve the screens, and it did: asked for `HEALTH_CONNECT`, it returned
-     * nothing for a night scored without a hypnogram, and that night — analysed, stamped, its
-     * accelerometer rows in `plm_result` — appeared on no screen. The why is in the KDoc of
-     * [DisplayedNightSql], the proof on SQLite in `DisplayedNightTest`. [allNights] stays for the
-     * readers that mean one mask and nothing else.
+     * A read of the view for one `maskSource` cannot serve the screens, and it did: asked for
+     * `HEALTH_CONNECT`, it returned nothing for a night scored without a hypnogram, and that
+     * night — analysed, stamped, its accelerometer rows in `plm_result` — appeared on no screen.
+     * The why is in the KDoc of [DisplayedNightSql], the proof on SQLite in `DisplayedNightTest`.
+     * That single-mask query is gone: [trendPoints] keeps its own, because the trend must never
+     * see the fallback row.
      */
     @Query(DisplayedNightSql.SQL)
     suspend fun displayNights(

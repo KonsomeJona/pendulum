@@ -27,9 +27,8 @@ night, and it cannot tell you what that means. That distinction is the whole des
 > has never been validated against a sleep study. Its numbers are on a different scale from the
 > ones a laboratory produces, for reasons set out in [Limits](#limits).
 >
-> **It is not finished.** No accelerometer has yet spent a single night at an ankle running this
-> software. Everything below describes a program that builds, installs and runs — not a program
-> that has been shown to work on a real night. See [where the project stands](#where-the-project-stands).
+> **It is not finished.** Everything below describes a program that builds, installs and runs. See
+> [where the project stands](#where-the-project-stands).
 >
 > **So:** take any result to a physician. Do not take a treatment decision from it, and do not let
 > a reassuring number stop you from seeing someone if you have symptoms.
@@ -101,9 +100,9 @@ one evening, the watch, the morning after, and the screen you will look at when 
 happening. Captured on 13 August 2026 on a phone emulator (Android 14, 1080 × 2400) and on a Pixel
 Watch 3.
 
-**The nights on these screens are synthetic.** No accelerometer has yet spent a night at an ankle
-running this software, so the populated screens were filled by a seeding path that exists in the
-debug build only and is not compiled into a release. The screens are real; the nights are not.
+**The nights on these screens are synthetic.** The populated screens were filled by a seeding path
+that exists in the debug build only and is not compiled into a release. The screens are real; the
+nights are not.
 
 ### Setting up, in six steps
 
@@ -252,10 +251,9 @@ applications 395 more, plus twenty-six that need a real device or an emulator; t
 chain is exercised against synthetic nights with injected ground truth, by a harness that reports
 where it fails and not only where it passes ([`docs/07-validation.md`](docs/07-validation.md)).
 
-What does not exist is a single night of real data. The roadmap declares a hardware feasibility gate
-blocking — three consecutive nights at 99 % sample coverage with battery to spare — and the rest of
-the project was built before passing it. That gate is now instrumented, displayed in the settings and
-exportable, so its verdict is calculable. What is missing is the nights.
+The roadmap declares a hardware feasibility gate blocking — three consecutive nights at 99 % sample
+coverage with battery to spare — and the rest of the project was built before passing it. That gate
+is now instrumented, displayed in the settings and exportable, so its verdict is calculable.
 [`docs/01-overview.md`](docs/01-overview.md) §5 records the departure from the plan and what it costs.
 
 Nothing has been validated against polysomnography, and there is no plan that would make that

@@ -7,7 +7,7 @@ import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
-import com.pendulum.format.wire.EraseOrder
+import com.pendulum.format.wire.Erasure
 import com.pendulum.format.wire.WirePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -71,7 +71,7 @@ object WatchCommands {
      * Tells the watch that everything it sent before [erasedBeforeMs] has been erased on the
      * phone, and clears the replicated store of every item either side wrote about it.
      *
-     * Not a message, unlike the two orders above: an [EraseOrder] item under
+     * Not a message, unlike the two requests above: an [Erasure] item under
      * `WirePaths.ERASE`, for the reason given on that path — an erasure has to reach a watch that
      * is out of range at that moment, and only the store carries an order across the gap.
      *
@@ -89,10 +89,10 @@ object WatchCommands {
      *    Deleting them here, at the instant of the erasure, is what makes "before T" precise:
      *    what is in the phone's replica at T is exactly what the phone received before T.
      *
-     * The order goes in **first**: if the deletions time out, the watch still gets the order and
+     * The erasure goes in **first**: if the deletions time out, the watch still gets it and
      * does its own deletions when it applies it.
      *
-     * @return `false` if the order could not be put or a deletion failed. The local erasure goes
+     * @return `false` if the erasure could not be put or a deletion failed. The local erasure goes
      *   ahead regardless — the phone's data is the user's first concern — but the caller must
      *   know: the watch may still hold, and push back, chunks of the erased nights.
      */
@@ -100,12 +100,12 @@ object WatchCommands {
         withContext(Dispatchers.IO) {
             try {
                 val client = Wearable.getDataClient(context)
-                val order = PutDataRequest.create(WirePaths.ERASE)
-                    .setData(EraseOrder(erasedBeforeMs).encode())
+                val erasure = PutDataRequest.create(WirePaths.ERASE)
+                    .setData(Erasure(erasedBeforeMs).encode())
                     // The watch may be recording: the sooner it stops, the less it records for
                     // nothing.
                     .setUrgent()
-                Tasks.await(client.putDataItem(order), TIMEOUT_S, TimeUnit.SECONDS)
+                Tasks.await(client.putDataItem(erasure), TIMEOUT_S, TimeUnit.SECONDS)
                 for (prefix in DISOWNED_PREFIXES) {
                     val uri = Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(prefix).build()
                     Tasks.await(

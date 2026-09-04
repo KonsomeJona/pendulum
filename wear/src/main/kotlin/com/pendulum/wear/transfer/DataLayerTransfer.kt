@@ -11,7 +11,7 @@ import com.google.android.gms.wearable.Wearable
 import com.pendulum.format.ChunkReader
 import com.pendulum.format.wire.Ack
 import com.pendulum.format.wire.ChunkMeta
-import com.pendulum.format.wire.EraseOrder
+import com.pendulum.format.wire.Erasure
 import com.pendulum.format.wire.LivePreview
 import com.pendulum.format.wire.SessionHeader
 import com.pendulum.format.wire.SessionState
@@ -435,7 +435,7 @@ object DataLayerTransfer {
     )
 
     /**
-     * Applies an [EraseOrder] from the phone: every session started before the erasure loses its
+     * Applies an [Erasure] from the phone: every session started before the erasure loses its
      * files and its items, and the one being recorded, if it is one of them, is tombstoned so that
      * the service closes it in silence.
      *
@@ -449,7 +449,7 @@ object DataLayerTransfer {
      *
      * ### Why the start of each session is compared, and not merely "everything"
      *
-     * The order is an item: it reaches a watch that was out of range, hours later, and by then a
+     * The erasure is an item: it reaches a watch that was out of range, hours later, and by then a
      * new night may have started. That night is not the phone's to disown. The comparison is with
      * the session's `startWallMs` — from the marker for the active one, from the sidecar for the
      * others — against the instant on the phone's clock; the two clocks are a few seconds apart at
@@ -476,13 +476,13 @@ object DataLayerTransfer {
      * instant of the erasure; what this deletes is what the watch put afterwards, and a failure
      * here leaves at worst an item nothing will ever read, not a file.
      */
-    fun disown(ctx: Context, order: EraseOrder): Disowned {
+    fun disown(ctx: Context, erasure: Erasure): Disowned {
         val store = SessionStore(ctx)
         return disownSessions(
             chunksRoot = store.chunksRoot,
             active = store.readMarker(),
             recording = RecordingState.state.value.phase != RecordPhase.IDLE,
-            erasedBeforeMs = order.erasedBeforeMs,
+            erasedBeforeMs = erasure.erasedBeforeMs,
             startOf = { dir -> sidecarStart(File(dir, "sidecar.json")) },
             deleteItems = { hex -> deleteItemsOf(ctx, hex) },
             clearActive = { store.clearActive() },

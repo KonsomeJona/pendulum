@@ -28,9 +28,8 @@ Every number visible on them was produced by the application's own preview
 dataset flowing through the real Compose code, and every chart was drawn by the same `DrawScope`
 extensions the production build uses.
 
-What they are *not*: a recorded night. No accelerometer data has ever been captured at an ankle by this
-software, so the plotted signal is the synthetic preview data, and the indices are the values that
-dataset produces. The screens are real; the night is not.
+What they are *not*: a recorded night. The plotted signal is the synthetic preview data, and the
+indices are the values that dataset produces. The screens are real; the night is not.
 
 Hand-authored SVG mock-ups of the same screens are kept in [`images/`](images/). Three of them are
 still shown below, for the cases the emulator run did not reach — the first-run warning, the evening

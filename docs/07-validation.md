@@ -1043,10 +1043,9 @@ None of this is validation.
   against polysomnography — sensitivity 0.954, specificity 0.524 for a consumer wrist device — is
   larger than anything the detector contributes. There is no synthetic test for that, because there
   is nothing to inject ground truth into.
-- **Nothing here has been run on a real night.** The Android modules now build and run on emulators,
-  and instrumented tests cover the interface guard rails, but no accelerometer has been worn at an
-  ankle by this software. Level 2 and level 3 checks have not been performed, and the hardware
-  feasibility gate itself (phase P1) has not been passed.
+- **Levels 2 and 3 have not been performed.** The Android modules build and run on emulators, and
+  instrumented tests cover the interface guard rails; beyond that, the hardware feasibility gate
+  itself (phase P1) has not been passed.
 - **No level tests what happens after the numbers are computed.** Every assertion above stops at the
   output of `algo`. Most of the path from there to a stored, displayed night is covered by unit
   tests on objects built in memory; what crosses the storage boundary is a handful of instrumented

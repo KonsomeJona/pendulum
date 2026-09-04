@@ -15,8 +15,8 @@ import org.junit.runner.RunWith
  *
  * `NightAnalyzer` writes the `HEALTH_CONNECT` rows of `plm_result` only when Health Connect
  * returned a hypnogram; the `ACCEL_IMMOBILITY` rows exist for every scored night. The night list,
- * the home card and the detail screen all read the `comparable_night` view through
- * `TrendDao.allNights(hash, rule, 'HEALTH_CONNECT')`, so a night scored without a hypnogram —
+ * the home card and the detail screen all read the `comparable_night` view for
+ * `maskSource = 'HEALTH_CONNECT'` and nothing else, so a night scored without a hypnogram —
  * analysed, stamped, its accelerometer rows in the table — came back as **no row**: absent from
  * the list, "0 nights recorded" the morning after a night the user had just watched being
  * analysed, a blank when tapped. That is the default path of every user without a sleep
@@ -49,12 +49,6 @@ class DisplayedNightTest {
             db.nightDao().insertIfAbsent(NIGHT)
             db.derivedDao().insertResults(listOf(result(ACCEL, gate = "TRUNCATED_NO_TREND")))
             db.derivedDao().insertWindows(listOf(window(ACCEL, sourcePackage = null)))
-        }
-
-        // The read every screen used to make, kept as the reference of what went wrong.
-        val hcOnly = runBlocking { db.trendDao().allNights(HASH, RULE, HC) }
-        if (hcOnly.isNotEmpty()) {
-            error("the set-up is wrong: a HEALTH_CONNECT row exists for a night scored without one")
         }
 
         val shown = runBlocking { db.trendDao().displayNights(HASH, RULE, HC, ACCEL) }

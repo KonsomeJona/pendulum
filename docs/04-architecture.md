@@ -12,9 +12,8 @@ reach the phone without either losing a night or spending the battery that was m
 
 This document describes decisions and their reasoning. Where a figure is an engineering estimate
 rather than a measurement, that is stated in the same sentence. The `wear` and `phone` modules described
-here are now implemented and build; they run on emulators, but **no night has ever been recorded with
-them**, so every runtime figure below remains an estimate. The byte layout in §3 is read from the code,
-not from the design notes.
+here are now implemented, build, and run on emulators; **every runtime figure below remains an
+estimate**. The byte layout in §3 is read from the code, not from the design notes.
 
 Two companions, both carrying what this file compresses.
 [`workings/CAPTURE-ARCHITECTURE.md`](workings/CAPTURE-ARCHITECTURE.md) holds the energy arithmetic worked out in
@@ -818,7 +817,7 @@ when a key is renamed, whereas here a layout change is rejected at the first byt
 | `/pendulum/chunk/<hex>/<idx:05d>` | watch → phone | `ChunkMeta` (idx, size, crc32, sampleCount, tFirstNs, tLastNs, flagsOr) plus the exact bytes of the chunk file |
 | `/pendulum/live/<hex>` | watch → phone, urgent | `LivePreview`: counters, battery, gaps, `syncBacklogged`, 900-byte envelope. **Replaced** each burst, never accumulated |
 | `/pendulum/ack/<hex>` | phone → watch, urgent | `Ack`: `ackedUpTo`, `bitmapBase`, `ackedBitmap`, `needResend` |
-| `/pendulum/erase` | phone → watch, urgent | `EraseOrder`: the instant of the erasure. Not per session — see below |
+| `/pendulum/erase` | phone → watch, urgent | `Erasure`: the instant of the erasure. Not per session — see below |
 | `/pendulum/sweep/<hex>` | watch → phone (channel) | bulk catch-up stream, specified but not yet implemented in `format` |
 
 The chunk index is zero-padded to five digits because lexicographic path order must coincide with
@@ -854,8 +853,8 @@ deduplicated by the Data Layer and would trigger nothing at all.
 nothing leaves the watch as the source of truth for data the user has just destroyed: the session
 being recorded re-announces itself at its close, the phone recreates the row from that header, and
 the night is back on the screen in the morning; the chunk items already in flight are never named by
-any acknowledgement again, so the files behind them stay on the watch for good. The order is
-therefore an `EraseOrder` **item** and not a message — a message to a watch in a drawer is simply
+any acknowledgement again, so the files behind them stay on the watch for good. The erasure is
+therefore an `Erasure` **item** and not a message — a message to a watch in a drawer is simply
 lost, and that is exactly the watch holding the most unsent chunks — carrying the instant of the
 erasure and nothing else. The watch compares it with the **start** of each session it holds and
 disowns those that began earlier: their files and their items go, and the session still being

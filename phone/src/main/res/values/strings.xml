@@ -1221,8 +1221,6 @@
     -->
     <string name="trend_nights_noun_measured_rate">nights with a measured miss rate</string>
     <string name="trend_nights_noun_valid_periodicity">nights with a valid periodicity index</string>
-    <!-- The unit of a dimensionless aggregate (a rate, an index): nothing after the figure. -->
-    <string name="trend_unit_none"></string>
     <string name="trend_interval_uncalibrated_note" formatted="false">Below six nights this interval is not a 95% interval, and Pendulum does not label it as one. Simulated on 10,000 draws, it holds the true value 75% of the time on three nights and 88% on four, where the label promises 95%.\n\nThe cause is arithmetic rather than a fault. The interval is built by resampling the nights you recorded, so it can never reach past your lowest and your highest night; with three nights, those two bounds fall on either side of the true value only three times in four. No variant of the method escapes that, so Pendulum names the interval for what it is instead of widening it by an invented amount.</string>
 
     <!--

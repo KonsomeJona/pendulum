@@ -39,6 +39,7 @@ import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
 import com.pendulum.phone.ui.common.PositionBox
 import com.pendulum.phone.ui.common.StatusStrip
+import com.pendulum.phone.ui.common.formatUnit
 import com.pendulum.phone.ui.common.formatValue
 import com.pendulum.phone.ui.model.Aggregate
 import com.pendulum.phone.ui.model.Mapping
@@ -227,7 +228,7 @@ fun TrendScreen(
                         stringResource(
                             R.string.trend_dispersion,
                             formatValue(state.rhythm.dispersion, state.rhythm.quantity),
-                            stringResource(state.rhythm.quantity.unit),
+                            formatUnit(state.rhythm.quantity),
                         ),
                         style = PendulumType.caption,
                         color = c.textTertiary,

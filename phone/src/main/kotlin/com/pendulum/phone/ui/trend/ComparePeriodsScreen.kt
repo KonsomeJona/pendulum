@@ -15,6 +15,7 @@ import com.pendulum.phone.ui.common.InlineValue
 import com.pendulum.phone.ui.common.Paragraph
 import com.pendulum.phone.ui.common.PendulumCard
 import com.pendulum.phone.ui.common.PendulumScreen
+import com.pendulum.phone.ui.common.formatUnit
 import com.pendulum.phone.ui.common.formatValue
 import com.pendulum.phone.ui.model.Aggregate
 import com.pendulum.phone.ui.text.resolve
@@ -101,7 +102,7 @@ fun ComparePeriodsScreen(
             InlineValue(
                 stringResource(R.string.compare_difference),
                 "${sign(result.difference)}${formatValue(kotlin.math.abs(result.difference), result.a.quantity)} " +
-                    "${stringResource(result.a.quantity.unit)}  (95% CI " +
+                    "${formatUnit(result.a.quantity)}  (95% CI " +
                     "${sign(result.diffCiLow)}${formatValue(kotlin.math.abs(result.diffCiLow), result.a.quantity)} to " +
                     "${sign(result.diffCiHigh)}${formatValue(kotlin.math.abs(result.diffCiHigh), result.a.quantity)})",
             )
@@ -116,7 +117,7 @@ fun ComparePeriodsScreen(
                 stringResource(
                     R.string.trend_dispersion,
                     formatValue(result.dispersion, result.a.quantity),
-                    stringResource(result.a.quantity.unit),
+                    formatUnit(result.a.quantity),
                 ),
                 style = PendulumType.caption,
                 color = c.textTertiary,
@@ -145,7 +146,7 @@ fun ComparePeriodsScreen(
 private fun estimateLine(r: Aggregate.Result): String = stringResource(
     R.string.compare_estimate_line,
     formatValue(r.median, r.quantity),
-    stringResource(r.quantity.unit),
+    formatUnit(r.quantity),
     formatValue(r.ciLow, r.quantity),
     formatValue(r.ciHigh, r.quantity),
     r.nights,

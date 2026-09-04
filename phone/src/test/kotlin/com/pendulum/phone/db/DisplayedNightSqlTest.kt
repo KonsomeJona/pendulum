@@ -79,37 +79,4 @@ class DisplayedNightSqlTest {
         assertThat(source).doesNotContain("LIMIT")
         assertThat(source).doesNotContain("ORDER BY")
     }
-
-    @Test
-    fun `a row built without naming its source has none`() {
-        // The fixtures of five test files build this row by hand; the accelerometer mask has no
-        // origin to name; and Room reads the column as nullable. All three want the same default.
-        val accessor = ComparableNight::class.java.getDeclaredMethod("getSourcePackage")
-        assertThat(accessor.returnType).isEqualTo(String::class.java)
-        assertThat(
-            ComparableNight(
-                sessionHex = "abcd",
-                startWallMs = 0L,
-                zoneId = "UTC",
-                paramsHash = "h",
-                rule = "AASM_V3",
-                maskSource = "ACCEL_IMMOBILITY",
-                gate = "TRUNCATED_NO_TREND",
-                independence = "CIRCULAR",
-                plmi = null,
-                plmiSpt = null,
-                fundamentalSec = null,
-                rhythmValid = false,
-                periodicityIndex = 0.0,
-                periodicityValid = false,
-                missRate = null,
-                analysableTstMin = 0.0,
-                analysableMin = 0.0,
-                truncated = false,
-                revealedAtMs = null,
-                comparable = false,
-                exclusionReason = ComparabilityRule.NO_CONTEXT,
-            ).sourcePackage
-        ).isNull()
-    }
 }

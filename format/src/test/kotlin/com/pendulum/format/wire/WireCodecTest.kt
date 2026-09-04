@@ -190,26 +190,26 @@ class WireCodecTest {
     }
 
     @Test
-    fun `an erase order survives a round trip`() {
+    fun `an erasure survives a round trip`() {
         // The instant is what the watch compares each session's start against: a session begun
         // after it is not the phone's to disown. Off by one bit, and a night recorded after the
         // erasure would be thrown away — or a night recorded before it kept.
-        val order = EraseOrder(erasedBeforeMs = 1_757_000_000_123L)
-        assertThat(EraseOrder.decode(order.encode())).isEqualTo(order)
+        val erasure = Erasure(erasedBeforeMs = 1_757_000_000_123L)
+        assertThat(Erasure.decode(erasure.encode())).isEqualTo(erasure)
         assertThat(WirePaths.ERASE).isEqualTo("/pendulum/erase")
     }
 
     @Test
-    fun `a bare erase order is refused rather than read as instant zero`() {
+    fun `a bare erasure is refused rather than read as instant zero`() {
         // The context item carries a bare decimal string, and that is fine for an item only ever
-        // tested for presence. The erase order is read back and acted on: a payload the watch
+        // tested for presence. The erasure is read back and acted on: a payload the watch
         // cannot understand must raise, because "instant 0" would disown nothing at all and the
         // erasure would silently not reach the watch.
-        assertThatThrownBy { EraseOrder.decode("1757000000123".toByteArray()) }
+        assertThatThrownBy { Erasure.decode("1757000000123".toByteArray()) }
             .isInstanceOf(WireFormatException::class.java)
             .hasMessageContaining("wire version")
-        val bytes = EraseOrder(1_757_000_000_123L).encode()
-        assertThatThrownBy { EraseOrder.decode(bytes.copyOf(bytes.size - 1)) }
+        val bytes = Erasure(1_757_000_000_123L).encode()
+        assertThatThrownBy { Erasure.decode(bytes.copyOf(bytes.size - 1)) }
             .isInstanceOf(WireFormatException::class.java)
             .hasMessageContaining("truncated")
     }

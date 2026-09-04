@@ -2,8 +2,11 @@ package com.pendulum.wear.transfer
 
 import com.pendulum.format.wire.WirePaths
 import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.w3c.dom.Element
+import org.w3c.dom.NodeList
 
 /**
  * Every path `AckObserver` handles must be named by a filter in the manifest.
@@ -35,6 +38,12 @@ import org.junit.jupiter.api.Test
  */
 class ObserverFilterTest {
 
+    private companion object {
+        const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
+        const val OBSERVER = "com.pendulum.wear.transfer.AckObserver"
+        const val DATA_CHANGED = "com.google.android.gms.wearable.DATA_CHANGED"
+    }
+
     /**
      * The paths `AckObserver.onDataChanged` dispatches on, and which must therefore be delivered.
      *
@@ -51,23 +60,57 @@ class ObserverFilterTest {
     fun `every path the observer handles is declared in the manifest`() {
         val manifest = manifestFile()
         assertThat(manifest).`as`("wear/src/main/AndroidManifest.xml").isNotNull
-        val xml = manifest!!.readText()
+        val declared = dataChangedPaths(manifest!!)
 
-        // The `android:path` / `android:pathPrefix` values of the DATA_CHANGED filters. A prefix
-        // covers everything under it, which is why the acknowledgement is declared as a prefix and
-        // the erase order — which carries no identifier — as an exact path.
-        val declared = Regex("""android:path(?:Prefix)?="([^"]+)"""")
-            .findAll(xml)
-            .map { it.groupValues[1] }
-            .toList()
+        // A bare `pathPrefix="/"` would deliver everything and turn this check into a tautology:
+        // the list above is meant to be read against the manifest, one filter per path.
+        assertThat(declared.filter { it.prefix }.map { it.value })
+            .`as`("catch-all prefix on the DATA_CHANGED filters of AckObserver")
+            .doesNotContain("/")
 
         val missing = handledPaths.filterNot { handled ->
-            declared.any { handled == it || handled.startsWith(it) }
+            declared.any { if (it.prefix) handled.startsWith(it.value) else handled == it.value }
         }
         assertThat(missing)
-            .`as`("paths handled by AckObserver that no intent-filter delivers: %s", missing)
+            .`as`("paths handled by AckObserver that no DATA_CHANGED filter delivers: %s", missing)
             .isEmpty()
     }
+
+    /** One `<data>` element: an `android:pathPrefix` covers everything under it, an `android:path`
+     *  is exact. */
+    private data class Declared(val value: String, val prefix: Boolean)
+
+    /**
+     * The `<data>` paths of the `DATA_CHANGED` filters of the `AckObserver` service — those and no
+     * others. The manifest is parsed, not grepped: a first version collected every `android:path`
+     * in the file, which proved only that the string appeared somewhere. `/pendulum/erase` moved
+     * under a `MESSAGE_RECEIVED` filter, or into another component, stayed green — and a filter
+     * landing in the wrong block while the manifest is reshuffled is the most plausible way this
+     * regresses.
+     */
+    private fun dataChangedPaths(manifest: File): List<Declared> {
+        val factory = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+        val document = factory.newDocumentBuilder().parse(manifest)
+        val service = document.getElementsByTagName("service").elements()
+            .singleOrNull { it.getAttributeNS(ANDROID_NS, "name") == OBSERVER }
+        assertThat(service).`as`("<service android:name=\"%s\">", OBSERVER).isNotNull
+
+        return service!!.getElementsByTagName("intent-filter").elements()
+            .filter { filter ->
+                filter.getElementsByTagName("action").elements()
+                    .any { it.getAttributeNS(ANDROID_NS, "name") == DATA_CHANGED }
+            }
+            .flatMap { it.getElementsByTagName("data").elements() }
+            .mapNotNull { data ->
+                data.getAttributeNS(ANDROID_NS, "path").takeIf { it.isNotEmpty() }
+                    ?.let { Declared(it, prefix = false) }
+                    ?: data.getAttributeNS(ANDROID_NS, "pathPrefix").takeIf { it.isNotEmpty() }
+                        ?.let { Declared(it, prefix = true) }
+            }
+    }
+
+    private fun NodeList.elements(): List<Element> =
+        (0 until length).mapNotNull { item(it) as? Element }
 
     private fun manifestFile(): File? {
         var dir: File? = File(System.getProperty("user.dir")).absoluteFile

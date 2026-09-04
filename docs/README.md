@@ -51,8 +51,7 @@ defect to be fixed in a later version.
 2. [`07-validation.md`](07-validation.md) — the adversarial account of the testing. Its §4.3 is the
    one that matters: the rhythm estimator, measured under the miss rate the detector actually
    produces, is wrong by 11 % where it answers at all and refuses to answer on 18 synthetic nights
-   out of 20. **Nothing here has been validated against polysomnography, and no night of real sleep
-   has ever been recorded with this software.**
+   out of 20. **Nothing here has been validated against polysomnography.**
 3. [`references.md`](references.md) — every source with its access status: read in full, abstract
    only, or known second-hand. Entries marked *none* are where this project is weakest.
 
@@ -197,7 +196,7 @@ came to be published with two different volume numbers. **One authority table** 
 
 Stated so that silence is not read as coverage.
 
-- **No night of real sleep has been recorded.** Every runtime figure in
+- **The runtime figures are estimates.** Every one of them in
   [`04-architecture.md`](04-architecture.md) is an engineering estimate, and the hardware gate P1
   has not been passed. [`01-overview.md`](01-overview.md) §5 is explicit about it.
 - **There is no user manual.** [`09-release.md`](09-release.md) §1 covers installation and first run;

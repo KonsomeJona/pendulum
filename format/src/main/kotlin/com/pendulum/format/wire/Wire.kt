@@ -99,8 +99,8 @@ object WirePaths {
     /**
      * Phone → watch: "everything you sent me before this instant has been erased; forget it."
      *
-     * A `DataItem` carrying an [EraseOrder], and **not** a message like [SWEEP_REQUEST] or
-     * [START_REQUEST]. The two orders above are gestures made in front of the watch, and a
+     * A `DataItem` carrying an [Erasure], and **not** a message like [SWEEP_REQUEST] or
+     * [START_REQUEST]. The two requests above are gestures made in front of the watch, and a
      * message that fails when the watch is out of range is reported as such. An erasure is a
      * different thing: it is a **state** — "the phone disowns what it received before T" — and
      * it must reach a watch that is in a drawer, switched off, or out of range at the moment the
@@ -125,7 +125,7 @@ object WirePaths {
      *
      * The payload is the erasure instant, and the watch compares it with the **start** of each
      * session it holds: a night started after the erasure is not the phone's to disown, and the
-     * order may reach the watch hours late, after such a night has begun.
+     * item may reach the watch hours late, after such a night has begun.
      */
     const val ERASE = "/pendulum/erase"
 
@@ -242,8 +242,13 @@ class WireFormatException(message: String) : IOException(message)
  * string the context item carries: the watch has to **read this number back** and act on it,
  * where the context item is only ever tested for presence. A payload that cannot be read must be
  * refused at the first byte rather than parsed into zero — zero would disown nothing, silently.
+ *
+ * Named for what it is and not for what it does. `ErasureOrder` on the phone is the *sequence*
+ * of the erasure's steps, after `SealingOrder`; an "erase order" next to it would read as the
+ * same thing, and this is not a command at all but a fact the phone states about itself — see
+ * [WirePaths.ERASE].
  */
-data class EraseOrder(val erasedBeforeMs: Long) {
+data class Erasure(val erasedBeforeMs: Long) {
 
     fun encode(): ByteArray = WireWriter(16)
         .u8(WireProtocol.VERSION)
@@ -251,10 +256,10 @@ data class EraseOrder(val erasedBeforeMs: Long) {
         .toByteArray()
 
     companion object {
-        fun decode(bytes: ByteArray): EraseOrder {
+        fun decode(bytes: ByteArray): Erasure {
             val r = WireReader(bytes)
-            r.version("EraseOrder")
-            return EraseOrder(erasedBeforeMs = r.i64())
+            r.version("Erasure")
+            return Erasure(erasedBeforeMs = r.i64())
         }
     }
 }

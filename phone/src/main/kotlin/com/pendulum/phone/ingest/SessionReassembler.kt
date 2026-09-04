@@ -114,11 +114,7 @@ object SessionReassembler {
             // alone: if the very first blocks were rejected, the timeline does not start at
             // `firstEventTimestampNs`, and a hypnogram placed on it would be shifted.
             if (anchor == null && blocks.isNotEmpty()) {
-                anchor = TimeAnchor(
-                    startWallMs = scan.header.startWallMs,
-                    firstEventTimestampNs = scan.header.firstEventTimestampNs,
-                    timelineT0Ns = blocks.first().tFirstNs,
-                )
+                anchor = TimeAnchor.of(scan.header, timelineT0Ns = blocks.first().tFirstNs)
             }
             if (!scan.complete) incomplete += idx
             scans += idx to scan
@@ -224,7 +220,9 @@ object SessionReassembler {
      * forbids any series from spanning it. So no inter-movement interval — the quantity this whole
      * application measures — is ever computed across the bridge.
      *
-     * The bridging is **counted**, never silent: see [Night.epochResets].
+     * The bridging is **counted**, never silent: [Night.epochResets] carries it and `AnalysisRunner`
+     * writes it to the log. It is not persisted, so it explains a night while the log still holds
+     * it and not a month later — a limit worth knowing before relying on it.
      */
     private fun bridgeEpoch(
         h: ChunkHeader,

@@ -8,7 +8,7 @@ import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 import com.pendulum.format.wire.Ack
-import com.pendulum.format.wire.EraseOrder
+import com.pendulum.format.wire.Erasure
 import com.pendulum.format.wire.WirePaths
 import com.pendulum.wear.record.RecordingService
 import com.pendulum.wear.record.SessionStore
@@ -32,7 +32,7 @@ class AckObserver : WearableListenerService() {
             val data = event.dataItem.data ?: continue
             try {
                 when {
-                    path == WirePaths.ERASE -> onErase(EraseOrder.decode(data))
+                    path == WirePaths.ERASE -> onErase(Erasure.decode(data))
                     path.startsWith(WirePaths.ACK_PREFIX) -> {
                         val ack = Ack.decode(data)
                         val dir = SessionStore(this).sessionDir(ack.sessionHex)
@@ -50,7 +50,7 @@ class AckObserver : WearableListenerService() {
     }
 
     /**
-     * The phone has erased everything it received before the order's instant.
+     * The phone has erased everything it received before the erasure's instant.
      *
      * An item and not a message, like the acknowledgement and for the same reason: it has to
      * reach a watch that was out of range when the user typed the confirmation. What it does is
@@ -66,9 +66,9 @@ class AckObserver : WearableListenerService() {
      * `catch` covers the refusal all the same, and the tombstone stands either way — a service
      * that could not be stopped records into a directory whose every burst is discarded.
      */
-    private fun onErase(order: EraseOrder) {
-        val disowned = DataLayerTransfer.disown(this, order)
-        Log.i(TAG, "erasure before ${order.erasedBeforeMs}: ${disowned.sessions.size} sessions disowned")
+    private fun onErase(erasure: Erasure) {
+        val disowned = DataLayerTransfer.disown(this, erasure)
+        Log.i(TAG, "erasure before ${erasure.erasedBeforeMs}: ${disowned.sessions.size} sessions disowned")
         if (!disowned.stopRecording) return
         try {
             ContextCompat.startForegroundService(

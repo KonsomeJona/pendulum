@@ -259,16 +259,16 @@ class PendulumListenerService : WearableListenerService() {
 
         // The chunk row and the telemetry rows are children of a cascading foreign key onto
         // `night_session`, and `INSERT OR IGNORE` does not cover foreign keys — SQLite's conflict
-        // clause applies to UNIQUE, NOT NULL, CHECK and PRIMARY KEY, nothing else. Until
-        // 4 September 2026 a chunk landing before its session item — the Data Layer orders
-        // nothing between distinct items, and the morning resynchronisation of a phone that was
-        // off all night delivers chunks and header in whatever order it likes — was written to
-        // disk above, then thrown out of this method by `SQLiteConstraintException` at the first
-        // insert, swallowed by the `catch` of `onDataChanged` as "item ignored", and acknowledged
-        // as nothing. The item stayed in the store, so the watch never re-put it; the file stayed
-        // on disk, so nothing re-read it before `IngestWorker` at the close — which never
-        // acknowledged either. Each such chunk held one of the watch's 24 in-flight slots until
-        // morning: a night that started this way showed its first two hours and nothing after.
+        // clause applies to UNIQUE, NOT NULL, CHECK and PRIMARY KEY, nothing else. A chunk
+        // landing before its session item — the Data Layer orders nothing between distinct
+        // items, and the morning resynchronisation of a phone that was off all night delivers
+        // chunks and header in whatever order it likes — used to be written to disk above, then
+        // thrown out of this method by `SQLiteConstraintException` at the first insert, swallowed
+        // by the `catch` of `onDataChanged` as "item ignored", and acknowledged as nothing. The
+        // item stayed in the store, so the watch never re-put it; the file stayed on disk, so
+        // nothing re-read it before `IngestWorker` at the close — which never acknowledged
+        // either. Each such chunk held one of the watch's 24 in-flight slots until morning: a
+        // night that started this way showed its first two hours and nothing after.
         //
         // The file is kept — the bytes were verified, they are the night — and no row is
         // attempted: `onSession` reconciles the directory against the database the moment the
@@ -343,12 +343,12 @@ class PendulumListenerService : WearableListenerService() {
         // announced series. Not before the series is complete, so that a backlog of seventy chunks
         // does not enqueue seventy analyses; not on a duplicate, so that a re-put of a chunk
         // already held does not enqueue one either. And **whether or not the night is scored
-        // yet**: until 4 September 2026 the relaunch went through `enqueueNightChain` and its
-        // `KEEP`, so it waited for `analyzedAtMs` — and the chunk that landed after `AnalyzeWorker`
-        // had listed the files but before it wrote `analyzedAtMs` was neither seen by that
-        // analysis nor relaunching one. A few seconds wide, and the night it fell in was
-        // truncated for good. `enqueueLateRescore` uses `APPEND_OR_REPLACE`: appended after the
-        // chain in flight if there is one, run at once otherwise, never dropped.
+        // yet**: the relaunch used to go through `enqueueNightChain` and its `KEEP`, so it
+        // waited for `analyzedAtMs` — and the chunk that landed after `AnalyzeWorker` had listed
+        // the files but before it wrote `analyzedAtMs` was neither seen by that analysis nor
+        // relaunching one. A few seconds wide, and the night it fell in was truncated for good.
+        // `enqueueLateRescore` uses `APPEND_OR_REPLACE`: appended after the chain in flight if
+        // there is one, run at once otherwise, never dropped.
         if (completesDeclaredSeries(
                 inserted = inserted,
                 declaredChunks = night.totalChunks,
@@ -381,9 +381,9 @@ class PendulumListenerService : WearableListenerService() {
     // ------------------------------------------------------------------
     //
     // The acknowledgement is recomputed **entirely from the database**, every single time, by
-    // `AckPublisher`. It lived here as a private method until 4 September 2026, which made this
-    // service its only caller — and a row that came into the database by any other road
-    // (`IngestWorker`, the reconciliation in `onSession`) was never acknowledged.
+    // `AckPublisher`. It used to live here as a private method, which made this service its
+    // only caller — and a row that came into the database by any other road (`IngestWorker`, the
+    // reconciliation in `onSession`) was never acknowledged.
 
     private fun sessionHexOfChunkPath(path: String): String? {
         val rest = path.removePrefix(WirePaths.CHUNK_PREFIX)
@@ -404,7 +404,10 @@ class PendulumListenerService : WearableListenerService() {
          * chunk the phone already holds would relaunch the analysis every time. Without
          * `declaredChunks`, a night the watch never closed would relaunch on every arrival — that
          * night belongs to the watchdog. Without the count reaching the declared total, every
-         * chunk of a backlog would enqueue an analysis.
+         * chunk of a backlog would enqueue an analysis. The count is compared with `>=` and not
+         * `==`: the watch declares `lastClosedIdx + 1`, so a count beyond it cannot come from the
+         * protocol — but a night that somehow had one would be no less complete, and an `==`
+         * would leave it unanalysed for good.
          *
          * There is deliberately **no** `analyzedAtMs` condition any more. It was there because the
          * relaunch went through `enqueueNightChain`, whose `KEEP` drops a request while the chain

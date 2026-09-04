@@ -97,7 +97,7 @@ object Aggregate {
      * to the headline figure, a count of eligible nights that the rest of the product contradicted.
      */
     enum class Quantity(
-        @StringRes val unit: Int,
+        @StringRes val unit: Int?,
         val decimals: Int,
         @StringRes val nightsNoun: Int,
     ) {
@@ -105,7 +105,13 @@ object Aggregate {
         HOURLY_COUNT(R.string.trend_unit_per_hour, 0, R.string.trend_nights_noun_eligible),
 
         /**
-         * The two quality medians of the trend card. Dimensionless, hence `trend_unit_none`.
+         * The two quality medians of the trend card. Dimensionless, hence `unit = null`: a rate
+         * and an index are ratios, and there is nothing to print after the figure. Absence is
+         * `null` here as it is everywhere else in the model (`plmi`, `missRate`, the `UiText?` of
+         * [qualifyPeriodicity]); it used to be an empty string resource, which printed nothing
+         * just as well but needed an exemption in the "no resource string is empty" guard rail to
+         * exist — and an exemption is the door through which the next empty string, the
+         * accidental one, walks in beside the deliberate one.
          *
          * They are quantities of this enum and not two hand-rolled medians because
          * `Mapping.aggregate` is the only producer of a [Result], hence the only place where
@@ -115,8 +121,8 @@ object Aggregate {
          * published RLS threshold — two lines under "Pendulum computes no aggregate below three
          * eligible nights".
          */
-        MISS_RATE(R.string.trend_unit_none, 2, R.string.trend_nights_noun_measured_rate),
-        PERIODICITY(R.string.trend_unit_none, 2, R.string.trend_nights_noun_valid_periodicity),
+        MISS_RATE(null, 2, R.string.trend_nights_noun_measured_rate),
+        PERIODICITY(null, 2, R.string.trend_nights_noun_valid_periodicity),
     }
 
     /**

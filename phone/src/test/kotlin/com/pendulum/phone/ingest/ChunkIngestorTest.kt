@@ -13,11 +13,11 @@ import java.io.File
 /**
  * The row rebuilt from a chunk file on the phone's disk.
  *
- * Until 4 September 2026 `IngestWorker` rebuilt it with `tFirstNs = 0`, `tLastNs = 0`,
- * `flagsOr = 0` and harvested no telemetry: one recovered chunk put the origin of the sensor time
- * base at zero and the metrology band of the whole night off the axis. These tests hold a file
- * next to the row it yields, and require the row to be the one the live path would have written
- * from the watch's `ChunkMeta` — the same sums, extrema, `OR` and CRC.
+ * `IngestWorker` used to rebuild it with `tFirstNs = 0`, `tLastNs = 0`, `flagsOr = 0` and
+ * harvested no telemetry: one recovered chunk put the origin of the sensor time base at zero and
+ * the metrology band of the whole night off the axis. These tests hold a file next to the row it
+ * yields, and require the row to be the one the live path would have written from the watch's
+ * `ChunkMeta` — the same sums, extrema, `OR` and CRC.
  */
 class ChunkIngestorTest {
 

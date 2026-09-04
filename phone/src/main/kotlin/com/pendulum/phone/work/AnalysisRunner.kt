@@ -70,6 +70,14 @@ object AnalysisRunner {
             sessionStateClosed = session.state == "CLOSED",
             declaredChunks = session.totalChunks,
         )
+        if (night.epochResets > 0) {
+            // The watch restarted during the night and the reassembler bridged the boot epochs, on
+            // a wall-clock difference this code base forbids everywhere else. The night is intact —
+            // that is the point of the bridge — but it was not measured under quite the same
+            // conditions as one that needed none, and a figure that later looks odd deserves to be
+            // explainable. Nothing else records this, so the log is where it is recorded.
+            Log.i(TAG, "$sessionHex: ${night.epochResets} watch reboot(s) bridged")
+        }
         if (night.blocks.isEmpty() || night.anchor == null) {
             Log.w(TAG, "$sessionHex: no usable block")
             return false

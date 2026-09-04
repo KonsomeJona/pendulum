@@ -420,7 +420,7 @@ class RecordingService : Service() {
             gaps?.consumePendingStep()?.let(::applyDegradation)
         }
         if (due.ui) publishUiState()
-        if (due.minuteMs > 0) minuteTick(due.minuteMs)
+        due.minuteCoveredMs?.let(::minuteTick)
     }
 
     /** @param sinceMs real elapsed time since the previous minute job: what the off-body counter

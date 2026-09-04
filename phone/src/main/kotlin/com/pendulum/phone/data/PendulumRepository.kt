@@ -107,7 +107,7 @@ class PendulumRepository(context: Context) {
     /**
      * The nights of the active hash, translated and sorted from the most recent to the oldest.
      *
-     * Through `displayNights` and not `allNights`: this read asked for the [DEFAULT_MASK] row and
+     * Through `displayNights`, with its fallback: this read asked for the [DEFAULT_MASK] row and
      * nothing else, and `NightAnalyzer` writes that row only when Health Connect returned a
      * hypnogram. A night scored without one — every night of a user with no sleep application,
      * and every night in the hours before its hypnogram arrives — had its accelerometer rows, its
@@ -171,29 +171,6 @@ class PendulumRepository(context: Context) {
                         Aggregate.Quantity.HOURLY_COUNT,
                         aggregatable,
                     ) { it.plmi },
-                    // The miss rate is measured by the harmonic deconvolution, not supposed. Its
-                    // median over the nights kept is both a quality indicator and the criterion
-                    // that says whether those nights measure the same thing.
-                    //
-                    // `mapNotNull`: a night whose fit was refused has no rate, and counting it as
-                    // zero would announce a measurement with no misses. `null` when no night
-                    // carries one — the screen then renders a dash.
-                    medianMissRate = aggregatable
-                        .mapNotNull { it.missRate }
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { Aggregate.median(it.toDoubleArray()) },
-                    // Only the nights whose fit was accepted, and `null` when there are none.
-                    //
-                    // The median used to run over every aggregatable night and fall back to `0.0`.
-                    // Both halves were wrong in the same direction: `Periodicity` states that below
-                    // its interval rate the value must not be displayed, and `0.0` is not an absence
-                    // but a legitimate index meaning "no periodicity whatsoever" — the single most
-                    // reassuring figure the scale can produce, published for a night that measured
-                    // nothing. Same treatment as the rhythm two lines above, and as `plmi`.
-                    medianPeriodicity = aggregatable
-                        .filter { it.periodicityValid }
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { Aggregate.median(DoubleArray(it.size) { i -> it[i].periodicityIndex }) },
                     customProfile = profile
                         ?.takeIf { it.paramsHash != AnalysisParams.DEFAULT.paramsHash }
                         ?.label,
@@ -578,9 +555,6 @@ data class TrendState(
     val nightsWithFittedRhythm: Int,
     val rhythm: Aggregate.Result?,
     val count: Aggregate.Result?,
-    /** `null` when no night kept carries a miss rate: a dash, never a zero. */
-    val medianMissRate: Double?,
-    val medianPeriodicity: Double?,
     val customProfile: String?,
     val mixedHashes: Boolean,
     val wakingFacts: WakingMachine.Facts? = null,

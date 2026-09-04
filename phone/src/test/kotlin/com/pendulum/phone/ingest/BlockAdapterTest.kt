@@ -78,6 +78,22 @@ class BlockAdapterTest {
     }
 
     @Test
+    fun `the epoch offset shifts both timestamps, and the nominal rate comes through`() {
+        // Across a reboot of the watch, `SessionReassembler` shifts every post-reboot block by the
+        // same offset. Shifting `tFirstNs` alone would leave the block's own duration negative
+        // and step -1 would reject it; and the rate is read per chunk because it changes in
+        // flight, so the value the header carries has to reach the block, not a default.
+        val adapted = BlockAdapter.adoptInPlace(
+            block(0f, 0f, 0f),
+            nominalHz = 25.0,
+            offsetNs = 7_000_000_000L,
+        )
+        assertThat(adapted.tFirstNs).isEqualTo(1_000L + 7_000_000_000L)
+        assertThat(adapted.tLastNs).isEqualTo(1_000L + 2 * 20_000_000L + 7_000_000_000L)
+        assertThat(adapted.nominalHz).isEqualTo(25.0)
+    }
+
+    @Test
     fun `a block of a single sample gets through`() {
         val adapted = BlockAdapter.copyOf(block(9.80665f))
         assertThat(adapted.x).hasSize(1)

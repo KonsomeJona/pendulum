@@ -320,12 +320,13 @@ class ChunkStore(
 
     private companion object {
         /**
-         * Ceiling of a plausible age for the first sample of a chunk: twice the report latency
-         * the strategy may ask of the sensor. Hardware time, not a wall-clock duration — the bench
-         * compresses neither the FIFO nor this bound. Beyond it the two clocks do not share a base
-         * and the difference measures nothing that should be subtracted.
+         * @see ChunkFormat.MAX_BURST_AGE_NS — the phone applies the same bound when it re-reads a
+         * header written before the watch started correcting it. `BurstAgeBoundTest` ties the
+         * shared figure back to [SensorStrategy.MAX_LATENCY_US], from which it is derived: raising
+         * the latency without raising the bound would make the watch stop correcting exactly the
+         * bursts that most need it.
          */
-        const val MAX_BURST_AGE_NS: Long = 2L * SensorStrategy.MAX_LATENCY_US * 1_000L
+        const val MAX_BURST_AGE_NS: Long = ChunkFormat.MAX_BURST_AGE_NS
     }
 }
 

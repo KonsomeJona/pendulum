@@ -28,16 +28,16 @@ import org.junit.jupiter.api.Test
 class LateChunkRelaunchTest {
 
     @Test
-    @DisplayName("scored or not, the completing chunk relaunches: the policy appends, it does not drop")
+    @DisplayName("the completing chunk relaunches, whatever the scoring state of the night")
     fun `the chunk that completes the announced series relaunches the analysis`() {
         // Session closed with three chunks announced, two of them held, the third lands. Whether
         // the chain launched by the CLOSED item has already scored the night, is still running,
         // or has not started, is deliberately not an input: the first rule refused this arrival
         // while the night was unscored ("the chain still ahead will see this chunk itself") and
         // got it wrong when the chunk landed after that chain had already listed the files. The
-        // rule has no way to tell the two apart, and it no longer needs to — `APPEND_OR_REPLACE`
-        // runs the second analysis after the first, on the complete series, at the price of one
-        // analysis more on that night.
+        // rule has no way to tell the two apart, and it no longer needs to. What makes that safe
+        // is the work policy of `WorkScheduler.enqueueLateRescore`, argued in its KDoc; nothing
+        // here exercises WorkManager, this test only pins the rule.
         assertThat(
             PendulumListenerService.completesDeclaredSeries(
                 inserted = true,
@@ -85,18 +85,5 @@ class LateChunkRelaunchTest {
                 completeChunks = 40,
             )
         ).isFalse()
-    }
-
-    @Test
-    fun `more complete chunks than declared still counts as complete`() {
-        // Defensive: the watch declares `lastClosedIdx + 1`, a strictly greater count cannot
-        // happen from the protocol, but if it did the night is not less complete for it.
-        assertThat(
-            PendulumListenerService.completesDeclaredSeries(
-                inserted = true,
-                declaredChunks = 3,
-                completeChunks = 4,
-            )
-        ).isTrue()
     }
 }

@@ -236,8 +236,8 @@ examination, not to replace one. No dose is adjusted on this number.
 
 **Today: pre-alpha.** All five modules build, and all five are written. The two pure-JVM modules
 carry **238 unit tests**; the two Android applications carry **395 more on the JVM**, plus 26
-instrumented tests that need a real device or an emulator. What does not exist is a single
-night of real data — the hardware feasibility gate (P1) has not been passed.
+instrumented tests that need a real device or an emulator. The hardware feasibility gate (P1) has
+not been passed.
 
 | Module | Language | State |
 |---|---|---|
@@ -307,7 +307,7 @@ attaches a night to its sealed context — rather than counting conformances. A 
 the run exactly as a failed one does, because reproducibility is the property that separates a rig
 that holds from a rig that held once.
 
-So the verdict is calculable, displayable and exportable. What is missing is the nights.
+So the verdict is calculable, displayable and exportable.
 
 ### What real hardware has nonetheless established
 

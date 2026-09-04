@@ -36,23 +36,23 @@ class TickSchedule(private val tickMs: Long, startElapsedMs: Long) {
 
     /**
      * What is due at [nowElapsedMs], and marks it as done: the caller must run everything it gets.
-     *
-     * [Due.minuteMs] is the **real** elapsed time since the previous minute job, or zero when it
-     * is not due. It is what the off-body counter has to add: a minute job that runs late must
-     * account for the time it covers, not for a nominal sixty seconds.
      */
     fun due(nowElapsedMs: Long): Due {
         val sync = nowElapsedMs - lastSyncMs >= tickMs
         if (sync) lastSyncMs = nowElapsedMs
         val ui = nowElapsedMs - lastUiMs >= 3 * tickMs
         if (ui) lastUiMs = nowElapsedMs
-        val sinceMinute = nowElapsedMs - lastMinuteMs
-        val minuteMs = if (sinceMinute >= 6 * tickMs) sinceMinute else 0L
-        if (minuteMs > 0) lastMinuteMs = nowElapsedMs
-        return Due(sync = sync, ui = ui, minuteMs = minuteMs)
+        val minuteCoveredMs = (nowElapsedMs - lastMinuteMs).takeIf { it >= 6 * tickMs }
+        if (minuteCoveredMs != null) lastMinuteMs = nowElapsedMs
+        return Due(sync = sync, ui = ui, minuteCoveredMs = minuteCoveredMs)
     }
 
-    data class Due(val sync: Boolean, val ui: Boolean, val minuteMs: Long) {
-        val any: Boolean get() = sync || ui || minuteMs > 0
+    /**
+     * @property minuteCoveredMs the **real** elapsed time since the previous minute job, `null`
+     *   when the minute is not due. A duration rather than a flag because it is what the off-body
+     *   counter has to add: a minute job that runs late covers more than a nominal sixty seconds.
+     */
+    data class Due(val sync: Boolean, val ui: Boolean, val minuteCoveredMs: Long?) {
+        val any: Boolean get() = sync || ui || minuteCoveredMs != null
     }
 }

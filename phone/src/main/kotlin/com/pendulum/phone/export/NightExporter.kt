@@ -1,13 +1,12 @@
 package com.pendulum.phone.export
 
 import android.content.Context
-import com.pendulum.phone.db.ChunkEntity
 import com.pendulum.phone.db.HcSnapshotEntity
 import com.pendulum.phone.db.NightContextEntity
 import com.pendulum.phone.db.NightSessionEntity
 import com.pendulum.phone.db.PendulumDatabase
+import com.pendulum.phone.ingest.ChunkIngestor
 import com.pendulum.phone.ingest.ChunkStore
-import com.pendulum.phone.ingest.TelemetryAdapter
 import com.pendulum.phone.work.AnalysisParams
 import com.pendulum.format.wire.WirePaths
 import com.pendulum.phone.work.WorkScheduler
@@ -113,65 +112,26 @@ object NightExporter {
         for ((idx, bytes) in content.chunks) {
             store.write(hex, idx, bytes)
 
-            // The same single pass as ingestion (`PendulumListenerService.onChunk`) and as the
-            // watch before it sends (`DataLayerTransfer.summarize`): the `TLM!` points and the
-            // block time base are harvested while the reader is already walking the file to find
-            // out whether it is complete. A second pass would be an occasion to diverge — a chunk
-            // judged complete by the first and unreadable by the second.
-            //
-            // Until 4 September 2026 this loop walked the file for `complete` alone: the telemetry
-            // was decoded, CRC-checked, and dropped, and the chunk row was written with
-            // `sampleCount = 0, tFirstNs = 0, tLastNs = 0, flagsOr = 0`. A campaign carried to a
-            // new phone therefore arrived with `telemetry_point` empty on every night — no
-            // metrology band on the night detail, an empty `Metrology.summary` in the "why" block,
-            // and the P1 battery criterion `UNDETERMINED` for the whole campaign, so that the P1
-            // report exported from the new phone contradicted the one from the old phone on the
-            // same nights. `Entities.kt` says the table cannot be reconstituted from the database;
-            // it can from the chunk bytes, which is exactly what the bundle carries.
-            val telemetry = ArrayList<com.pendulum.format.TelemetryPoint>()
-            var sampleCount = 0
-            var tFirstNs = Long.MAX_VALUE
-            var tLastNs = Long.MIN_VALUE
-            var flagsOr = 0
-            val complete = store.fileFor(hex, idx).inputStream().buffered().use {
-                com.pendulum.format.ChunkReader.forEachBlock(
-                    it,
-                    onTelemetry = { point -> telemetry += point },
-                ) { block ->
-                    sampleCount += block.sampleCount
-                    if (block.tFirstNs < tFirstNs) tFirstNs = block.tFirstNs
-                    if (block.tLastNs > tLastNs) tLastNs = block.tLastNs
-                    flagsOr = flagsOr or block.flags
-                }.complete
-            }
+            // This loop used to walk the file for `complete` alone: the telemetry was decoded,
+            // CRC-checked, and dropped, and the chunk row was written with `sampleCount = 0,
+            // tFirstNs = 0, tLastNs = 0, flagsOr = 0`. A campaign carried to a new phone therefore
+            // arrived with `telemetry_point` empty on every night — no metrology band on the night
+            // detail, an empty `Metrology.summary` in the "why" block, and the P1 battery criterion
+            // `UNDETERMINED` for the whole campaign, so that the P1 report exported from the new
+            // phone contradicted the one from the old phone on the same nights. `Entities.kt` says
+            // the table cannot be reconstituted from the database; it can from the chunk bytes,
+            // which is exactly what the bundle carries — and `ChunkIngestor.scan` is the one
+            // function that turns them back into the row and the points, the same way for a live
+            // arrival, a recovery from disk and an import.
+            val scanned = ChunkIngestor.scan(hex, idx, store.fileFor(hex, idx), System.currentTimeMillis())
 
             // Written **before** the chunk row, in the same order as ingestion. A v1 chunk carries
             // no `TLM!` block: the list is empty and the night has no metrology band, which is the
             // truth of that night and not a failure of the import.
-            if (telemetry.isNotEmpty()) {
-                db.telemetryDao().insertAllIfAbsent(TelemetryAdapter.toEntities(hex, telemetry))
+            if (scanned.telemetry.isNotEmpty()) {
+                db.telemetryDao().insertAllIfAbsent(scanned.telemetry)
             }
-
-            db.chunkDao().insertIfAbsent(
-                ChunkEntity(
-                    sessionHex = hex,
-                    idx = idx,
-                    path = store.fileFor(hex, idx).absolutePath,
-                    size = bytes.size,
-                    crc32 = ChunkStore.crc32(bytes),
-                    sampleCount = sampleCount,
-                    // `tFirstNs` of the first chunk is the origin of the sensor time base
-                    // (`PendulumRepository.nightDetail`, `Metrology`): left at zero, the restored
-                    // metrology band aligned on an origin that was not the night's. A chunk with
-                    // no readable block keeps the zeroes ingestion would never have written for
-                    // it, rather than `Long.MAX_VALUE`.
-                    tFirstNs = if (sampleCount == 0) 0L else tFirstNs,
-                    tLastNs = if (sampleCount == 0) 0L else tLastNs,
-                    flagsOr = flagsOr,
-                    complete = complete,
-                    receivedAtMs = System.currentTimeMillis(),
-                )
-            )
+            db.chunkDao().insertIfAbsent(scanned.row)
         }
 
         // The context is sealed on import as it was originally — `sealedAtMs` is copied across,

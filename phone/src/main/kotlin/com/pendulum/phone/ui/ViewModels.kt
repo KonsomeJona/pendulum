@@ -294,7 +294,7 @@ class TrendViewModel(app: Application) : AndroidViewModel(app) {
             Math.round(r.median).toString(),
             value(points.minOf { it.value }),
             value(points.maxOf { it.value }),
-            res.getString(Aggregate.Quantity.RHYTHM_SECONDS.unit),
+            Aggregate.Quantity.RHYTHM_SECONDS.unit?.let { res.getString(it) }.orEmpty(),
         )
     }
 }

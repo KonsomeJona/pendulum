@@ -42,17 +42,19 @@ import com.pendulum.phone.ingest.ChunkStore
 object DataEraser {
 
     /**
-     * @return `false` when the watch side could not be reached — the order was not put or a
-     *   deletion failed. The phone's own data is gone either way; what may remain is on the
-     *   watch, and it may come back. The erasure screen does not show this yet: the value is
-     *   there for it, and the log line says it in the meantime.
+     * A watch that could not be reached — the order not put, or a deletion failed — is logged and
+     * nothing more: the phone's own data is gone either way, and what may remain is on the watch,
+     * from where it may come back.
      */
-    suspend fun eraseEverything(context: Context): Boolean = ErasureOrder.execute(
-        cancelWork = { WorkManager.getInstance(context).cancelAllWork() },
-        disownWatch = { WatchCommands.disown(context, System.currentTimeMillis()) },
-        deleteFiles = { ChunkStore(context).deleteAll() },
-        eraseDatabase = { PendulumDatabase.get(context).eraseEverything() },
-    ).also { if (!it) Log.w(TAG, "erased locally; the watch was not told") }
+    suspend fun eraseEverything(context: Context) {
+        val watchTold = ErasureOrder.execute(
+            cancelWork = { WorkManager.getInstance(context).cancelAllWork() },
+            disownWatch = { WatchCommands.disown(context, System.currentTimeMillis()) },
+            deleteFiles = { ChunkStore(context).deleteAll() },
+            eraseDatabase = { PendulumDatabase.get(context).eraseEverything() },
+        )
+        if (!watchTold) Log.w(TAG, "erased locally; the watch was not told")
+    }
 
     /** The space occupied, so that the deletion screen can announce what it is about to destroy. */
     fun bytesOnDisk(context: Context): Long {
@@ -74,7 +76,9 @@ object DataEraser {
  *     holds the data, so an interrupted sequence leaves something to erase again rather than a
  *     watch pushing back what is gone;
  *  2. **a watch that cannot be told does not stop the local erasure.** The disown step is the one
- *     with a remote party in it; it reports, it does not veto.
+ *     with a remote party in it; it reports, it does not veto. It reports with `false`, never by
+ *     raising: `WatchCommands.disown` catches, and the sequence relies on that rather than guard
+ *     it a second time.
  *
  * `inline` for the same reason as `SealingOrder.execute`: the four steps stay suspending lambdas
  * called from a `suspend` function without this one having to be one.
@@ -89,14 +93,7 @@ object ErasureOrder {
         eraseDatabase: () -> Unit,
     ): Boolean {
         cancelWork()
-        // A remote party that raises is a remote party that could not be told — not a reason to
-        // leave the user's data in place. `WatchCommands.disown` already catches; this is the
-        // guarantee at the level of the sequence, where a test can see it.
-        val watchTold = try {
-            disownWatch()
-        } catch (e: Exception) {
-            false
-        }
+        val watchTold = disownWatch()
         deleteFiles()
         eraseDatabase()
         return watchTold

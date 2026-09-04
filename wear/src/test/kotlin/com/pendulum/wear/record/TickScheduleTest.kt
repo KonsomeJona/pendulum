@@ -32,7 +32,7 @@ class TickScheduleTest {
         repeat(20) {
             now += 30_000L
             val due = s.due(now)
-            if (due.minuteMs > 0) minutes++
+            if (due.minuteCoveredMs != null) minutes++
         }
         assertThat(minutes).isEqualTo(10)
     }
@@ -44,7 +44,7 @@ class TickScheduleTest {
         // covers 120 s, and the off-body counter must add 120 s, not 60.
         val s = TickSchedule(TICK, T0)
         val due = s.due(T0 + 120_000L)
-        assertThat(due.minuteMs).isEqualTo(120_000L)
+        assertThat(due.minuteCoveredMs).isEqualTo(120_000L)
         // Consulted again a second later: nothing is due, the previous call consumed it.
         assertThat(s.due(T0 + 121_000L).any).isFalse()
     }
@@ -58,20 +58,20 @@ class TickScheduleTest {
         val first = s.due(T0 + TICK)
         assertThat(first.sync).isTrue()
         assertThat(first.ui).isFalse()
-        assertThat(first.minuteMs).isZero()
+        assertThat(first.minuteCoveredMs).isNull()
 
         s.due(T0 + 2 * TICK)
         val third = s.due(T0 + 3 * TICK)
         assertThat(third.sync).isTrue()
         assertThat(third.ui).isTrue()
-        assertThat(third.minuteMs).isZero()
+        assertThat(third.minuteCoveredMs).isNull()
 
         s.due(T0 + 4 * TICK)
         s.due(T0 + 5 * TICK)
         val sixth = s.due(T0 + 6 * TICK)
         assertThat(sixth.sync).isTrue()
         assertThat(sixth.ui).isTrue()
-        assertThat(sixth.minuteMs).isEqualTo(6 * TICK)
+        assertThat(sixth.minuteCoveredMs).isEqualTo(6 * TICK)
     }
 
     @Test
@@ -79,7 +79,7 @@ class TickScheduleTest {
     fun `periods are counted from the start`() {
         // The first burst lands 30 s after START; a minute has not passed. At the second, it has.
         val s = TickSchedule(TICK, T0)
-        assertThat(s.due(T0 + 30_000L).minuteMs).isZero()
-        assertThat(s.due(T0 + 60_000L).minuteMs).isEqualTo(60_000L)
+        assertThat(s.due(T0 + 30_000L).minuteCoveredMs).isNull()
+        assertThat(s.due(T0 + 60_000L).minuteCoveredMs).isEqualTo(60_000L)
     }
 }

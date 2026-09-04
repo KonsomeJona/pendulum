@@ -3,7 +3,6 @@ package com.pendulum.phone.ui.model
 import com.pendulum.algo.model.PublicationGate
 import com.pendulum.phone.db.ComparabilityRule
 import com.pendulum.phone.db.ComparableNight
-import com.pendulum.phone.db.PlmResultEntity
 import com.pendulum.phone.R
 import com.pendulum.phone.ui.text.UiText
 import com.pendulum.phone.ui.text.text
@@ -135,9 +134,6 @@ object Mapping {
      * this number" block, and the median over such nights on the trend card.
      */
     fun missRate(n: ComparableNight): Double? = n.missRate?.takeIf { n.rhythmValid }
-
-    /** The same gate, on the result row rather than on the view. */
-    fun missRate(r: PlmResultEntity): Double? = r.missRate?.takeIf { r.rhythmValid }
 
     /**
      * `21 s`, or the mention of the refusal. **The only place where a rhythm is formatted**: the
