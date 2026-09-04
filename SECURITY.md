@@ -30,6 +30,16 @@ Particularly worth reporting:
 - **The Data Layer surface.** `PendulumListenerService` is exported by necessity — Google Play
   services starts it — and guarded by `BIND_WEARABLE_LISTENER` plus a path prefix filter. If a
   malicious application can reach it, say so.
+- **Anything that survives "erase everything".** The erasure spans two devices and an asynchronous
+  channel. The phone cancels its queued work, puts an erase order on the Data Layer, deletes every
+  item either side had written there, then its own chunk files, then the database — append-only
+  triggers dropped, `VACUUM`ed, so the freed pages are not left readable in the file. The watch,
+  when that order reaches it, deletes the chunk files and the items of every session that started
+  before the erasure instant; a session started *after* it is deliberately kept, because the order
+  is an item and may arrive hours later on a watch that has since begun another night. Two things
+  are worth reporting: data of an erased night still readable on either device once the order has
+  been applied, and any way that order can be lost rather than merely delayed — the phone erases
+  itself whether or not the watch could be told.
 - **Anything in a release artifact that should not be there**: keys, tokens, paths from a build
   machine, or a debug-signed artifact published as a release.
 
@@ -37,8 +47,8 @@ Particularly worth reporting:
 
 - **That the estimate can be wrong.** It can, and the ways it can are documented at length in
   [`docs/07-validation.md`](docs/07-validation.md), including the measurements that still fall
-  short of what the product needs (§4.2 and §4.3). Wrong numbers are a correctness problem — open a
-  normal issue.
+  short of what the product needs (§4.1, §4.3 and §4.4). Wrong numbers are a correctness problem —
+  open a normal issue.
 - **That sideloading is unsafe.** It is a deliberate choice, and its consequences are in
   [`fastlane/README.md`](fastlane/README.md).
 - **That releases are signed with a self-managed key.** They are, and losing it would be a real

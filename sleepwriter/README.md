@@ -147,6 +147,17 @@ END=$(( $(date -d '07:00' +%s) * 1000 ))          # this morning at 7 am
 START=$(( END - 8 * 3600 * 1000 ))                # eight hours earlier
 ```
 
+### The window written is not the denominator
+
+Pendulum clips every external sleep window to the span it actually recorded
+(`NightAnalyzer.clipToSignal`): sleep that continues past the last sample contributes nothing to the
+numerator, so letting it into `tstMin` would divide the published index by up to two. A run that
+replays twenty minutes of signal under an eight-hour session therefore reports twenty minutes of
+sleep, and that is the right answer rather than a fault in the writer. A session that does not
+overlap the recorded span at all leaves the night with no Health Connect mask, exactly as if nothing
+had been written. Match the window to the signal being replayed whenever the run is about the index
+rather than about the plumbing.
+
 ---
 
 ## The four scenarios

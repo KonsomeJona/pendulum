@@ -58,8 +58,9 @@ truth. What remains in `wear` and `phone` is the part that genuinely needs a dev
 lifecycle, sensor registration, the Data Layer, Room, WorkManager, and the interface.
 
 **`algo` depends on nothing at all — not even on `format`.** Its input is the minimal interface
-`SampleBlock` (`tFirstNs`, `tLastNs`, `flags`, `x`, `y`, `z`). The adapter from
-`com.pendulum.format.DecodedBlock` to `SampleBlock` lives in `phone`, not in `algo`. This is not
+`SampleBlock` (`tFirstNs`, `tLastNs`, `flags`, `x`, `y`, `z`, and `nominalHz` — the rate declared by
+the chunk header that carried the block, because a night is not at a single rate, see §2.3). The
+adapter from `com.pendulum.format.DecodedBlock` to `SampleBlock` lives in `phone`, not in `algo`. This is not
 fastidiousness: it is what lets the synthetic generator feed the chain directly, so that a
 detection result can be compared against a movement list that is known by construction rather than
 inferred. A dependency on `format` would tie the algorithm's test harness to a binary file format
@@ -158,7 +159,7 @@ datum is `reserved` on the specific watch, read at runtime and written into the 
 the `fifoMaxEventCount` field, which should carry **`reserved`, not `max`**, or into a second field
 taken from the six reserved bytes of the 80-byte header.
 
-`SensorStrategy` is a pure function `(isWakeUp, fifoReserved, fifoMax, rateHz) → AcquisitionMode`
+`SensorStrategy` is a pure function `(isWakeUp, fifoReserved, rateHz) → AcquisitionMode`
 with no Android dependency, so all four branches are covered by JVM tests.
 
 **The wake lock costs roughly 200 mAh over eight hours, about 65 % of the battery.** It is the only
@@ -202,6 +203,14 @@ and are never rewritten, because the format is append-only. Every block that fol
 
 25 Hz remains ample. Candidate limb movements last 0.5 to 10 s and the RMS envelope is computed over
 0.15 s; Nyquist is not the limiting factor, onset time resolution is, and 40 ms suffices.
+
+**A rate change is recorded in a header, so everything downstream must read it from there.** Each
+block reaches `algo` carrying the nominal of the header that delivered it, and the session nominal
+— taken from the first chunk — is only the fallback. Measured against that session nominal instead,
+every block recorded after step 3 shows a 50 % deviation against a 20 % tolerance and is rejected as
+an implausible rate: the recording is thrown away exactly when degrading has managed to save it.
+Reading the rate per block does not weaken the check, which still catches a genuinely corrupted time
+base — it is measured against the rate the watch says it was recording at.
 
 Independently of the gap monitor, `SensorPipeline` **measures the real `fs` continuously** over 60 s
 windows and raises a flag when it departs from nominal by more than 5 %. The requested rate is not
@@ -316,6 +325,16 @@ Non-negotiable details:
   schedules an `AlarmManager.setExactAndAllowWhileIdle` at +30 s to start a fresh session with a new
   UUID, marked `RESTARTED_AFTER_TIMEOUT`. Cost if unnecessary: zero. Cost if necessary and absent:
   half of every night.
+- **The periodic jobs are decided on `elapsedRealtime`, never on the ticks of the `Handler`.** A
+  `Handler` runs on the uptime clock, which does not advance while the SoC is suspended, and in the
+  nominal batched mode the processor is awake a few per cent of the time between two FIFO flushes:
+  counted in ticks, a minute of night lasts on the order of half an hour. That stretches everything
+  the minute carries — the stop conditions of §2.6, so a low battery seen thirty minutes late is a
+  watch the system switches off before the clean close; the 10:00 cut-off; and the telemetry point
+  the phone counts as one per minute, which then stops dividing the 300 s rotation. `TickSchedule`
+  is a pure class that takes the clock as a parameter and hands back the duration actually covered, so
+  the off-body counter accumulates real seconds. The tick itself stays a `Handler` and stays free:
+  the decision runs in the wake of a flush the FIFO causes anyway, and wakes nothing.
 - The wake lock is acquired **without a timeout**. This is a sideloaded personal application, so
   there is no store constraint, and a timeout that expires at 4 a.m. is a silent bug.
 - The notification uses an `IMPORTANCE_LOW` channel: no sound, no vibration, `setOngoing(true)`,
@@ -337,7 +356,7 @@ Six conditions; the first to occur wins. Each writes a `stopReason` into the sid
 | 2 | **Battery ≤ 5 %** | clean close plus a final `setUrgent()` burst **before** the system kills anything | `LOW_BATTERY` |
 | 3 | **Maximum duration** | `startWallMs + 10 h` | `MAX_DURATION` |
 | 4 | **Cut-off time** | local time ≥ `stopAtLocalTime` (default **10:00**) | `TIME_LIMIT` |
-| 5 | **Waking detected** | more than 80 % of 30 s epochs above the locomotion threshold over a sliding 10 min window | `WAKE_DETECTED` |
+| 5 | **Waking detected** | more than 80 % of 30 s epochs above the locomotion threshold over a sliding 10 min window, and **zero until that window holds its twenty epochs** | `WAKE_DETECTED` |
 | 6 | **Disk** | free space below 50 MB | `DISK_FULL` |
 
 Condition 2 is the highest-yield item in this document. It converts "the watch died at 3 a.m." into
@@ -351,6 +370,13 @@ capacitive sensing at the wrist; at the ankle its behaviour is undocumented and 
 affected blocks — and **never acted upon**. The real "watch removed" detector is condition 5, which
 measures locomotion: the event actually of interest ("the person got up"), not an unvalidated proxy
 for it.
+
+That detector answers only on a **full** window, and the reason is the first minute of every night.
+A ratio divided by the number of epochs closed *so far*, rather than by the twenty of the window,
+puts the very first active epoch at 1.0 — and the first active epoch is the walk from the button to
+the bed, several m/s² at the ankle. The night then closes one minute after START, cleanly, with
+nobody awake to see it. Before the window is full the "80 % of ten minutes" the condition promises
+does not exist, so neither does its verdict.
 
 ### 2.7 Recovery after reboot or crash
 
@@ -375,6 +401,25 @@ night exactly as the recording is supposed to avoid.
 The first chunk after a resume carries `FLAG_GAP_BEFORE` on its first block and a `chunkIndex` that
 **continues the numbering** read from the marker. It is never reset: the phone's `(sessionId, idx)`
 uniqueness constraint depends on it.
+
+**What the watch cannot carry across the reboot is its clock, and the phone has to.**
+`SensorEvent.timestamp` is `elapsedRealtimeNanos`, which restarts from zero at boot, so every block
+recorded after the reboot is dated *before* the last one recorded before it. The integrity step that
+enforces monotonicity compares each block against the last **accepted** one, which then never
+advances again, so left alone it rejects the whole second half of the night one block at a time — an
+integrity failure declared on files that are all intact, with the data sitting unused on the disk.
+The change of epoch is visible only in the chunk header, which is why the bridging lives in the
+phone's `SessionReassembler` and not in `algo`: `startElapsedRealtimeNs` is monotonic within one boot and can
+only go backwards across one, so it is the field that tells two epochs apart, and the second epoch is
+placed after the first with the wall-clock difference between the two headers. Differencing wall
+clocks is forbidden everywhere else in this project, and legitimately so; here it is the only bridge
+there is, because two boot epochs share no monotonic clock at all. Its error is seconds, the hole it
+measures is minutes, and the error lands *inside* a hole long enough to be cut as a segment break, so
+no inter-movement interval — the quantity this application measures — is ever computed across it. A
+floor keeps a wall clock that stepped back at boot (an NTP correction right after starting) from
+landing on top of the samples already stacked. Each bridge is **counted** in the reassembly result
+(`Night.epochResets`), never silent: a bridged night is intact, which is the point of the repair, but
+it was not measured under quite the same conditions as one that needed no bridge.
 
 **A blind spot to measure: credential encryption.** If the watch has a lock code, `BOOT_COMPLETED`
 is only broadcast after unlock, and credential-encrypted storage is unreachable before that. A
@@ -453,6 +498,21 @@ off  size  field                    type
 are all recorded because `SensorEvent.timestamp` is not guaranteed equal to
 `elapsedRealtimeNanos` — some vendors exclude suspend time — and without the three-way comparison
 that drift is invisible, shifting the fusion with the hypnogram by minutes.
+
+**And all three date the same instant: the first sample of the chunk.** That is not what writing them
+naïvely gives. A chunk is opened from the first `writeBlock`, that is at the first FIFO flush, and in
+batched mode that burst is already up to thirty seconds old when it arrives; even in continuous mode
+the 512-sample block puts 10.24 s between the first sample and the write. Stamping the two system
+clocks at the write while `firstEventTimestampNs` names the sample makes the phone — which pairs
+`startWallMs` with `firstEventTimestampNs` to place the night — project every movement of the night
+10 to 60 s late against the hypnogram and the evening record: a whole AASM epoch, and a different one
+every night, since it depends on the phase between `registerListener` and the first burst. A movement
+at a sleep/wake boundary changes epoch, and therefore status, silently. Both system clocks are
+therefore pulled back by the measured age of that first sample — both, so that a reader pairing *any*
+two of the three fields is right — and only when that age is plausible, its ceiling being twice the
+longest report latency the strategy ever asks for. Beyond that ceiling the two clock bases do not
+share an origin, and the header is left raw: an anchor that is merely late is a far smaller error
+than one moved by hours, and the raw triplet stays visible for the drift comparison above.
 
 **Format evolution rule.** The CRC *always* occupies the last two bytes of the header, and
 `headerSize` gives the length. An older reader can therefore read a file written by a newer writer
@@ -758,6 +818,7 @@ when a key is renamed, whereas here a layout change is rejected at the first byt
 | `/pendulum/chunk/<hex>/<idx:05d>` | watch → phone | `ChunkMeta` (idx, size, crc32, sampleCount, tFirstNs, tLastNs, flagsOr) plus the exact bytes of the chunk file |
 | `/pendulum/live/<hex>` | watch → phone, urgent | `LivePreview`: counters, battery, gaps, `syncBacklogged`, 900-byte envelope. **Replaced** each burst, never accumulated |
 | `/pendulum/ack/<hex>` | phone → watch, urgent | `Ack`: `ackedUpTo`, `bitmapBase`, `ackedBitmap`, `needResend` |
+| `/pendulum/erase` | phone → watch, urgent | `EraseOrder`: the instant of the erasure. Not per session — see below |
 | `/pendulum/sweep/<hex>` | watch → phone (channel) | bulk catch-up stream, specified but not yet implemented in `format` |
 
 The chunk index is zero-padded to five digits because lexicographic path order must coincide with
@@ -788,6 +849,39 @@ Three invariants hold the whole thing together:
 
 A resend requires deleting the `DataItem` before re-putting it: an identical `putDataItem` is
 deduplicated by the Data Layer and would trigger nothing at all.
+
+**"Erase everything" is the same argument a second time.** Erasing the phone and telling the watch
+nothing leaves the watch as the source of truth for data the user has just destroyed: the session
+being recorded re-announces itself at its close, the phone recreates the row from that header, and
+the night is back on the screen in the morning; the chunk items already in flight are never named by
+any acknowledgement again, so the files behind them stay on the watch for good. The order is
+therefore an `EraseOrder` **item** and not a message — a message to a watch in a drawer is simply
+lost, and that is exactly the watch holding the most unsent chunks — carrying the instant of the
+erasure and nothing else. The watch compares it with the **start** of each session it holds and
+disowns those that began earlier: their files and their items go, and the session still being
+recorded — whose stream the service holds open, so that deleting its directory would only have it
+recreated at the next rotation — keeps a tombstone instead, which makes it announce nothing and
+discard every chunk it is handed afterwards. It is then stopped through the ordinary stop path, so
+that the wake lock and the sensor are released where they always are. A session started *after* the
+instant is not the phone's to disown, because the order may arrive hours late. The phone clears
+every path family of the protocol from the replicated store at that moment, which is what makes
+"before T" precise, and it never lets the watch side block the local erasure: a watch that cannot be
+told is reported, not obeyed.
+
+**One line is missing for that order to arrive.** The watch's `AckObserver` handles the item, but the
+service is declared in the manifest with a `DATA_CHANGED` filter on `/pendulum/ack` alone, and an
+intent filter that does not match a path does not deliver it. Until `/pendulum/erase` is added there,
+the phone puts an order that the watch never reads — and, this being the Data Layer, nothing says so:
+the failure mode is silence, which is what the manifest fix has to be checked against on a device
+rather than in a unit test.
+
+The chunk index is also the acknowledgement's order of work. `reconcileAck` walks the session's files
+by index, and it stops deleting *items* at the first failure — this runs inside a GMS callback, where
+two dozen timeouts would hold that callback for as many minutes — so *which* items survive to the
+next pass depends on the order it walks in. Left to `listFiles`, that order is whatever the
+filesystem hands back: stable enough to look deterministic on one device and different on another.
+The oldest chunks are also the ones that have been holding an in-flight slot the longest, so index
+order is the right order in its own right, not merely a reproducible one.
 
 ### 4.5 Quota, saturation, and the phone being off all night
 
@@ -829,6 +923,29 @@ synchronise, the ack arrives, and `TransferWorker` starts a sweep that drains th
 about three minutes. **Nothing is lost.** The only cost is that the "loss bounded to 20 minutes"
 guarantee degrades to "loss bounded to what the disk holds" — which is exactly the behaviour of the
 batch option, so never worse.
+
+**Two things have to hold for that to be true of the result and not only of the bytes**, because on
+that morning the items arrive in an order nobody chose: the Data Layer promises no order at all
+between distinct items.
+
+*A chunk can land before the session header it belongs to.* Its row is the child of a cascading
+foreign key onto the session row, and `INSERT OR IGNORE` does not cover foreign keys, so the insert
+fails; the file is kept on disk, since its bytes were verified and they are the night, and no resend
+is asked for, since the watch would re-put bytes the phone already holds. What the header's arrival
+then does is reconcile the whole directory against the database — every file without a row gets its
+row and its telemetry, rebuilt from the bytes by `ChunkIngestor` exactly as the watch computed them
+before sending, and then the acknowledgement that frees its in-flight slot (`AckPublisher`). Without
+that reconciliation such chunks wait for the close: they hold slots the watch cannot reuse, so it
+stops sending, and a night that begins this way shows its first two hours and nothing after.
+
+*The analysis is triggered by completeness, not by the `CLOSED` item.* The close is announced urgent
+while the last burst is not, and a non-urgent item may be held for up to thirty minutes; on this
+morning the close arrives with two hours of chunks while six more follow at the pace of the
+acknowledgements. Triggered by `CLOSED` alone, the night is scored with fewer chunks than the watch
+declared — hence marked truncated, hence out of the trend — while the chunks that arrive afterwards
+are ingested, acknowledged, and read by nothing. The relaunch therefore happens on the arrival that
+completes the announced series, and exactly once: not before it, so that a backlog of seventy chunks
+does not enqueue seventy analyses, and whether or not the night has already been scored.
 
 ### 4.6 When the watch dies at 3 a.m.
 

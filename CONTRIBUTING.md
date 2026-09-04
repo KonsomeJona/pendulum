@@ -45,8 +45,11 @@ In rough order of value to the project:
   `SampleBlock` interface. This is what makes it testable against synthetic signals, and it is not
   negotiable.
 - **Pure functions, explicit sampling rate, no wall clock, no un-seeded randomness.** The whole
-  module must be reproducible bit-for-bit from the same input. There is a regression test that
-  checks exactly this.
+  module must be reproducible bit-for-bit from the same input. That is a rule the module is written
+  to, not a property anything asserts end to end: T13, the determinism row of the non-regression
+  table, is not written (`docs/07-validation.md` §3). What is checked is one stage of it —
+  `ImmobilityMaskTest` builds the same mask twice and compares. So the rule is yours to keep; no
+  test will catch you breaking it.
 - **Parameters come from the tables in `docs/03-algorithm.md` §8 (or `docs/workings/ALGO-v2.md` §6, the authoritative original)**, with their published justification.
   A parameter without a reason recorded next to it will be questioned.
 - **Every clinical rule cites its source.** AASM v3 and WASM 2016 differ in ways that matter — most
@@ -60,6 +63,13 @@ In rough order of value to the project:
 ```bash
 ./gradlew :format:test :algo:test
 ```
+
+That is the fast half. CI also runs the Android modules' own unit tests —
+`:wear:testDebugUnitTest`, `:phone:testDebugUnitTest`, `:sleepwriter:testSourceADebugUnitTest` and
+the two release-variant guard rails — and it requires **each of those tasks to have executed at
+least one test**, so a test source set that no longer compiles fails the job by its own empty
+report instead of passing under cover of the hundreds of tests the other modules did run. The
+instrumented tests run on top of that, on an emulator.
 
 A change to the detector must come with a regression case in `algo/src/test/kotlin/com/pendulum/algo/regression/`. The
 suite is built on a synthetic night generator with injected ground truth, precisely so that

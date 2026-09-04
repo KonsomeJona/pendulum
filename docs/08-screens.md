@@ -98,7 +98,7 @@ deliberately refuses to inject fake nights in order to photograph them.
 | ![Trend refused](images/screens/trend-refusal.png) | **Trend, refused under three nights.** Not a warning over a figure — there is no figure. The refusal is carried by the type, not by the display: no branch of code produces an aggregate below three nights. |
 | ![Settings](images/screens/settings.png) | **Settings.** Where the counting rule and the parameter profile live, both shown as values rather than as controls, because neither is adjustable yet. |
 | ![P1 report](images/screens/p1-report.png) | **The P1 report.** The only blocking milestone of the project, instrumented and not yet passed. Each night gets a verdict on three criteria, and *undetermined* is a verdict like the others. |
-| ![Erase everything](images/screens/erasure.png) | **Erase everything.** Local data, local erasure, and a confirmation that has to be typed. |
+| ![Erase everything](images/screens/erasure.png) | **Erase everything.** Local data, local erasure, and a confirmation that has to be typed. The button also clears the replicated store and puts an erase order for the watch, neither of which this screen reports on — see [`04-architecture.md`](04-architecture.md) §4.4, including what is still missing for that order to be delivered. |
 | ![Watch, at rest](images/screens/watch-idle.png) | **The watch, blocked on an unsealed context.** Amber and not red: this is a step the user has not taken yet, not a fault of the device. |
 
 ## What is faithful, and what is not

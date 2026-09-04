@@ -137,16 +137,26 @@ in an `always()` step so that a failed build does not leave it behind.
 ### Releasing
 
 ```bash
-# Bump versionCode and versionName in phone/build.gradle.kts and wear/build.gradle.kts,
-# keeping the two modules in step.
-git commit -am "Release 0.2.0"
 git tag v0.2.0
 git push origin main --tags
 ```
 
-The tag triggers [`release.yml`](../.github/workflows/release.yml), which runs the unit tests,
-refuses to publish if any test fails or if Gradle produced no report at all, builds the four signed
-artifacts, computes their hashes, and attaches everything to a GitHub release.
+**There is no version to bump by hand.** Both modules read `versionCode` and `versionName` from
+`rootProject.extra`, which the root build fills from `-Ppendulum.versionCode` and
+`-Ppendulum.versionName`, and the workflow derives the two from the tag: `v1.2.3` gives the name
+`1.2.3` and the code `10203`, monotonic for as long as minor and patch stay below 100. A local build
+passing neither property carries `0.0.0-dev` and code 1, which is what tells a hand-built artefact
+apart from a released one. A ref that does not read as `vMAJOR.MINOR.PATCH` is refused in the first
+second rather than published as version 0.
+
+Running the workflow by hand — Actions → Release → Run workflow — takes the tag from the input, for
+the checkout **and** for the version. That matters because the branch chosen in "Use workflow from"
+is not the thing being released: a manual run publishes the version of the tag typed in.
+
+The tag triggers [`release.yml`](../.github/workflows/release.yml), which runs every module's unit
+tests plus the release-variant guard rails and lint, refuses to publish if any of them fails or if
+one of those tasks produced no report at all, builds the four signed artifacts, computes their
+hashes, and attaches everything to a GitHub release.
 
 ### Why the release job refuses to fall back to debug signing
 
@@ -154,6 +164,13 @@ If the secrets are missing, the job fails rather than producing an unsigned or d
 artifact. A debug-signed APK published as a release installs and runs perfectly — and then can never
 be upgraded, because the real release key will not match. Failing loudly at build time is much
 cheaper than discovering this after people have installed it.
+
+The keystore and the store password are checked for that before anything is built, and **a blank
+value counts as a missing one**: a secret that was never created still reaches the runner as an
+empty string, not as an absent variable. The same reading applies in the two `build.gradle.kts`,
+which is what makes the last two rows of the table above true — leave the alias unset and it really
+does fall back to `pendulum`, leave the key password unset and it really does fall back to the store
+password, instead of the signer being handed an empty string twenty minutes into the job.
 
 ### No test is allowed to fail
 
@@ -167,5 +184,8 @@ someone cutting a release would have expected the tag to publish over it. It doe
 
 Both workflows now go through [`tools/ci/verifier-tests.py`](../tools/ci/verifier-tests.py), which
 fails on any red test — and also when Gradle produced **no** report at all, the case of a
-compilation error, which reading the XML reports alone would let through as a silent success. Do
-not reintroduce a named exception under another form.
+compilation error, which reading the XML reports alone would let through as a silent success. It is
+given **one glob per test task** rather than one glob over the runner, so each task named answers
+for itself: a module whose test source set stops compiling is caught by its own empty report instead
+of being covered by the hundreds of tests another module did run. Do not reintroduce a named
+exception under another form.

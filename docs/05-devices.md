@@ -525,6 +525,16 @@ must therefore handle a hypnogram with holes, not only full coverage. Counting a
 wake changes the denominator, therefore the index, therefore potentially the screening decision —
 so make it an explicit, recorded parameter, not a hard-coded value.
 
+**Sleep that falls outside the recording is not a hole, and must not be treated as one.** The source
+knows nothing of Pendulum's grid: its session can begin before the first sample and — the common
+case — carry on for hours after the last one, because a watch that died at 3 a.m. does not stop the
+phone that scores the sleep. That sleep can enter no numerator, since no movement is detectable where
+nothing was recorded, so leaving it in the denominator divides the index by up to two. Clip the
+external windows to the span actually recorded before they become a denominator, and keep the
+hole-proration for the holes **inside** that span, where it has something to approximate. The
+direction of the error is what makes this worth a paragraph: an index that reads too high gets
+checked, whereas an index that reads too low is a reassuring figure that ends a search.
+
 `startZoneOffset` and `endZoneOffset` are supplied by the source. Use them rather than recomputing a
 local offset; they are the defence against the daylight-saving trap.
 
@@ -554,7 +564,10 @@ Golden rule: **pick one source, and only one, for a given night. Never merge sta
 sources.** Suggested selection order: (1) the user's preferred source if it covers ≥ 50 % of the
 window; (2) otherwise the one with the most distinct stages; (3) on a tie, the longest coverage.
 Record the chosen `dataOrigin.packageName` alongside the sleep window — without it, an anomalous
-night is undebuggable.
+night is undebuggable. And read the source shown next to a night back from that record rather than
+from the setting: a preference is a wish about future nights, so naming a night with it relabels
+every night already scored the moment the setting is changed, and names a source that may never have
+served at all.
 
 Users can set priority in Health Connect (`Manage data`), but Google notes that reading apps remain
 free to read everything and merge as they see fit

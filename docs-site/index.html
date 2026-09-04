@@ -166,7 +166,7 @@
 
     <p class="status">
       <span class="pill">Pre-alpha</span>
-      <span class="status-txt">All five modules build; 227 unit tests on the two pure-JVM modules.
+      <span class="status-txt">All five modules build; 238 unit tests on the two pure-JVM modules.
       No accelerometer has yet been worn at an ankle by this software.</span>
     </p>
   </div>
@@ -198,6 +198,14 @@
         the index needs.</p>
       </div>
     </div>
+    <p class="note measure">
+      The window that second device reports is clipped to the span Pendulum actually recorded. A
+      sleep session commonly runs on for hours after the watch has stopped — a watch whose battery
+      died at 3 a.m. does not stop the phone that scores the night — and that sleep contributes
+      nothing to the numerator, since no movement can be detected where nothing was recorded.
+      Left in the denominator it would divide the index by as much as two: an error in the
+      reassuring direction, which is the one direction this project cannot afford.
+    </p>
     <p class="note measure">
       An accelerometer does the work, not a gyroscope. A movement lasting 0.5 to 10 seconds is fully
       described by acceleration, and a gyroscope costs 3 to 40 times the current for nothing.

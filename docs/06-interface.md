@@ -99,10 +99,12 @@ cannot be flicked past. No "Skip".
    a check, not decoration.
 4. **Sleep source.** Health Connect permission, then the list of sources actually found over the last
    seven days, with how many nights each covers and whether it provides stages or only a duration.
-5. **Notifications and measurement conditions.** One notification per night, at waking, when the
-   analysis is ready — no others. Then the conditions to keep identical from night to night (same
-   strap at the same hole, same leg, same position above the malleolus, same mattress), and a field
-   recording the strap hole, which is replayed every evening.
+5. **Notifications and measurement conditions.** The notification permission, and what it buys: the
+   phone posts one notification, in the evening, when the watch asks for the form to be opened
+   (§2.2). The step's own copy promises one at waking instead, and nothing posts that one — see
+   §2.3. Then the conditions to keep identical from night to night (same strap at the same hole,
+   same leg, same position above the malleolus, same mattress), and a field recording the strap
+   hole, which is replayed every evening.
 
 ### 2.2 The bedtime ritual
 
@@ -153,6 +155,14 @@ No phone-side service, no persistent notification.
 > flight and nothing to analyse, which is either an evening being prepared or a daytime with nothing
 > to do. That is the only place `20:00–04:00` still appears.
 
+Because the evening record is sealed once and can never be edited, every field of its form survives a
+rotation, an unfolding and the process being killed: the activity fixes neither its orientation nor its
+configuration changes, and a form emptied at 23:00 is retyped in a hurry or abandoned — which leaves
+the evening unsealed and the watch refusing to start. The strap field shows the reference noted during
+onboarding until the user touches it, for the same reason it is asked for once: retyping it every
+evening is an opportunity to write "hole 5" where every previous night says "hole 4", and a night
+sealed with a different strap is a night that is no longer comparable.
+
 #### The phone can ask the watch to start, and the gate is unchanged
 
 The specification reserved starting for a physical press on the watch. The watch now also accepts a
@@ -172,15 +182,24 @@ attempt is made anyway, because it succeeds when an exemption applies; when the 
 the fallback is a **notification on the watch** offering exactly the one-tap gesture that was wanted.
 That is not a degraded path to hide — it is the only path the system guarantees.
 
-**What does not exist yet is the phone-side sender.** `WatchCommands` emits `/pendulum/sweep-request`
-and nothing else; no code on the phone currently sends `/pendulum/start-request`. The protocol is
-wired on the receiving side and idle on the sending side, which is the same shape the sweep path had
-before it was connected.
+**The sending side is wired too**, on the Prepare-the-night card: `WatchCommands.requestStart` puts
+the message to every connected node and the button carries the outcome under it, because a message is
+the one thing here that can fail silently. "The watch is recording" and "the watch received nothing"
+are otherwise the same screen, and this is the application's only gesture whose failure is not
+discovered until the morning, when there is nothing left to salvage.
 
 ### 2.3 Waking: five states
 
-There is one notification per night, sent **after** the analysis and never before, and it carries no
-figure: `Pendulum — night of 12 March analysed. 6 nights available.`
+**Nothing is posted at waking.** The analysis raises no notification: the five states below are read
+on the screen, when the app is opened, and the phone's one notification is the evening one — the
+watch asking for the form (§2.2). The rule for anything that might one day be posted at waking still
+holds, and it is the reason to be careful about adding one: the result is masked at waking and its
+unveiling is written to the technical log (guard rail 2), so a notification carrying the figure would
+be an unveiling with no trace, that is, the guard rail circumvented by a side channel. A notification
+announcing only that a night has been analysed would pass that test, and the onboarding step and an
+unused string (`waking_notification`) both describe it — but nothing posts it, and a promised
+notification that never comes teaches the user not to open the app at all, which is also the gesture
+that triggers the opportunistic Health Connect read.
 
 The head of the Trend screen carries a status strip that takes exactly one of five states, with at
 most one available action.
@@ -200,7 +219,7 @@ stateDiagram-v2
 
 | State | What it shows | Action |
 |---|---|---|
-| **1 — Awaiting transfer** | Night recorded on the watch, megabytes outstanding, that transfer starts when the watch is on its dock and in Bluetooth range, and an estimate in minutes | `Transfer now` |
+| **1 — Awaiting transfer** | Night recorded on the watch, that transfer starts when the watch is on its dock and in Bluetooth range, and — only when the watch has announced its chunk count, which it does on closing — the megabytes outstanding and an estimate in minutes. A session gone quiet has closed nothing, so there is no total to extrapolate from and the card says so in words rather than printing the "0.0 MB, allow 1 minute" that no total produces | `Transfer now` |
 | **2 — Transferring** | Bytes received of bytes total, chunk *n* of *m*, and that the app may be closed. Transfer resumes where it stopped; the percentage never goes backwards | none |
 | **3 — Analysing** | One of exactly three stage labels: *assembling the signal*, *detecting movements*, *crossing with sleep*. No technical log here — that lives in Settings › Log | none |
 | **4 — Provisional** | The movements are scored; the wrist device's sleep stages have not yet reached Health Connect. States that this synchronisation often happens several hours after waking, that Pendulum is meanwhile using its own immobility mask, and that the figure will be recomputed automatically. Shows last attempt and next attempt | `Retry now` |
@@ -216,6 +235,16 @@ hypnogram.
 A failed night is **never** silently dropped. It appears in the list, struck through, with its
 reason, and the eligible-night counter always accounts for the difference:
 `7 nights recorded · 5 eligible · 2 excluded (see Nights)`.
+
+**And *provisional* means one thing only: the hypnogram has not arrived.** It is a promise that the
+figure will be recomputed on its own, so it may only be shown where that promise can be kept — that
+is, on a night still scored against the accelerometric mask. Once the hypnogram is there, a refusal
+is the analysis's last word on that night: a recording cut short, under four hours of sleep, no index
+at all. Such a night is **excluded, with the refusal as its reason**, and not left showing a
+half-moon that will never fill, on the list, in the chart and in the report. Where a night is both
+outside the comparability rules and refused by the analysis, the comparability reason is the one
+shown: a night recorded on the wrong leg is not "too short", even when it also is, and naming the
+wrong one sends the user checking the recording when the setup was the problem.
 
 ### 2.4 Night list and night detail
 
@@ -387,6 +416,22 @@ rounding    = median and bounds to the integer; never a decimal on a per-hour in
 
 The fixed seed is an interface requirement, not a statistical one. An interval that moves on every
 recomposition destroys trust in the whole screen.
+
+**One function computes every aggregate on the trend screen, and that is what makes P1 and P2
+properties of one place rather than of each caller.** The rhythm, the hourly count, the median miss
+rate and the median periodicity index are quantities of the same producer, which is the only code
+that applies the three-night minimum and the only one that returns an interval and an `n`. A figure
+rolled by hand beside them obeys neither, and the two quality medians were rolled that way: a
+"median" over a single night, with nothing next to it to say so, on the card that states two lines
+above that nothing is aggregated below three nights. The `n` of two quantities need not count the
+same nights — the count takes every eligible night, the rhythm only those whose fit was accepted —
+which is why each figure carries its own, and why the caveat about an uncalibrated interval (§4.4b)
+is shown as soon as *either* interval on the card is below six.
+
+The exported campaign report has not been moved onto that producer: its `Median estimated miss rate`
+and `Median periodicity index` lines still come from the repository's own medians, so they can still
+be printed over fewer than three nights and without an interval. That is a defect and it is written
+here rather than left to be discovered in a document meant for a physician.
 
 ### 4.4 Below three nights, and the five position sentences
 
@@ -641,6 +686,12 @@ night — but the button stays enabled. The user decides.
 **Recording state**: elapsed time in large tabular figures, then sample count, measured rate and gap
 count, battery, FIFO mode, and the worn indicator. Stopping requires a confirmation: an accidental
 press at three in the morning costs the whole night.
+
+Those two buttons are declared as buttons — the role, the click, and for STOP the long press it
+answers — and they are at least 48 dp tall. Refusing the ripple and the pill shape is a visual
+decision and must not cost the semantics: a raw gesture detector emits none at all, so a screen
+reader announces a label where there is a control, and START then does nothing on a double tap while
+STOP offers no way to end a recording other than waiting for an automatic stop.
 
 The screen refreshes **every 30 s exactly, and only while the display is on**. No recomposition in
 ambient mode. No result of any kind is ever displayed on the watch.

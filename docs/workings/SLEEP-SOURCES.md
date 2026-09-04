@@ -427,6 +427,8 @@ class SleepSessionRecord(
 
 The SPEC's eight constants are **exact**. Two documented constraints ([features/sleep-sessions](https://developer.android.com/health-and-fitness/health-connect/features/sleep-sessions)): the stages must be **sequential and non-overlapping**; **holes are allowed**. `mergeMasks()` must therefore handle a hypnogram with holes, not only full coverage.
 
+**And a session longer than the recording, which is the ordinary case.** The two devices do not cover the same span: a `SleepSessionRecord` can begin before Pendulum's first sample and, far more often, carry on for hours after its last one — a watch whose battery died at 3 a.m. does not stop the phone that scores the sleep until morning. That overhang enters no numerator, since no movement can be detected where nothing was recorded, and admitting it into the denominator divides the index by up to two — in the reassuring direction, which is the one that ends a search instead of prompting a check. The windows read here are therefore clipped to the span actually recorded before anything is computed from them ([`ALGO-v2.md`](ALGO-v2.md) §3.6.4); a window straddling an edge is cut and kept, its recorded part being real sleep.
+
 A useful note: `startZoneOffset` / `endZoneOffset` are provided by the source. They are your counter-measure to trap no. 10 of the SPEC (daylight saving time) — use them rather than recomputing a local offset.
 
 ### Deduplication by `dataOrigin` — the most counter-intuitive point
@@ -442,7 +444,7 @@ Hence a concrete two-stage strategy:
 1. `aggregate(SleepSessionRecord.SLEEP_DURATION_TOTAL)` → a TST deduplicated by the system. It serves as a **cross-check** on your own computation. If your TST departs from it by more than ~10 %, your deduplication is wrong.
 2. `readRecords()` + **your own deduplication** for the hypnogram. The SPEC already correctly plans a "preferred source as a setting": that is the right approach.
 
-Golden rule: **choose one source and one only for a given night. Never merge the stages of two sources.** Suggested selection order: (1) the preferred source set by the user if it covers ≥ 50 % of the window; (2) otherwise the one with the most distinct `stages`; (3) on a tie, the longest coverage. Record the chosen `dataOrigin.packageName` in `sleep_window` — without that, an abnormal night is undebuggable.
+Golden rule: **choose one source and one only for a given night. Never merge the stages of two sources.** Suggested selection order: (1) the preferred source set by the user if it covers ≥ 50 % of the window; (2) otherwise the one with the most distinct `stages`; (3) on a tie, the longest coverage. Record the chosen `dataOrigin.packageName` in `sleep_window` — without that, an abnormal night is undebuggable. And it is **that** recorded origin, not the preference held in Settings, that the night list, the night detail and the report name as the night's sleep source. The preference says what should be read tonight; it says nothing about what was read for a night already scored, so labelling from it renamed the source of an entire campaign the day the user changed their mind, and could name an application that had never served.
 
 On the user side, the priority is set in Health Connect (`Manage data`), but Google specifies that reading apps remain free to read everything and merge in their own way ([support.google.com/android/answer/13770384](https://support.google.com/android/answer/13770384)). **Do not count on the system priority to protect you**: that is Pendulum's job.
 

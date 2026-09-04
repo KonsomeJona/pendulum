@@ -114,7 +114,7 @@ of what the codec accepted. This is a design requirement, not a precaution.
 |---|---|---|
 | 1 | `1 ≤ N ≤ MAX_SAMPLES_PER_BLOCK`, all three axes of length `N` | block |
 | 2 | `tFirstNs ≤ tLastNs`, both strictly positive | block |
-| 3 | `fs_block = (N−1)·1e9/(tLastNs−tFirstNs)` within ±20 % of nominal | block |
+| 3 | `fs_block = (N−1)·1e9/(tLastNs−tFirstNs)` within ±20 % of the nominal rate **of that block** | block |
 | 4 | Inter-block monotonicity: `tFirstNs(b+1) ≥ tLastNs(b)` | block b+1 |
 | 5 | Non-overlap: `tFirstNs(b+1) − tLastNs(b) ≥ 0.5/fs` | block b+1 |
 | 6 | Plausible gap: `tFirstNs(b+1) − tLastNs(b) ≤ 14 h` (beyond that, a clock reset) | session split |
@@ -128,6 +128,31 @@ Check 8 exists specifically because a badly implemented saturation clamp produce
 — ±16 g flipping between adjacent samples. It detects that failure independently of whether the
 codec bug is fixed, and it costs one subtraction per sample. It should not be removed once the codec
 is corrected.
+
+**Check 3 measures a block against its own declared rate, never against the session's.** A night is
+not recorded at a single rate. When the acquisition starts losing samples, the watch degrades in
+three steps, and the third re-registers the sensor at **25 Hz** and rotates the chunk, so the new
+rate arrives in the *next* chunk header — the recording itself is correct. Measured against the
+nominal of the first chunk, that is a 50 % deviation against a 20 % tolerance, and every block
+written after the degradation was rejected as `IMPLAUSIBLE_RATE`: the recording was discarded
+precisely when degrading had managed to save it. Each block carries the nominal of the header that
+delivered it (`SampleBlock.nominalHz`), and the session nominal stays the fallback for a producer
+that declares none — the synthetic generator, a block built by hand — so a genuinely corrupted time
+base is still caught by the same check.
+
+**A reboot in mid-night is bridged before these checks see the blocks.** The watch handles a restart
+on purpose: it resumes the same session, with the chunk numbering carried on. But
+`SensorEvent.timestamp` is `elapsedRealtimeNanos`, which restarts from zero at boot, so every
+post-reboot block dates *before* the last pre-reboot one and check 4 — which compares against the
+last **accepted** block, and therefore never advances again — rejected them one after another as
+`NON_MONOTONIC`. Half a night was lost and reported as an integrity failure although every file was
+intact. Check 6 was no help: it only ever knew how to handle a jump *forward*. The two boot epochs
+share no monotonic clock at all, so `SessionReassembler` places the new epoch using the wall-clock
+difference between the two chunk headers — the one use of a wall-clock difference this project
+allows, and it is allowed because its error is seconds while the hole it measures is minutes, and
+because that error lands *inside* a hole long enough to become a segment break, so no
+inter-movement interval is ever computed across it. The bridging is counted, never silent
+(`Night.epochResets`).
 
 Rejected blocks become **gaps** of their nominal duration. A rejection rate above **1 %** voids the
 night.
@@ -203,6 +228,20 @@ since some vendors exclude suspend time. Drift is estimated by regressing wall-c
 deltas across chunks; a slope departing from 1 by more than 1e-4 (> 2.9 s over 8 h) raises
 `CLOCK_DRIFT`, because fusion with an externally supplied hypnogram would then be misaligned and
 movements would be attributed to the wrong stage.
+
+The triple also anchors the night, and for that the three fields must describe **one instant: the
+first sample of the chunk**, not the moment the first block reached the disk. A chunk opens at the
+first FIFO flush, which in the 30 s batched mode has been holding its oldest sample for half a
+minute, and even in continuous mode puts 10.24 s between that sample and the write. Stamping the
+wall clock at the flush while stamping `firstEventTimestampNs` at the sample made the pair
+`(startWallMs, firstEventTimestampNs)` — the pair the phone reads as simultaneous — describe two
+different instants, so every wall-clock time converted onto the timeline, the hypnogram and the
+bedtime entries alike, landed up to a whole AASM epoch out, by a different amount each night. The
+watch now pulls both of its clocks back by the measured age of the first sample, and only when that
+age is plausible; two clock bases that disagree leave the header raw. `TimeAnchor` still subtracts
+whatever age it can read from `startElapsedRealtimeNs − firstEventTimestampNs`, which is zero on a
+header the watch has already corrected, so nights recorded before the change are placed correctly
+and nothing is subtracted twice.
 
 ### Stage 1 — Gravity / movement separation
 
@@ -475,6 +514,19 @@ That is the known limit of this standard, and there is no other. The field
 `gainSource ∈ {GROSS_BODY, NONE}` must accompany **every** published index; `NONE` means no
 inter-night comparison is founded.
 
+**Not everything flagged as a gross body movement is a body turn.** The median is taken over the
+events carrying `GROSS_BODY` that carry neither `IN_BLIND_ZONE` nor `TRUNCATED`. Inside a hole the
+movement channel is fed zeros (stage 0), and the step back to gravity at the end of the hole rings
+through the 0.5 Hz high-pass at **390–550 mg** on the coarse envelope — *larger* than a real turn at
+377 ± 63 mg, so the artefact is classified as a gross body movement and, left in the median, pulled
+the night's only gain reference upward by an amount set by how many FIFO holes the night happened to
+contain. Two nights with different hole counts then stop being comparable, which is the one thing
+this reference exists to make possible. The 2 s blind zone of the gap policy is sized for that
+ringing, but it only ever protected the *detector*: this median never looked at it. A movement
+truncated by a segment edge is excluded for the opposite reason — its peak is measured on a partial
+event and biases the median down. The filter reads the **flags**, not `reject`: a gross body movement
+always carries `reject == GROSS_BODY`, which would hide every other reason behind it.
+
 This is the only one of the three terms that compensates strap tightness, which is the variable that
 destroys night-to-night comparability.
 
@@ -628,6 +680,17 @@ aPLM-w     = plmwCount / analysable_WASO_hours
 **Never raw TST.** Counting movements over a period during which none could have been seen inflates
 the denominator and deflates the index — in exactly the direction that makes a screen miss.
 
+That applies with particular force to a denominator that comes from elsewhere, so an externally
+supplied sleep window is **clipped to the recorded span** before it becomes one. Health Connect
+knows nothing of our grid: a sleep session can start before our first sample and — the common
+case — carry on for hours after our last, because a watch whose battery died at 3 a.m. does not stop
+the phone that goes on scoring the night. None of that sleep can enter a numerator, and letting it
+enter the denominator divided the index by as much as two. A window straddling an edge is cut rather
+than dropped, since the recorded part of it is real sleep; a window entirely outside disappears. The
+coverage factor is untouched and keeps its own job — prorating the holes *inside* the grid, where it
+is a documented approximation. This clip removes only the overflow, where there was nothing to
+approximate.
+
 **Periodicity Index (Ferri)**, over in-sleep movements:
 
 ```
@@ -719,7 +782,9 @@ methodological regression.
 If the night stops at 03:00:
 
 1. The sleep period has no end. `SPT_end = last valid sample`, flag `TRUNCATED_NIGHT`. Do not
-   extrapolate.
+   extrapolate. The rule holds for a sleep record that comes from another device as well: it is
+   clipped at the last valid sample (stage 7), because that device knows nothing of the cut and
+   goes on scoring sleep after it.
 2. **The index of a truncated night is biased upward, non-correctably.** PLMS concentrate in N1/N2
    and in the first half of the night, so a night cut at 03:00 preferentially samples the rich part.
    The split-half ratio is the best available indicator of the magnitude of that bias and must be
@@ -942,6 +1007,10 @@ denominator.
 for an external sleep source, and it is not merely that such a source supplies stages: **it is
 independent**. Another wrist, another sensor, another algorithm, another device. No circularity at
 all.
+
+The external record is first clipped to the recorded span, as stage 7 describes; the four steps below
+all run on the clipped windows, the ΔTST of step 2 included, which otherwise reports a disagreement
+that is only the overflow measuring itself.
 
 Fusion, in four steps:
 
@@ -1432,7 +1501,7 @@ these are its only parameters anywhere.
 
 | Parameter | Default | Unit | Plausible range | Justification / source | Effect of ±20 % |
 |---|---|---|---|---|---|
-| `maxRateDeviation` | 0.20 | — | 0.10–0.30 | Integrity check 3 | < 1 % |
+| `maxRateDeviation` | 0.20 | — | 0.10–0.30 | Integrity check 3, against the nominal declared by the block's own chunk header | < 1 % |
 | `maxJerkG` | 8.0 | g/sample | 4–16 | Check 8: detects saturation sign-wrap independently of the codec | < 1 % |
 | `saturationFraction` | 0.05 | — | 0.02–0.10 | Check 10 | < 1 % |
 | `maxGapNs` | 14 | h | 8–24 | Beyond this, a clock reset rather than a gap | n/a |

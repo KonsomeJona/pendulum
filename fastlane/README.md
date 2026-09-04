@@ -51,13 +51,14 @@ fastlane supply --aab pendulum-phone-<version>.aab --track internal
   real measurement) and what it is not (a medical device, an official health application, a
   diagnosis). Both halves are near the top, not at the bottom: Play truncates the full description in
   the list view, and a qualification below the fold is one nobody reads.
+- The **512×512 listing icon** is in place for both locales (`images/icon.png`), and both
+  applications carry a launcher icon of their own rather than the system default.
 - The screenshots are real captures of the running application, not renderings. They come from
   `docs/images/screenshots/`, which is the same set the documentation shows.
 
 ## What is still missing before a listing could go live
 
 - A **feature graphic**, 1024×500, which Play requires and which does not exist.
-- An **application icon**, 512×512. The current launcher icon is a placeholder.
 - A **privacy policy at a public URL**. The content is already written — the application declares no
   `INTERNET` permission and can therefore open no connection at all — but Play needs it hosted.
 - The **Health apps declaration form**, discussed above.

@@ -248,8 +248,10 @@ before the estimate of `p` is trusted.
 | Night-to-night tracking (the trend, the main screen) | Fundamental period `μ` in seconds, and the periodicity index | Stable, no denominator, no improperly transposed threshold |
 | Report for a physician (export) | Hourly count, with its denominator stated explicitly, its error bars, and the estimated miss rate | It is what a sleep specialist can read |
 
-A bare "0.58" is not shown to anyone. Periodicity is presented as **a rhythm in seconds**; an
-interval is intuitive, a dimensionless index is not.
+The screens show no bare "0.58". Periodicity is presented there as **a rhythm in seconds** and, for
+the index itself, as a qualifier that appears only once five nights carry a valid index: an interval
+is intuitive, a dimensionless index is not. The exported report does print the median index as a
+number, because it is written for a reader who knows that scale.
 
 ---
 
@@ -407,6 +409,14 @@ for the Galaxy Watch 3 against PSG, sensitivity 0.954, specificity 0.524, TST bi
 (Kim et al. 2023). Over-reported sleep inflates the denominator and **under-states** the index. Sleep
 *stages* from such devices are worse still (four-stage accuracy 0.651, Cohen's κ 0.34–0.47), which is
 why Pendulum uses them for the wake/sleep boundary only and never reports an index by stage.
+
+The coarsest form of that same error is removed rather than tolerated. The other device knows nothing
+of when the ankle watch stopped, so its sleep session routinely runs on for hours past the last
+recorded sample — a watch whose battery died at 3 a.m. does not stop the phone that goes on scoring
+the night. That sleep can enter no numerator, since no movement can be detected where nothing was
+recorded, and it used to divide the index by as much as two. External sleep is therefore clipped to
+the span actually recorded before it becomes a denominator. What clipping cannot reach is the
+over-reporting *inside* that span, which is the bias described above.
 
 **A single night means nothing.** In confirmed RLS patients the 15/h threshold is exceeded on only
 about **34 %** of individual nights (52 % at 10/h, 70 % at 5/h); across five nights the probability

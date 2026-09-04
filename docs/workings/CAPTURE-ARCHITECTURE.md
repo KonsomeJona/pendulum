@@ -206,6 +206,14 @@ payload : the exact bytes of the chunk file
 
 **Structuring choice: the acknowledgement is a `DataItem`, not a message.** An ack sent by `MessageClient` while the watch is out of range is lost, and the watch would keep its files forever. An ack as a `DataItem` is a **convergent state**: the watch reads it when it can, and the state is the same however many times it reads it. Idempotence for free.
 
+**`/pendulum/erase`** — phone → watch, `setUrgent()`, one item for every session at once
+```
+{ erasedBeforeMs }
+```
+Put when the user erases everything, and **for the same reason as the acknowledgement: an item and not a message.** An erasure must reach a watch that is in a drawer, switched off, or out of range at the moment the confirmation is typed — which is exactly the watch still holding the most unsent chunks. A message would simply be lost, and the watch would push its files back into a phone that no longer knows the night they belong to: before this item existed, "erase everything" cleaned the phone and said nothing to the watch, the session being recorded re-announced itself at its close, the row was recreated from that header, and a night erased at 3 a.m. was on the screen at 7.
+
+The watch **disowns** every session it holds whose start precedes `erasedBeforeMs` — the start and not the close, because the order may arrive hours late, after a new night has begun, and that night is not the phone's to disown. A disowned session leaves a tombstone in its directory: it announces nothing, sheds the chunks it is handed, and if it is the one being recorded the service is asked to stop through its ordinary path. The phone, in the same gesture, deletes every item either side wrote — acknowledgements, sealed contexts, sessions, chunks, live previews — so that "what the phone received before T" is exactly what its replica held at T. It is put **before** those deletions, so that an interrupted sequence still leaves the watch informed.
+
 **`/pendulum/sweep-request`** (Message, phone → watch) and **`/pendulum/sweep/<sessionHex>`** (Channel) — see §2.5.
 
 ### 2.4 Nominal loop
@@ -217,6 +225,11 @@ payload : the exact bytes of the chunk file
 5. **Watch.** `AckObserver` receives the ack. For each bit set: delete the chunk file **then** the corresponding `DataItem`. For each index in `needResend`: delete then re-put the `DataItem` (the deletion is necessary, an identical re-`put` would be deduplicated and would trigger nothing).
 
 **The file is never deleted before the ack bit. Nor is the `DataItem`.** The invariant holds by itself: the watch's disk is the source of truth as long as the phone's database has not become it.
+
+**Two orderings belong to the protocol, and neither is a detail.**
+
+- **The session item precedes the first chunk.** On the phone the chunk row hangs off the session row by a cascading foreign key, and `INSERT OR IGNORE` covers `UNIQUE`, `NOT NULL`, `CHECK` and `PRIMARY KEY` — not foreign keys. A chunk that lands first is therefore kept on disk with no row, and acknowledged as nothing, which costs the watch one of its 24 in-flight slots until morning. So the burst is withheld, and the announcement retried, as long as the session has not been announced; and on the phone side the arrival of a header reconciles the directory against the database, giving those files their rows and the acknowledgement that frees the slots. The Data Layer promises no order between distinct items, and the morning resynchronisation of a phone that was off all night delivers them in whatever order it likes — this is not a rare case.
+- **The watch walks its files in index order** when it applies an acknowledgement. It gives up on the store at the first failure — this runs inside a GMS callback, where twenty-four timeouts would hold it for twenty-four minutes — so *which* items survive to the next pass depends on the order of the walk. Left to `listFiles`, that order is whatever the filesystem hands back: stable enough to look deterministic on one device and different on another. And the oldest chunks are also the ones that have held a slot the longest, so index order is the right order in its own right, not merely a reproducible one.
 
 ### 2.5 Catch-up: `ChannelClient`
 
@@ -262,7 +275,7 @@ The append-only, CRC-blocked format of `ChunkCodec.kt` already does the job: `Ch
 
 - `now − lastChunkArrivalMs > 45 min` → `state = STALE` (the watch has stopped talking, it may come back).
 - `now > startWallMs + 14 h` **or** local time > 12:00 → `state = TRUNCATED`, `endWallMs = tFirstNs of the last chunk received`, and we **run the analysis on what we have**.
-- If chunks arrive afterwards (watch recharged, rebooted): reconciliation, `RescoreWorker` recomputes. The chain is idempotent; the analysis of a truncated night is never an irreversible final state.
+- If chunks arrive afterwards (watch recharged, rebooted, phone switched back on): the analysis is relaunched by **completeness**, and not by the `CLOSED` item. That distinction is the whole point, because `CLOSED` is not the end of the transfer — the watch puts it *before* its final burst, the Data Layer may hold a non-urgent item back for half an hour, and a phone that was off all night receives `CLOSED` together with 24 chunks while six hours' worth follow at the pace of the acknowledgements. Triggered by the close alone, the analysis scored those nights with fewer chunks than the session declared, hence as truncated and out of the trend, and the late chunks were ingested into a night nobody re-read. The arrival that completes the announced series therefore enqueues `IngestWorker` then `AnalyzeWorker` again (`WorkScheduler.enqueueLateRescore`), appended behind the chain already in flight if there is one and never dropped. The chain is idempotent; the analysis of a truncated night is never an irreversible final state.
 
 **Probable cause.** The `sidecar.json` and `/pendulum/live` carry `batteryPct` per minute. If the last reading is ≤ 8 % → "battery". If a `BootReceiver` later publishes a restart marker → "restart". Otherwise → "unknown interruption". Never invent: displaying "unknown" is information, guessing is a bug.
 
@@ -381,6 +394,8 @@ A change of level **forces a chunk rotation**: `modeFlags` and `nominalRateHz` a
 | 5 | **Waking detected** | > 80 % of the 30 s epochs above the locomotion threshold over a sliding 10 min | `WAKE_DETECTED` |
 | 6 | **Disk** | free space < 50 MB | `DISK_FULL` |
 
+**Condition 5 counts over the window, not over the epochs seen.** Dividing by the number of epochs already collected makes a single active epoch score 1.0, and `WAKE_DETECTED` then stops the night one minute after START — on the walk to bed. The ratio is zero until the ten-minute window is full.
+
 **Condition 2 is the most profitable in the document.** It turns the "the watch dies at 3 a.m." scenario into "the watch closes cleanly at 3 a.m. and sends everything" — the cost is a thirty-line `BatteryLogger`.
 
 **Explicit correction to `SPEC-v1.md`: off-body must NEVER stop the recording.** Off-body detection relies on the PPG/capacitive sensor at the wrist; on the ankle, its behaviour is unknown and probably "not worn" permanently. A stop on off-body would cut every night off in its first minute. `TYPE_LOW_LATENCY_OFFBODY_DETECT` is **logged** (sidecar + `FLAG_OFF_BODY` on the blocks) and **never acted upon**. The "watch taken off" detector is condition 5, which measures locomotion — that is, the event we actually want to detect ("the person got up"), not an unvalidated proxy.
@@ -400,6 +415,8 @@ marker present
 Otherwise: **do not resume**, but **finalise** — move `/pendulum/session` to `CLOSED` with `stopReason = CRASH`, and let `TransferWorker` push the remainder. `SPEC-v1.md` only tested the 14 h window, which restarts a recording at 8 in the morning on the charger after a night-time reboot, and pollutes the night in exactly the way trap no. 11, which it describes elsewhere, warns about.
 
 The first chunk after a resume carries `FLAG_GAP_BEFORE` on its first block and a `chunkIndex` that **continues the numbering** (read from the marker), never reset: the `(sessionId, idx)` uniqueness on the phone side depends on it.
+
+**What the watch cannot carry over is its sensor clock, and the phone bridges it.** `SensorEvent.timestamp` is `elapsedRealtimeNanos`, which restarts from zero at boot. Every post-reboot block therefore dates *before* the last pre-reboot one, and check no. 4 of step −1 ([`ALGO-v2.md`](ALGO-v2.md)) rejected them one after another as `NON_MONOTONIC`, because it compares against the last **accepted** block — which, once the epoch has changed, never advances again. Half a night was lost, reported as an integrity failure, with every file intact and sitting unused on the phone's disk. The chunk header is the only place where the change of epoch is visible — `startElapsedRealtimeNs` is monotonic within one boot and can only go backwards across one — so the bridging lives in `SessionReassembler`, before the algorithm sees the blocks. It rests on a wall-clock difference, which is the single exception to the rule stated in [`SPEC-v2.md`](SPEC-v2.md) §2.7 and is argued there. It is floored, so that a clock resynchronised backwards just after boot cannot land on top of the samples already stacked. And it is counted, in `Night.epochResets`: a bridged night is intact, but it was not measured under quite the same conditions as one that needed no bridge.
 
 **Blind spot to measure: credential encryption.** If the watch has a lock code, `BOOT_COMPLETED` is only broadcast after unlocking, and credential-encrypted storage is inaccessible before that. A watch that reboots at 3 a.m. **on the wrist** stays locked until morning → no resume at all. Do not go `directBootAware` (it would force moving the chunks into device-encrypted storage, more exposed and more complex for an uncertain gain). **To measure in P2: how much time actually elapses between a night-time reboot and the resume.** If the verdict is "never", condition 2 (clean stop on low battery) becomes even more critical.
 
@@ -500,6 +517,7 @@ stopForeground(STOP_FOREGROUND_REMOVE) ; stopSelf()  →  IDLE
 
 Non-negotiable details:
 
+- **The three periods are decided on `elapsedRealtime`, never on the ticks of a `Handler`.** `postDelayed` runs on `uptimeMillis`, which does not advance while the SoC is suspended: in the nominal `WAKEUP 30 s` mode the processor is awake a few per cent of the time between two FIFO bursts, so sixty seconds of *uptime* were on the order of half an hour of night. Every consumer of the minute inherited that stretch — the six stop conditions of §3.4 were evaluated every half hour, and a `LOW_BATTERY` seen thirty minutes late is a watch the system switches off before the clean close and its final burst; the 10:00 cut-off landed towards 10:30; the telemetry point the phone counts as one a minute came one per half hour, and with it the battery series of the sidecar. `TickSchedule` — pure, and testable on the JVM like `StopConditions` and `GapMonitor` beside it — says what is due at a given `elapsedRealtime` and hands back the duration actually covered, which is what the off-body counter has to add rather than a nominal sixty seconds. The decision is taken in the wake of the FIFO flush that wakes the processor anyway, so it still costs no wake-up. Nothing on the bench could show this: it runs on the dock with adb attached, which keeps the processor awake, and so does every degraded mode, whose wake lock is precisely what makes the two clocks agree.
 - `onStartCommand` returns **`START_STICKY`**; `onTaskRemoved` **does nothing** (the service survives the task being swiped away, hence `stopWithTask="false"`).
 - **`startForeground()` is called in the first useful instruction of `onStartCommand`**, before any I/O — five seconds of delay and the system raises `ForegroundServiceDidNotStartInTimeException`.
 - **`onTimeout(startId, fgsType)` is implemented** even though `health` is not subject to it: if a future version made it subject, the default behaviour would be a crash 6 h into the night. The implementation closes cleanly (full `FINALIZING` path), calls `stopSelf()`, and schedules an `AlarmManager.setExactAndAllowWhileIdle` at +30 s to start a new session (new `sessionUuid`, marked `RESTARTED_AFTER_TIMEOUT`). **Cost if useless: zero. Cost if necessary and absent: half of every night.**
@@ -619,10 +637,11 @@ This is the only moment when the user looks. The preflight runs **before** `STAR
 | `BatteryLogger` | Battery reading every 60 s into the sidecar; triggers the clean stop at ≤ 5 %. |
 | `OffBodyLogger` | Listens to `TYPE_LOW_LATENCY_OFFBODY_DETECT`, logs, sets `FLAG_OFF_BODY`. **Never stops anything.** |
 | `WakeDetector` | **Pure**: detects sustained locomotion (30 s epochs over 10 min) → automatic stop. |
-| `RecordingService` | `health` FGS: the state machine of §3.7, wake lock, notification, 10 s / 60 s / 15 min ticks. |
+| `TickSchedule` | **Pure**: which of the periodic jobs are due at a given `elapsedRealtime`, and how much real time the minute job actually covers. |
+| `RecordingService` | `health` FGS: the state machine of §3.7, wake lock, notification, the periods of `TickSchedule`. |
 | `SyncCoordinator` | Decides **what** to push and **when**: rate `N`, ceiling of 24 in-flight items, switch to sweep mode. |
 | `ChunkPublisher` | Performs the `putDataItem` / `deleteDataItems`: chunk, session, live. |
-| `AckObserver` | `WearableListenerService`: `/pendulum/ack` → deletes files and items, handles `needResend`; `/pendulum/sweep-request` → starts the sweep. |
+| `AckObserver` | `WearableListenerService`: `/pendulum/ack` → deletes files and items, handles `needResend`; `/pendulum/sweep-request` → starts the sweep; `/pendulum/erase` → disowns the sessions started before the erasure instant, and stops the service if the one being recorded is among them. |
 | `SweepSender` | Opens the `ChannelClient` and writes the `SweepFraming` stream of the unacknowledged chunks. |
 | `TransferWorker` | `WorkManager`: catch-up outside the service (morning, reboot, backlog), constraint battery > 30 % or charger. |
 | `BootReceiver` | `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED` → resume **or** finalise, according to the five resume conditions of §3.5 — not to be confused with the **six** stop conditions of §3.4. |

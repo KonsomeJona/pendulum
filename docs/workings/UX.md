@@ -640,7 +640,7 @@ Plain `ListItem` sections, no search, no deep sub-menus.
 **Data**
 - Space used, `Purge raw signals older than 90 days` (the results are kept).
 - `Technical log`: timestamped list of workers, gaps, HC retries, errors. Copyable.
-- `Erase all data` (double confirmation, typing the word `ERASE`).
+- `Erase all data` (double confirmation, typing the word `ERASE`). It reaches the watch as well: the phone puts an erasure order in the replicated store — an item and not a message, so that it arrives even at a watch that is out of range, in a drawer or switched off at that moment — and the watch then disowns every session it began before that instant, announcing nothing more about them. Without that order the phone was cleaned and the watch was told nothing, so a night being recorded re-announced itself at its close and a night erased at 3 a.m. was on screen at 7.
 
 **About**
 - App version, algorithm version, `Read the warning again`, scientific sources

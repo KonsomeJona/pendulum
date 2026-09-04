@@ -55,8 +55,8 @@ that precedes all of it, P1.
 
 ## 2. The synthetic night generator
 
-`com.pendulum.algo.synth`. Deterministic: the same seed produces a bit-identical output, and that is
-itself an assertion (T13).
+`com.pendulum.algo.synth`. Deterministic by construction: the same seed produces a bit-identical
+output. That property is what T13 would assert, and T13 is not written — see §3.
 
 ### 2.1 The physical model
 
@@ -257,8 +257,8 @@ specified in [`workings/ALGO-v2.md`](workings/ALGO-v2.md) §5.5.
 
 ## 4. Current status, stated plainly
 
-**148 tests in the `algo` module. 145 run and all 145 pass**; the other three are long-running
-parametric measurements kept `@Disabled` and run by hand. Those 145 cover **8 of the 18 numbered
+**156 tests in the `algo` module. 153 run and all 153 pass**; the other three are long-running
+parametric measurements kept `@Disabled` and run by hand. Those 153 cover **8 of the 18 numbered
 rows of §3** — T1 to T7 and T22 — plus `RhythmMeasurementTest` and the module's unit tests; the
 ten other rows are specifications and are marked as such in that table. **T6 no longer fails — because its denominator was changed, deliberately and with the
 measurement in hand.** §4.1 is the whole account: what was measured, what it overturned, what was
@@ -284,8 +284,8 @@ to 11/20, the published index from 5 % of truth to 47 %, with no measured cost i
 threshold policy is a miss rate between 0.39 and 0.55, and identifiability needs below 0.50.
 
 **§4.5 re-runs the whole suite at the recommended value so the recommendation arrives complete.** At
-`f_cal` = 0.06, **142 of 145 tests pass**. None of the artefact defences — T1 to T4 — is among the
-three, which is the result that mattered. Of the three, one is a tripwire on a published constant
+`f_cal` = 0.06, **142 of the 145 tests the suite then ran pass**. None of the artefact defences — T1
+to T4 — is among the three, which is the result that mattered. Of the three, one is a tripwire on a published constant
 doing its job, one is an inverted assertion whose failure is the good news, and one is a genuine
 regression in a *relative* fidelity bound that coincides with a ninefold improvement in the *absolute*
 number. **The default is unchanged**; the decision goes to whoever owns it, with the list in hand.
@@ -778,8 +778,8 @@ if something else breaks it is better to know now. The default is untouched; `Re
 reads `-Palgo.calFraction` and falls back to the shipped value, so `./gradlew :algo:test
 -Palgo.calFraction=0.06` reproduces the table below.
 
-**Result: 142 of 145 pass at both values, against 145 today. The same three fail at both, and the
-artefact defences are not among them.**
+**Result: 142 of the 145 tests the suite then ran pass at both values, against all 145 at the
+shipped default. The same three fail at both, and the artefact defences are not among them.**
 
 | | `f_cal` = 0.06 | `f_cal` = 0.08 | 0.12 (shipped) |
 |---|---|---|---|
@@ -1048,13 +1048,17 @@ None of this is validation.
   ankle by this software. Level 2 and level 3 checks have not been performed, and the hardware
   feasibility gate itself (phase P1) has not been passed.
 - **No level tests what happens after the numbers are computed.** Every assertion above stops at the
-  output of `algo`. The path from there to a stored, displayed night is covered by unit tests on
-  objects built in memory, and a defect currently lives in exactly that gap: a night whose index is
-  a refusal rather than a value cannot be written to the database at all, so it vanishes without a
-  message instead of appearing as an excluded night with its reason.
-  [`04-architecture.md`](04-architecture.md) §4.7 describes it and the correction. It is the kind of
-  failure a synthetic suite is structurally unable to catch, because the suite never crosses the
-  storage boundary.
+  output of `algo`. Most of the path from there to a stored, displayed night is covered by unit
+  tests on objects built in memory; what crosses the storage boundary is a handful of instrumented
+  tests writing real rows through the real database on an emulator, run by
+  `:phone:connectedDebugAndroidTest` in CI — in `phone/src/androidTest/.../db/`: `DisplayedNightTest`
+  for the night scored without a hypnogram, `PrincipalSessionTest` for which of an evening's
+  sessions *is* the night, `ImmutabilityTest` for the append-only triggers, and
+  `export/BundleImportTest` for a bundle read back. What they establish is that a row exists, that
+  it is unique and that it is the expected one; nothing on that side of the boundary judges the
+  number inside it. The failure this gap produces is not a wrong number but a silence — a guard rail
+  firing in a place that cannot report it — and [`04-architecture.md`](04-architecture.md) §4.7 is
+  the worked case.
 
 **And no amount of synthetic testing substitutes for polysomnography.** The AASM issues a strong
 recommendation against actigraphy as a replacement for EMG in diagnosing periodic limb movement

@@ -86,6 +86,8 @@ v1 believed that AASM v3 and WASM 2016 were distinguished only by the lower boun
 - The header is **80 bytes** (the code is right, spec v1 was wrong: its own list of fields already summed to 68 B excluding the reserved area).
 - The 12 reserved bytes take the IANA `zoneId` and the offset. Absolute rule: **every duration is computed on `SensorEvent.timestamp` or `elapsedRealtime`, never by a difference of wall clocks** — this covers the clock change and, more frequently, an NTP resynchronisation in the middle of the night.
 
+**The rule has exactly one exception, and it exists because there is no alternative.** A reboot in the middle of the night restarts `SensorEvent.timestamp` from zero — it is `elapsedRealtimeNanos` — so the two boot epochs of a resumed session share **no** monotonic clock, and nothing but the wall clock can say how far apart they are. `SessionReassembler.bridgeEpoch` on the phone therefore places the new epoch by a wall-clock difference. What makes that defensible is what surrounds it, not the measurement itself: the error is seconds, the hole it measures is minutes, and the error lands *inside* a hole long enough to become a `SEGMENT_BREAK` — the filters restart on the new segment and no inter-movement interval, the quantity the whole product measures, is ever computed across it. It is also **counted** (`Night.epochResets`) rather than silent, because a night that needed a bridge was not measured under quite the same conditions as one that did not. Everywhere else the rule stands as written, and a second exception would be a defect.
+
 ---
 
 ## 3. The anti-self-deception guard rails (to be coded, not displayed)

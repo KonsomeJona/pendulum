@@ -160,16 +160,18 @@ anchored at zero. What each element is for is argued in
 | **This is the ordinary case, not a fault.** Below three eligible nights there is no chart, no median and no export — and there is no code path that produces one. Four nights were recorded here and two of them are eligible; the refusal lists all four, so you can see they arrived. | **Where to look.** `Preferred sleep source` and the `Health Connect` line say whether a second source was found. Home carries the same line, as `sleep source not identified`. |
 
 The discouraging case is the one that looks exactly like a bug and is not. **A night recorded
-without an independent sleep record is captured, transferred, analysed and stored like any other,
-and it does not appear in the list at all** — so the counter does not move and the trend stays
+without an independent sleep record is captured, transferred, analysed and stored like any other. It
+appears in the list, scored against Pendulum's own accelerometer denominator and marked provisional,
+and it never enters the trend** — so the count of eligible nights does not move and the chart stays
 refused, night after night. The night is not lost: it is on the phone, with its raw signal and its
-result, and it joins the list the day a sleep source covers it. But nothing on screen says it is
-there, which is why this page insists on the point. The reason is on the settings screen in the application's
-own words: *the accelerometer mask alone cannot carry the main result — the denominator would be
-computed from the same signal as the numerator.* The fix is not in Pendulum: it is a second
-application writing sleep sessions into Health Connect — a wrist wearable, a ring, an under-mattress
-sensor. [`docs/05-devices.md`](docs/05-devices.md) compares eleven sources and marks which of them
-are confirmed to write there rather than assumed to.
+result, and it is re-scored from raw the day a hypnogram covers it. What the list cannot show is
+that none is coming: a provisional row reads the same whether its sleep period is an hour late or
+will never exist, which is why this page insists on the point. The reason is on the settings screen
+in the application's own words: *the accelerometer mask alone cannot carry the main result — the
+denominator would be computed from the same signal as the numerator.* The fix is not in Pendulum: it
+is a second application writing sleep sessions into Health Connect — a wrist wearable, a ring, an
+under-mattress sensor. [`docs/05-devices.md`](docs/05-devices.md) compares eleven sources and marks
+which of them are confirmed to write there rather than assumed to.
 
 The screens this walk-through leaves out — one night in detail, the report for a physician, the
 hardware feasibility gate, erasure — are in [`docs/08-screens.md`](docs/08-screens.md), and what the
@@ -245,8 +247,8 @@ a unit test asserts that on the resource file itself. The reasoning behind each 
 
 ## Where the project stands
 
-**Pre-alpha.** All modules build. The two pure-JVM modules carry 227 unit tests and the two
-applications over three hundred more, plus twelve that need a real device or an emulator; the signal
+**Pre-alpha.** All modules build. The two pure-JVM modules carry 238 unit tests and the two
+applications 395 more, plus twenty-six that need a real device or an emulator; the signal
 chain is exercised against synthetic nights with injected ground truth, by a harness that reports
 where it fails and not only where it passes ([`docs/07-validation.md`](docs/07-validation.md)).
 

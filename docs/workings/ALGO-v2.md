@@ -172,7 +172,7 @@ Checks, in this order, all O(n):
 |---|---|---|
 | 1 | `1 ≤ N ≤ MAX_SAMPLES_PER_BLOCK` and `x.size == y.size == z.size == N` | block |
 | 2 | `tFirstNs ≤ tLastNs`; both strictly positive | block |
-| 3 | `fs_block = (N−1)·1e9/(tLastNs−tFirstNs)` within ±20 % of `nominalRateHz` | block |
+| 3 | `fs_block = (N−1)·1e9/(tLastNs−tFirstNs)` within ±20 % of the `nominalRateHz` **of the block's own chunk header** | block |
 | 4 | **Inter-block monotonicity**: `tFirstNs(b+1) ≥ tLastNs(b)` | block b+1 |
 | 5 | **Non-overlap**: `tFirstNs(b+1) − tLastNs(b) ≥ 0.5/fs` | block b+1 |
 | 6 | **Plausible gap**: `tFirstNs(b+1) − tLastNs(b) ≤ maxGapNs` (default 14 h — beyond that, a clock reset) | session cut |
@@ -181,6 +181,8 @@ Checks, in this order, all O(n):
 | 9 | **Gravitational plausibility**: over static windows, `median(‖a‖)` must be within [0.80 ; 1.20] g | session marked `DECODE_SUSPECT` |
 | 10 | **Saturation**: a block in which > 5 % of the samples equal ±32767 LSB is corrupted, not saturated (the ankle does not reach ±16 g) | block |
 | 11 | Consistency of `FLAG_GAP_BEFORE` with the gap actually measured; inconsistency → flag, not rejection | report |
+
+**Why check no. 3 measures against the block and not against the session.** A night is not recorded at a single rate. Auto-degradation step 3 re-registers the sensor at 25 Hz in the middle of the night and forces a chunk rotation, so the new rate is carried by the *next* header — the watch records the change correctly ([`CAPTURE-ARCHITECTURE.md`](CAPTURE-ARCHITECTURE.md) §3.3). Compared with the session nominal, read from the first chunk, every block recorded after the degradation shows a 50 % deviation against a 20 % tolerance and is rejected as `IMPLAUSIBLE_RATE`: the recording is thrown away precisely when degrading had managed to save it. `SampleBlock` therefore carries the nominal of the header that delivered it, and the session-wide `nominalHz` handed to `Integrity.check` stays the **fallback**, for a producer that has no header to declare — the synthetic generator, a block built by hand in a test. Nothing is lost on the detection side: a genuinely corrupted time base still fails the check, since the deviation is then measured against the rate the block's own header declares.
 
 Every rejected block is converted into a **gap** of its nominal duration and handled by the gap policy of step 0. The number of blocks rejected per check is published in `IntegrityReport` and must appear in the night's quality report: a rejection rate > 1 % invalidates the night.
 
@@ -415,6 +417,8 @@ snrCal   = gainCal / floorCal
 
 **Fallback if the ritual is not performed** (the user forgets, the screen does not appear): use as the internal gain reference the **median of the peak amplitudes of the night's gross body movements**. Turns are a physiologically stereotyped event, frequent (20–60/night) and of relatively stable amplitude (Sicbaldi: 377 ± 63 mg during sleep, a CV of 17 % across subjects). It is a poorer internal standard than the ritual, but much better than nothing. The field `gainSource ∈ {RITUAL, GROSS_BODY, NONE}` must accompany **every** published PLMI.
 
+**That median takes real turns and nothing else.** Inside a hole the movement channel is fed zeros (step 0), and the step back to gravity at the end of the hole rings through the 0.5 Hz high-pass at 390–550 mg on the coarse envelope — *larger* than a real turn, which is the 377 ± 63 mg quoted just above. The artefact is therefore classified `GROSS_BODY`, and left in the median it pulled the night's only gain reference upward by an amount that depends on how many FIFO holes the night happened to contain: two nights with different hole counts stopped being comparable, which is the one thing this internal standard exists to make possible. `Calibration.fromGrossBodyMovements` skips every event carrying `IN_BLIND_ZONE`, and `TRUNCATED` with it — an event clipped by a segment edge has its peak measured on a partial event, which biases the median the other way. The filter is on the **flags** and not on `reject`: a gross body movement always carries `reject == GROSS_BODY`, so filtering on the reason would hide everything else. The blind zone was already bounding this ringing for the *detector*; it never protected the gain, because this median never looked at it. The zero injection of `Gravity.split` is deliberately untouched — it is specified at step 0 above and the 2 s blind zone is sized for the ringing it causes; the leak was one module downstream, and that is where it is closed.
+
 **Associated regression test (T11)**: multiply the whole movement channel of a synthetic night by 0.6 then 1.8 (loose / tight strap). Calibration on → PLMI deviation ≤ 10 %. Calibration off → expected deviation > 40 %. This is the test that **proves** that part B is good for something; if it does not show that gap, part B is folklore and must be removed.
 
 ### 3.4 Drift of the real sampling frequency
@@ -425,7 +429,9 @@ Handled in full in steps −1 and 0. Three points to remember:
 - **Resample onto a fixed grid rather than adapting the coefficients.** Adapting the filters to a varying `fs` forces the biquads to be recomputed during the session, which causes transients at every change — we would be replacing a 5 % problem with localised artefacts. Resampling costs one linear interpolation and makes everything else exact.
 - **An aberrant block `fs` is a symptom of corrupted timestamps**, not of drift: the block is rejected beyond ±5 % of the session median, and accounted for as a gap.
 
-The clock triplet in the header (`startWallMs`, `startElapsedRealtimeNs`, `firstEventTimestampNs`) serves a distinct and equally important purpose: **detecting the drift between the `SensorEvent.timestamp` scale and the wall clock** — some OEMs exclude suspend time. The drift is estimated by regressing `(startWallMs − startWallMs[0])` on `(firstEventTimestampNs − firstEventTimestampNs[0])` across the chunks of the session. A slope departing from 1 by more than 1e-4 (i.e. > 2.9 s over 8 h) must raise `CLOCK_DRIFT`: **the fusion with the Health Connect hypnogram would be offset**, which moves CLMs from one stage to another and falsifies the PLMS/PLMW split. The cross-correlation realignment (§3.6) recovers part of it, but one has to know.
+The clock triplet in the header (`startWallMs`, `startElapsedRealtimeNs`, `firstEventTimestampNs`) names **one instant, the first sample of the chunk**: the watch pulls its two clocks back by the measured age of that sample, since a chunk opens at the first FIFO flush and the flush can be up to a minute later than the sample it carries. It only does so while that age is plausible — at most twice the report latency it may ask of the sensor — and leaves the header raw beyond that, which is exactly what keeps a divergent time base visible here.
+
+That triplet serves a distinct and equally important purpose: **detecting the drift between the `SensorEvent.timestamp` scale and the wall clock** — some OEMs exclude suspend time. The drift is estimated by regressing `(startWallMs − startWallMs[0])` on `(firstEventTimestampNs − firstEventTimestampNs[0])` across the chunks of the session. A slope departing from 1 by more than 1e-4 (i.e. > 2.9 s over 8 h) must raise `CLOCK_DRIFT`: **the fusion with the Health Connect hypnogram would be offset**, which moves CLMs from one stage to another and falsifies the PLMS/PLMW split. The cross-correlation realignment (§3.6) recovers part of it, but one has to know.
 
 **Benefit of the move to 5 min chunks.** The number of chunks per night goes from ~16 to ~96, so the number of anchor points of the drift regression is multiplied by 6: the uncertainty on the slope improves by a factor **√6 ≈ 2.4**. That is a free and not negligible gain for the fusion with the hypnogram. The arithmetic of the format checks out: 5 min × 60 × 50 Hz × 6 B = 90 000 B, plus the header and the block overhead ≈ **91 kB**, consistent with the `DataItem` constraint.
 
@@ -552,6 +558,8 @@ The intervals passed in `ignoreIntervals` are **neutralised**: the epoch contain
    The UI displays the interval, not the point.
 ```
 
+**Before any of that, the external windows are clipped to the span actually recorded.** The hypnogram comes from a device that knows nothing of our grid: it can begin before our first sample and — the common case — carry on for hours after our last one, because a watch that died at 3 a.m. does not stop the phone that scores the sleep. That sleep enters no numerator, since no movement can be detected where nothing was recorded, but it did enter `tstMin`, and the index came out divided by up to two. That is the one direction of error this project cannot afford: an index that reads too high gets checked, an index that reads too low is a reassuring figure that ends a search. `NightAnalyzer.clipToSignal` therefore restricts every external window to the recorded span — a window straddling an edge is cut and not dropped, its recorded part being real sleep — and steps 1 and 2 are given the clipped windows too, failing which the ΔTST of step 2 would report a disagreement that is only the overhang measuring itself. `coverage` is untouched and keeps its own job, prorating the holes *inside* the grid where it is a documented approximation; the clip removes only the overhang, where the approximation had nothing to approximate. It is the rule of §3.7.2 point 1 — `SPT_end = last valid sample`, do not extrapolate — applied to the external mask as well.
+
 When HC answers, the **HEALTH_CONNECT** mask is primary (it brings the stages, hence the N1/N2/N3/REM distribution of the CLMs, which is the level 5 biological plausibility check of v1, **and** it breaks the circularity). When HC does not answer, the corrected **ACCEL_IMMOBILITY** mask becomes primary, `stage = SLEEP` undifferentiated, and the per-stage distribution is not produced.
 
 A rule point not to be missed: AASM v3 requires that **at least a portion of each CLM fall within an epoch of sleep**, whereas WASM 2016 explicitly allows a series to cross a sleep/wake transition (2.4.4). The two implementations must therefore consume the mask **differently**; a single mask wired to a parametric `SeriesRule` would produce a wrong result for one of the two.
@@ -642,6 +650,10 @@ interface SampleBlock {
     val x: FloatArray   // g
     val y: FloatArray
     val z: FloatArray
+    /** Nominal rate declared by the chunk header that carried this block, 0.0 if unknown.
+     *  Check no. 3 of step −1 measures the block against it; see there for why it is not
+     *  the session's. 0.0 falls back on the session nominal. */
+    val nominalHz: Double get() = 0.0
 }
 
 /** Tri-axial signal on a uniform grid. NaN = missing sample. */
@@ -875,6 +887,7 @@ object Filters {
 
 /** Step −1: the algo trusts neither the CRC nor the block header. */
 object Integrity {
+    /** @param nominalHz session nominal, used only for the blocks whose own `nominalHz` is 0.0. */
     fun check(blocks: List<SampleBlock>, nominalHz: Double,
               cfg: IntegrityConfig = IntegrityConfig()): Pair<List<SampleBlock>, IntegrityReport>
 }
