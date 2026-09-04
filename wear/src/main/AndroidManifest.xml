@@ -85,6 +85,29 @@
                     android:host="*"
                     android:pathPrefix="/pendulum/ack" />
             </intent-filter>
+            <!--
+                The erase order, and it needs its own filter.
+
+                Play Services only delivers `DATA_CHANGED` for the paths a filter names, so
+                `AckObserver.onDataChanged` can handle `/pendulum/erase` all it likes: without this
+                block the item is put by the phone, replicated to the watch, and never delivered to
+                anybody. The night would go on being recorded and would re-announce itself at its
+                close, which is exactly the defect the erase order exists to close.
+
+                This is the same failure mode as the one `ComponentPermissionsTest` was written for:
+                the code is right, the manifest makes it unreachable, and nothing says so — no
+                exception, no message, just a feature that quietly does nothing.
+
+                An exact path and not a prefix: `/pendulum/erase` carries no identifier, unlike the
+                per-session paths beside it.
+            -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:scheme="wear"
+                    android:host="*"
+                    android:path="/pendulum/erase" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
                 <data
